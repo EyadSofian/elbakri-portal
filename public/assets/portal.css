@@ -1588,12 +1588,15 @@ html[lang="ar"] .data-table thead th {
 @media (max-width: 860px) {
   :root {
     --sidebar-w: 0px;
+    --topbar-h: 108px;
   }
 
   .sidebar {
     transform: translateX(-100%);
-    width: 240px;
+    width: min(280px, 86vw);
     transition: transform 180ms ease;
+    z-index: 90;
+    box-shadow: var(--shadow-popover);
   }
 
   [dir="rtl"] .sidebar {
@@ -1607,7 +1610,12 @@ html[lang="ar"] .data-table thead th {
   .topbar {
     left: 0;
     right: 0;
-    padding: 0 12px;
+    height: var(--topbar-h);
+    align-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
   }
 
   [dir="rtl"] .topbar {
@@ -1629,8 +1637,26 @@ html[lang="ar"] .data-table thead th {
   }
 
   .quick-search {
-    width: auto;
-    flex: 1;
+    order: 10;
+    width: 100%;
+    flex: 0 0 100%;
+    height: 36px;
+  }
+
+  .quick-search kbd {
+    display: none;
+  }
+
+  .topbar-spacer {
+    display: none;
+  }
+
+  .wallet-pill {
+    height: 34px;
+    margin-inline-start: auto;
+    padding: 0 9px;
+    gap: 5px;
+    font-size: 12px;
   }
 
   .wallet-pill span,
@@ -1638,15 +1664,188 @@ html[lang="ar"] .data-table thead th {
     display: none;
   }
 
+  .lang-toggle {
+    height: 34px;
+  }
+
+  .lang-toggle button {
+    height: 26px;
+    padding: 0 8px;
+  }
+
+  .topbar-actions {
+    gap: 2px;
+  }
+
+  .topbar-actions .icon-button {
+    width: 34px;
+    height: 34px;
+  }
+
   .page-wrap {
-    padding: 16px;
+    width: 100%;
+    max-width: 100%;
+    padding: 12px;
+    overflow-x: hidden;
   }
 
   .page-header {
     display: grid;
+    gap: 10px;
+    margin-bottom: 12px;
   }
 
-  .stats-grid,
+  .page-title {
+    font-size: 21px;
+    line-height: 28px;
+  }
+
+  .page-subtitle {
+    font-size: 12px;
+  }
+
+  .page-actions,
+  .toolbar-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .page-actions .btn,
+  .toolbar-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .stat-card {
+    min-height: 92px;
+    padding: 10px;
+  }
+
+  .stat-label,
+  .stat-sub {
+    font-size: 10.5px;
+  }
+
+  .stat-value {
+    margin-top: 6px;
+    font-size: 19px;
+    line-height: 25px;
+  }
+
+  .grid-2,
+  .workbench {
+    gap: 12px;
+  }
+
+  .panel-header,
+  .table-toolbar {
+    display: grid;
+    align-items: start;
+    gap: 8px;
+    min-height: auto;
+    padding: 10px 12px;
+  }
+
+  .panel-body {
+    padding: 12px;
+  }
+
+  .filter-head,
+  .filter-body {
+    padding: 10px 12px;
+  }
+
+  .filter-body {
+    gap: 10px;
+  }
+
+  .table-card,
+  .panel,
+  .filter-rail {
+    border-radius: var(--r-8);
+  }
+
+  .table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .data-table {
+    min-width: 760px;
+  }
+
+  .data-table thead th {
+    height: 36px;
+    padding: 0 8px;
+  }
+
+  .data-table tbody td {
+    height: 42px;
+    padding: 6px 8px;
+  }
+
+  .table-foot {
+    display: grid;
+    justify-content: stretch;
+    gap: 8px;
+  }
+
+  .pager {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .bulk-bar.show {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 8px;
+  }
+
+  .modal,
+  .modal.modal-wide {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    border-radius: var(--r-12) var(--r-12) 0 0;
+  }
+
+  .modal-header {
+    min-height: 50px;
+    padding: 12px 14px;
+  }
+
+  .modal-body {
+    padding: 14px;
+  }
+
+  .modal-footer {
+    flex-wrap: wrap;
+    justify-content: stretch;
+    padding: 10px 14px;
+  }
+
+  [dir="rtl"] .modal-footer {
+    justify-content: stretch;
+  }
+
+  .modal-footer .btn {
+    flex: 1 1 140px;
+  }
+
+  .tabs,
+  .detail-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
   .form-grid,
   .info-grid {
     grid-template-columns: 1fr;
@@ -1659,14 +1858,17 @@ html[lang="ar"] .data-table thead th {
   .login-shell {
     grid-template-columns: 1fr;
     min-height: auto;
+    max-width: 480px;
   }
 
   .login-panel {
+    order: 2;
     padding: 28px;
     gap: 28px;
   }
 
   .login-card {
+    order: 1;
     padding: 28px;
   }
 
@@ -1687,5 +1889,127 @@ html[lang="ar"] .data-table thead th {
   .login-art h1 {
     font-size: 28px;
     line-height: 36px;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --topbar-h: 104px;
+  }
+
+  body {
+    font-size: 12.5px;
+  }
+
+  .topbar {
+    padding: 7px 10px;
+  }
+
+  .topbar-actions {
+    display: none;
+  }
+
+  .wallet-pill strong {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .icon-button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .page-wrap {
+    padding: 10px;
+  }
+
+  .page-title {
+    font-size: 20px;
+    line-height: 26px;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .btn {
+    min-height: 34px;
+    padding: 0 10px;
+  }
+
+  .table-toolbar .toolbar-actions,
+  .page-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .table-toolbar .toolbar-actions .btn,
+  .page-actions .btn {
+    width: 100%;
+  }
+
+  .data-table {
+    min-width: 720px;
+    font-size: 12px;
+  }
+
+  .login-page {
+    min-height: 100dvh;
+    align-items: stretch;
+    padding: 0;
+    background: #f0f4f8;
+  }
+
+  .login-shell {
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #fff;
+  }
+
+  .login-panel {
+    display: none;
+  }
+
+  .login-card {
+    justify-content: flex-start;
+    gap: 18px;
+    padding: 28px 18px 22px;
+  }
+
+  .login-card-head h2 {
+    font-size: 22px;
+    line-height: 28px;
+  }
+
+  .form-row.between {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 420px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .table-toolbar .toolbar-actions,
+  .page-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .wallet-pill {
+    max-width: 150px;
+  }
+
+  .wallet-pill strong {
+    max-width: 78px;
+  }
+
+  .login-card {
+    padding-inline: 16px;
   }
 }
