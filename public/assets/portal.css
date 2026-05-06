@@ -1564,6 +1564,11 @@ html[lang="ar"] .data-table thead th {
   display: none;
 }
 
+.sidebar-close,
+.sidebar-backdrop {
+  display: none;
+}
+
 @media (max-width: 1180px) {
   .stats-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -1605,6 +1610,33 @@ html[lang="ar"] .data-table thead th {
 
   .sidebar.open {
     transform: translateX(0);
+  }
+
+  body.sidebar-open {
+    overflow: hidden;
+  }
+
+  .sidebar-close {
+    display: inline-grid;
+    margin-inline-start: auto;
+    border-color: rgba(255, 255, 255, 0.16);
+    color: rgba(255, 255, 255, 0.82);
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: block;
+    opacity: 0;
+    pointer-events: none;
+    background: rgba(15, 27, 71, 0.52);
+    transition: opacity 180ms ease;
+  }
+
+  .sidebar-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .topbar {

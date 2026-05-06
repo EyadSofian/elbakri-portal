@@ -22,6 +22,7 @@
             <div class="brand-name">ELBAKRI</div>
             <div class="brand-sub">OVERSEAS</div>
           </div>
+          <button class="icon-button sidebar-close" onclick="closeSidebar()" aria-label="Close menu"><i data-lucide="x"></i></button>
         </div>
         <div class="role-chip" data-i18n="app.superAdmin">Super Admin</div>
       </div>
@@ -73,6 +74,7 @@
         </button>
       </div>
     </aside>
+    <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
 
     <div class="main-content">
       <header class="topbar">
@@ -316,7 +318,10 @@ function setPage(page) {
 }
 
 document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
-  btn.addEventListener("click", () => setPage(btn.dataset.page));
+  btn.addEventListener("click", () => {
+    setPage(btn.dataset.page);
+    closeSidebar();
+  });
 });
 
 document.addEventListener("keydown", (event) => {
@@ -324,10 +329,19 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     document.getElementById("globalSearch").focus();
   }
+  if (event.key === "Escape") closeSidebar();
 });
 
 function toggleSidebar() {
-  document.getElementById("sidebar").classList.toggle("open");
+  const isOpen = document.getElementById("sidebar").classList.toggle("open");
+  document.body.classList.toggle("sidebar-open", isOpen);
+  document.getElementById("sidebarBackdrop")?.classList.toggle("open", isOpen);
+}
+
+function closeSidebar() {
+  document.getElementById("sidebar")?.classList.remove("open");
+  document.body.classList.remove("sidebar-open");
+  document.getElementById("sidebarBackdrop")?.classList.remove("open");
 }
 
 function logout() {
