@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Elbakri Overseas - Agency Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/portal.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="/assets/i18n.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-block">
+        <div class="brand-row">
+          <div class="brand-mark">B</div>
+          <div>
+            <div class="brand-name">ELBAKRI</div>
+            <div class="brand-sub">AGENCY PORTAL</div>
+          </div>
+        </div>
+        <div class="tier-chip" id="agentTier">STANDARD</div>
+      </div>
+
+      <div class="nav-scroll">
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="nav.workspace">Workspace</div>
+          <button class="nav-item active" data-page="dashboard"><i data-lucide="layout-dashboard"></i><span data-i18n="nav.dashboard">Dashboard</span></button>
+          <button class="nav-item" data-page="bookings"><i data-lucide="briefcase-business"></i><span data-i18n="nav.bookings">Bookings</span><span class="nav-count" id="pendingBadge">0</span></button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="nav.services">Services</div>
+          <button class="nav-item" data-page="hotels"><i data-lucide="hotel"></i><span data-i18n="nav.hotels">Hotels</span></button>
+          <button class="nav-item" data-page="cruises"><i data-lucide="ship"></i><span data-i18n="nav.nileCruises">Nile Cruises</span></button>
+          <button class="nav-item" data-page="transport"><i data-lucide="bus"></i><span data-i18n="nav.transport">Transport</span></button>
+          <button class="nav-item" data-page="activities"><i data-lucide="map-pin"></i><span data-i18n="nav.activities">Activities</span></button>
+          <button class="nav-item" data-page="visa"><i data-lucide="passport"></i><span data-i18n="nav.visa">Visa Applications</span></button>
+          <button class="nav-item" data-page="reception"><i data-lucide="plane-landing"></i><span data-i18n="nav.reception">Airport Reception</span></button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="nav.operations">Operations</div>
+          <button class="nav-item" data-page="invoices"><i data-lucide="receipt-text"></i><span data-i18n="nav.invoices">Invoices</span></button>
+          <button class="nav-item" data-page="wallet"><i data-lucide="wallet-cards"></i><span data-i18n="nav.wallet">Wallet</span></button>
+          <button class="nav-item" data-page="reports"><i data-lucide="chart-column"></i><span data-i18n="nav.reports">Reports</span></button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="nav.tools">Tools</div>
+          <button class="nav-item" data-page="calculators"><i data-lucide="calculator"></i><span data-i18n="nav.calculators">Calculators</span></button>
+          <button class="nav-item" data-page="support"><i data-lucide="headphones"></i><span data-i18n="nav.support">Support</span></button>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="account-mini">
+          <div class="avatar" id="sidebarInitial">?</div>
+          <div class="truncate">
+            <div class="account-name truncate" id="sidebarCompany">Loading</div>
+            <div class="account-role truncate" id="sidebarUser">Agent</div>
+          </div>
+        </div>
+        <button class="btn btn-danger" style="width:100%;margin-top:10px" onclick="logout()">
+          <i data-lucide="log-out"></i><span data-i18n="nav.logout">Logout</span>
+        </button>
+      </div>
+    </aside>
+
+    <div class="main-content">
+      <header class="topbar">
+        <button class="icon-button mobile-menu" onclick="toggleSidebar()" aria-label="Menu"><i data-lucide="menu"></i></button>
+        <div class="breadcrumb">
+          <div class="breadcrumb-label" id="companyBreadcrumb">Agency</div>
+          <div class="breadcrumb-title" id="breadcrumbTitle">Dashboard</div>
+        </div>
+        <label class="quick-search">
+          <i data-lucide="search"></i>
+          <input id="globalSearch" data-i18n-placeholder="topbar.search" placeholder="Search booking, company, client" />
+          <kbd data-i18n="topbar.command">Ctrl K</kbd>
+        </label>
+        <div class="topbar-spacer"></div>
+        <div class="wallet-pill">
+          <i data-lucide="wallet"></i>
+          <span data-i18n="topbar.wallet">Wallet</span>
+          <strong id="walletPillValue">USD 0.00</strong>
+        </div>
+        <div class="role-chip" id="topbarTier" style="margin:0">STANDARD</div>
+        <div class="lang-toggle" role="group" aria-label="Language">
+          <button data-lang="en" class="active">EN</button>
+          <button data-lang="ar">AR</button>
+        </div>
+        <button class="icon-button" data-i18n-label="topbar.notifications"><i data-lucide="bell"></i></button>
+      </header>
+
+      <main class="page-wrap" id="content"></main>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <div class="modal-overlay" id="modalHost"></div>
+
+<script>
+const { t, initI18n, applyTranslations, formatMoney, formatDate, formatNumber } = window.PortalI18n;
+
+const state = {
+  page: "dashboard",
+  user: null,
+  wallet: null,
+  selected: new Set(),
+  cache: {},
+  filters: {},
+  listConfigs: {},
+  wizard: { step: 1, type: "HOTEL", payload: {} },
+};
+
+const pageMeta = {
+  dashboard: ["page.dashboardTitle", "page.dashboardSub"],
+  bookings: ["page.bookingsTitle", "page.bookingsSub"],
+  hotels: ["page.hotelsTitle", "page.hotelsSub"],
+  cruises: ["nav.nileCruises", "page.servicesSub"],
+  transport: ["nav.transport", "page.servicesSub"],
+  activities: ["nav.activities", "page.servicesSub"],
+  visa: ["nav.visa", "page.servicesSub"],
+  reception: ["nav.reception", "page.servicesSub"],
+  invoices: ["page.invoicesTitle", "page.invoicesSub"],
+  wallet: ["page.walletTitle", "page.walletSub"],
+  reports: ["page.reportsTitle", "page.reportsSub"],
+  calculators: ["page.calculatorsTitle", "page.calculatorsSub"],
+  support: ["nav.support", "page.servicesSub"],
+};
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function icon(name) {
+  return `<i data-lucide="${name}"></i>`;
+}
+
+function refreshIcons(root = document) {
+  applyTranslations(root);
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function apiFetch(path, options = {}) {
+  const token = localStorage.getItem("accessToken");
+  return fetch("/api" + path, {
+    ...options,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(options.headers || {}) },
+    credentials: "include",
+  }).then(async res => {
+    if (res.status === 401) {
+      const refresh = await fetch("/api/auth/refresh", { method: "POST", credentials: "include" });
+      if (!refresh.ok) {
+        localStorage.clear();
+        location.href = "/login.html";
+        return null;
+      }
+      const json = await refresh.json();
+      localStorage.setItem("accessToken", json.data.accessToken);
+      return apiFetch(path, options);
+    }
+    const json = await res.json().catch(() => ({ success: false, message: res.statusText }));
+    if (!res.ok || json.success === false) throw new Error(json.message || json.error || "Request failed");
+    return json;
+  }).catch(err => {
+    toast(err.message || "Request failed", "error");
+    return null;
+  });
+}
+
+function toast(message, type = "") {
+  const el = document.getElementById("toast");
+  el.textContent = message;
+  el.className = `toast ${type} show`;
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.className = "toast"; }, 3600);
+}
+
+function content(html) {
+  const root = document.getElementById("content");
+  root.innerHTML = html;
+  refreshIcons(root);
+}
+
+function pageHeader(actions = "") {
+  const [titleKey, subKey] = pageMeta[state.page] || pageMeta.dashboard;
+  document.getElementById("breadcrumbTitle").textContent = t(titleKey);
+  return `<div class="page-header">
+    <div>
+      <div class="page-kicker">${escapeHtml(state.user?.company?.name || "Elbakri B2B")}</div>
+      <h1 class="page-title">${t(titleKey)}</h1>
+      <p class="page-subtitle">${t(subKey)}</p>
+    </div>
+    <div class="page-actions">${actions}</div>
+  </div>`;
+}
+
+function statusBadge(status) {
+  const key = String(status || "").toUpperCase();
+  return `<span class="badge badge-${key.toLowerCase()}">${t("status." + key, key.replace(/_/g, " "))}</span>`;
+}
+
+function tierBadge(tier) {
+  const key = String(tier || "STANDARD").toUpperCase();
+  return `<span class="badge badge-${key.toLowerCase()}">${t("tier." + key, key)}</span>`;
+}
+
+function skeletonRows(cols = 8, rows = 8) {
+  return Array.from({ length: rows }, () => `<tr>${Array.from({ length: cols }, () => `<td><div class="skeleton" style="height:14px;width:70%"></div></td>`).join("")}</tr>`).join("");
+}
+
+function emptyBlock(messageKey, action = "") {
+  return `<div class="empty-state"><div class="empty-illustration"></div><strong>${t(messageKey)}</strong><span>${t("empty.adjustFilters")}</span>${action}</div>`;
+}
+
+function tableFoot(meta, onPage, pageName) {
+  const page = meta?.page || 1;
+  const pages = Math.max(meta?.pages || 1, 1);
+  const total = meta?.total || 0;
+  const limit = meta?.limit || 20;
+  const start = total ? ((page - 1) * limit) + 1 : 0;
+  const end = Math.min(page * limit, total);
+  return `<div class="table-foot">
+    <span>${formatNumber(start)}-${formatNumber(end)} / ${formatNumber(total)}</span>
+    <div class="pager">${Array.from({ length: Math.min(pages, 7) }, (_, i) => `<button class="${i + 1 === page ? "active" : ""}" onclick="${onPage}('${pageName}', ${i + 1})">${i + 1}</button>`).join("")}</div>
+  </div>`;
+}
+
+function exportRows(filename, rows) {
+  if (!rows || !rows.length) return toast(t("toast.noRowsSelected"), "warning");
+  if (window.XLSX) {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Export");
+    XLSX.writeFile(wb, `${filename}.xlsx`);
+  }
+  toast(t("toast.exported"), "success");
+}
+
+function openModal(title, body, footer = "") {
+  const host = document.getElementById("modalHost");
+  host.innerHTML = `<div class="modal ${body.length > 2400 ? "modal-wide" : ""}">
+    <div class="modal-header"><div class="modal-title">${title}</div><button class="icon-button" onclick="closeModal()">${icon("x")}</button></div>
+    <div class="modal-body">${body}</div>
+    ${footer ? `<div class="modal-footer">${footer}</div>` : ""}
+  </div>`;
+  host.classList.add("open");
+  refreshIcons(host);
+}
+
+function closeModal() {
+  document.getElementById("modalHost").classList.remove("open");
+  document.getElementById("modalHost").innerHTML = "";
+}
+
+document.getElementById("modalHost").addEventListener("click", e => {
+  if (e.target.id === "modalHost") closeModal();
+});
+
+function setPage(page) {
+  state.page = page;
+  state.selected.clear();
+  document.querySelectorAll(".nav-item").forEach(btn => btn.classList.toggle("active", btn.dataset.page === page));
+  (pageLoaders[page] || renderDashboard)();
+}
+
+document.querySelectorAll(".nav-item[data-page]").forEach(btn => btn.addEventListener("click", () => setPage(btn.dataset.page)));
+
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    document.getElementById("globalSearch").focus();
+  }
+});
+
+function toggleSidebar() {
+  document.getElementById("sidebar").classList.toggle("open");
+}
+
+function logout() {
+  apiFetch("/auth/logout", { method: "POST" }).finally(() => {
+    localStorage.clear();
+    location.href = "/login.html";
+  });
+}
+
+async function renderDashboard() {
+  content(pageHeader(`<button class="btn btn-primary" onclick="openBookingWizard()">${icon("plus")}${t("btn.createBooking")}</button>`) + `
+    <div class="stats-grid">${Array.from({ length: 6 }, () => `<div class="stat-card"><div class="skeleton" style="height:12px;width:62%"></div><div class="skeleton" style="height:28px;width:44%;margin-top:14px"></div><div class="skeleton" style="height:12px;width:55%;margin-top:12px"></div></div>`).join("")}</div>
+    <div class="grid-2">
+      <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.bookings")}</div><div class="panel-subtitle">${t("topbar.justNow")}</div></div></div><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(7, 6)}</tbody></table></div></section>
+      <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.wallet")}</div><div class="panel-subtitle">${t("form.currentBalance")}</div></div></div><div class="panel-body"><div class="skeleton" style="height:70px"></div></div></section>
+    </div>`);
+
+  const [report, bookings, wallet] = await Promise.all([
+    state.user?.companyId ? apiFetch(`/reports/company/${state.user.companyId}`) : null,
+    apiFetch("/bookings?limit=8"),
+    apiFetch("/wallet/balance"),
+  ]);
+  if (wallet?.data) updateWallet(wallet.data);
+  const d = report?.data || {};
+  document.getElementById("pendingBadge").textContent = d.pendingBookings || 0;
+  content(pageHeader(`<button class="btn btn-primary" onclick="openBookingWizard()">${icon("plus")}${t("btn.createBooking")}</button>`) + `
+    <div class="stats-grid">
+      ${statCard("stat.totalBookings", d.totalBookings || 0, "stat.allTime")}
+      ${statCard("stat.totalRevenue", formatMoney(d.totalRevenue || 0, "USD"), "stat.monthToDate")}
+      ${statCard("stat.pending", d.pendingBookings || 0, "toast.validationError")}
+      ${statCard("stat.commission", formatMoney((d.totalRevenue || 0) * 0.1, "USD"), "stat.vsMonth")}
+      ${statCard("stat.markup", "12.5%", "stat.lastThirty")}
+      ${statCard("stat.cancellations", d.bookingsByStatus?.CANCELLED || 0, "stat.lastThirty", true)}
+    </div>
+    <div class="grid-2">
+      ${bookingPanel(bookings?.data || [])}
+      <section class="panel">
+        <div class="panel-header"><div><div class="panel-title">${t("nav.wallet")}</div><div class="panel-subtitle">${t("form.currentBalance")}</div></div>${tierBadge(state.user?.company?.tier)}</div>
+        <div class="panel-body">
+          <div class="info-grid" style="grid-template-columns:1fr">
+            <div class="info-item"><div class="info-label">${t("th.balance")}</div><div class="info-value">${formatMoney(wallet?.data?.balance || 0, wallet?.data?.currency || "USD")}</div></div>
+            <div class="info-item"><div class="info-label">${t("th.creditLimit")}</div><div class="info-value">${formatMoney(state.user?.company?.creditLimit || 0, wallet?.data?.currency || "USD")}</div></div>
+            <div class="info-item"><div class="info-label">${t("topbar.lastRefresh")}</div><div class="info-value">${t("topbar.justNow")}</div></div>
+          </div>
+        </div>
+      </section>
+    </div>`);
+}
+
+function statCard(labelKey, value, subKey, down = false) {
+  return `<div class="stat-card">
+    <div class="stat-row"><div class="stat-label">${t(labelKey)}</div><span class="trend ${down ? "down" : ""}">${icon(down ? "trending-down" : "trending-up")} ${down ? "-2%" : "+8%"}</span></div>
+    <div class="stat-value">${value}</div>
+    <div class="stat-sub">${t(subKey)}</div>
+  </div>`;
+}
+
+function bookingPanel(rows) {
+  const cols = [
+    ["th.ref", b => `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`],
+    ["th.type", b => escapeHtml(b.type)],
+    ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
+    ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
+    ["th.commission", b => `<span class="numeric">${formatMoney(Number(b.totalAmount || 0) * 0.1, b.currency || "USD")}</span>`],
+    ["th.status", b => statusBadge(b.status)],
+    ["th.date", b => formatDate(b.createdAt)],
+  ];
+  return `<section class="panel">
+    <div class="panel-header"><div><div class="panel-title">${t("nav.bookings")}</div><div class="panel-subtitle">${t("topbar.justNow")}</div></div><button class="btn btn-outline" onclick="setPage('bookings')">${t("btn.view")}</button></div>
+    <div class="table-scroll"><table class="data-table"><thead><tr>${cols.map(([k]) => `<th>${t(k)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map(r => `<tr>${cols.map(([, fn]) => `<td>${fn(r)}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${cols.length}">${emptyBlock("empty.noBookings")}</td></tr>`}</tbody></table></div>
+  </section>`;
+}
+
+function renderBookings() {
+  renderListPage("bookings", "/bookings", [
+    ["th.ref", b => `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`],
+    ["th.type", b => escapeHtml(b.type)],
+    ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
+    ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
+    ["th.commission", b => formatMoney(Number(b.totalAmount || 0) * 0.1, b.currency || "USD")],
+    ["th.status", b => statusBadge(b.status)],
+    ["th.invoice", b => b.invoice ? statusBadge(b.invoice.status) : "—"],
+    ["th.date", b => formatDate(b.createdAt)],
+  ], {
+    filters: [
+      ["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]],
+      ["type", "form.type", ["", "HOTEL", "FLIGHT", "PACKAGE"]],
+      ["currency", "form.currency", ["", "USD", "EGP", "EUR"]],
+    ],
+  });
+}
+
+function renderHotels() {
+  renderListPage("hotels", "/hotels", [
+    ["th.name", h => `<span class="primary-text">${escapeHtml(h.name)}</span><div class="secondary-text">${escapeHtml(h.city)}, ${escapeHtml(h.country)}</div>`],
+    ["th.stars", h => "★".repeat(Math.min(h.stars || 0, 5))],
+    ["th.amount", h => `<span class="numeric">${formatMoney(h.pricePerNight, h.currency)}</span>`],
+    ["th.currency", h => escapeHtml(h.currency)],
+    ["th.status", h => statusBadge(h.isActive ? "ACTIVE" : "INACTIVE")],
+    ["th.actions", h => `<button class="btn btn-primary" onclick="openBookingWizard('HOTEL','${h.id}')">${t("btn.bookNow")}</button>`],
+  ], {
+    filters: [
+      ["city", "th.city", "text"],
+      ["stars", "th.stars", ["", "3", "4", "5", "6", "7"]],
+      ["currency", "form.currency", ["", "USD", "EGP", "EUR"]],
+    ],
+  });
+}
+
+function renderCruises() {
+  renderListPage("cruises", "/cruises", [
+    ["th.name", c => `<span class="primary-text">${escapeHtml(c.name)}</span>`],
+    ["th.type", c => escapeHtml(c.shipType)],
+    ["th.route", c => escapeHtml(c.route)],
+    ["th.amount", c => `<span class="numeric">${formatMoney(c.priceFrom, c.currency)}</span>`],
+    ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
+    ["th.actions", c => `<button class="btn btn-primary" onclick="openServiceModal('cruise','${c.id}')">${t("btn.bookNow")}</button>`],
+  ]);
+}
+
+function renderTransport() {
+  renderListPage("transport", "/transport-bookings", [
+    ["th.ref", r => escapeHtml(r.refNumber)],
+    ["th.type", r => escapeHtml(r.type)],
+    ["th.route", r => `${escapeHtml(r.fromLocation)} → ${escapeHtml(r.toLocation)}`],
+    ["th.amount", r => `<span class="numeric">${formatMoney(r.totalAmount, r.currency)}</span>`],
+    ["th.status", r => statusBadge(r.status)],
+    ["th.date", r => formatDate(r.pickupDateTime)],
+  ], { filters: [["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]]] });
+}
+
+function renderActivities() {
+  renderListPage("activities", "/activities", [
+    ["th.name", a => `<span class="primary-text">${escapeHtml(a.name)}</span>`],
+    ["th.city", a => escapeHtml(a.city)],
+    ["th.type", a => escapeHtml(a.category)],
+    ["th.amount", a => `<span class="numeric">${formatMoney(a.priceAdult, a.currency)}</span>`],
+    ["th.status", a => statusBadge(a.isActive ? "ACTIVE" : "INACTIVE")],
+    ["th.actions", a => `<button class="btn btn-primary" onclick="openServiceModal('activity','${a.id}')">${t("btn.bookNow")}</button>`],
+  ], { filters: [["city", "th.city", ["", "CAIRO", "HURGHADA", "SHARM_EL_SHEIKH", "ALEXANDRIA"]]] });
+}
+
+function renderVisa() {
+  renderListPage("visa", "/visa-applications", [
+    ["th.ref", v => escapeHtml(v.refNumber)],
+    ["th.name", v => escapeHtml(v.applicantName)],
+    ["th.type", v => escapeHtml(v.visaType)],
+    ["th.country", v => escapeHtml(v.destinationCountry)],
+    ["th.amount", v => `<span class="numeric">${formatMoney(v.totalAmount, v.currency)}</span>`],
+    ["th.status", v => statusBadge(v.status)],
+  ], { filters: [["status", "form.status", ["", "PENDING", "SUBMITTED", "APPROVED", "REJECTED"]]] });
+}
+
+function renderReception() {
+  renderListPage("reception", "/airport-receptions", [
+    ["th.ref", r => escapeHtml(r.refNumber)],
+    ["th.name", r => escapeHtml(r.guestName)],
+    ["th.service", r => escapeHtml(r.serviceType)],
+    ["th.route", r => escapeHtml(r.airport)],
+    ["th.amount", r => `<span class="numeric">${formatMoney(r.totalAmount, r.currency)}</span>`],
+    ["th.status", r => statusBadge(r.status)],
+  ], { filters: [["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]]] });
+}
+
+function renderInvoices() {
+  renderListPage("invoices", "/invoices", [
+    ["th.invoice", i => `<span class="primary-text">${escapeHtml(i.invoiceNumber)}</span>`],
+    ["th.ref", i => escapeHtml(i.booking?.refNumber || "—")],
+    ["th.amount", i => `<span class="numeric">${formatMoney(i.total, i.currency)}</span>`],
+    ["th.status", i => statusBadge(i.status)],
+    ["th.dueDate", i => formatDate(i.dueDate)],
+    ["th.actions", i => `<a class="btn btn-outline" href="/api/invoices/${i.id}/pdf" target="_blank">${icon("file-down")}${t("btn.downloadPdf")}</a>`],
+  ], { filters: [["status", "form.status", ["", "UNPAID", "PAID", "OVERDUE", "CANCELLED"]]] });
+}
+
+function renderWallet() {
+  renderListPage("wallet", "/wallet/transactions", [
+    ["th.type", r => statusBadge(r.type)],
+    ["th.amount", r => `<span class="numeric">${formatMoney(r.amount, "USD")}</span>`],
+    ["th.before", r => formatMoney(r.balanceBefore, "USD")],
+    ["th.after", r => formatMoney(r.balanceAfter, "USD")],
+    ["th.reference", r => escapeHtml(r.reference || "—")],
+    ["th.description", r => escapeHtml(r.description)],
+    ["th.date", r => formatDate(r.createdAt)],
+  ], { filters: [["type", "form.type", ["", "CREDIT", "DEBIT", "REFUND", "ADJUSTMENT"]]] });
+}
+
+async function renderReports() {
+  state.page = "reports";
+  const res = state.user?.companyId ? await apiFetch(`/reports/company/${state.user.companyId}`) : null;
+  const d = res?.data || {};
+  content(pageHeader(`<button class="btn btn-outline" onclick="renderReports()">${icon("refresh-cw")}${t("btn.refresh")}</button>`) + `
+    <div class="stats-grid">
+      ${statCard("stat.totalBookings", d.totalBookings || 0, "stat.allTime")}
+      ${statCard("stat.totalRevenue", formatMoney(d.totalRevenue || 0, "USD"), "stat.monthToDate")}
+      ${statCard("stat.pending", d.pendingBookings || 0, "status.PENDING")}
+      ${statCard("stat.commission", formatMoney((d.totalRevenue || 0) * 0.1, "USD"), "stat.vsMonth")}
+    </div>
+    <section class="panel"><div class="panel-header"><div class="panel-title">${t("page.reportsTitle")}</div></div><div class="panel-body">${emptyBlock("empty.noData")}</div></section>`);
+}
+
+function renderCalculators() {
+  content(pageHeader() + `
+    <div class="stats-grid">
+      ${calcCard("stat.commission", "calcSale", "calcRate", "calcResult", "calcCommission()")}
+      ${calcCard("stat.markup", "calcCost", "calcMarkup", "markupResult", "calcMarkup()")}
+      ${calcCard("form.currency", "currAmount", "currRate", "currResult", "calcCurrency()")}
+    </div>`);
+}
+
+function renderSupport() {
+  content(pageHeader() + `<section class="panel"><div class="panel-body"><div class="info-grid"><div class="info-item"><div class="info-label">Email</div><div class="info-value">bookings@elbakri.com</div></div><div class="info-item"><div class="info-label">Phone</div><div class="info-value">+20 2 0000 0000</div></div></div></div></section>`);
+}
+
+async function renderListPage(page, endpoint, columns, options = {}) {
+  state.page = page;
+  state.listConfigs[page] = { endpoint, columns };
+  const filters = options.filters || [];
+  content(pageHeader(`
+    <button class="btn btn-primary" onclick="openBookingWizard()">${icon("plus")}${t("btn.createBooking")}</button>
+    <button class="btn btn-outline" onclick="exportRows('${page}', state.cache['${page}Rows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>
+  `) + `
+    <div class="workbench">
+      <aside class="filter-rail">
+        <div class="filter-head"><span>${t("filter.title")}</span>${icon("sliders-horizontal")}</div>
+        <div class="filter-body">
+          <div class="field"><label>${t("filter.search")}</label><input id="${page}Search" placeholder="${t("placeholder.searchAny")}" oninput="debouncedList('${page}')"></div>
+          ${filters.map(([key, labelKey, values]) => renderFilterControl(page, key, labelKey, values)).join("")}
+          <button class="btn btn-outline" onclick="clearListFilters('${page}')">${icon("rotate-ccw")}${t("btn.reset")}</button>
+        </div>
+      </aside>
+      <section class="workbench-main table-card">
+        <div class="table-toolbar">
+          <div><strong>${t(pageMeta[page]?.[0] || "nav."+page)}</strong><div class="secondary-text" id="${page}Meta">${t("empty.loading")}</div></div>
+          <div class="toolbar-actions"><button class="btn btn-outline" onclick="${pageLoaders[page].name}()">${icon("refresh-cw")}${t("btn.refresh")}</button></div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table"><thead><tr>${columns.map(([k]) => `<th>${t(k)}</th>`).join("")}</tr></thead><tbody id="${page}Tbody">${skeletonRows(columns.length, 8)}</tbody></table>
+        </div>
+        <div id="${page}Foot"></div>
+      </section>
+    </div>`);
+  await loadListData(page, endpoint, columns);
+}
+
+function renderFilterControl(page, key, labelKey, values) {
+  if (values === "text") return `<div class="field"><label>${t(labelKey)}</label><input id="${page}-${key}" oninput="debouncedList('${page}')"></div>`;
+  return `<div class="field"><label>${t(labelKey)}</label><select id="${page}-${key}" onchange="loadCurrentList('${page}')">${values.map(v => `<option value="${v}">${v ? t("status."+v, v) : t("form.allTypes")}</option>`).join("")}</select></div>`;
+}
+
+let listTimer;
+function debouncedList(page) {
+  clearTimeout(listTimer);
+  listTimer = setTimeout(() => loadCurrentList(page), 250);
+}
+
+function clearListFilters(page) {
+  document.querySelectorAll(`[id^="${page}-"], #${page}Search`).forEach(el => { el.value = ""; });
+  loadCurrentList(page);
+}
+
+async function loadCurrentList(page, pageNumber = 1) {
+  const config = state.listConfigs[page];
+  if (config) {
+    await loadListData(page, config.endpoint, config.columns, pageNumber);
+    return;
+  }
+  const loader = pageLoaders[page];
+  if (loader) loader();
+}
+
+async function loadListData(page, endpoint, columns, pageNumber = 1) {
+  const params = new URLSearchParams({ page: pageNumber, limit: 50 });
+  document.querySelectorAll(`[id^="${page}-"]`).forEach(el => { if (el.value) params.set(el.id.replace(page + "-", ""), el.value); });
+  const search = document.getElementById(page + "Search")?.value;
+  if (search) params.set("search", search);
+  const res = await apiFetch(`${endpoint}?${params}`);
+  const rows = res?.data || [];
+  state.cache[page + "Rows"] = rows;
+  const tbody = document.getElementById(page + "Tbody");
+  if (!tbody) return;
+  tbody.innerHTML = rows.length ? rows.map(row => `<tr>${columns.map(([, fn]) => `<td>${fn(row)}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length}">${emptyBlock("empty.noData")}</td></tr>`;
+  const meta = res?.meta || { total: rows.length, page: 1, limit: 50, pages: 1 };
+  document.getElementById(page + "Meta").textContent = `${formatNumber(meta.total)} ${t(pageMeta[page]?.[0] || "empty.noData")}`;
+  document.getElementById(page + "Foot").innerHTML = tableFoot(meta, "loadCurrentList", page);
+  refreshIcons(tbody);
+}
+
+function calcCard(titleKey, input1, input2, resultId, handler) {
+  return `<div class="stat-card" style="min-height:190px">
+    <div class="stat-label">${t(titleKey)}</div>
+    <div class="field" style="margin-top:10px"><input id="${input1}" type="number" placeholder="0.00" oninput="${handler}"></div>
+    <div class="field" style="margin-top:8px"><input id="${input2}" type="number" placeholder="10" oninput="${handler}"></div>
+    <div class="stat-value" id="${resultId}">USD 0.00</div>
+  </div>`;
+}
+
+function calcCommission() {
+  const sale = Number(document.getElementById("calcSale")?.value || 0);
+  const rate = Number(document.getElementById("calcRate")?.value || 0);
+  document.getElementById("calcResult").textContent = formatMoney(sale * rate / 100, "USD");
+}
+
+function calcMarkup() {
+  const cost = Number(document.getElementById("calcCost")?.value || 0);
+  const rate = Number(document.getElementById("calcMarkup")?.value || 0);
+  document.getElementById("markupResult").textContent = formatMoney(cost * (1 + rate / 100), "USD");
+}
+
+function calcCurrency() {
+  const amount = Number(document.getElementById("currAmount")?.value || 0);
+  const rate = Number(document.getElementById("currRate")?.value || 1);
+  document.getElementById("currResult").textContent = formatMoney(amount * rate, "EGP");
+}
+
+function openBookingWizard(type = "HOTEL", presetId = "") {
+  state.wizard = { step: 1, type, payload: { hotelId: presetId } };
+  renderBookingWizard();
+}
+
+function renderBookingWizard() {
+  const w = state.wizard;
+  const steps = ["modal.type", "modal.details", "modal.review"];
+  let body = `<div class="tabs" style="margin-bottom:16px">${steps.map((k, i) => `<button class="tab ${w.step === i + 1 ? "active" : ""}">${i + 1}. ${t(k)}</button>`).join("")}</div>`;
+  if (w.step === 1) {
+    body += `<div class="form-grid">
+      <div class="form-field full"><label>${t("modal.type")}</label><select id="wizType">${["HOTEL","FLIGHT","PACKAGE"].map(v => `<option value="${v}" ${v === w.type ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+    </div>`;
+  } else if (w.step === 2) {
+    body += `<div class="form-grid">
+      ${field("wizRefName", w.type === "HOTEL" ? "nav.hotels" : "th.details", w.payload.hotelId || "")}
+      ${field("wizStart", "th.date", "", true, "date")}
+      ${field("wizEnd", "form.billingAddress", "", false, "date")}
+      ${field("wizAdults", "nav.clients", "2", true, "number")}
+      ${field("wizAmount", "th.amount", "", true, "number")}
+      <div class="form-field"><label>${t("form.currency")}</label><select id="wizCurrency"><option>USD</option><option>EGP</option><option>EUR</option></select></div>
+      <div class="form-field full"><label>${t("placeholder.notes")}</label><textarea id="wizNotes"></textarea></div>
+    </div>`;
+  } else {
+    body += `<div class="info-grid">
+      <div class="info-item"><div class="info-label">${t("th.type")}</div><div class="info-value">${escapeHtml(w.type)}</div></div>
+      <div class="info-item"><div class="info-label">${t("th.amount")}</div><div class="info-value">${formatMoney(w.payload.totalAmount || 0, w.payload.currency || "USD")}</div></div>
+      <div class="info-item"><div class="info-label">${t("th.commission")}</div><div class="info-value">${formatMoney((w.payload.totalAmount || 0) * 0.1, w.payload.currency || "USD")}</div></div>
+    </div>`;
+  }
+  openModal(t("modal.bookingNew"), body, wizardFooter());
+}
+
+function wizardFooter() {
+  const w = state.wizard;
+  return `
+    ${w.step > 1 ? `<button class="btn btn-outline" onclick="wizardBack()">${t("btn.back")}</button>` : `<button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>`}
+    ${w.step < 3 ? `<button class="btn btn-primary" onclick="wizardNext()">${t("btn.next")}</button>` : `<button class="btn btn-primary" onclick="submitWizardBooking()">${t("btn.createBooking")}</button>`}`;
+}
+
+function wizardNext() {
+  const w = state.wizard;
+  if (w.step === 1) {
+    w.type = document.getElementById("wizType").value;
+  } else if (w.step === 2) {
+    w.payload = {
+      type: w.type,
+      hotelId: document.getElementById("wizRefName").value || undefined,
+      checkIn: document.getElementById("wizStart").value || undefined,
+      checkOut: document.getElementById("wizEnd").value || undefined,
+      adultsCount: Number(document.getElementById("wizAdults").value || 1),
+      totalAmount: Number(document.getElementById("wizAmount").value || 0),
+      baseAmount: Number(document.getElementById("wizAmount").value || 0),
+      currency: document.getElementById("wizCurrency").value || "USD",
+      notes: document.getElementById("wizNotes").value,
+    };
+    if (!w.payload.totalAmount) return toast(t("toast.validationError"), "error");
+  }
+  w.step += 1;
+  renderBookingWizard();
+}
+
+function wizardBack() {
+  state.wizard.step -= 1;
+  renderBookingWizard();
+}
+
+async function submitWizardBooking() {
+  const payload = { ...state.wizard.payload };
+  if (state.wizard.type !== "HOTEL") {
+    delete payload.hotelId;
+    payload.origin = "CAI";
+    payload.destination = "JED";
+    payload.departureDate = payload.checkIn || new Date().toISOString();
+  }
+  const res = await apiFetch("/bookings", { method: "POST", body: JSON.stringify(payload) });
+  if (res?.success) {
+    closeModal();
+    toast(`${t("toast.created")} ${res.data.refNumber}`, "success");
+    setPage("bookings");
+  }
+}
+
+function openServiceModal(kind, id) {
+  toast(`${t("btn.bookNow")}: ${kind} ${id}`, "");
+}
+
+function field(id, labelKey, value = "", required = false, type = "text") {
+  return `<div class="form-field"><label>${t(labelKey)} ${required ? '<span class="required">*</span>' : ""}</label><input id="${id}" type="${type}" value="${escapeHtml(value ?? "")}"></div>`;
+}
+
+function updateWallet(data) {
+  state.wallet = data;
+  document.getElementById("walletPillValue").textContent = formatMoney(data.balance || 0, data.currency || "USD");
+}
+
+async function bootstrapUser() {
+  const token = localStorage.getItem("accessToken");
+  if (!token) {
+    location.href = "/login.html";
+    return false;
+  }
+  const me = await apiFetch("/auth/me");
+  if (!me?.success) return false;
+  if (me.data.role === "SUPERADMIN") {
+    location.href = "/admin.html";
+    return false;
+  }
+  state.user = me.data;
+  localStorage.setItem("user", JSON.stringify(me.data));
+  localStorage.setItem("userRole", me.data.role);
+  document.getElementById("sidebarUser").textContent = me.data.name;
+  document.getElementById("sidebarInitial").textContent = me.data.name?.charAt(0).toUpperCase() || "?";
+  document.getElementById("sidebarCompany").textContent = me.data.company?.name || "Agency";
+  document.getElementById("companyBreadcrumb").textContent = me.data.company?.name || "Agency";
+  const tier = me.data.company?.tier || "STANDARD";
+  document.getElementById("agentTier").textContent = t("tier." + tier, tier);
+  document.getElementById("topbarTier").textContent = t("tier." + tier, tier);
+  const wallet = await apiFetch("/wallet/balance");
+  if (wallet?.data) updateWallet(wallet.data);
+  return true;
+}
+
+const pageLoaders = {
+  dashboard: renderDashboard,
+  bookings: renderBookings,
+  hotels: renderHotels,
+  cruises: renderCruises,
+  transport: renderTransport,
+  activities: renderActivities,
+  visa: renderVisa,
+  reception: renderReception,
+  invoices: renderInvoices,
+  wallet: renderWallet,
+  reports: renderReports,
+  calculators: renderCalculators,
+  support: renderSupport,
+};
+
+document.addEventListener("portal:lang", () => setPage(state.page));
+
+(async function init() {
+  initI18n();
+  refreshIcons();
+  const ok = await bootstrapUser();
+  if (ok) setPage("dashboard");
+})();
+</script>
+</body>
+</html>

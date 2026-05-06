@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Elbakri Overseas - Super Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/portal.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="/assets/i18n.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-block">
+        <div class="brand-row">
+          <div class="brand-mark">B</div>
+          <div>
+            <div class="brand-name">ELBAKRI</div>
+            <div class="brand-sub">OVERSEAS</div>
+          </div>
+        </div>
+        <div class="role-chip" data-i18n="app.superAdmin">Super Admin</div>
+      </div>
+
+      <div class="nav-scroll">
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="nav.overview">Overview</div>
+          <button class="nav-item active" data-page="dashboard"><i data-lucide="layout-dashboard"></i><span data-i18n="nav.dashboard">Dashboard</span></button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="nav.management">Management</div>
+          <button class="nav-item" data-page="companies"><i data-lucide="building-2"></i><span data-i18n="nav.companies">Companies</span></button>
+          <button class="nav-item" data-page="users"><i data-lucide="users"></i><span data-i18n="nav.users">Users</span></button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="nav.services">Services</div>
+          <button class="nav-item" data-page="hotels"><i data-lucide="hotel"></i><span data-i18n="nav.hotels">Hotels</span></button>
+          <button class="nav-item" data-page="hotel-pricing"><i data-lucide="badge-dollar-sign"></i><span data-i18n="nav.hotelPricing">Hotel Pricing</span></button>
+          <button class="nav-item" data-page="cruises"><i data-lucide="ship"></i><span data-i18n="nav.nileCruises">Nile Cruises</span></button>
+          <button class="nav-item" data-page="activities"><i data-lucide="map-pin"></i><span data-i18n="nav.activities">Activities</span></button>
+          <button class="nav-item" data-page="transport"><i data-lucide="bus"></i><span data-i18n="nav.transport">Transport</span></button>
+          <button class="nav-item" data-page="visa"><i data-lucide="passport"></i><span data-i18n="nav.visa">Visa Applications</span></button>
+          <button class="nav-item" data-page="reception"><i data-lucide="plane-landing"></i><span data-i18n="nav.reception">Airport Reception</span></button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="nav.finance">Finance</div>
+          <button class="nav-item" data-page="bookings"><i data-lucide="briefcase-business"></i><span data-i18n="nav.bookings">Bookings</span><span class="nav-count" id="pendingCount">0</span></button>
+          <button class="nav-item" data-page="invoices"><i data-lucide="receipt-text"></i><span data-i18n="nav.invoices">Invoices</span></button>
+          <button class="nav-item" data-page="wallet"><i data-lucide="wallet-cards"></i><span data-i18n="nav.wallet">Wallet</span></button>
+          <button class="nav-item" data-page="reports"><i data-lucide="chart-column"></i><span data-i18n="nav.reports">Reports</span></button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label" data-i18n="nav.tools">Tools</div>
+          <button class="nav-item" data-page="sheets-config"><i data-lucide="sheet"></i><span data-i18n="nav.sheetsConfig">Sheets Config</span></button>
+          <button class="nav-item" data-page="calculators"><i data-lucide="calculator"></i><span data-i18n="nav.calculators">Calculators</span></button>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="account-mini">
+          <div class="avatar" id="userInitial">A</div>
+          <div class="truncate">
+            <div class="account-name truncate" id="sidebarUserName">Admin</div>
+            <div class="account-role truncate" data-i18n="app.adminPortal">Admin Portal</div>
+          </div>
+        </div>
+        <button class="btn btn-danger" style="width:100%;margin-top:10px" onclick="logout()">
+          <i data-lucide="log-out"></i><span data-i18n="nav.logout">Logout</span>
+        </button>
+      </div>
+    </aside>
+
+    <div class="main-content">
+      <header class="topbar">
+        <button class="icon-button mobile-menu" onclick="toggleSidebar()" aria-label="Menu"><i data-lucide="menu"></i></button>
+        <div class="breadcrumb">
+          <div class="breadcrumb-label" data-i18n="app.superAdmin">Super Admin</div>
+          <div class="breadcrumb-title" id="breadcrumbTitle">Dashboard</div>
+        </div>
+        <label class="quick-search">
+          <i data-lucide="search"></i>
+          <input id="globalSearch" data-i18n-placeholder="topbar.search" placeholder="Search booking, company, client" />
+          <kbd data-i18n="topbar.command">Ctrl K</kbd>
+        </label>
+        <div class="topbar-spacer"></div>
+        <div class="wallet-pill" title="Agent wallet exposure">
+          <i data-lucide="wallet"></i>
+          <span data-i18n="topbar.platformWallet">Agent Balances</span>
+          <strong id="walletPillValue">USD 0.00</strong>
+        </div>
+        <div class="refresh-pill"><i data-lucide="refresh-cw"></i><span id="lastRefresh" data-i18n="topbar.justNow">Just now</span></div>
+        <div class="lang-toggle" role="group" aria-label="Language">
+          <button data-lang="en" class="active">EN</button>
+          <button data-lang="ar">AR</button>
+        </div>
+        <div class="topbar-actions">
+          <button class="icon-button" data-i18n-label="topbar.notifications" title="Notifications"><i data-lucide="bell"></i></button>
+          <button class="icon-button" data-i18n-label="topbar.help" title="Help"><i data-lucide="circle-help"></i></button>
+        </div>
+      </header>
+
+      <main class="page-wrap" id="content"></main>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <div class="modal-overlay" id="modalHost"></div>
+
+<script>
+const { t, initI18n, applyTranslations, formatMoney, formatDate, formatNumber } = window.PortalI18n;
+
+const state = {
+  page: "dashboard",
+  companies: [],
+  companiesMeta: { page: 1, limit: 20, total: 0, pages: 1 },
+  companyFilters: { page: 1, limit: 20, search: "", tier: "", isActive: "", country: "" },
+  selectedCompanies: new Set(),
+  currentCompany: null,
+  cache: {},
+  sort: {},
+};
+
+const pageMeta = {
+  dashboard: ["page.dashboardTitle", "page.dashboardSub"],
+  companies: ["page.companiesTitle", "page.companiesSub"],
+  users: ["page.usersTitle", "page.usersSub"],
+  hotels: ["page.hotelsTitle", "page.hotelsSub"],
+  "hotel-pricing": ["page.hotelPricingTitle", "page.hotelPricingSub"],
+  "sheets-config": ["page.sheetsTitle", "page.sheetsSub"],
+  bookings: ["page.bookingsTitle", "page.bookingsSub"],
+  invoices: ["page.invoicesTitle", "page.invoicesSub"],
+  wallet: ["page.walletTitle", "page.walletSub"],
+  reports: ["page.reportsTitle", "page.reportsSub"],
+  cruises: ["nav.nileCruises", "page.servicesSub"],
+  transport: ["nav.transportBookings", "page.servicesSub"],
+  activities: ["nav.activities", "page.servicesSub"],
+  visa: ["nav.visa", "page.servicesSub"],
+  reception: ["nav.reception", "page.servicesSub"],
+  calculators: ["page.calculatorsTitle", "page.calculatorsSub"],
+};
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function apiFetch(path, options = {}) {
+  const token = localStorage.getItem("accessToken");
+  return fetch("/api" + path, {
+    ...options,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(options.headers || {}) },
+    credentials: "include",
+  }).then(async res => {
+    if (res.status === 401) {
+      const refresh = await fetch("/api/auth/refresh", { method: "POST", credentials: "include" });
+      if (!refresh.ok) {
+        localStorage.clear();
+        location.href = "/login.html";
+        return null;
+      }
+      const json = await refresh.json();
+      localStorage.setItem("accessToken", json.data.accessToken);
+      return apiFetch(path, options);
+    }
+    const json = await res.json().catch(() => ({ success: false, message: res.statusText }));
+    if (!res.ok || json.success === false) throw new Error(json.message || json.error || "Request failed");
+    return json;
+  }).catch(err => {
+    toast(err.message || "Request failed", "error");
+    return null;
+  });
+}
+
+function toast(message, type = "") {
+  const el = document.getElementById("toast");
+  el.textContent = message;
+  el.className = `toast ${type} show`;
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.className = "toast"; }, 3600);
+}
+
+function icon(name) {
+  return `<i data-lucide="${name}"></i>`;
+}
+
+function refreshIcons(root = document) {
+  applyTranslations(root);
+  if (window.lucide) window.lucide.createIcons();
+}
+
+function statusBadge(status) {
+  const key = String(status ?? "").toUpperCase();
+  return `<span class="badge badge-${key.toLowerCase()}">${t("status." + key, key.replace(/_/g, " "))}</span>`;
+}
+
+function tierBadge(tier) {
+  const key = String(tier || "STANDARD").toUpperCase();
+  return `<span class="badge badge-${key.toLowerCase()}">${t("tier." + key, key)}</span>`;
+}
+
+function content(html) {
+  const root = document.getElementById("content");
+  root.innerHTML = html;
+  refreshIcons(root);
+}
+
+function pageHeader(actions = "") {
+  const [titleKey, subKey] = pageMeta[state.page] || pageMeta.dashboard;
+  document.getElementById("breadcrumbTitle").textContent = t(titleKey);
+  return `<div class="page-header">
+    <div>
+      <div class="page-kicker">Elbakri B2B</div>
+      <h1 class="page-title">${t(titleKey)}</h1>
+      <p class="page-subtitle">${t(subKey)}</p>
+    </div>
+    <div class="page-actions">${actions}</div>
+  </div>`;
+}
+
+function skeletonRows(cols = 8, rows = 8) {
+  return Array.from({ length: rows }, () => `<tr>${Array.from({ length: cols }, () => `<td><div class="skeleton" style="height:14px;width:${50 + Math.random() * 40}%"></div></td>`).join("")}</tr>`).join("");
+}
+
+function emptyBlock(messageKey, action = "") {
+  return `<div class="empty-state"><div class="empty-illustration"></div><strong>${t(messageKey)}</strong><span>${t("empty.adjustFilters")}</span>${action}</div>`;
+}
+
+function sortable(labelKey, key) {
+  return `<button class="sort-btn" onclick="sortCompanies('${key}')"><span>${t(labelKey)}</span>${icon("chevrons-up-down")}</button>`;
+}
+
+function tableFoot(meta, prefix, onPage) {
+  const page = meta?.page || 1;
+  const pages = Math.max(meta?.pages || 1, 1);
+  const total = meta?.total || 0;
+  const limit = meta?.limit || 20;
+  const start = total ? ((page - 1) * limit) + 1 : 0;
+  const end = Math.min(page * limit, total);
+  const buttons = Array.from({ length: Math.min(pages, 7) }, (_, i) => {
+    const p = i + 1;
+    return `<button class="${p === page ? "active" : ""}" onclick="${onPage}(${p})">${p}</button>`;
+  }).join("");
+  return `<div class="table-foot">
+    <span>${prefix || ""}${formatNumber(start)}-${formatNumber(end)} / ${formatNumber(total)}</span>
+    <div class="pager">${buttons}</div>
+  </div>`;
+}
+
+function exportRows(filename, rows) {
+  if (!rows || !rows.length) {
+    toast(t("toast.noRowsSelected"), "warning");
+    return;
+  }
+  if (window.XLSX) {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, "Export");
+    XLSX.writeFile(wb, `${filename}.xlsx`);
+  } else {
+    const headers = Object.keys(rows[0]);
+    const csv = [headers.join(","), ...rows.map(row => headers.map(h => `"${String(row[h] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${filename}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  toast(t("toast.exported"), "success");
+}
+
+function openModal(title, body, footer = "") {
+  const host = document.getElementById("modalHost");
+  host.innerHTML = `<div class="modal ${body.length > 2600 ? "modal-wide" : ""}" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div class="modal-title">${title}</div>
+      <button class="icon-button" onclick="closeModal()" aria-label="Close">${icon("x")}</button>
+    </div>
+    <div class="modal-body">${body}</div>
+    ${footer ? `<div class="modal-footer">${footer}</div>` : ""}
+  </div>`;
+  host.classList.add("open");
+  refreshIcons(host);
+}
+
+function closeModal() {
+  const host = document.getElementById("modalHost");
+  host.classList.remove("open");
+  host.innerHTML = "";
+}
+
+document.getElementById("modalHost").addEventListener("click", (event) => {
+  if (event.target.id === "modalHost") closeModal();
+});
+
+function confirmAction(message, callback) {
+  openModal(t("modal.confirmDelete"), `<p style="margin:0;color:var(--text-secondary)">${escapeHtml(message)}</p>`, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-danger" id="confirmActionBtn">${t("btn.confirm")}</button>
+  `);
+  document.getElementById("confirmActionBtn").onclick = async () => {
+    closeModal();
+    await callback();
+  };
+}
+
+function setPage(page) {
+  state.page = page;
+  document.querySelectorAll(".nav-item").forEach(btn => btn.classList.toggle("active", btn.dataset.page === page));
+  const loader = pageLoaders[page] || renderDashboard;
+  loader();
+}
+
+document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
+  btn.addEventListener("click", () => setPage(btn.dataset.page));
+});
+
+document.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    document.getElementById("globalSearch").focus();
+  }
+});
+
+function toggleSidebar() {
+  document.getElementById("sidebar").classList.toggle("open");
+}
+
+function logout() {
+  apiFetch("/auth/logout", { method: "POST" }).finally(() => {
+    localStorage.clear();
+    location.href = "/login.html";
+  });
+}
+
+async function renderDashboard() {
+  content(pageHeader(`<button class="btn btn-outline" onclick="renderDashboard()">${icon("refresh-cw")}${t("btn.refresh")}</button>`) + `
+    <div class="stats-grid">${Array.from({ length: 6 }, () => `<div class="stat-card"><div class="skeleton" style="height:12px;width:70%"></div><div class="skeleton" style="height:28px;width:48%;margin-top:14px"></div><div class="skeleton" style="height:12px;width:58%;margin-top:12px"></div></div>`).join("")}</div>
+    <div class="grid-2">
+      <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.bookings")}</div><div class="panel-subtitle">${t("stat.today")}</div></div></div><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(5, 6)}</tbody></table></div></section>
+      <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.wallet")}</div><div class="panel-subtitle">${t("topbar.lastRefresh")}</div></div></div><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(4, 6)}</tbody></table></div></section>
+    </div>`);
+
+  const [overview, bookings, tx, companies] = await Promise.all([
+    apiFetch("/admin/reports/overview"),
+    apiFetch("/bookings?limit=8"),
+    apiFetch("/admin/wallet/transactions?limit=8"),
+    apiFetch("/admin/companies?limit=100"),
+  ]);
+  const d = overview?.data || {};
+  const walletExposure = (companies?.data || []).reduce((sum, c) => sum + Number(c.balance || 0), 0);
+  document.getElementById("walletPillValue").textContent = formatMoney(walletExposure, "USD");
+  document.getElementById("pendingCount").textContent = d.pendingBookings || 0;
+
+  content(pageHeader(`<button class="btn btn-outline" onclick="renderDashboard()">${icon("refresh-cw")}${t("btn.refresh")}</button>`) + `
+    <div class="stats-grid">
+      ${statCard("stat.totalBookings", d.totalBookings || 0, "stat.allTime", "briefcase-business")}
+      ${statCard("stat.totalRevenue", formatMoney(d.totalRevenue || 0, "USD"), "stat.monthToDate", "banknote")}
+      ${statCard("stat.pending", d.pendingBookings || 0, "toast.validationError", "clock")}
+      ${statCard("stat.activeCompanies", d.activeCompanies || 0, "status.ACTIVE", "building-2")}
+      ${statCard("stat.walletExposure", formatMoney(walletExposure, "USD"), "topbar.platformWallet", "wallet")}
+      ${statCard("stat.hotels", d.bookingsByType?.HOTEL || 0, "nav.hotels", "hotel")}
+    </div>
+    <div class="grid-2">
+      ${miniTable("nav.bookings", bookings?.data || [], [
+        ["th.ref", b => `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`],
+        ["th.company", b => escapeHtml(b.company?.name || "—")],
+        ["th.type", b => escapeHtml(b.type)],
+        ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency || "USD")}</span>`],
+        ["th.status", b => statusBadge(b.status)],
+      ])}
+      ${miniTable("nav.wallet", tx?.data || [], [
+        ["th.company", r => escapeHtml(r.company?.name || "—")],
+        ["th.type", r => statusBadge(r.type)],
+        ["th.amount", r => `<span class="numeric">${formatMoney(r.amount, "USD")}</span>`],
+        ["th.date", r => formatDate(r.createdAt)],
+      ])}
+    </div>`);
+}
+
+function statCard(labelKey, value, subKey, iconName) {
+  return `<div class="stat-card">
+    <div class="stat-row"><div class="stat-label">${t(labelKey)}</div><span class="trend">${icon("trending-up")}+12%</span></div>
+    <div class="stat-value">${value}</div>
+    <div class="stat-sub">${t(subKey)}</div>
+  </div>`;
+}
+
+function miniTable(titleKey, rows, columns) {
+  const body = rows.length ? rows.map(row => `<tr>${columns.map(([, fn]) => `<td>${fn(row)}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length}">${emptyBlock("empty.noData")}</td></tr>`;
+  return `<section class="panel">
+    <div class="panel-header"><div><div class="panel-title">${t(titleKey)}</div><div class="panel-subtitle">${t("topbar.justNow")}</div></div></div>
+    <div class="table-scroll"><table class="data-table"><thead><tr>${columns.map(([k]) => `<th>${t(k)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>
+  </section>`;
+}
+
+function renderCompanies() {
+  content(pageHeader(`
+    <button class="btn btn-outline" onclick="exportCompanyRows(false)">${icon("download")}${t("btn.exportExcel")}</button>
+    <button class="btn btn-primary" onclick="showCompanyModal()">${icon("plus")}${t("btn.newCompany")}</button>
+  `) + `
+    <div class="workbench">
+      <aside class="filter-rail">
+        <div class="filter-head"><span>${t("filter.title")}</span>${icon("sliders-horizontal")}</div>
+        <div class="filter-body">
+          <div class="field"><label>${t("filter.search")}</label><input id="coSearch" data-i18n-placeholder="placeholder.searchCompany" placeholder="Search name or email" oninput="debouncedCompanies()"></div>
+          <div class="field"><label>${t("filter.tier")}</label><select id="coTier" onchange="loadCompanies(1)">${option("", "form.allTiers")}${["STANDARD","SILVER","GOLD","PLATINUM"].map(v => `<option value="${v}">${t("tier."+v)}</option>`).join("")}</select></div>
+          <div class="field"><label>${t("filter.status")}</label><select id="coActive" onchange="loadCompanies(1)"><option value="">${t("form.allStatuses")}</option><option value="true">${t("status.ACTIVE")}</option><option value="false">${t("status.INACTIVE")}</option></select></div>
+          <div class="field"><label>${t("filter.country")}</label><input id="coCountry" data-i18n-placeholder="placeholder.country" placeholder="Country" oninput="debouncedCompanies()"></div>
+          <button class="btn btn-outline" onclick="resetCompanyFilters()">${icon("rotate-ccw")}${t("btn.reset")}</button>
+        </div>
+      </aside>
+      <section class="workbench-main table-card">
+        <div class="table-toolbar">
+          <div><strong>${t("page.companiesTitle")}</strong><div class="secondary-text" id="companiesMetaText">${t("empty.loading")}</div></div>
+          <div class="toolbar-actions">
+            <button class="btn btn-outline" onclick="loadCompanies()">${icon("refresh-cw")}${t("btn.refresh")}</button>
+            <button class="btn btn-outline" onclick="exportCompanyRows(false)">${icon("download")}${t("btn.exportExcel")}</button>
+          </div>
+        </div>
+        <div class="bulk-bar" id="companyBulkBar">
+          <span id="companySelectedCount">0</span>
+          <button class="btn btn-outline" onclick="exportCompanyRows(true)">${icon("download")}${t("btn.exportSelected")}</button>
+          <button class="btn btn-outline" onclick="showBulkTopup()">${icon("wallet")}${t("btn.bulkTopup")}</button>
+          <button class="btn btn-danger" onclick="bulkDeactivate()">${icon("ban")}${t("btn.bulkDeactivate")}</button>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr>
+              <th><input type="checkbox" onchange="toggleAllCompanies(this.checked)"></th>
+              <th>${t("th.logo")}</th>
+              <th>${sortable("th.company", "name")}</th>
+              <th>${t("th.tier")}</th>
+              <th>${t("th.country")}</th>
+              <th class="numeric">${t("th.balance")}</th>
+              <th class="numeric">${t("th.creditLimit")}</th>
+              <th>${t("th.bookingsCount")}</th>
+              <th>${t("th.status")}</th>
+              <th>${t("th.lastActivity")}</th>
+              <th>${t("th.actions")}</th>
+            </tr></thead>
+            <tbody id="companiesTbody">${skeletonRows(11, 10)}</tbody>
+          </table>
+        </div>
+        <div id="companiesFoot"></div>
+      </section>
+    </div>`);
+  loadCompanies();
+}
+
+function option(value, key) {
+  return `<option value="${value}">${t(key)}</option>`;
+}
+
+let companiesTimer;
+function debouncedCompanies() {
+  clearTimeout(companiesTimer);
+  companiesTimer = setTimeout(() => loadCompanies(1), 250);
+}
+
+function resetCompanyFilters() {
+  ["coSearch", "coTier", "coActive", "coCountry"].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+  loadCompanies(1);
+}
+
+async function loadCompanies(page = state.companyFilters.page) {
+  state.companyFilters = {
+    page,
+    limit: 20,
+    search: document.getElementById("coSearch")?.value || "",
+    tier: document.getElementById("coTier")?.value || "",
+    isActive: document.getElementById("coActive")?.value || "",
+    country: document.getElementById("coCountry")?.value || "",
+  };
+  const params = new URLSearchParams(Object.entries(state.companyFilters).filter(([, v]) => v !== ""));
+  const res = await apiFetch(`/admin/companies?${params}`);
+  if (!res?.success) return;
+  state.companies = res.data || [];
+  state.companiesMeta = res.meta || { page, limit: 20, total: state.companies.length, pages: 1 };
+  renderCompaniesTable();
+}
+
+function renderCompaniesTable() {
+  const tbody = document.getElementById("companiesTbody");
+  if (!tbody) return;
+  if (!state.companies.length) {
+    tbody.innerHTML = `<tr><td colspan="11">${emptyBlock("empty.noCompanies", `<button class="btn btn-primary" onclick="showCompanyModal()">${icon("plus")}${t("btn.newCompany")}</button>`)}</td></tr>`;
+  } else {
+    tbody.innerHTML = state.companies.map(c => {
+      const selected = state.selectedCompanies.has(c.id);
+      return `<tr class="${selected ? "selected" : ""}">
+        <td><input type="checkbox" ${selected ? "checked" : ""} onchange="toggleCompanySelection('${c.id}', this.checked)"></td>
+        <td><div class="logo-cell">${c.logoUrl ? `<img src="${escapeHtml(c.logoUrl)}" alt="">` : escapeHtml((c.name || "?").charAt(0).toUpperCase())}</div></td>
+        <td><div class="company-cell"><div class="logo-cell">${escapeHtml((c.name || "?").slice(0, 2).toUpperCase())}</div><div class="truncate"><div class="primary-text truncate">${escapeHtml(c.name)}</div><div class="secondary-text truncate">${escapeHtml(c.email || c.nameAr || "—")}</div></div></div></td>
+        <td>${tierBadge(c.tier)}</td>
+        <td>${escapeHtml(c.country || "—")}</td>
+        <td class="numeric">${formatMoney(c.balance, c.currency || "USD")}</td>
+        <td class="numeric">${formatMoney(c.creditLimit, c.currency || "USD")}</td>
+        <td>${formatNumber(c._count?.bookings || c.bookingsCount || 0)}</td>
+        <td>${statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")}</td>
+        <td>${formatDate(c.lastActivityAt || c.updatedAt || c.createdAt)}</td>
+        <td><div class="row-actions">
+          <button class="icon-button btn-icon" title="${t("btn.view")}" onclick="showCompanyDetails('${c.id}')">${icon("eye")}</button>
+          <button class="icon-button btn-icon" title="${t("btn.edit")}" onclick="showCompanyModal('${c.id}')">${icon("pencil")}</button>
+          <button class="icon-button btn-icon" title="${t("btn.topup")}" onclick="showTopupModal('${c.id}')">${icon("wallet")}</button>
+          <button class="icon-button btn-icon" title="${t("btn.toggle")}" onclick="toggleCompany('${c.id}', ${!c.isActive})">${icon(c.isActive ? "ban" : "check-circle")}</button>
+          <button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deleteCompany('${c.id}')">${icon("trash-2")}</button>
+        </div></td>
+      </tr>`;
+    }).join("");
+  }
+  document.getElementById("companiesFoot").innerHTML = tableFoot(state.companiesMeta, "", "loadCompanies");
+  document.getElementById("companiesMetaText").textContent = `${formatNumber(state.companiesMeta.total || 0)} ${t("nav.companies")}`;
+  updateCompanyBulkBar();
+  refreshIcons(tbody);
+}
+
+function sortCompanies(key) {
+  const direction = state.sort[key] === "asc" ? "desc" : "asc";
+  state.sort = { [key]: direction };
+  state.companies.sort((a, b) => String(a[key] || "").localeCompare(String(b[key] || "")) * (direction === "asc" ? 1 : -1));
+  renderCompaniesTable();
+}
+
+function toggleCompanySelection(id, checked) {
+  if (checked) state.selectedCompanies.add(id);
+  else state.selectedCompanies.delete(id);
+  renderCompaniesTable();
+}
+
+function toggleAllCompanies(checked) {
+  if (checked) state.companies.forEach(c => state.selectedCompanies.add(c.id));
+  else state.companies.forEach(c => state.selectedCompanies.delete(c.id));
+  renderCompaniesTable();
+}
+
+function updateCompanyBulkBar() {
+  const count = state.selectedCompanies.size;
+  const bar = document.getElementById("companyBulkBar");
+  if (!bar) return;
+  bar.classList.toggle("show", count > 0);
+  document.getElementById("companySelectedCount").textContent = `${formatNumber(count)} selected`;
+}
+
+function companyRows(selectedOnly) {
+  const rows = selectedOnly ? state.companies.filter(c => state.selectedCompanies.has(c.id)) : state.companies;
+  return rows.map(c => ({
+    Name: c.name,
+    Email: c.email,
+    Tier: c.tier,
+    Country: c.country,
+    Balance: Number(c.balance || 0),
+    CreditLimit: Number(c.creditLimit || 0),
+    Bookings: c._count?.bookings || 0,
+    Status: c.isActive ? "Active" : "Inactive",
+  }));
+}
+
+function exportCompanyRows(selectedOnly) {
+  exportRows("companies", companyRows(selectedOnly));
+}
+
+async function showCompanyModal(id) {
+  let c = null;
+  if (id) {
+    const res = await apiFetch(`/admin/companies/${id}`);
+    c = res?.data;
+  }
+  const title = id ? t("modal.companyEdit") : t("modal.companyNew");
+  const body = `
+    <div class="form-section">
+      <div class="form-section-title">${t("form.basicInfo")}</div>
+      <div class="form-grid">
+        ${field("mCoName", "form.companyName", c?.name, true)}
+        ${field("mCoNameAr", "form.nameAr", c?.nameAr)}
+        ${field("mCoTaxId", "form.taxId", c?.taxId)}
+        ${field("mCoCountry", "form.country", c?.country || "EG", true)}
+        ${field("mCoWebsite", "form.website", c?.website)}
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">${t("form.contact")}</div>
+      <div class="form-grid">
+        ${field("mCoEmail", "form.email", c?.email, true, "email", id ? "disabled" : "")}
+        ${field("mCoPhone", "form.phone", c?.phone, true)}
+        ${field("mCoAddress", "form.address", c?.address, false, "text", "", "full")}
+        ${field("mCoBillingAddress", "form.billingAddress", c?.billingAddress || c?.address, false, "text", "", "full")}
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">${t("form.financial")}</div>
+      <div class="form-grid">
+        <div class="form-field"><label>${t("form.tier")} <span class="required">*</span></label><select id="mCoTier">${["STANDARD","SILVER","GOLD","PLATINUM"].map(v => `<option value="${v}" ${v === (c?.tier || "STANDARD") ? "selected" : ""}>${t("tier."+v)} - ${t("tier."+v.toLowerCase()+"Desc")}</option>`).join("")}</select></div>
+        ${field("mCoCreditLimit", "form.creditLimit", c?.creditLimit || 0, false, "number")}
+        <div class="form-field"><label>${t("form.currency")}</label><select id="mCoCurrency">${["USD","EGP","EUR","SAR","AED"].map(v => `<option value="${v}" ${v === (c?.currency || "USD") ? "selected" : ""}>${t("currency."+v)}</option>`).join("")}</select></div>
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">${t("form.branding")}</div>
+      <div class="form-grid">
+        ${field("mCoLogoUrl", "form.logo", c?.logoUrl)}
+        ${field("mCoThemeColor", "form.themeColor", c?.themeColor || "#1b2b6b", false, "color")}
+      </div>
+    </div>`;
+  openModal(title, body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" onclick="saveCompany('${id || ""}')">${t("btn.save")}</button>
+  `);
+}
+
+function field(id, labelKey, value = "", required = false, type = "text", extra = "", cls = "") {
+  return `<div class="form-field ${cls}"><label>${t(labelKey)} ${required ? '<span class="required">*</span>' : ""}</label><input id="${id}" type="${type}" value="${escapeHtml(value ?? "")}" ${extra}></div>`;
+}
+
+async function saveCompany(id) {
+  const payload = {
+    name: document.getElementById("mCoName").value.trim(),
+    nameAr: document.getElementById("mCoNameAr").value.trim() || undefined,
+    email: document.getElementById("mCoEmail")?.value.trim(),
+    phone: document.getElementById("mCoPhone").value.trim(),
+    country: document.getElementById("mCoCountry").value.trim() || "EG",
+    website: document.getElementById("mCoWebsite").value.trim() || undefined,
+    taxId: document.getElementById("mCoTaxId").value.trim() || undefined,
+    address: document.getElementById("mCoAddress").value.trim() || undefined,
+    billingAddress: document.getElementById("mCoBillingAddress").value.trim() || undefined,
+    tier: document.getElementById("mCoTier").value,
+    creditLimit: Number(document.getElementById("mCoCreditLimit").value || 0),
+    currency: document.getElementById("mCoCurrency").value,
+    logoUrl: document.getElementById("mCoLogoUrl").value.trim() || undefined,
+    themeColor: document.getElementById("mCoThemeColor").value || undefined,
+  };
+  if (!payload.name || !payload.phone || (!id && !payload.email)) {
+    toast(t("toast.validationError"), "error");
+    return;
+  }
+  const res = await apiFetch(id ? `/admin/companies/${id}` : "/admin/companies", {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify(payload),
+  });
+  if (res?.success) {
+    closeModal();
+    toast(id ? t("toast.updated") : t("toast.created"), "success");
+    loadCompanies();
+  }
+}
+
+async function showCompanyDetails(id) {
+  const res = await apiFetch(`/admin/companies/${id}`);
+  if (!res?.success) return;
+  const c = res.data;
+  state.currentCompany = c;
+  const body = `
+    <div class="detail-tabs">
+      ${["overview","users","bookings","wallet","invoices"].map((tab, i) => `<button class="tab ${i === 0 ? "active" : ""}" onclick="switchDetailTab('${tab}', this)">${t("modal."+tab)}</button>`).join("")}
+    </div>
+    <div id="pane-overview" class="detail-pane active">
+      <div class="info-grid">
+        ${info("form.companyName", c.name)}
+        ${info("form.email", c.email)}
+        ${info("form.phone", c.phone)}
+        ${info("form.country", c.country)}
+        ${info("form.tier", tierBadge(c.tier))}
+        ${info("th.status", statusBadge(c.isActive ? "ACTIVE" : "INACTIVE"))}
+        ${info("th.balance", formatMoney(c.balance, c.currency || "USD"))}
+        ${info("th.creditLimit", formatMoney(c.creditLimit, c.currency || "USD"))}
+        ${info("form.taxId", c.taxId || "—")}
+      </div>
+    </div>
+    <div id="pane-users" class="detail-pane">${detailTable(c.users || [], ["name","email","role","isActive"])}</div>
+    <div id="pane-bookings" class="detail-pane">${detailTable(c.bookings || [], ["refNumber","type","totalAmount","status","createdAt"])}</div>
+    <div id="pane-wallet" class="detail-pane">${detailTable(c.transactions || [], ["type","amount","balanceBefore","balanceAfter","description","createdAt"])}</div>
+    <div id="pane-invoices" class="detail-pane">${detailTable(c.invoices || [], ["invoiceNumber","total","status","dueDate"])}</div>`;
+  openModal(`${t("modal.companyDetails")} - ${escapeHtml(c.name)}`, body, `
+    <button class="btn btn-outline" onclick="showCompanyModal('${c.id}')">${icon("pencil")}${t("btn.edit")}</button>
+    <button class="btn btn-primary" onclick="showTopupModal('${c.id}')">${icon("wallet")}${t("btn.topup")}</button>
+  `);
+}
+
+function info(labelKey, value) {
+  return `<div class="info-item"><div class="info-label">${t(labelKey)}</div><div class="info-value">${value}</div></div>`;
+}
+
+function detailTable(rows, keys) {
+  if (!rows.length) return emptyBlock("empty.noData");
+  return `<div class="table-scroll"><table class="data-table"><thead><tr>${keys.map(k => `<th>${escapeHtml(k)}</th>`).join("")}</tr></thead><tbody>${rows.map(row => `<tr>${keys.map(k => `<td>${formatCell(row[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+
+function formatCell(value) {
+  if (value === true) return statusBadge("ACTIVE");
+  if (value === false) return statusBadge("INACTIVE");
+  if (typeof value === "number") return formatMoney(value, "USD");
+  if (String(value || "").match(/^\d{4}-\d{2}-\d{2}T/)) return formatDate(value);
+  if (["PENDING","CONFIRMED","CANCELLED","COMPLETED","PAID","UNPAID","OVERDUE","CREDIT","DEBIT","REFUND"].includes(String(value))) return statusBadge(value);
+  return escapeHtml(value ?? "—");
+}
+
+function switchDetailTab(tab, btn) {
+  document.querySelectorAll(".detail-tabs .tab").forEach(x => x.classList.remove("active"));
+  document.querySelectorAll(".detail-pane").forEach(x => x.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("pane-" + tab).classList.add("active");
+}
+
+async function showTopupModal(id, bulkIds) {
+  const company = id ? state.companies.find(c => c.id === id) || state.currentCompany : null;
+  const ids = bulkIds || (id ? [id] : Array.from(state.selectedCompanies));
+  const label = company?.name || `${ids.length} ${t("nav.companies")}`;
+  openModal(t("modal.topup"), `
+    <div class="info-item" style="margin-bottom:14px"><div class="info-label">${t("form.currentBalance")}</div><div class="info-value">${company ? formatMoney(company.balance, company.currency || "USD") : "—"}</div></div>
+    <div class="form-grid">
+      ${field("topupAmount", "form.amount", "", true, "number")}
+      <div class="form-field"><label>${t("form.currency")}</label><select id="topupCurrency"><option>USD</option><option>EGP</option><option>EUR</option></select></div>
+      <div class="form-field full"><label>${t("form.description")} <span class="required">*</span></label><input id="topupDescription" placeholder="${t("placeholder.description")}"></div>
+      <label class="form-field full" style="display:flex;grid-template-columns:auto 1fr;align-items:center;gap:8px"><input type="checkbox" id="topupNotify" checked style="width:auto"> ${t("btn.sendNotification")}</label>
+      <div class="info-item full"><div class="info-label">${t("modal.review")}</div><div class="info-value" id="topupSummary">Top up ${escapeHtml(label)}</div></div>
+    </div>`, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" onclick="submitTopup(${JSON.stringify(ids).replace(/"/g, "&quot;")})">${t("btn.confirm")}</button>
+  `);
+}
+
+function showBulkTopup() {
+  const ids = Array.from(state.selectedCompanies);
+  if (!ids.length) return toast(t("toast.noRowsSelected"), "warning");
+  showTopupModal(null, ids);
+}
+
+async function submitTopup(ids) {
+  const amount = Number(document.getElementById("topupAmount").value || 0);
+  const description = document.getElementById("topupDescription").value.trim();
+  if (amount <= 0 || !description) return toast(t("toast.validationError"), "error");
+  for (const id of ids) {
+    await apiFetch(`/admin/companies/${id}/topup`, { method: "POST", body: JSON.stringify({ amount, description, notify: document.getElementById("topupNotify").checked }) });
+  }
+  closeModal();
+  toast(t("toast.topupDone"), "success");
+  state.selectedCompanies.clear();
+  loadCompanies();
+}
+
+async function toggleCompany(id, isActive) {
+  const res = await apiFetch(`/admin/companies/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) });
+  if (res?.success) {
+    toast(t("toast.statusChanged"), "success");
+    loadCompanies();
+  }
+}
+
+function deleteCompany(id) {
+  confirmAction("Delete this company? Existing history will be preserved as inactive.", async () => {
+    const res = await apiFetch(`/admin/companies/${id}`, { method: "DELETE" });
+    if (res?.success) {
+      toast(t("toast.deleted"), "success");
+      loadCompanies();
+    }
+  });
+}
+
+async function bulkDeactivate() {
+  const ids = Array.from(state.selectedCompanies);
+  for (const id of ids) await toggleCompany(id, false);
+  state.selectedCompanies.clear();
+  loadCompanies();
+}
+
+async function renderUsers() {
+  renderSimpleList("users", "/users?limit=100", [
+    ["th.name", u => `<span class="primary-text">${escapeHtml(u.name)}</span>`],
+    ["th.email", u => escapeHtml(u.email)],
+    ["th.company", u => escapeHtml(u.company?.name || "—")],
+    ["th.type", u => statusBadge(u.role)],
+    ["th.status", u => statusBadge(u.isActive ? "ACTIVE" : "INACTIVE")],
+    ["th.lastActivity", u => formatDate(u.lastLoginAt)],
+  ]);
+}
+
+async function renderHotels() {
+  renderSimpleList("hotels", "/hotels?limit=100", [
+    ["th.name", h => `<span class="primary-text">${escapeHtml(h.name)}</span><div class="secondary-text">${escapeHtml(h.city)}, ${escapeHtml(h.country)}</div>`],
+    ["th.stars", h => "★".repeat(Math.min(h.stars || 0, 5))],
+    ["th.amount", h => `<span class="numeric">${formatMoney(h.pricePerNight, h.currency)}</span>`],
+    ["th.currency", h => escapeHtml(h.currency)],
+    ["th.status", h => statusBadge(h.isActive ? "ACTIVE" : "INACTIVE")],
+    ["th.actions", h => `<div class="row-actions"><button class="icon-button btn-icon" onclick="syncEntity('hotels')">${icon("refresh-cw")}</button></div>`],
+  ], `<button class="btn btn-outline" onclick="syncEntity('hotels')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
+}
+
+async function renderHotelPricing() {
+  renderSheetsEntity("hotelPricing");
+}
+
+async function renderBookings() {
+  renderSimpleList("bookings", "/bookings?limit=100", [
+    ["th.ref", b => `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`],
+    ["th.company", b => escapeHtml(b.company?.name || "—")],
+    ["th.type", b => escapeHtml(b.type)],
+    ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
+    ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
+    ["th.status", b => statusBadge(b.status)],
+    ["th.commission", b => formatMoney(Number(b.totalAmount || 0) * 0.1, b.currency || "USD")],
+    ["th.date", b => formatDate(b.createdAt)],
+  ]);
+}
+
+async function renderInvoices() {
+  renderSimpleList("invoices", "/invoices?limit=100", [
+    ["th.invoice", i => `<span class="primary-text">${escapeHtml(i.invoiceNumber)}</span>`],
+    ["th.company", i => escapeHtml(i.company?.name || "—")],
+    ["th.ref", i => escapeHtml(i.booking?.refNumber || "—")],
+    ["th.amount", i => `<span class="numeric">${formatMoney(i.total, i.currency)}</span>`],
+    ["th.status", i => statusBadge(i.status)],
+    ["th.dueDate", i => formatDate(i.dueDate)],
+    ["th.actions", i => `<a class="btn btn-outline" href="/api/invoices/${i.id}/pdf" target="_blank">${icon("file-down")}${t("btn.downloadPdf")}</a>`],
+  ]);
+}
+
+async function renderWallet() {
+  renderSimpleList("wallet", "/admin/wallet/transactions?limit=100", [
+    ["th.company", r => escapeHtml(r.company?.name || "—")],
+    ["th.type", r => statusBadge(r.type)],
+    ["th.amount", r => `<span class="numeric">${formatMoney(r.amount, "USD")}</span>`],
+    ["th.before", r => formatMoney(r.balanceBefore, "USD")],
+    ["th.after", r => formatMoney(r.balanceAfter, "USD")],
+    ["th.description", r => escapeHtml(r.description)],
+    ["th.date", r => formatDate(r.createdAt)],
+  ]);
+}
+
+async function renderReports() {
+  renderDashboard();
+}
+
+async function renderCruises() {
+  renderSimpleList("cruises", "/cruises?limit=100", [
+    ["th.name", c => `<span class="primary-text">${escapeHtml(c.name)}</span>`],
+    ["th.type", c => escapeHtml(c.shipType)],
+    ["th.route", c => escapeHtml(c.route)],
+    ["th.amount", c => formatMoney(c.priceFrom, c.currency)],
+    ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
+  ], `<button class="btn btn-outline" onclick="syncEntity('cruises')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
+}
+
+async function renderActivities() {
+  renderSimpleList("activities", "/activities?limit=100", [
+    ["th.name", a => `<span class="primary-text">${escapeHtml(a.name)}</span>`],
+    ["th.city", a => escapeHtml(a.city)],
+    ["th.type", a => escapeHtml(a.category)],
+    ["th.amount", a => formatMoney(a.priceAdult, a.currency)],
+    ["th.status", a => statusBadge(a.isActive ? "ACTIVE" : "INACTIVE")],
+  ], `<button class="btn btn-outline" onclick="syncEntity('activities')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
+}
+
+async function renderTransport() {
+  renderSimpleList("transport", "/transport-bookings?limit=100", [
+    ["th.ref", b => escapeHtml(b.refNumber)],
+    ["th.type", b => escapeHtml(b.type)],
+    ["th.route", b => `${escapeHtml(b.fromLocation)} → ${escapeHtml(b.toLocation)}`],
+    ["th.amount", b => formatMoney(b.totalAmount, b.currency)],
+    ["th.status", b => statusBadge(b.status)],
+    ["th.date", b => formatDate(b.pickupDateTime)],
+  ], `<button class="btn btn-outline" onclick="syncEntity('transport-rates')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
+}
+
+async function renderVisa() {
+  renderSimpleList("visa", "/visa-applications?limit=100", [
+    ["th.ref", v => escapeHtml(v.refNumber)],
+    ["th.name", v => escapeHtml(v.applicantName)],
+    ["th.type", v => escapeHtml(v.visaType)],
+    ["th.country", v => escapeHtml(v.destinationCountry)],
+    ["th.amount", v => formatMoney(v.totalAmount, v.currency)],
+    ["th.status", v => statusBadge(v.status)],
+  ], `<button class="btn btn-outline" onclick="syncEntity('visa-fees')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
+}
+
+async function renderReception() {
+  renderSimpleList("reception", "/airport-receptions?limit=100", [
+    ["th.ref", r => escapeHtml(r.refNumber)],
+    ["th.name", r => escapeHtml(r.guestName)],
+    ["th.service", r => escapeHtml(r.serviceType)],
+    ["th.route", r => escapeHtml(r.airport)],
+    ["th.amount", r => formatMoney(r.totalAmount, r.currency)],
+    ["th.status", r => statusBadge(r.status)],
+  ], `<button class="btn btn-outline" onclick="syncEntity('reception-services')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
+}
+
+async function renderSimpleList(page, endpoint, columns, extraActions = "") {
+  state.page = page;
+  content(pageHeader(`${extraActions}<button class="btn btn-outline" onclick="exportRows('${page}', state.cache['${page}Rows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>`) + `
+    <section class="table-card">
+      <div class="table-toolbar"><strong>${t(pageMeta[page]?.[0] || "nav."+page)}</strong><div class="toolbar-actions"><span class="refresh-pill">${icon("refresh-cw")}${t("topbar.justNow")}</span></div></div>
+      <div class="table-scroll"><table class="data-table"><thead><tr>${columns.map(([k]) => `<th>${t(k)}</th>`).join("")}</tr></thead><tbody id="simpleTbody">${skeletonRows(columns.length, 8)}</tbody></table></div>
+    </section>`);
+  const res = await apiFetch(endpoint);
+  const rows = res?.data || [];
+  state.cache[page + "Rows"] = rows;
+  document.getElementById("simpleTbody").innerHTML = rows.length
+    ? rows.map(row => `<tr>${columns.map(([, fn]) => `<td>${fn(row)}</td>`).join("")}</tr>`).join("")
+    : `<tr><td colspan="${columns.length}">${emptyBlock("empty.noData")}</td></tr>`;
+  refreshIcons(document.getElementById("simpleTbody"));
+}
+
+async function renderSheetsConfig() {
+  state.page = "sheets-config";
+  const entities = [
+    ["hotels", "sync.hotels"],
+    ["hotel-pricing", "sync.hotelPricing"],
+    ["cruises", "sync.cruises"],
+    ["activities", "sync.activities"],
+    ["transport-rates", "sync.transportRates"],
+    ["visa-fees", "sync.visaFees"],
+    ["reception-services", "sync.receptionServices"],
+  ];
+  content(pageHeader(`
+    <button class="btn btn-outline" onclick="testSheetsConnection()">${icon("plug-zap")}${t("btn.testConnection")}</button>
+  `) + `
+    <div class="grid-2">
+      <section class="panel">
+        <div class="panel-header"><div><div class="panel-title">${t("page.sheetsTitle")}</div><div class="panel-subtitle">${t("sync.oneWay")}</div></div></div>
+        <div class="panel-body">
+          <div class="form-grid">
+            ${field("sheetsId", "form.sheetsId", "", true)}
+            ${field("syncCron", "form.cron", "*/30 * * * *")}
+          </div>
+          <div class="info-item" style="margin-top:12px"><div class="info-label">${t("sync.source")}</div><div class="info-value">${t("sync.sourceText")}</div></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><div><div class="panel-title">${t("th.schedule")}</div><div class="panel-subtitle">${t("sync.scheduled")}</div></div><button class="btn btn-primary" onclick="saveSheetsConfig()">${t("btn.scheduleSync")}</button></div>
+        <div class="panel-body"><div id="syncHistory">${emptyBlock("empty.loading")}</div></div>
+      </section>
+    </div>
+    <section class="table-card" style="margin-top:16px">
+      <div class="table-toolbar"><strong>${t("btn.syncSheets")}</strong><button class="btn btn-outline" onclick="loadSyncHistory()">${icon("refresh-cw")}${t("btn.refresh")}</button></div>
+      <div class="table-scroll"><table class="data-table"><thead><tr><th>${t("th.entity")}</th><th>${t("th.sheet")}</th><th>${t("th.lastSync")}</th><th>${t("th.result")}</th><th>${t("th.actions")}</th></tr></thead><tbody>
+        ${entities.map(([entity, key]) => `<tr><td class="primary-text">${t(key)}</td><td>${entity}</td><td id="last-${entity}">—</td><td id="result-${entity}">—</td><td><button class="btn btn-primary" onclick="syncEntity('${entity}')">${icon("refresh-cw")}${t("btn.syncSheets")}</button></td></tr>`).join("")}
+      </tbody></table></div>
+    </section>`);
+  loadSheetsSettings();
+  loadSyncHistory();
+}
+
+function renderSheetsEntity(entity) {
+  renderSheetsConfig();
+}
+
+async function testSheetsConnection() {
+  const res = await apiFetch("/admin/sheets/test", { method: "POST", body: JSON.stringify({ spreadsheetId: document.getElementById("sheetsId")?.value }) });
+  toast(res?.success ? t("toast.connectionOk") : t("toast.connectionFailed"), res?.success ? "success" : "error");
+}
+
+async function loadSheetsSettings() {
+  const res = await apiFetch("/admin/sheets/config");
+  const data = res?.data;
+  if (!data) return;
+  const sheetsId = document.getElementById("sheetsId");
+  const syncCron = document.getElementById("syncCron");
+  if (sheetsId) sheetsId.value = data.spreadsheetId || "";
+  if (syncCron) syncCron.value = data.cronExpression || "*/30 * * * *";
+  (data.entities || []).forEach(item => {
+    const resultEl = document.getElementById("result-" + item.entity);
+    const lastEl = document.getElementById("last-" + item.entity);
+    if (resultEl && item.lastSync) resultEl.innerHTML = statusBadge(item.lastSync.status);
+    if (lastEl && item.lastSync?.finishedAt) lastEl.textContent = formatDate(item.lastSync.finishedAt);
+  });
+}
+
+async function saveSheetsConfig() {
+  const res = await apiFetch("/admin/sheets/config", {
+    method: "PATCH",
+    body: JSON.stringify({
+      spreadsheetId: document.getElementById("sheetsId")?.value || "",
+      cronExpression: document.getElementById("syncCron")?.value || "*/30 * * * *",
+      autoSyncEnabled: true,
+    }),
+  });
+  toast(res?.success ? t("toast.saved") : t("toast.validationError"), res?.success ? "success" : "error");
+}
+
+async function syncEntity(entity) {
+  toast(t("toast.syncStarted"), "");
+  const res = await apiFetch(`/admin/sheets/sync/${entity}`, { method: "POST", body: JSON.stringify({ spreadsheetId: document.getElementById("sheetsId")?.value || undefined }) });
+  if (res?.success) {
+    const d = res.data || {};
+    const resultEl = document.getElementById("result-" + entity);
+    const lastEl = document.getElementById("last-" + entity);
+    if (resultEl) resultEl.textContent = `${d.synced || 0} ${t("th.synced")} (${d.created || 0}/${d.updated || 0})`;
+    if (lastEl) lastEl.textContent = formatDate(new Date());
+    toast(`${t("toast.syncComplete")}: ${d.synced || 0}`, "success");
+    loadSyncHistory();
+  } else {
+    toast(t("toast.syncFailed"), "error");
+  }
+}
+
+async function loadSyncHistory() {
+  const res = await apiFetch("/admin/sheets/history?limit=10");
+  const rows = res?.data || [];
+  const el = document.getElementById("syncHistory");
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = emptyBlock("empty.noErrors");
+    return;
+  }
+  el.innerHTML = `<div class="table-scroll"><table class="data-table"><tbody>${rows.map(r => `<tr><td>${escapeHtml(r.entity)}</td><td>${statusBadge(r.status)}</td><td>${formatDate(r.createdAt)}</td></tr>`).join("")}</tbody></table></div>`;
+  refreshIcons(el);
+}
+
+function renderCalculators() {
+  content(pageHeader() + `
+    <div class="stats-grid">
+      ${calcCard("stat.commission", "calcCommSale", "calcCommRate", "calcCommResult", "calcCommissionAdmin()")}
+      ${calcCard("stat.markup", "calcCost", "calcMarkup", "calcMarkupResult", "calcMarkupAdmin()")}
+    </div>`);
+}
+
+function calcCard(titleKey, input1, input2, resultId, handler) {
+  return `<div class="stat-card" style="min-height:190px">
+    <div class="stat-label">${t(titleKey)}</div>
+    <div class="field" style="margin-top:10px"><input id="${input1}" type="number" placeholder="0.00" oninput="${handler}"></div>
+    <div class="field" style="margin-top:8px"><input id="${input2}" type="number" placeholder="10" oninput="${handler}"></div>
+    <div class="stat-value" id="${resultId}">USD 0.00</div>
+  </div>`;
+}
+
+function calcCommissionAdmin() {
+  const sale = Number(document.getElementById("calcCommSale")?.value || 0);
+  const rate = Number(document.getElementById("calcCommRate")?.value || 0);
+  document.getElementById("calcCommResult").textContent = formatMoney(sale * rate / 100, "USD");
+}
+
+function calcMarkupAdmin() {
+  const cost = Number(document.getElementById("calcCost")?.value || 0);
+  const rate = Number(document.getElementById("calcMarkup")?.value || 0);
+  document.getElementById("calcMarkupResult").textContent = formatMoney(cost * (1 + rate / 100), "USD");
+}
+
+const pageLoaders = {
+  dashboard: renderDashboard,
+  companies: renderCompanies,
+  users: renderUsers,
+  hotels: renderHotels,
+  "hotel-pricing": renderHotelPricing,
+  "sheets-config": renderSheetsConfig,
+  bookings: renderBookings,
+  invoices: renderInvoices,
+  wallet: renderWallet,
+  reports: renderReports,
+  cruises: renderCruises,
+  transport: renderTransport,
+  activities: renderActivities,
+  visa: renderVisa,
+  reception: renderReception,
+  calculators: renderCalculators,
+};
+
+document.addEventListener("portal:lang", () => setPage(state.page));
+
+(function init() {
+  const token = localStorage.getItem("accessToken");
+  const role = localStorage.getItem("userRole");
+  if (!token || role !== "SUPERADMIN") {
+    location.href = "/login.html";
+    return;
+  }
+  const name = localStorage.getItem("userName") || "Admin";
+  document.getElementById("sidebarUserName").textContent = name;
+  document.getElementById("userInitial").textContent = name.charAt(0).toUpperCase();
+  initI18n();
+  refreshIcons();
+  setPage("dashboard");
+})();
+</script>
+</body>
+</html>

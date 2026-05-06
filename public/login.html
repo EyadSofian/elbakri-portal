@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Elbakri Overseas - Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/portal.css" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="/assets/i18n.js"></script>
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-panel">
+      <div class="login-brand">
+        <span class="brand-mark">EO</span>
+        <div>
+          <strong data-i18n="app.name">Elbakri Overseas</strong>
+          <span data-i18n="app.tagline">B2B travel portal</span>
+        </div>
+      </div>
+
+      <div class="login-copy">
+        <p class="eyebrow" data-i18n="login.secure">Secure agent access</p>
+        <h1 data-i18n="login.title">Sign in to your portal</h1>
+        <p data-i18n="login.subtitle">Manage bookings, wallet balances, invoices, and supplier inventory from one operational workspace.</p>
+      </div>
+
+      <div class="login-metrics" aria-label="Portal indicators">
+        <div>
+          <strong>24/7</strong>
+          <span data-i18n="login.metricSupport">Ops support</span>
+        </div>
+        <div>
+          <strong>3</strong>
+          <span data-i18n="login.metricCurrency">Currencies</span>
+        </div>
+        <div>
+          <strong>1982</strong>
+          <span data-i18n="login.metricSince">Established</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="login-card" aria-labelledby="loginTitle">
+      <div class="login-card-head">
+        <div>
+          <p class="eyebrow" data-i18n="login.workspace">Workspace Login</p>
+          <h2 id="loginTitle" data-i18n="login.cardTitle">Agent Portal</h2>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="langBtn" onclick="toggleLang()" data-i18n="topbar.language" aria-label="Language">AR</button>
+      </div>
+
+      <div class="alert alert-danger hidden" id="errorMsg"></div>
+
+      <form id="loginForm" class="form-stack" onsubmit="handleLogin(event)" novalidate>
+        <label class="field">
+          <span data-i18n="form.email">Email address</span>
+          <input type="email" id="email" required autocomplete="email" data-i18n-placeholder="placeholder.email" placeholder="agent@company.com" />
+          <small class="field-error" id="emailError"></small>
+        </label>
+
+        <label class="field">
+          <span data-i18n="form.password">Password</span>
+          <span class="input-action">
+            <input type="password" id="password" required autocomplete="current-password" placeholder="********" aria-describedby="passwordError" />
+            <button type="button" class="icon-btn" onclick="togglePassword()" data-i18n-title="btn.view" title="View password" aria-label="View password">
+              <i data-lucide="eye"></i>
+            </button>
+          </span>
+          <small class="field-error" id="passwordError"></small>
+        </label>
+
+        <div class="form-row between">
+          <label class="check-row">
+            <input type="checkbox" id="rememberMe" />
+            <span data-i18n="login.remember">Remember this device</span>
+          </label>
+          <button type="button" class="link-btn" data-i18n="login.forgot">Forgot password?</button>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-block" id="btnLogin">
+          <i data-lucide="log-in"></i>
+          <span id="btnText" data-i18n="btn.signIn">Sign in</span>
+        </button>
+      </form>
+
+      <p class="login-foot" data-i18n="login.footer">Authorized B2B travel partners only. Activity is logged for account security.</p>
+    </section>
+  </main>
+
+  <script>
+    const { initI18n, setLang, t } = window.PortalI18n;
+    initI18n();
+
+    function refreshIcons() {
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    function toggleLang() {
+      const next = document.documentElement.lang === "ar" ? "en" : "ar";
+      setLang(next);
+      refreshIcons();
+    }
+
+    function togglePassword() {
+      const input = document.getElementById("password");
+      input.type = input.type === "password" ? "text" : "password";
+    }
+
+    function setLoading(isLoading) {
+      const button = document.getElementById("btnLogin");
+      const text = document.getElementById("btnText");
+      button.disabled = isLoading;
+      text.textContent = isLoading ? t("login.signingIn") : t("btn.signIn");
+    }
+
+    function showError(message) {
+      const el = document.getElementById("errorMsg");
+      el.textContent = message;
+      el.classList.remove("hidden");
+      el.classList.add("show");
+    }
+
+    function clearErrors() {
+      const alert = document.getElementById("errorMsg");
+      alert.classList.add("hidden");
+      alert.classList.remove("show");
+      document.getElementById("emailError").textContent = "";
+      document.getElementById("passwordError").textContent = "";
+    }
+
+    function validateForm() {
+      let ok = true;
+      const email = document.getElementById("email");
+      const password = document.getElementById("password");
+      if (!email.value || !email.checkValidity()) {
+        document.getElementById("emailError").textContent = t("form.invalidEmail");
+        ok = false;
+      }
+      if (!password.value) {
+        document.getElementById("passwordError").textContent = t("form.required");
+        ok = false;
+      }
+      return ok;
+    }
+
+    async function handleLogin(event) {
+      event.preventDefault();
+      clearErrors();
+      if (!validateForm()) return;
+
+      setLoading(true);
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          const inactive = String(data.message || "").toLowerCase().includes("inactive");
+          showError(inactive ? t("login.inactive") : t("login.invalid"));
+          setLoading(false);
+          return;
+        }
+
+        localStorage.setItem("accessToken", data.data.accessToken);
+        localStorage.setItem("userRole", data.data.user.role);
+        localStorage.setItem("userName", data.data.user.name);
+        localStorage.setItem("companyId", data.data.user.companyId || "");
+
+        window.location.href = data.data.user.role === "SUPERADMIN" ? "/admin.html" : "/dashboard.html";
+      } catch (error) {
+        showError(t("login.network"));
+        setLoading(false);
+      }
+    }
+
+    const token = localStorage.getItem("accessToken");
+    if (token) {
+      const role = localStorage.getItem("userRole");
+      window.location.href = role === "SUPERADMIN" ? "/admin.html" : "/dashboard.html";
+    }
+
+    refreshIcons();
+  </script>
+</body>
+</html>

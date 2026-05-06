@@ -1,0 +1,736 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Role {
+  SUPERADMIN
+  COMPANY_ADMIN
+  AGENT
+}
+
+enum CompanyTier {
+  STANDARD
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum HotelSource {
+  MANUAL
+  GOOGLE_SHEETS
+}
+
+enum RoomType {
+  STANDARD
+  DELUXE
+  SUITE
+  EXECUTIVE
+}
+
+enum BookingType {
+  HOTEL
+  FLIGHT
+  PACKAGE
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum InvoiceStatus {
+  UNPAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+  REFUND
+  ADJUSTMENT
+}
+
+enum SyncStatus {
+  SUCCESS
+  FAILED
+  PARTIAL
+  RUNNING
+}
+
+enum CabinClass {
+  ECONOMY
+  BUSINESS
+  FIRST
+}
+
+enum Season {
+  LOW
+  REGULAR
+  HIGH
+  PEAK
+}
+
+enum ShipType {
+  CRUISE
+  DAHABIYA
+  FELUCCA
+}
+
+enum CruiseRoute {
+  LUXOR_ASWAN
+  ASWAN_LUXOR
+  LUXOR_ASWAN_LUXOR
+}
+
+enum CabinType {
+  STANDARD
+  DELUXE
+  SUITE
+  PRESIDENTIAL
+}
+
+enum TransportType {
+  AIRPORT_TRANSFER
+  PRIVATE_TRANSFER
+  DAY_TOUR_TRANSPORT
+  INTERCITY
+}
+
+enum VehicleType {
+  SEDAN
+  SUV
+  VAN_6
+  VAN_12
+  MINIBUS_20
+  BUS_45
+  LUXURY_LIMO
+}
+
+enum ActivityCity {
+  CAIRO
+  SHARM_EL_SHEIKH
+  DAHAB
+  HURGHADA
+  EL_GOUNA
+  ALEXANDRIA
+}
+
+enum ActivityCategory {
+  SIGHTSEEING
+  DIVING
+  SNORKELING
+  DESERT_SAFARI
+  WATER_SPORTS
+  CULTURAL
+  FOOD_TOUR
+  ADVENTURE
+  RELAXATION
+}
+
+enum VisaType {
+  TOURIST
+  BUSINESS
+  TRANSIT
+  STUDENT
+  MEDICAL
+  UMRAH
+  HAJJ
+}
+
+enum ProcessingType {
+  NORMAL
+  EXPRESS
+  URGENT
+}
+
+enum VisaStatus {
+  PENDING
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ReceptionType {
+  MEET_AND_GREET
+  AHLAN_SERVICE
+  VIP_LOUNGE
+  FULL_ASSISTANCE
+}
+
+enum EgyptAirport {
+  CAI
+  HRG
+  SSH
+  LXR
+  ASW
+  HBE
+  MHH
+}
+
+// ─────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────
+
+model User {
+  id                String              @id @default(cuid())
+  email             String              @unique
+  password          String
+  name              String
+  nameAr            String?
+  role              Role                @default(AGENT)
+  companyId         String?
+  company           Company?            @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  bookings          Booking[]           @relation("BookingCreatedBy")
+  transactions      WalletTransaction[] @relation("TransactionCreatedBy")
+  cruiseBookings    CruiseBooking[]     @relation("CruiseBookingCreatedBy")
+  transportBookings TransportBooking[]  @relation("TransportBookingCreatedBy")
+  activityBookings  ActivityBooking[]   @relation("ActivityBookingCreatedBy")
+  visaApplications  VisaApplication[]   @relation("VisaCreatedBy")
+  airportReceptions AirportReception[]  @relation("ReceptionCreatedBy")
+  refreshTokens     RefreshToken[]
+  isActive          Boolean             @default(true)
+  lastLoginAt       DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([email])
+  @@index([companyId])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+// ─────────────────────────────────────────────
+// COMPANIES
+// ─────────────────────────────────────────────
+
+model Company {
+  id                String              @id @default(cuid())
+  name              String
+  nameAr            String?
+  email             String              @unique
+  phone             String
+  address           String?
+  billingAddress    String?
+  country           String              @default("EG")
+  taxId             String?
+  website           String?
+  creditLimit       Decimal             @default(0)  @db.Decimal(12, 2)
+  balance           Decimal             @default(0)  @db.Decimal(12, 2)
+  currency          String              @default("USD")
+  tier              CompanyTier         @default(STANDARD)
+  logoUrl           String?
+  themeColor        String?
+  isActive          Boolean             @default(true)
+  lastActivityAt    DateTime?
+  users             User[]
+  bookings          Booking[]
+  invoices          Invoice[]
+  transactions      WalletTransaction[]
+  cruiseBookings    CruiseBooking[]
+  transportBookings TransportBooking[]
+  activityBookings  ActivityBooking[]
+  visaApplications  VisaApplication[]
+  airportReceptions AirportReception[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([email])
+}
+
+// ─────────────────────────────────────────────
+// HOTELS & ROOMS
+// ─────────────────────────────────────────────
+
+model Hotel {
+  id             String         @id @default(cuid())
+  name           String
+  nameAr         String?
+  city           String
+  cityAr         String?
+  country        String
+  stars          Int            @default(3)
+  address        String
+  description    String?
+  descriptionAr  String?
+  amenities      String[]       @default([])
+  imageUrl       String?
+  pricePerNight  Decimal        @db.Decimal(10, 2)
+  currency       String         @default("USD")
+  source         HotelSource    @default(MANUAL)
+  sheetsRowId    String?
+  isActive       Boolean        @default(true)
+  rooms          Room[]
+  bookings       Booking[]
+  pricing        HotelPricing[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([city])
+  @@index([country])
+  @@index([sheetsRowId])
+}
+
+model Room {
+  id            String    @id @default(cuid())
+  hotelId       String
+  hotel         Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  type          RoomType  @default(STANDARD)
+  capacity      Int       @default(2)
+  pricePerNight Decimal   @db.Decimal(10, 2)
+  isAvailable   Boolean   @default(true)
+  bookings      Booking[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([hotelId])
+}
+
+model HotelPricing {
+  id            String   @id @default(cuid())
+  hotelId       String
+  hotel         Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  roomType      RoomType
+  season        Season   @default(REGULAR)
+  pricePerNight Decimal  @db.Decimal(10, 2)
+  currency      String   @default("USD")
+  validFrom     DateTime
+  validTo       DateTime
+  sheetsRowId    String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([hotelId])
+  @@index([sheetsRowId])
+}
+
+// ─────────────────────────────────────────────
+// BOOKINGS
+// ─────────────────────────────────────────────
+
+model Booking {
+  id                 String        @id @default(cuid())
+  refNumber          String        @unique
+  type               BookingType
+  status             BookingStatus @default(PENDING)
+  companyId          String
+  company            Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdById        String
+  createdBy          User          @relation("BookingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  hotelId            String?
+  hotel              Hotel?        @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  roomId             String?
+  room               Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  checkIn            DateTime?
+  checkOut           DateTime?
+  nights             Int?
+  origin             String?
+  destination        String?
+  departureDate      DateTime?
+  returnDate         DateTime?
+  airline            String?
+  flightNumber       String?
+  cabinClass         CabinClass?
+  passengerNames     String[]      @default([])
+  adultsCount        Int           @default(1)
+  childrenCount      Int           @default(0)
+  infantsCount       Int           @default(0)
+  baseAmount         Decimal       @db.Decimal(12, 2)
+  discount           Decimal       @default(0) @db.Decimal(12, 2)
+  totalAmount        Decimal       @db.Decimal(12, 2)
+  currency           String        @default("USD")
+  notes              String?
+  internalNotes      String?
+  invoice            Invoice?
+  confirmedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@index([type])
+  @@index([refNumber])
+  @@index([createdAt])
+}
+
+model BookingCounter {
+  year    Int @id
+  lastSeq Int @default(0)
+}
+
+// ─────────────────────────────────────────────
+// INVOICES
+// ─────────────────────────────────────────────
+
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique
+  bookingId     String        @unique
+  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  companyId     String
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  subtotal      Decimal       @db.Decimal(12, 2)
+  taxRate       Decimal       @default(0.14) @db.Decimal(5, 4)
+  taxAmount     Decimal       @db.Decimal(12, 2)
+  total         Decimal       @db.Decimal(12, 2)
+  currency      String        @default("USD")
+  status        InvoiceStatus @default(UNPAID)
+  pdfPath       String?
+  dueDate       DateTime
+  paidAt        DateTime?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+}
+
+model InvoiceCounter {
+  year    Int @id
+  lastSeq Int @default(0)
+}
+
+// ─────────────────────────────────────────────
+// WALLET
+// ─────────────────────────────────────────────
+
+model WalletTransaction {
+  id            String          @id @default(cuid())
+  companyId     String
+  company       Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type          TransactionType
+  amount        Decimal         @db.Decimal(12, 2)
+  balanceBefore Decimal         @db.Decimal(12, 2)
+  balanceAfter  Decimal         @db.Decimal(12, 2)
+  reference     String?
+  description   String
+  createdById   String
+  createdBy     User            @relation("TransactionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt     DateTime        @default(now())
+
+  @@index([companyId])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// NILE CRUISES
+// ─────────────────────────────────────────────
+
+model NileCruise {
+  id            String          @id @default(cuid())
+  name          String
+  nameAr        String?
+  shipType      ShipType        @default(CRUISE)
+  operator      String?
+  cabins        Int             @default(0)
+  route         CruiseRoute     @default(LUXOR_ASWAN)
+  departureDays String[]        @default([])
+  duration      Int             @default(4)
+  description   String?
+  descriptionAr String?
+  imageUrl      String?
+  priceFrom     Decimal         @db.Decimal(10, 2)
+  currency      String          @default("USD")
+  sheetsRowId    String?
+  isActive      Boolean         @default(true)
+  bookings      CruiseBooking[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([sheetsRowId])
+}
+
+model CruiseBooking {
+  id             String        @id @default(cuid())
+  refNumber      String        @unique
+  cruiseId       String
+  cruise         NileCruise    @relation(fields: [cruiseId], references: [id])
+  companyId      String
+  company        Company       @relation(fields: [companyId], references: [id])
+  createdById    String
+  createdBy      User          @relation("CruiseBookingCreatedBy", fields: [createdById], references: [id])
+  checkIn        DateTime
+  checkOut       DateTime
+  cabinType      CabinType     @default(STANDARD)
+  passengerNames String[]      @default([])
+  adultsCount    Int           @default(1)
+  childrenCount  Int           @default(0)
+  totalAmount    Decimal       @db.Decimal(12, 2)
+  currency       String        @default("USD")
+  status         BookingStatus @default(PENDING)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────
+// TRANSPORT
+// ─────────────────────────────────────────────
+
+model TransportBooking {
+  id             String        @id @default(cuid())
+  refNumber      String        @unique
+  companyId      String
+  company        Company       @relation(fields: [companyId], references: [id])
+  createdById    String
+  createdBy      User          @relation("TransportBookingCreatedBy", fields: [createdById], references: [id])
+  type           TransportType
+  vehicleType    VehicleType   @default(SEDAN)
+  fromLocation   String
+  toLocation     String
+  pickupDateTime DateTime
+  returnDateTime DateTime?
+  isRoundTrip    Boolean       @default(false)
+  passengerCount Int           @default(1)
+  passengerNames String[]      @default([])
+  flightNumber   String?
+  totalAmount    Decimal       @db.Decimal(12, 2)
+  currency       String        @default("USD")
+  status         BookingStatus @default(PENDING)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+}
+
+model TransportRate {
+  id           String        @id @default(cuid())
+  sheetsRowId  String?
+  type         TransportType @default(PRIVATE_TRANSFER)
+  vehicleType  VehicleType   @default(SEDAN)
+  city         String?
+  fromLocation String?
+  toLocation   String?
+  rate         Decimal       @db.Decimal(10, 2)
+  currency     String        @default("USD")
+  notes        String?
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([sheetsRowId])
+  @@index([type])
+  @@index([vehicleType])
+}
+
+// ─────────────────────────────────────────────
+// ACTIVITIES
+// ─────────────────────────────────────────────
+
+model Activity {
+  id            String            @id @default(cuid())
+  name          String
+  nameAr        String?
+  city          ActivityCity
+  category      ActivityCategory  @default(SIGHTSEEING)
+  duration      String?
+  description   String?
+  descriptionAr String?
+  includes      String[]          @default([])
+  excludes      String[]          @default([])
+  imageUrl      String?
+  priceAdult    Decimal           @db.Decimal(10, 2)
+  priceChild    Decimal           @db.Decimal(10, 2)
+  currency      String            @default("USD")
+  sheetsRowId    String?
+  minPax        Int               @default(1)
+  maxPax        Int               @default(20)
+  isActive      Boolean           @default(true)
+  bookings      ActivityBooking[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([city])
+  @@index([sheetsRowId])
+}
+
+model ActivityBooking {
+  id             String        @id @default(cuid())
+  refNumber      String        @unique
+  activityId     String
+  activity       Activity      @relation(fields: [activityId], references: [id])
+  companyId      String
+  company        Company       @relation(fields: [companyId], references: [id])
+  createdById    String
+  createdBy      User          @relation("ActivityBookingCreatedBy", fields: [createdById], references: [id])
+  activityDate   DateTime
+  adultsCount    Int           @default(1)
+  childrenCount  Int           @default(0)
+  passengerNames String[]      @default([])
+  totalAmount    Decimal       @db.Decimal(12, 2)
+  currency       String        @default("USD")
+  status         BookingStatus @default(PENDING)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([companyId])
+  @@index([activityId])
+}
+
+// ─────────────────────────────────────────────
+// VISA
+// ─────────────────────────────────────────────
+
+model VisaApplication {
+  id                 String         @id @default(cuid())
+  refNumber          String         @unique
+  companyId          String
+  company            Company        @relation(fields: [companyId], references: [id])
+  createdById        String
+  createdBy          User           @relation("VisaCreatedBy", fields: [createdById], references: [id])
+  applicantName      String
+  nationality        String
+  passportNumber     String
+  passportExpiry     DateTime
+  visaType           VisaType
+  destinationCountry String
+  travelDate         DateTime
+  processingType     ProcessingType @default(NORMAL)
+  status             VisaStatus     @default(PENDING)
+  totalAmount        Decimal        @db.Decimal(12, 2)
+  currency           String         @default("USD")
+  notes              String?
+  submittedAt        DateTime?
+  approvedAt         DateTime?
+  rejectedAt         DateTime?
+  rejectionReason    String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+}
+
+model VisaFee {
+  id                 String         @id @default(cuid())
+  sheetsRowId        String?
+  visaType           VisaType
+  destinationCountry String
+  processingType     ProcessingType @default(NORMAL)
+  fee                Decimal        @db.Decimal(10, 2)
+  currency           String         @default("USD")
+  notes              String?
+  isActive           Boolean        @default(true)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([sheetsRowId])
+  @@index([visaType])
+  @@index([destinationCountry])
+}
+
+// ─────────────────────────────────────────────
+// AIRPORT RECEPTION
+// ─────────────────────────────────────────────
+
+model AirportReception {
+  id              String        @id @default(cuid())
+  refNumber       String        @unique
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id])
+  createdById     String
+  createdBy       User          @relation("ReceptionCreatedBy", fields: [createdById], references: [id])
+  serviceType     ReceptionType
+  airport         EgyptAirport
+  flightNumber    String
+  flightDateTime  DateTime
+  guestName       String
+  guestCount      Int           @default(1)
+  passengerNames  String[]      @default([])
+  signboardName   String?
+  hotelName       String?
+  specialRequests String?
+  totalAmount     Decimal       @db.Decimal(12, 2)
+  currency        String        @default("USD")
+  status          BookingStatus @default(PENDING)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+}
+
+model ReceptionServiceRate {
+  id          String        @id @default(cuid())
+  sheetsRowId String?
+  serviceType ReceptionType
+  airport     EgyptAirport?
+  rate        Decimal       @db.Decimal(10, 2)
+  currency    String        @default("USD")
+  notes       String?
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([sheetsRowId])
+  @@index([serviceType])
+  @@index([airport])
+}
+
+model SheetsConfig {
+  id              String      @id @default("default")
+  spreadsheetId   String?
+  autoSyncEnabled Boolean     @default(false)
+  cronExpression  String?
+  lastTestAt      DateTime?
+  lastTestStatus  SyncStatus?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model SyncLog {
+  id            String     @id @default(cuid())
+  entity        String
+  sheetName     String
+  spreadsheetId String?
+  status        SyncStatus
+  synced        Int        @default(0)
+  created       Int        @default(0)
+  updated       Int        @default(0)
+  skipped       Int        @default(0)
+  errors        Json?
+  triggeredById String?
+  startedAt     DateTime   @default(now())
+  finishedAt    DateTime?
+  durationMs    Int?
+  createdAt     DateTime   @default(now())
+
+  @@index([entity])
+  @@index([status])
+  @@index([createdAt])
+}
