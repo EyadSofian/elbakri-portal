@@ -32,6 +32,9 @@ process uses it to update an existing record or create a new one.
 | amenities | No | List separated by `;`, `,`, or `|`. |
 | pricePerNight | Yes | Base rate. |
 | currency | No | `USD`, `EGP`, `EUR`, etc. Default `USD`. |
+| commissionPercent | No | Percentage added to the base hotel price when an agent books. Default `0`. |
+| availableRooms | No | Inventory cap used by booking availability checks. `0` means open inventory. |
+| maxGuestsPerRoom | No | Guest capacity used to calculate required rooms. Default `2`. |
 | imageUrl | No | Public or uploaded image URL. |
 | isActive | No | Default `true`. |
 

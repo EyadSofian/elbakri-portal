@@ -684,6 +684,9 @@ const masterConfigs = {
       { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
       { name: "pricePerNight", label: "th.amount", type: "number", required: true, default: 1 },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "commissionPercent", label: "form.commissionPercent", fallback: "Hotel commission %", type: "number", default: 0, help: "Added to the hotel base price for client bookings" },
+      { name: "availableRooms", label: "form.availableRooms", fallback: "Available rooms", type: "number", default: 0, help: "0 means no inventory cap" },
+      { name: "maxGuestsPerRoom", label: "form.maxGuestsPerRoom", fallback: "Guests per room", type: "number", default: 2 },
     ],
   },
   "hotel-pricing": {
@@ -1167,6 +1170,8 @@ async function renderHotels() {
     ["th.name", h => `<span class="primary-text">${escapeHtml(h.name)}</span><div class="secondary-text">${escapeHtml(h.city)}, ${escapeHtml(h.country)}</div>`],
     ["th.stars", h => "★".repeat(Math.min(h.stars || 0, 5))],
     ["th.amount", h => `<span class="numeric">${formatMoney(h.pricePerNight, h.currency)}</span>`],
+    ["form.commissionPercent", h => `${Number(h.commissionPercent || 0).toFixed(2)}%`],
+    ["form.availableRooms", h => Number(h.availableRooms || 0) ? `${Number(h.availableRooms)} / ${Number(h.maxGuestsPerRoom || 2)}` : "Open"],
     ["th.currency", h => escapeHtml(h.currency)],
     ["th.status", h => statusBadge(h.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", h => masterRowActions("hotels", h)],

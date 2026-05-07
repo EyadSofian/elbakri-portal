@@ -44,6 +44,7 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
     description?: string; descriptionAr?: string;
     amenities?: string[]; imageUrl?: string;
     pricePerNight: number; currency?: string;
+    commissionPercent?: number; availableRooms?: number; maxGuestsPerRoom?: number;
   };
 
   const imageUrl = (req.file ? `/uploads/${req.file.filename}` : body.imageUrl) ?? undefined;
@@ -63,6 +64,9 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
       imageUrl,
       pricePerNight: new Decimal(body.pricePerNight),
       currency: body.currency ?? 'USD',
+      commissionPercent: new Decimal(body.commissionPercent ?? 0),
+      availableRooms: body.availableRooms ?? 0,
+      maxGuestsPerRoom: body.maxGuestsPerRoom ?? 2,
       source: 'MANUAL',
     },
   });
@@ -85,6 +89,9 @@ export async function updateHotel(req: Request, res: Response): Promise<void> {
   if (body.imageUrl !== undefined) data.imageUrl = body.imageUrl ? String(body.imageUrl) : null;
   if (body.pricePerNight !== undefined) data.pricePerNight = new Decimal(Number(body.pricePerNight));
   if (body.currency) data.currency = String(body.currency);
+  if (body.commissionPercent !== undefined) data.commissionPercent = new Decimal(Number(body.commissionPercent));
+  if (body.availableRooms !== undefined) data.availableRooms = Number(body.availableRooms);
+  if (body.maxGuestsPerRoom !== undefined) data.maxGuestsPerRoom = Number(body.maxGuestsPerRoom);
 
   const hotel = await prisma.hotel.update({
     where: { id: req.params.id },

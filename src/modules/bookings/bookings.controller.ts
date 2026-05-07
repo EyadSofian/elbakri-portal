@@ -7,11 +7,24 @@ import { generateInvoicePdf } from '../invoices/pdf.generator';
 
 const bookingInclude = {
   company: { select: { id: true, name: true, email: true } },
-  hotel: { select: { id: true, name: true, city: true, country: true } },
+  hotel: { select: { id: true, name: true, city: true, country: true, commissionPercent: true } },
   room: { select: { id: true, type: true, pricePerNight: true } },
   createdBy: { select: { id: true, name: true } },
   invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
 };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function parseDateInput(value?: string): Date | null {
+  if (!value) return null;
+  const date = new Date(value.includes('T') ? value : `${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) throw new Error('INVALID_DATE');
+  return date;
+}
+
+function nightsBetween(checkIn: Date, checkOut: Date): number {
+  return Math.ceil((checkOut.getTime() - checkIn.getTime()) / DAY_MS);
+}
 
 export async function listBookings(req: Request, res: Response): Promise<void> {
   const caller = req.user!;
@@ -52,7 +65,8 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
     cabinClass?: 'ECONOMY' | 'BUSINESS' | 'FIRST';
     passengerNames?: string[];
     adultsCount?: number; childrenCount?: number; infantsCount?: number;
-    baseAmount: number; discount?: number; currency?: string; notes?: string;
+    roomsCount?: number;
+    baseAmount?: number; discount?: number; currency?: string; notes?: string;
   };
 
   const companyId = caller.role === 'SUPERADMIN' ? (body.companyId ?? caller.companyId!) : caller.companyId!;
@@ -61,9 +75,7 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const baseAmount = new Decimal(body.baseAmount);
   const discount = new Decimal(body.discount ?? 0);
-  const totalAmount = baseAmount.sub(discount);
 
   let result: { booking: { id: string; refNumber: string }; invoice: { id: string; invoiceNumber: string } };
 
@@ -75,6 +87,81 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
       });
 
       if (!company.isActive) throw new Error('COMPANY_INACTIVE');
+
+      const adultsCount = body.adultsCount ?? 1;
+      const childrenCount = body.childrenCount ?? 0;
+      const infantsCount = body.infantsCount ?? 0;
+      let hotelId = body.hotelId;
+      let roomId = body.roomId;
+      let checkIn = parseDateInput(body.checkIn);
+      let checkOut = parseDateInput(body.checkOut);
+      let departureDate = parseDateInput(body.departureDate);
+      let returnDate = parseDateInput(body.returnDate);
+      let nights = body.nights ?? null;
+      let roomsCount = body.roomsCount ?? 1;
+      let baseAmount = new Decimal(0);
+      let commissionPercent = new Decimal(0);
+      let commissionAmount = new Decimal(0);
+      let currency = body.currency ?? 'USD';
+
+      if (body.type === 'HOTEL') {
+        if (!hotelId) throw new Error('HOTEL_REQUIRED');
+        if (!checkIn || !checkOut || checkOut <= checkIn) throw new Error('INVALID_HOTEL_DATES');
+
+        const hotel = await tx.hotel.findUnique({
+          where: { id: hotelId },
+          select: {
+            id: true,
+            name: true,
+            pricePerNight: true,
+            currency: true,
+            commissionPercent: true,
+            availableRooms: true,
+            maxGuestsPerRoom: true,
+            isActive: true,
+          },
+        });
+
+        if (!hotel || !hotel.isActive) throw new Error('HOTEL_NOT_AVAILABLE');
+
+        const datedPrice = await tx.hotelPricing.findFirst({
+          where: {
+            hotelId,
+            isActive: true,
+            validFrom: { lte: checkIn },
+            validTo: { gte: checkOut },
+          },
+          orderBy: { pricePerNight: 'asc' },
+        });
+
+        nights = nightsBetween(checkIn, checkOut);
+        roomsCount = Math.max(1, Math.ceil(Math.max(1, adultsCount + childrenCount) / Math.max(1, hotel.maxGuestsPerRoom || 2)));
+        const nightlyRate = datedPrice?.pricePerNight ?? hotel.pricePerNight;
+        currency = datedPrice?.currency ?? hotel.currency ?? 'USD';
+        baseAmount = nightlyRate.mul(nights).mul(roomsCount);
+        commissionPercent = hotel.commissionPercent ?? new Decimal(0);
+        commissionAmount = baseAmount.mul(commissionPercent).div(100);
+
+        if ((hotel.availableRooms ?? 0) > 0) {
+          const occupied = await tx.booking.aggregate({
+            _sum: { roomsCount: true },
+            where: {
+              hotelId,
+              status: { not: 'CANCELLED' },
+              checkIn: { lt: checkOut },
+              checkOut: { gt: checkIn },
+            },
+          });
+          const occupiedRooms = occupied._sum.roomsCount ?? 0;
+          if (occupiedRooms + roomsCount > hotel.availableRooms) throw new Error('HOTEL_NOT_AVAILABLE');
+        }
+      } else {
+        if (!body.baseAmount || body.baseAmount <= 0) throw new Error('BASE_AMOUNT_REQUIRED');
+        baseAmount = new Decimal(body.baseAmount);
+      }
+
+      const totalAmount = baseAmount.add(commissionAmount).sub(discount);
+      if (totalAmount.lte(0)) throw new Error('INVALID_TOTAL');
       if (company.balance.lt(totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
 
       const refNumber = await generateBookingRef(prisma);
@@ -91,26 +178,29 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
           type: body.type,
           companyId,
           createdById: caller.id,
-          hotelId: body.hotelId,
-          roomId: body.roomId,
-          checkIn: body.checkIn ? new Date(body.checkIn) : null,
-          checkOut: body.checkOut ? new Date(body.checkOut) : null,
-          nights: body.nights,
+          hotelId,
+          roomId,
+          checkIn,
+          checkOut,
+          nights,
           origin: body.origin,
           destination: body.destination,
-          departureDate: body.departureDate ? new Date(body.departureDate) : null,
-          returnDate: body.returnDate ? new Date(body.returnDate) : null,
+          departureDate,
+          returnDate,
           airline: body.airline,
           flightNumber: body.flightNumber,
           cabinClass: body.cabinClass,
           passengerNames: body.passengerNames ?? [],
-          adultsCount: body.adultsCount ?? 1,
-          childrenCount: body.childrenCount ?? 0,
-          infantsCount: body.infantsCount ?? 0,
+          adultsCount,
+          childrenCount,
+          infantsCount,
+          roomsCount,
           baseAmount,
+          commissionPercent,
+          commissionAmount,
           discount,
           totalAmount,
-          currency: body.currency ?? 'USD',
+          currency,
           notes: body.notes,
         },
       });
@@ -140,7 +230,7 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
           subtotal,
           taxAmount,
           total,
-          currency: body.currency ?? 'USD',
+          currency,
           dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         },
       });
@@ -153,6 +243,10 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
       res.status(400).json({ success: false, error: 'COMPANY_INACTIVE', message: 'Company account is inactive' });
     } else if (message === 'INSUFFICIENT_BALANCE') {
       res.status(400).json({ success: false, error: 'INSUFFICIENT_BALANCE', message: 'Insufficient wallet balance' });
+    } else if (['HOTEL_REQUIRED', 'INVALID_DATE', 'INVALID_HOTEL_DATES', 'BASE_AMOUNT_REQUIRED', 'INVALID_TOTAL'].includes(message)) {
+      res.status(400).json({ success: false, error: message, message: 'Please complete the booking details' });
+    } else if (message === 'HOTEL_NOT_AVAILABLE') {
+      res.status(400).json({ success: false, error: 'HOTEL_NOT_AVAILABLE', message: 'Hotel is not available for the selected dates and guests' });
     } else {
       console.error(err);
       res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });

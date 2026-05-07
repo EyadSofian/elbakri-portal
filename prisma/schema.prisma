@@ -283,6 +283,9 @@ model Hotel {
   imageUrl       String?
   pricePerNight  Decimal        @db.Decimal(10, 2)
   currency       String         @default("USD")
+  commissionPercent Decimal     @default(0) @db.Decimal(5, 2)
+  availableRooms Int            @default(0)
+  maxGuestsPerRoom Int          @default(2)
   source         HotelSource    @default(MANUAL)
   sheetsRowId    String?
   isActive       Boolean        @default(true)
@@ -362,7 +365,10 @@ model Booking {
   adultsCount        Int           @default(1)
   childrenCount      Int           @default(0)
   infantsCount       Int           @default(0)
+  roomsCount         Int           @default(1)
   baseAmount         Decimal       @db.Decimal(12, 2)
+  commissionPercent  Decimal       @default(0) @db.Decimal(5, 2)
+  commissionAmount   Decimal       @default(0) @db.Decimal(12, 2)
   discount           Decimal       @default(0) @db.Decimal(12, 2)
   totalAmount        Decimal       @db.Decimal(12, 2)
   currency           String        @default("USD")

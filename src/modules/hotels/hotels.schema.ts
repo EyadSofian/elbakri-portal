@@ -14,6 +14,9 @@ export const createHotelSchema = z.object({
   imageUrl: z.string().url().optional(),
   pricePerNight: z.number().positive(),
   currency: z.string().default('USD'),
+  commissionPercent: z.number().min(0).max(100).default(0),
+  availableRooms: z.number().int().min(0).default(0),
+  maxGuestsPerRoom: z.number().int().min(1).max(12).default(2),
 });
 
 export const updateHotelSchema = createHotelSchema.partial();

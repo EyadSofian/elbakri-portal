@@ -354,7 +354,7 @@ function bookingPanel(rows) {
     ["th.type", b => escapeHtml(b.type)],
     ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
     ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
-    ["th.commission", b => `<span class="numeric">${formatMoney(Number(b.totalAmount || 0) * 0.1, b.currency || "USD")}</span>`],
+    ["th.commission", b => `<span class="numeric">${formatMoney(b.commissionAmount || 0, b.currency || "USD")}</span>`],
     ["th.status", b => statusBadge(b.status)],
     ["th.date", b => formatDate(b.createdAt)],
   ];
@@ -370,7 +370,7 @@ function renderBookings() {
     ["th.type", b => escapeHtml(b.type)],
     ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
     ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
-    ["th.commission", b => formatMoney(Number(b.totalAmount || 0) * 0.1, b.currency || "USD")],
+    ["th.commission", b => formatMoney(b.commissionAmount || 0, b.currency || "USD")],
     ["th.status", b => statusBadge(b.status)],
     ["th.invoice", b => b.invoice ? statusBadge(b.invoice.status) : "—"],
     ["th.date", b => formatDate(b.createdAt)],
@@ -387,7 +387,7 @@ function renderHotels() {
   renderListPage("hotels", "/hotels", [
     ["th.name", h => `<span class="primary-text">${escapeHtml(h.name)}</span><div class="secondary-text">${escapeHtml(h.city)}, ${escapeHtml(h.country)}</div>`],
     ["th.stars", h => "★".repeat(Math.min(h.stars || 0, 5))],
-    ["th.amount", h => `<span class="numeric">${formatMoney(h.pricePerNight, h.currency)}</span>`],
+    ["th.amount", h => `<span class="numeric">${formatMoney(h.pricePerNight, h.currency)}</span><div class="secondary-text">${Number(h.commissionPercent || 0).toFixed(2)}% ${t("th.commission")}</div>`],
     ["th.currency", h => escapeHtml(h.currency)],
     ["th.status", h => statusBadge(h.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", h => `<button class="btn btn-primary" onclick="openBookingWizard('HOTEL','${h.id}')">${t("btn.bookNow")}</button>`],
@@ -607,8 +607,101 @@ function calcCurrency() {
 }
 
 function openBookingWizard(type = "HOTEL", presetId = "") {
-  state.wizard = { step: 1, type, payload: { hotelId: presetId } };
+  const hotel = presetId ? findWizardHotel(presetId) : null;
+  state.wizard = {
+    step: presetId ? 2 : 1,
+    type,
+    payload: {
+      hotelId: presetId,
+      hotelName: hotel?.name || "",
+      hotel,
+      adultsCount: 2,
+      childrenCount: 0,
+    },
+  };
   renderBookingWizard();
+}
+
+function findWizardHotel(id) {
+  if (!id) return null;
+  const rows = state.cache.hotelsRows || [];
+  const current = state.wizard?.payload?.hotel;
+  return rows.find(item => item.id === id) || (current?.id === id ? current : null);
+}
+
+function selectWizardHotel(id) {
+  state.wizard.payload.checkIn = document.getElementById("wizStart")?.value || state.wizard.payload.checkIn || "";
+  state.wizard.payload.checkOut = document.getElementById("wizEnd")?.value || state.wizard.payload.checkOut || "";
+  state.wizard.payload.adultsCount = Number(document.getElementById("wizAdults")?.value || state.wizard.payload.adultsCount || 2);
+  state.wizard.payload.childrenCount = Number(document.getElementById("wizChildren")?.value || state.wizard.payload.childrenCount || 0);
+  state.wizard.payload.notes = document.getElementById("wizNotes")?.value || state.wizard.payload.notes || "";
+  const hotel = findWizardHotel(id);
+  state.wizard.payload.hotelId = id;
+  state.wizard.payload.hotelName = hotel?.name || "";
+  state.wizard.payload.hotel = hotel;
+  renderBookingWizard();
+}
+
+function calculateHotelQuote(payload = {}, hotel = null) {
+  const checkInValue = payload.checkIn || document.getElementById("wizStart")?.value || "";
+  const checkOutValue = payload.checkOut || document.getElementById("wizEnd")?.value || "";
+  const adultsCount = Math.max(1, Number(payload.adultsCount ?? document.getElementById("wizAdults")?.value ?? 1));
+  const childrenCount = Math.max(0, Number(payload.childrenCount ?? document.getElementById("wizChildren")?.value ?? 0));
+  const checkIn = checkInValue ? new Date(`${checkInValue}T00:00:00`) : null;
+  const checkOut = checkOutValue ? new Date(`${checkOutValue}T00:00:00`) : null;
+  const pricePerNight = Number(hotel?.pricePerNight || 0);
+  const maxGuestsPerRoom = Math.max(1, Number(hotel?.maxGuestsPerRoom || 2));
+  const commissionPercent = Number(hotel?.commissionPercent || 0);
+  const currency = hotel?.currency || "USD";
+  const guests = adultsCount + childrenCount;
+  const roomsCount = Math.max(1, Math.ceil(Math.max(1, guests) / maxGuestsPerRoom));
+  const nights = checkIn && checkOut ? Math.ceil((checkOut - checkIn) / (24 * 60 * 60 * 1000)) : 0;
+  const valid = Boolean(hotel?.id && checkIn && checkOut && nights > 0 && pricePerNight > 0);
+  const baseAmount = valid ? pricePerNight * nights * roomsCount : 0;
+  const commissionAmount = baseAmount * commissionPercent / 100;
+  const totalAmount = baseAmount + commissionAmount;
+  return {
+    valid,
+    currency,
+    nights,
+    roomsCount,
+    adultsCount,
+    childrenCount,
+    commissionPercent,
+    baseAmount,
+    commissionAmount,
+    totalAmount,
+    availableRooms: Number(hotel?.availableRooms || 0),
+  };
+}
+
+function hotelQuoteHtml(quote) {
+  if (!quote.valid) {
+    return `<div class="empty-state" style="padding:16px"><strong>${t("modal.details")}</strong><span>${t("form.chooseDates", "Choose hotel dates to calculate the booking amount")}</span></div>`;
+  }
+  const capacityText = quote.availableRooms ? `${quote.roomsCount}/${quote.availableRooms}` : t("form.openInventory", "Open");
+  return `<div class="info-grid">
+    <div class="info-item"><div class="info-label">${t("form.nights", "Nights")}</div><div class="info-value">${formatNumber(quote.nights)}</div></div>
+    <div class="info-item"><div class="info-label">${t("form.rooms", "Rooms")}</div><div class="info-value">${formatNumber(quote.roomsCount)}</div></div>
+    <div class="info-item"><div class="info-label">${t("form.availableRooms", "Available rooms")}</div><div class="info-value">${capacityText}</div></div>
+    <div class="info-item"><div class="info-label">${t("th.amount")}</div><div class="info-value">${formatMoney(quote.baseAmount, quote.currency)}</div></div>
+    <div class="info-item"><div class="info-label">${t("th.commission")}</div><div class="info-value">${formatMoney(quote.commissionAmount, quote.currency)} (${quote.commissionPercent.toFixed(2)}%)</div></div>
+    <div class="info-item"><div class="info-label">${t("th.total", "Total")}</div><div class="info-value">${formatMoney(quote.totalAmount, quote.currency)}</div></div>
+  </div>`;
+}
+
+function updateHotelQuote() {
+  const w = state.wizard;
+  if (!w || w.type !== "HOTEL") return;
+  w.payload.checkIn = document.getElementById("wizStart")?.value || "";
+  w.payload.checkOut = document.getElementById("wizEnd")?.value || "";
+  w.payload.adultsCount = Number(document.getElementById("wizAdults")?.value || 1);
+  w.payload.childrenCount = Number(document.getElementById("wizChildren")?.value || 0);
+  w.payload.notes = document.getElementById("wizNotes")?.value || "";
+  const hotel = findWizardHotel(w.payload.hotelId);
+  const quote = calculateHotelQuote(w.payload, hotel);
+  const box = document.getElementById("hotelQuoteBox");
+  if (box) box.innerHTML = hotelQuoteHtml(quote);
 }
 
 function renderBookingWizard() {
@@ -620,20 +713,45 @@ function renderBookingWizard() {
       <div class="form-field full"><label>${t("modal.type")}</label><select id="wizType">${["HOTEL","FLIGHT","PACKAGE"].map(v => `<option value="${v}" ${v === w.type ? "selected" : ""}>${v}</option>`).join("")}</select></div>
     </div>`;
   } else if (w.step === 2) {
-    body += `<div class="form-grid">
-      ${field("wizRefName", w.type === "HOTEL" ? "nav.hotels" : "th.details", w.payload.hotelId || "")}
-      ${field("wizStart", "th.date", "", true, "date")}
-      ${field("wizEnd", "form.billingAddress", "", false, "date")}
-      ${field("wizAdults", "nav.clients", "2", true, "number")}
-      ${field("wizAmount", "th.amount", "", true, "number")}
-      <div class="form-field"><label>${t("form.currency")}</label><select id="wizCurrency"><option>USD</option><option>EGP</option><option>EUR</option></select></div>
-      <div class="form-field full"><label>${t("placeholder.notes")}</label><textarea id="wizNotes"></textarea></div>
-    </div>`;
+    if (w.type === "HOTEL") {
+      const hotel = findWizardHotel(w.payload.hotelId);
+      const hotels = state.cache.hotelsRows || [];
+      const quote = calculateHotelQuote(w.payload, hotel);
+      body += `<div class="form-grid">
+        <div class="form-field full"><label>${t("nav.hotels")} <span class="required">*</span></label><select id="wizHotelId" onchange="selectWizardHotel(this.value)">
+          <option value="">${t("form.selectHotel", "Select hotel")}</option>
+          ${hotels.map(h => `<option value="${h.id}" ${h.id === w.payload.hotelId ? "selected" : ""}>${escapeHtml(h.name)} - ${escapeHtml(h.city || "")}</option>`).join("")}
+        </select></div>
+        ${field("wizStart", "form.checkIn", w.payload.checkIn || "", true, "date", 'onchange="updateHotelQuote()"', "Check-in")}
+        ${field("wizEnd", "form.checkOut", w.payload.checkOut || "", true, "date", 'onchange="updateHotelQuote()"', "Check-out")}
+        ${field("wizAdults", "form.adults", w.payload.adultsCount ?? 2, true, "number", 'min="1" step="1" oninput="updateHotelQuote()"', "Adults")}
+        ${field("wizChildren", "form.children", w.payload.childrenCount ?? 0, false, "number", 'min="0" step="1" oninput="updateHotelQuote()"', "Children")}
+        <div class="form-field"><label>${t("form.currency")}</label><input value="${escapeHtml(quote.currency)}" readonly></div>
+        <div class="form-field full"><label>${t("placeholder.notes")}</label><textarea id="wizNotes" oninput="updateHotelQuote()">${escapeHtml(w.payload.notes || "")}</textarea></div>
+        <div class="form-field full" id="hotelQuoteBox">${hotelQuoteHtml(quote)}</div>
+      </div>`;
+    } else {
+      body += `<div class="form-grid">
+        ${field("wizRefName", "th.details", w.payload.hotelId || "")}
+        ${field("wizStart", "th.date", "", true, "date")}
+        ${field("wizEnd", "form.checkOut", "", false, "date", "", "Return date")}
+        ${field("wizAdults", "form.adults", "2", true, "number", 'min="1" step="1"', "Adults")}
+        ${field("wizAmount", "th.amount", "", true, "number")}
+        <div class="form-field"><label>${t("form.currency")}</label><select id="wizCurrency"><option>USD</option><option>EGP</option><option>EUR</option></select></div>
+        <div class="form-field full"><label>${t("placeholder.notes")}</label><textarea id="wizNotes"></textarea></div>
+      </div>`;
+    }
   } else {
+    const amount = w.payload.totalAmount || 0;
+    const commission = w.payload.commissionAmount || 0;
     body += `<div class="info-grid">
       <div class="info-item"><div class="info-label">${t("th.type")}</div><div class="info-value">${escapeHtml(w.type)}</div></div>
-      <div class="info-item"><div class="info-label">${t("th.amount")}</div><div class="info-value">${formatMoney(w.payload.totalAmount || 0, w.payload.currency || "USD")}</div></div>
-      <div class="info-item"><div class="info-label">${t("th.commission")}</div><div class="info-value">${formatMoney((w.payload.totalAmount || 0) * 0.1, w.payload.currency || "USD")}</div></div>
+      ${w.type === "HOTEL" ? `<div class="info-item"><div class="info-label">${t("nav.hotels")}</div><div class="info-value">${escapeHtml(w.payload.hotelName || "")}</div></div>
+      <div class="info-item"><div class="info-label">${t("form.nights", "Nights")}</div><div class="info-value">${formatNumber(w.payload.nights || 0)}</div></div>
+      <div class="info-item"><div class="info-label">${t("form.rooms", "Rooms")}</div><div class="info-value">${formatNumber(w.payload.roomsCount || 1)}</div></div>` : ""}
+      <div class="info-item"><div class="info-label">${t("th.amount")}</div><div class="info-value">${formatMoney(w.payload.baseAmount || amount, w.payload.currency || "USD")}</div></div>
+      <div class="info-item"><div class="info-label">${t("th.commission")}</div><div class="info-value">${formatMoney(commission, w.payload.currency || "USD")}</div></div>
+      <div class="info-item"><div class="info-label">${t("th.total", "Total")}</div><div class="info-value">${formatMoney(amount, w.payload.currency || "USD")}</div></div>
     </div>`;
   }
   openModal(t("modal.bookingNew"), body, wizardFooter());
@@ -651,18 +769,43 @@ function wizardNext() {
   if (w.step === 1) {
     w.type = document.getElementById("wizType").value;
   } else if (w.step === 2) {
-    w.payload = {
-      type: w.type,
-      hotelId: document.getElementById("wizRefName").value || undefined,
-      checkIn: document.getElementById("wizStart").value || undefined,
-      checkOut: document.getElementById("wizEnd").value || undefined,
-      adultsCount: Number(document.getElementById("wizAdults").value || 1),
-      totalAmount: Number(document.getElementById("wizAmount").value || 0),
-      baseAmount: Number(document.getElementById("wizAmount").value || 0),
-      currency: document.getElementById("wizCurrency").value || "USD",
-      notes: document.getElementById("wizNotes").value,
-    };
-    if (!w.payload.totalAmount) return toast(t("toast.validationError"), "error");
+    if (w.type === "HOTEL") {
+      updateHotelQuote();
+      const hotelId = document.getElementById("wizHotelId")?.value || w.payload.hotelId;
+      const hotel = findWizardHotel(hotelId);
+      const quote = calculateHotelQuote(w.payload, hotel);
+      if (!quote.valid) return toast(t("toast.validationError"), "error");
+      if (quote.availableRooms && quote.roomsCount > quote.availableRooms) return toast(t("toast.unavailable", "Not enough rooms for selected guests"), "error");
+      w.payload = {
+        type: w.type,
+        hotelId,
+        hotelName: hotel?.name || "",
+        checkIn: w.payload.checkIn,
+        checkOut: w.payload.checkOut,
+        adultsCount: quote.adultsCount,
+        childrenCount: quote.childrenCount,
+        roomsCount: quote.roomsCount,
+        nights: quote.nights,
+        baseAmount: quote.baseAmount,
+        commissionAmount: quote.commissionAmount,
+        totalAmount: quote.totalAmount,
+        currency: quote.currency,
+        notes: w.payload.notes || "",
+        hotel,
+      };
+    } else {
+      w.payload = {
+        type: w.type,
+        checkIn: document.getElementById("wizStart").value || undefined,
+        checkOut: document.getElementById("wizEnd").value || undefined,
+        adultsCount: Number(document.getElementById("wizAdults").value || 1),
+        totalAmount: Number(document.getElementById("wizAmount").value || 0),
+        baseAmount: Number(document.getElementById("wizAmount").value || 0),
+        currency: document.getElementById("wizCurrency").value || "USD",
+        notes: document.getElementById("wizNotes").value,
+      };
+      if (!w.payload.totalAmount) return toast(t("toast.validationError"), "error");
+    }
   }
   w.step += 1;
   renderBookingWizard();
@@ -675,7 +818,13 @@ function wizardBack() {
 
 async function submitWizardBooking() {
   const payload = { ...state.wizard.payload };
-  if (state.wizard.type !== "HOTEL") {
+  if (state.wizard.type === "HOTEL") {
+    delete payload.hotel;
+    delete payload.hotelName;
+    delete payload.totalAmount;
+    delete payload.baseAmount;
+    delete payload.commissionAmount;
+  } else {
     delete payload.hotelId;
     payload.origin = "CAI";
     payload.destination = "JED";
@@ -693,8 +842,8 @@ function openServiceModal(kind, id) {
   toast(`${t("btn.bookNow")}: ${kind} ${id}`, "");
 }
 
-function field(id, labelKey, value = "", required = false, type = "text") {
-  return `<div class="form-field"><label>${t(labelKey)} ${required ? '<span class="required">*</span>' : ""}</label><input id="${id}" type="${type}" value="${escapeHtml(value ?? "")}"></div>`;
+function field(id, labelKey, value = "", required = false, type = "text", extra = "", fallback = "") {
+  return `<div class="form-field"><label>${t(labelKey, fallback || labelKey)} ${required ? '<span class="required">*</span>' : ""}</label><input id="${id}" type="${type}" value="${escapeHtml(value ?? "")}" ${extra}></div>`;
 }
 
 function updateWallet(data) {
