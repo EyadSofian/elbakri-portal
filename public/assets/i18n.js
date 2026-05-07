@@ -46,7 +46,7 @@
       search: "ابحث عن حجز أو شركة أو عميل",
       command: "Ctrl K",
       wallet: "المحفظة",
-      platformWallet: "أرصدة الوكلاء",
+      platformWallet: "محفظة المنصة",
       notifications: "الإشعارات",
       messages: "الرسائل",
       help: "المساعدة",
@@ -210,6 +210,9 @@
       downloadPdf: "PDF",
       sendNotification: "إرسال إشعار",
       scheduleSync: "جدولة المزامنة",
+      newUser: "مستخدم جديد",
+      resetPassword: "إعادة تعيين كلمة المرور",
+      addFunds: "إضافة رصيد",
     },
     form: {
       basicInfo: "البيانات الأساسية",
@@ -266,6 +269,10 @@
       from: "من",
       to: "إلى",
       processingType: "المعالجة",
+      role: "الدور",
+      password: "كلمة المرور",
+      none: "بدون",
+      autoGenerate: "توليد تلقائي إذا تُركت فارغة",
     },
     placeholder: {
       searchCompany: "بحث بالاسم أو البريد",
@@ -298,6 +305,9 @@
       review: "المراجعة",
       details: "التفاصيل",
       type: "النوع",
+      userNew: "مستخدم جديد",
+      userEdit: "تعديل المستخدم",
+      passwordReset: "كلمة مرور مؤقتة",
     },
     empty: {
       noData: "لا توجد بيانات",
@@ -327,6 +337,8 @@
       connectionOk: "الاتصال ناجح",
       connectionFailed: "فشل الاتصال",
       validationError: "راجع الحقول المطلوبة",
+      passwordReset: "تمت إعادة تعيين كلمة المرور",
+      currencyMismatch: "اختر شركات بنفس العملة",
     },
     filter: {
       title: "الفلاتر",
@@ -350,6 +362,13 @@
       source: "مصدر الحقيقة",
       sourceText: "Google Sheets هو مصدر بيانات الأساس",
       oneWay: "اتجاه واحد: من الشيت إلى قاعدة البيانات",
+    },
+    wallet: {
+      platformSub: "رصيد متاح للتوزيع على الشركات",
+      platformHistory: "حركات محفظة المنصة",
+      platformRule: "أي شحن لشركة يتم خصمه من هذا الرصيد",
+      addFunds: "إضافة رصيد لمحفظة المنصة",
+      fundPlaceholder: "إيداع بنكي / نقدية مستلمة",
     },
     currency: {
       USD: "USD",
@@ -398,7 +417,7 @@
       settings: "Settings", logout: "Logout",
     },
     topbar: {
-      search: "Search booking, company, client", command: "Ctrl K", wallet: "Wallet", platformWallet: "Agent Balances",
+      search: "Search booking, company, client", command: "Ctrl K", wallet: "Wallet", platformWallet: "Platform Wallet",
       notifications: "Notifications", messages: "Messages", help: "Help", lastRefresh: "Last refresh", justNow: "Just now", language: "Language",
     },
     page: {
@@ -448,6 +467,7 @@
       syncSheets: "Sync from Sheets", testConnection: "Test Connection", refresh: "Refresh", clear: "Clear", apply: "Apply",
       reset: "Reset", close: "Close", next: "Next", back: "Back", createBooking: "Create Booking", bookNow: "Book Now",
       markPaid: "Mark Paid", downloadPdf: "PDF", sendNotification: "Send notification", scheduleSync: "Schedule Sync",
+      newUser: "New User", resetPassword: "Reset Password", addFunds: "Add Funds",
     },
     form: {
       basicInfo: "Basic Info", contact: "Contact", financial: "Financial", branding: "Branding", name: "Name", nameAr: "Arabic Name",
@@ -461,6 +481,7 @@
       validTo: "Valid To", operator: "Operator", cabins: "Cabins", departureDays: "Departure Days", duration: "Duration",
       includes: "Includes", excludes: "Excludes", priceAdult: "Adult Price", priceChild: "Child Price", minPax: "Min Pax",
       maxPax: "Max Pax", vehicleType: "Vehicle Type", from: "From", to: "To", processingType: "Processing",
+      role: "Role", password: "Password", none: "None", autoGenerate: "Auto-generate if empty",
     },
     placeholder: {
       searchCompany: "Search name or email", searchAny: "Quick search", email: "agent@company.com", phone: "+20 2 1234 5678",
@@ -471,7 +492,7 @@
       companyNew: "Create Company", companyEdit: "Edit Company", companyDetails: "Company Details", topup: "Top-up Wallet",
       confirmDelete: "Confirm Delete", confirmToggle: "Confirm Status Change", bookingNew: "New Booking", syncResult: "Sync Result",
       overview: "Overview", users: "Users", bookings: "Bookings", wallet: "Wallet", invoices: "Invoices", review: "Review",
-      details: "Details", type: "Type",
+      details: "Details", type: "Type", userNew: "New User", userEdit: "Edit User", passwordReset: "Temporary Password",
     },
     empty: {
       noData: "No data found", noCompanies: "No matching companies", noBookings: "No bookings found", noInvoices: "No invoices found",
@@ -483,6 +504,7 @@
       syncStarted: "Sync started", syncComplete: "Sync complete", syncFailed: "Sync failed", topupDone: "Wallet topped up",
       statusChanged: "Status changed", loginExpired: "Session expired. Please login again", noRowsSelected: "Select at least one row",
       connectionOk: "Connection successful", connectionFailed: "Connection failed", validationError: "Check required fields",
+      passwordReset: "Password reset", currencyMismatch: "Select companies with the same currency",
     },
     filter: { title: "Filters", search: "Search", tier: "Tier", status: "Status", country: "Country", dateRange: "Date Range", currency: "Currency" },
     sync: {
@@ -490,6 +512,13 @@
       transportRates: "Transport Rates", visaFees: "Visa Fees", receptionServices: "Reception Services",
       manual: "Manual", scheduled: "Scheduled", source: "Source of truth", sourceText: "Google Sheets is the source of truth for master data",
       oneWay: "One-way sync: Sheets to database",
+    },
+    wallet: {
+      platformSub: "Funds available to allocate to companies",
+      platformHistory: "Platform Ledger",
+      platformRule: "Company top-ups deduct from this balance",
+      addFunds: "Add Platform Funds",
+      fundPlaceholder: "Bank deposit / cash received",
     },
     currency: { USD: "USD", EGP: "EGP", EUR: "EUR", SAR: "SAR", AED: "AED", GBP: "GBP" },
     login: {

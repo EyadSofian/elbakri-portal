@@ -197,6 +197,7 @@ model User {
   company           Company?            @relation(fields: [companyId], references: [id], onDelete: SetNull)
   bookings          Booking[]           @relation("BookingCreatedBy")
   transactions      WalletTransaction[] @relation("TransactionCreatedBy")
+  platformTransactions PlatformWalletTransaction[] @relation("PlatformWalletTransactionCreatedBy")
   cruiseBookings    CruiseBooking[]     @relation("CruiseBookingCreatedBy")
   transportBookings TransportBooking[]  @relation("TransportBookingCreatedBy")
   activityBookings  ActivityBooking[]   @relation("ActivityBookingCreatedBy")
@@ -251,6 +252,7 @@ model Company {
   bookings          Booking[]
   invoices          Invoice[]
   transactions      WalletTransaction[]
+  platformTransactions PlatformWalletTransaction[]
   cruiseBookings    CruiseBooking[]
   transportBookings TransportBooking[]
   activityBookings  ActivityBooking[]
@@ -437,6 +439,34 @@ model WalletTransaction {
   createdAt     DateTime        @default(now())
 
   @@index([companyId])
+  @@index([createdAt])
+}
+
+model PlatformWallet {
+  currency  String   @id @default("USD")
+  balance   Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PlatformWalletTransaction {
+  id            String          @id @default(cuid())
+  type          TransactionType
+  amount        Decimal         @db.Decimal(12, 2)
+  balanceBefore Decimal         @db.Decimal(12, 2)
+  balanceAfter  Decimal         @db.Decimal(12, 2)
+  currency      String          @default("USD")
+  reference     String?
+  description   String
+  companyId     String?
+  company       Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  createdById   String?
+  createdBy     User?           @relation("PlatformWalletTransactionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime        @default(now())
+
+  @@index([currency])
+  @@index([companyId])
+  @@index([createdById])
   @@index([createdAt])
 }
 

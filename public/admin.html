@@ -91,7 +91,7 @@
         <div class="topbar-spacer"></div>
         <div class="wallet-pill" title="Agent wallet exposure">
           <i data-lucide="wallet"></i>
-          <span data-i18n="topbar.platformWallet">Agent Balances</span>
+          <span data-i18n="topbar.platformWallet">Platform Wallet</span>
           <strong id="walletPillValue">USD 0.00</strong>
         </div>
         <div class="refresh-pill"><i data-lucide="refresh-cw"></i><span id="lastRefresh" data-i18n="topbar.justNow">Just now</span></div>
@@ -369,15 +369,16 @@ async function renderDashboard() {
       <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.wallet")}</div><div class="panel-subtitle">${t("topbar.lastRefresh")}</div></div></div><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(4, 6)}</tbody></table></div></section>
     </div>`);
 
-  const [overview, bookings, tx, companies] = await Promise.all([
+  const [overview, bookings, tx, platform] = await Promise.all([
     apiFetch("/admin/reports/overview"),
     apiFetch("/bookings?limit=8"),
     apiFetch("/admin/wallet/transactions?limit=8"),
-    apiFetch("/admin/companies?limit=100"),
+    apiFetch("/admin/wallet/platform?currency=USD"),
   ]);
   const d = overview?.data || {};
-  const walletExposure = (companies?.data || []).reduce((sum, c) => sum + Number(c.balance || 0), 0);
-  document.getElementById("walletPillValue").textContent = formatMoney(walletExposure, "USD");
+  const platformWallet = platform?.data?.wallet || { balance: 0, currency: "USD" };
+  const platformBalance = Number(platformWallet.balance || 0);
+  document.getElementById("walletPillValue").textContent = formatMoney(platformBalance, platformWallet.currency || "USD");
   document.getElementById("pendingCount").textContent = d.pendingBookings || 0;
 
   content(pageHeader(`<button class="btn btn-outline" onclick="renderDashboard()">${icon("refresh-cw")}${t("btn.refresh")}</button>`) + `
@@ -386,7 +387,7 @@ async function renderDashboard() {
       ${statCard("stat.totalRevenue", formatMoney(d.totalRevenue || 0, "USD"), "stat.monthToDate", "banknote")}
       ${statCard("stat.pending", d.pendingBookings || 0, "toast.validationError", "clock")}
       ${statCard("stat.activeCompanies", d.activeCompanies || 0, "status.ACTIVE", "building-2")}
-      ${statCard("stat.walletExposure", formatMoney(walletExposure, "USD"), "topbar.platformWallet", "wallet")}
+      ${statCard("topbar.platformWallet", formatMoney(platformBalance, platformWallet.currency || "USD"), "stat.walletExposure", "wallet")}
       ${statCard("stat.hotels", d.bookingsByType?.HOTEL || 0, "nav.hotels", "hotel")}
     </div>
     <div class="grid-2">
@@ -400,7 +401,7 @@ async function renderDashboard() {
       ${miniTable("nav.wallet", tx?.data || [], [
         ["th.company", r => escapeHtml(r.company?.name || "—")],
         ["th.type", r => statusBadge(r.type)],
-        ["th.amount", r => `<span class="numeric">${formatMoney(r.amount, "USD")}</span>`],
+        ["th.amount", r => `<span class="numeric">${formatMoney(r.amount, r.company?.currency || "USD")}</span>`],
         ["th.date", r => formatDate(r.createdAt)],
       ])}
     </div>`);
@@ -478,6 +479,12 @@ function renderCompanies() {
 
 function option(value, key) {
   return `<option value="${value}">${t(key)}</option>`;
+}
+
+async function ensureCompanyOptions() {
+  if (state.cache.companyOptions?.length) return;
+  const res = await apiFetch("/admin/companies?limit=300");
+  state.cache.companyOptions = res?.data || [];
 }
 
 let companiesTimer;
@@ -959,15 +966,19 @@ function switchDetailTab(tab, btn) {
   document.getElementById("pane-" + tab).classList.add("active");
 }
 
-async function showTopupModal(id, bulkIds) {
+async function showTopupModal(id, bulkIds, forcedCurrency) {
   const company = id ? state.companies.find(c => c.id === id) || state.currentCompany : null;
   const ids = bulkIds || (id ? [id] : Array.from(state.selectedCompanies));
+  const currency = forcedCurrency || company?.currency || "USD";
+  const platform = await apiFetch(`/admin/wallet/platform?currency=${encodeURIComponent(currency)}`);
+  const platformWallet = platform?.data?.wallet || { balance: 0, currency };
   const label = company?.name || `${ids.length} ${t("nav.companies")}`;
   openModal(t("modal.topup"), `
+    <div class="info-item" style="margin-bottom:14px"><div class="info-label">${t("topbar.platformWallet")}</div><div class="info-value">${formatMoney(platformWallet.balance, platformWallet.currency || currency)}</div></div>
     <div class="info-item" style="margin-bottom:14px"><div class="info-label">${t("form.currentBalance")}</div><div class="info-value">${company ? formatMoney(company.balance, company.currency || "USD") : "—"}</div></div>
     <div class="form-grid">
       ${field("topupAmount", "form.amount", "", true, "number")}
-      <div class="form-field"><label>${t("form.currency")}</label><select id="topupCurrency"><option>USD</option><option>EGP</option><option>EUR</option></select></div>
+      <div class="form-field"><label>${t("form.currency")}</label><select id="topupCurrency">${["USD","EGP","EUR","SAR","AED"].map(item => `<option value="${item}" ${item === currency ? "selected" : ""}>${item}</option>`).join("")}</select></div>
       <div class="form-field full"><label>${t("form.description")} <span class="required">*</span></label><input id="topupDescription" placeholder="${t("placeholder.description")}"></div>
       <label class="form-field full" style="display:flex;grid-template-columns:auto 1fr;align-items:center;gap:8px"><input type="checkbox" id="topupNotify" checked style="width:auto"> ${t("btn.sendNotification")}</label>
       <div class="info-item full"><div class="info-label">${t("modal.review")}</div><div class="info-value" id="topupSummary">Top up ${escapeHtml(label)}</div></div>
@@ -980,19 +991,26 @@ async function showTopupModal(id, bulkIds) {
 function showBulkTopup() {
   const ids = Array.from(state.selectedCompanies);
   if (!ids.length) return toast(t("toast.noRowsSelected"), "warning");
-  showTopupModal(null, ids);
+  const currencies = new Set(state.companies.filter(c => ids.includes(c.id)).map(c => c.currency || "USD"));
+  if (currencies.size > 1) return toast(t("toast.currencyMismatch", "Select companies with the same currency"), "error");
+  showTopupModal(null, ids, Array.from(currencies)[0] || "USD");
 }
 
 async function submitTopup(ids) {
   const amount = Number(document.getElementById("topupAmount").value || 0);
+  const currency = document.getElementById("topupCurrency").value;
   const description = document.getElementById("topupDescription").value.trim();
   if (amount <= 0 || !description) return toast(t("toast.validationError"), "error");
+  let success = true;
   for (const id of ids) {
-    await apiFetch(`/admin/companies/${id}/topup`, { method: "POST", body: JSON.stringify({ amount, description, notify: document.getElementById("topupNotify").checked }) });
+    const res = await apiFetch(`/admin/companies/${id}/topup`, { method: "POST", body: JSON.stringify({ amount, currency, description, notify: document.getElementById("topupNotify").checked }) });
+    if (!res?.success) success = false;
   }
+  if (!success) return;
   closeModal();
   toast(t("toast.topupDone"), "success");
   state.selectedCompanies.clear();
+  await refreshPlatformWalletPill(currency);
   loadCompanies();
 }
 
@@ -1029,7 +1047,95 @@ async function renderUsers() {
     ["th.type", u => statusBadge(u.role)],
     ["th.status", u => statusBadge(u.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.lastActivity", u => formatDate(u.lastLoginAt)],
-  ]);
+    ["th.actions", u => `<div class="row-actions">
+      <button class="icon-button btn-icon" title="${t("btn.edit")}" onclick="showUserModal('${u.id}')">${icon("pencil")}</button>
+      <button class="icon-button btn-icon" title="${t("btn.resetPassword", "Reset Password")}" onclick="resetUserPassword('${u.id}')">${icon("key-round")}</button>
+      <button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deleteUserRecord('${u.id}')">${icon("trash-2")}</button>
+    </div>`],
+  ], `<button class="btn btn-primary" onclick="showUserModal()">${icon("plus")}${t("btn.newUser", "New User")}</button>`);
+}
+
+async function showUserModal(id = "") {
+  await ensureCompanyOptions();
+  const row = id ? (state.cache.usersRows || []).find(user => user.id === id) : null;
+  const companyOptions = (state.cache.companyOptions || []).map(company => (
+    `<option value="${company.id}" ${company.id === row?.companyId ? "selected" : ""}>${escapeHtml(company.name)}</option>`
+  )).join("");
+  const role = row?.role || "AGENT";
+  const body = `<div class="form-section"><div class="form-section-title">${t("form.basicInfo")}</div><div class="form-grid">
+    ${field("userName", "form.name", row?.name, true)}
+    ${field("userNameAr", "form.nameAr", row?.nameAr)}
+    ${field("userEmail", "form.email", row?.email, true, "email")}
+    <div class="form-field"><label>${t("form.role", "Role")} <span class="required">*</span></label><select id="userRole">
+      ${["SUPERADMIN","COMPANY_ADMIN","AGENT"].map(item => `<option value="${item}" ${item === role ? "selected" : ""}>${item.replace(/_/g, " ")}</option>`).join("")}
+    </select></div>
+    <div class="form-field"><label>${t("th.company")}</label><select id="userCompanyId"><option value="">${t("form.none", "None")}</option>${companyOptions}</select></div>
+    <div class="form-field"><label>${t("form.status")}</label><select id="userActive"><option value="true" ${row?.isActive !== false ? "selected" : ""}>${t("status.ACTIVE")}</option><option value="false" ${row?.isActive === false ? "selected" : ""}>${t("status.INACTIVE")}</option></select></div>
+    ${id ? "" : field("userPassword", "form.password", "", false, "password", `placeholder="${t("form.autoGenerate", "Auto-generate if empty")}"`)}
+  </div></div>`;
+  openModal(id ? t("modal.userEdit", "Edit User") : t("modal.userNew", "New User"), body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" onclick="saveUser('${id}')">${t("btn.save")}</button>
+  `);
+}
+
+async function saveUser(id = "") {
+  const role = document.getElementById("userRole").value;
+  const payload = {
+    name: document.getElementById("userName").value.trim(),
+    nameAr: document.getElementById("userNameAr").value.trim() || undefined,
+    email: document.getElementById("userEmail").value.trim(),
+    role,
+    companyId: role === "SUPERADMIN" ? null : document.getElementById("userCompanyId").value,
+    isActive: document.getElementById("userActive").value === "true",
+  };
+  if (!payload.name || !payload.email || (role !== "SUPERADMIN" && !payload.companyId)) {
+    toast(t("toast.validationError"), "error");
+    return;
+  }
+  if (!id) {
+    const password = document.getElementById("userPassword").value.trim();
+    if (password) payload.password = password;
+  }
+  const res = await apiFetch(id ? `/users/${id}` : "/users", {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify(payload),
+  });
+  if (res?.success) {
+    closeModal();
+    const tempPassword = res.data?.tempPassword;
+    if (tempPassword) {
+      openModal(t("modal.passwordReset", "Temporary Password"), `<div class="info-item"><div class="info-label">${t("form.password")}</div><div class="info-value">${escapeHtml(tempPassword)}</div></div>`, `<button class="btn btn-primary" onclick="closeModal(); renderUsers()">${t("btn.close")}</button>`);
+    } else {
+      toast(id ? t("toast.updated") : t("toast.created"), "success");
+      renderUsers();
+    }
+  }
+}
+
+function resetUserPassword(id) {
+  const user = (state.cache.usersRows || []).find(item => item.id === id);
+  confirmAction(`${t("btn.resetPassword", "Reset password")} - ${user?.email || ""}`, async () => {
+    const res = await apiFetch(`/users/${id}/reset-password`, { method: "POST", body: JSON.stringify({}) });
+    if (res?.success) {
+      const tempPassword = res.data.tempPassword;
+      openModal(t("modal.passwordReset", "Temporary Password"), `
+        <div class="info-item"><div class="info-label">${escapeHtml(res.data.email)}</div><div class="info-value">${escapeHtml(tempPassword)}</div></div>
+      `, `<button class="btn btn-primary" onclick="closeModal()">${t("btn.close")}</button>`);
+      toast(t("toast.passwordReset", "Password reset"), "success");
+    }
+  });
+}
+
+function deleteUserRecord(id) {
+  const user = (state.cache.usersRows || []).find(item => item.id === id);
+  confirmAction(`${t("btn.delete")} ${user?.email || ""}?`, async () => {
+    const res = await apiFetch(`/users/${id}`, { method: "DELETE" });
+    if (res?.success) {
+      toast(t("toast.deleted"), "success");
+      renderUsers();
+    }
+  });
 }
 
 async function renderHotels() {
@@ -1082,15 +1188,76 @@ async function renderInvoices() {
 }
 
 async function renderWallet() {
-  renderSimpleList("wallet", "/admin/wallet/transactions?limit=100", [
-    ["th.company", r => escapeHtml(r.company?.name || "—")],
-    ["th.type", r => statusBadge(r.type)],
-    ["th.amount", r => `<span class="numeric">${formatMoney(r.amount, "USD")}</span>`],
-    ["th.before", r => formatMoney(r.balanceBefore, "USD")],
-    ["th.after", r => formatMoney(r.balanceAfter, "USD")],
-    ["th.description", r => escapeHtml(r.description)],
-    ["th.date", r => formatDate(r.createdAt)],
+  state.page = "wallet";
+  content(pageHeader(`<button class="btn btn-primary" onclick="showPlatformFundModal()">${icon("plus")}${t("btn.addFunds", "Add Funds")}</button>`) + `
+    <div class="grid-2">
+      <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("topbar.platformWallet")}</div><div class="panel-subtitle">${t("wallet.platformSub", "Funds available to allocate to companies")}</div></div></div><div class="panel-body" id="platformWalletBox">${emptyBlock("empty.loading")}</div></section>
+      <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("wallet.platformHistory", "Platform Ledger")}</div><div class="panel-subtitle">${t("topbar.justNow")}</div></div></div><div class="panel-body" id="platformWalletHistory">${emptyBlock("empty.loading")}</div></section>
+    </div>
+    <section class="table-card" style="margin-top:16px">
+      <div class="table-toolbar"><strong>${t("nav.wallet")}</strong><div class="toolbar-actions"><button class="btn btn-outline" onclick="renderWallet()">${icon("refresh-cw")}${t("btn.refresh")}</button><button class="btn btn-outline" onclick="exportRows('wallet', state.cache.walletRows || [])">${icon("download")}${t("btn.exportExcel")}</button></div></div>
+      <div class="table-scroll"><table class="data-table"><thead><tr><th>${t("th.company")}</th><th>${t("th.type")}</th><th>${t("th.amount")}</th><th>${t("th.before")}</th><th>${t("th.after")}</th><th>${t("th.description")}</th><th>${t("th.date")}</th></tr></thead><tbody id="walletTbody">${skeletonRows(7, 8)}</tbody></table></div>
+    </section>`);
+  const [platform, companyTx] = await Promise.all([
+    apiFetch("/admin/wallet/platform?currency=USD"),
+    apiFetch("/admin/wallet/transactions?limit=100"),
   ]);
+  const wallet = platform?.data?.wallet || { balance: 0, currency: "USD" };
+  const platformRows = platform?.data?.transactions || [];
+  const rows = companyTx?.data || [];
+  state.cache.walletRows = rows;
+  document.getElementById("walletPillValue").textContent = formatMoney(wallet.balance, wallet.currency || "USD");
+  document.getElementById("platformWalletBox").innerHTML = `
+    <div class="stat-card" style="box-shadow:none;border:1px solid var(--border)">
+      <div class="stat-label">${t("topbar.platformWallet")}</div>
+      <div class="stat-value">${formatMoney(wallet.balance, wallet.currency || "USD")}</div>
+      <div class="stat-sub">${t("wallet.platformRule", "Company top-ups deduct from this balance")}</div>
+    </div>`;
+  document.getElementById("platformWalletHistory").innerHTML = platformRows.length
+    ? `<div class="table-scroll"><table class="data-table"><thead><tr><th>${t("th.type")}</th><th>${t("th.company")}</th><th>${t("th.amount")}</th><th>${t("th.after")}</th><th>${t("th.description")}</th></tr></thead><tbody>${platformRows.map(r => `<tr><td>${statusBadge(r.type)}</td><td>${escapeHtml(r.company?.name || "—")}</td><td>${formatMoney(r.amount, r.currency)}</td><td>${formatMoney(r.balanceAfter, r.currency)}</td><td>${escapeHtml(r.description)}</td></tr>`).join("")}</tbody></table></div>`
+    : emptyBlock("empty.noTransactions");
+  document.getElementById("walletTbody").innerHTML = rows.length
+    ? rows.map(r => {
+      const currency = r.company?.currency || "USD";
+      return `<tr><td>${escapeHtml(r.company?.name || "—")}</td><td>${statusBadge(r.type)}</td><td class="numeric">${formatMoney(r.amount, currency)}</td><td>${formatMoney(r.balanceBefore, currency)}</td><td>${formatMoney(r.balanceAfter, currency)}</td><td>${escapeHtml(r.description)}</td><td>${formatDate(r.createdAt)}</td></tr>`;
+    }).join("")
+    : `<tr><td colspan="7">${emptyBlock("empty.noTransactions")}</td></tr>`;
+  refreshIcons(document.getElementById("content"));
+}
+
+async function refreshPlatformWalletPill(currency = "USD") {
+  const res = await apiFetch(`/admin/wallet/platform?currency=${encodeURIComponent(currency)}`);
+  const wallet = res?.data?.wallet;
+  if (wallet) document.getElementById("walletPillValue").textContent = formatMoney(wallet.balance, wallet.currency || currency);
+  return wallet;
+}
+
+function showPlatformFundModal() {
+  openModal(t("wallet.addFunds", "Add Platform Funds"), `
+    <div class="form-grid">
+      ${field("platformAmount", "form.amount", "", true, "number")}
+      <div class="form-field"><label>${t("form.currency")}</label><select id="platformCurrency">${["USD","EGP","EUR","SAR","AED"].map(c => `<option value="${c}">${c}</option>`).join("")}</select></div>
+      <div class="form-field full"><label>${t("form.description")} <span class="required">*</span></label><input id="platformDescription" placeholder="${t("wallet.fundPlaceholder", "Bank deposit / cash received")}"></div>
+    </div>`, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" onclick="submitPlatformFund()">${t("btn.confirm")}</button>
+  `);
+}
+
+async function submitPlatformFund() {
+  const amount = Number(document.getElementById("platformAmount").value || 0);
+  const currency = document.getElementById("platformCurrency").value;
+  const description = document.getElementById("platformDescription").value.trim();
+  if (amount <= 0 || !description) return toast(t("toast.validationError"), "error");
+  const res = await apiFetch("/admin/wallet/platform/fund", {
+    method: "POST",
+    body: JSON.stringify({ amount, currency, description }),
+  });
+  if (res?.success) {
+    closeModal();
+    toast(t("toast.saved"), "success");
+    renderWallet();
+  }
 }
 
 async function renderReports() {

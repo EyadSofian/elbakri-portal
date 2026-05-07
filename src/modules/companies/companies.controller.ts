@@ -200,41 +200,95 @@ export async function updateCompany(req: Request, res: Response): Promise<void> 
 }
 
 export async function topupCompany(req: Request, res: Response): Promise<void> {
-  const { amount, description, notify } = req.body as { amount: number; description: string; notify?: boolean };
+  const { amount, currency, description, notify } = req.body as {
+    amount: number; currency?: string; description: string; notify?: boolean;
+  };
   const companyId = req.params.id;
 
-  const result = await prisma.$transaction(async (tx) => {
-    const company = await tx.company.findUniqueOrThrow({ where: { id: companyId } });
-    const balanceBefore = company.balance;
-    const balanceAfter = balanceBefore.add(new Decimal(amount));
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const company = await tx.company.findUniqueOrThrow({ where: { id: companyId } });
+      const amountDecimal = new Decimal(amount);
+      const walletCurrency = String(currency || company.currency || 'USD').toUpperCase();
+      if (walletCurrency !== company.currency) throw new Error('CURRENCY_MISMATCH');
 
-    const updated = await tx.company.update({
-      where: { id: companyId },
-      data: { balance: balanceAfter },
+      const platformWallet = await tx.platformWallet.upsert({
+        where: { currency: walletCurrency },
+        create: { currency: walletCurrency, balance: new Decimal(0) },
+        update: {},
+      });
+      if (platformWallet.balance.lt(amountDecimal)) throw new Error('INSUFFICIENT_PLATFORM_BALANCE');
+
+      const platformBefore = platformWallet.balance;
+      const platformAfter = platformBefore.sub(amountDecimal);
+      await tx.platformWallet.update({
+        where: { currency: walletCurrency },
+        data: { balance: platformAfter },
+      });
+      await tx.platformWalletTransaction.create({
+        data: {
+          type: 'DEBIT',
+          amount: amountDecimal,
+          balanceBefore: platformBefore,
+          balanceAfter: platformAfter,
+          currency: walletCurrency,
+          reference: `TOPUP-${companyId}`,
+          description: `Top-up ${company.name}: ${description}`,
+          companyId,
+          createdById: req.user!.id,
+        },
+      });
+
+      const balanceBefore = company.balance;
+      const balanceAfter = balanceBefore.add(amountDecimal);
+
+      const updated = await tx.company.update({
+        where: { id: companyId },
+        data: { balance: balanceAfter },
+      });
+
+      const transaction = await tx.walletTransaction.create({
+        data: {
+          companyId,
+          type: 'CREDIT',
+          amount: amountDecimal,
+          balanceBefore,
+          balanceAfter,
+          description,
+          createdById: req.user!.id,
+        },
+      });
+
+      return { company: updated, transaction, platformBalance: platformAfter };
     });
 
-    const transaction = await tx.walletTransaction.create({
-      data: {
-        companyId,
-        type: 'CREDIT',
-        amount: new Decimal(amount),
-        balanceBefore,
-        balanceAfter,
-        description,
-        createdById: req.user!.id,
-      },
-    });
+    if (notify !== false) {
+      const recipients = [result.company.email, process.env.INTERNAL_TEAM_EMAIL].filter(Boolean) as string[];
+      const { subject, html } = walletTopupEmail(result.company, result.transaction);
+      if (recipients.length) sendEmail(recipients, subject, html).catch(console.error);
+    }
 
-    return { company: updated, transaction };
-  });
-
-  if (notify !== false) {
-    const recipients = [result.company.email, process.env.INTERNAL_TEAM_EMAIL].filter(Boolean) as string[];
-    const { subject, html } = walletTopupEmail(result.company, result.transaction);
-    if (recipients.length) sendEmail(recipients, subject, html).catch(console.error);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    const message = String((error as Error).message);
+    if (message === 'INSUFFICIENT_PLATFORM_BALANCE') {
+      res.status(400).json({
+        success: false,
+        error: 'INSUFFICIENT_PLATFORM_BALANCE',
+        message: 'Platform wallet does not have enough funds. Add funds first.',
+      });
+      return;
+    }
+    if (message === 'CURRENCY_MISMATCH') {
+      res.status(400).json({
+        success: false,
+        error: 'CURRENCY_MISMATCH',
+        message: 'Top-up currency must match the company wallet currency.',
+      });
+      return;
+    }
+    throw error;
   }
-
-  res.json({ success: true, data: result });
 }
 
 export async function deleteCompany(req: Request, res: Response): Promise<void> {

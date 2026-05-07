@@ -11,7 +11,7 @@ export const createCompanySchema = z.object({
   taxId: z.string().optional(),
   website: z.string().url().optional().or(z.literal('')),
   creditLimit: z.number().min(0).default(0),
-  currency: z.string().min(3).max(3).default('USD'),
+  currency: z.string().min(3).max(3).optional(),
   tier: z.enum(['STANDARD', 'SILVER', 'GOLD', 'PLATINUM']).default('STANDARD'),
   logoUrl: z.string().optional(),
   themeColor: z.string().optional(),
@@ -37,6 +37,7 @@ export const updateCompanySchema = z.object({
 
 export const topupSchema = z.object({
   amount: z.number().positive(),
+  currency: z.string().min(3).max(3).default('USD'),
   description: z.string().min(1),
   notify: z.boolean().optional(),
 });
