@@ -41,6 +41,7 @@ export async function listInvoices(req: Request, res: Response): Promise<void> {
 }
 
 export async function downloadPdf(req: Request, res: Response): Promise<void> {
+  const caller = req.user!;
   const invoice = await prisma.invoice.findUnique({
     where: { id: req.params.id },
     include: invoiceInclude,
@@ -48,6 +49,11 @@ export async function downloadPdf(req: Request, res: Response): Promise<void> {
 
   if (!invoice) {
     res.status(404).json({ success: false, error: 'NOT_FOUND' });
+    return;
+  }
+
+  if (caller.role !== 'SUPERADMIN' && invoice.companyId !== caller.companyId) {
+    res.status(403).json({ success: false, error: 'FORBIDDEN' });
     return;
   }
 
@@ -62,7 +68,12 @@ export async function downloadPdf(req: Request, res: Response): Promise<void> {
   const filename = path.basename(pdfPath);
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  fs.createReadStream(pdfPath).pipe(res);
+  const stream = fs.createReadStream(pdfPath);
+  stream.on('error', (error) => {
+    console.error(error);
+    if (!res.headersSent) res.status(500).json({ success: false, error: 'PDF_READ_FAILED' });
+  });
+  stream.pipe(res);
 }
 
 export async function markPaid(req: Request, res: Response): Promise<void> {

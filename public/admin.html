@@ -179,6 +179,34 @@ function apiFetch(path, options = {}) {
   });
 }
 
+async function downloadInvoicePdf(id) {
+  const token = localStorage.getItem("accessToken");
+  try {
+    const res = await fetch(`/api/invoices/${id}/pdf`, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      throw new Error(json?.message || json?.error || "PDF download failed");
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const filename = match?.[1] || `invoice-${id}.pdf`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    toast(err.message || "PDF download failed", "error");
+  }
+}
+
 function toast(message, type = "") {
   const el = document.getElementById("toast");
   el.textContent = message;
@@ -1212,7 +1240,7 @@ async function renderInvoices() {
     ["th.amount", i => `<span class="numeric">${formatMoney(i.total, i.currency)}</span>`],
     ["th.status", i => statusBadge(i.status)],
     ["th.dueDate", i => formatDate(i.dueDate)],
-    ["th.actions", i => `<a class="btn btn-outline" href="/api/invoices/${i.id}/pdf" target="_blank">${icon("file-down")}${t("btn.downloadPdf")}</a>`],
+    ["th.actions", i => `<button class="btn btn-outline" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}${t("btn.downloadPdf")}</button>`],
   ]);
 }
 
