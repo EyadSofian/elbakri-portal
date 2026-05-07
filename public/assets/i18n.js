@@ -339,6 +339,7 @@
       validationError: "راجع الحقول المطلوبة",
       passwordReset: "تمت إعادة تعيين كلمة المرور",
       currencyMismatch: "اختر شركات بنفس العملة",
+      deactivated: "تم التعطيل وإخفاؤه من القائمة",
     },
     filter: {
       title: "الفلاتر",
@@ -348,6 +349,7 @@
       country: "الدولة",
       dateRange: "نطاق التاريخ",
       currency: "العملة",
+      showInactive: "إظهار غير النشط",
     },
     sync: {
       hotels: "الفنادق",
@@ -505,8 +507,9 @@
       statusChanged: "Status changed", loginExpired: "Session expired. Please login again", noRowsSelected: "Select at least one row",
       connectionOk: "Connection successful", connectionFailed: "Connection failed", validationError: "Check required fields",
       passwordReset: "Password reset", currencyMismatch: "Select companies with the same currency",
+      deactivated: "Deactivated and hidden",
     },
-    filter: { title: "Filters", search: "Search", tier: "Tier", status: "Status", country: "Country", dateRange: "Date Range", currency: "Currency" },
+    filter: { title: "Filters", search: "Search", tier: "Tier", status: "Status", country: "Country", dateRange: "Date Range", currency: "Currency", showInactive: "Show inactive" },
     sync: {
       hotels: "Hotels", hotelPricing: "Hotel Pricing", cruises: "Nile Cruises", activities: "Activities",
       transportRates: "Transport Rates", visaFees: "Visa Fees", receptionServices: "Reception Services",

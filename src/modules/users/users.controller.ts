@@ -21,10 +21,16 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
   const page = parseInt(String(req.query.page ?? '1'));
   const limit = parseInt(String(req.query.limit ?? '20'));
   const { skip, take } = paginate(page, limit);
+  const includeInactive = req.query.includeInactive === 'true';
+  const activeFilter = req.query.isActive !== undefined
+    ? { isActive: req.query.isActive === 'true' }
+    : includeInactive
+      ? {}
+      : { isActive: true };
 
   const where = caller.role === 'SUPERADMIN'
-    ? { ...(req.query.companyId && { companyId: String(req.query.companyId) }) }
-    : { companyId: caller.companyId! };
+    ? { ...activeFilter, ...(req.query.companyId && { companyId: String(req.query.companyId) }) }
+    : { ...activeFilter, companyId: caller.companyId! };
 
   const [users, total] = await Promise.all([
     prisma.user.findMany({ where, skip, take, orderBy: { createdAt: 'desc' }, select: userSelect }),
@@ -169,10 +175,48 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: req.params.id }, data: { isActive: false } }),
-    prisma.refreshToken.deleteMany({ where: { userId: req.params.id } }),
+  const [
+    bookings,
+    transactions,
+    cruiseBookings,
+    transportBookings,
+    activityBookings,
+    visaApplications,
+    airportReceptions,
+  ] = await Promise.all([
+    prisma.booking.count({ where: { createdById: req.params.id } }),
+    prisma.walletTransaction.count({ where: { createdById: req.params.id } }),
+    prisma.cruiseBooking.count({ where: { createdById: req.params.id } }),
+    prisma.transportBooking.count({ where: { createdById: req.params.id } }),
+    prisma.activityBooking.count({ where: { createdById: req.params.id } }),
+    prisma.visaApplication.count({ where: { createdById: req.params.id } }),
+    prisma.airportReception.count({ where: { createdById: req.params.id } }),
   ]);
 
-  res.json({ success: true, data: null });
+  const hasOperationalHistory = [
+    bookings,
+    transactions,
+    cruiseBookings,
+    transportBookings,
+    activityBookings,
+    visaApplications,
+    airportReceptions,
+  ].some((count) => count > 0);
+
+  if (hasOperationalHistory) {
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: req.params.id }, data: { isActive: false } }),
+      prisma.refreshToken.deleteMany({ where: { userId: req.params.id } }),
+    ]);
+
+    res.json({ success: true, data: { mode: 'DEACTIVATED' } });
+    return;
+  }
+
+  await prisma.$transaction([
+    prisma.refreshToken.deleteMany({ where: { userId: req.params.id } }),
+    prisma.user.delete({ where: { id: req.params.id } }),
+  ]);
+
+  res.json({ success: true, data: { mode: 'DELETED' } });
 }

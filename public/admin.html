@@ -94,7 +94,9 @@
           <span data-i18n="topbar.platformWallet">Platform Wallet</span>
           <strong id="walletPillValue">USD 0.00</strong>
         </div>
-        <div class="refresh-pill"><i data-lucide="refresh-cw"></i><span id="lastRefresh" data-i18n="topbar.justNow">Just now</span></div>
+        <button class="refresh-pill" onclick="refreshCurrentPage()" title="Refresh">
+          <i data-lucide="refresh-cw"></i><span id="lastRefresh" data-i18n="topbar.justNow">Just now</span>
+        </button>
         <div class="lang-toggle" role="group" aria-label="Language">
           <button data-lang="en" class="active">EN</button>
           <button data-lang="ar">AR</button>
@@ -120,6 +122,7 @@ const state = {
   companies: [],
   companiesMeta: { page: 1, limit: 20, total: 0, pages: 1 },
   companyFilters: { page: 1, limit: 20, search: "", tier: "", isActive: "", country: "" },
+  userFilters: { includeInactive: false },
   selectedCompanies: new Set(),
   currentCompany: null,
   cache: {},
@@ -207,6 +210,17 @@ function content(html) {
   const root = document.getElementById("content");
   root.innerHTML = html;
   refreshIcons(root);
+}
+
+function markRefreshed() {
+  const el = document.getElementById("lastRefresh");
+  if (el) el.textContent = t("topbar.justNow");
+}
+
+function refreshCurrentPage() {
+  markRefreshed();
+  const loader = pageLoaders[state.page] || renderDashboard;
+  loader();
 }
 
 function pageHeader(actions = "") {
@@ -434,7 +448,7 @@ function renderCompanies() {
         <div class="filter-body">
           <div class="field"><label>${t("filter.search")}</label><input id="coSearch" data-i18n-placeholder="placeholder.searchCompany" placeholder="Search name or email" oninput="debouncedCompanies()"></div>
           <div class="field"><label>${t("filter.tier")}</label><select id="coTier" onchange="loadCompanies(1)">${option("", "form.allTiers")}${["STANDARD","SILVER","GOLD","PLATINUM"].map(v => `<option value="${v}">${t("tier."+v)}</option>`).join("")}</select></div>
-          <div class="field"><label>${t("filter.status")}</label><select id="coActive" onchange="loadCompanies(1)"><option value="">${t("form.allStatuses")}</option><option value="true">${t("status.ACTIVE")}</option><option value="false">${t("status.INACTIVE")}</option></select></div>
+          <div class="field"><label>${t("filter.status")}</label><select id="coActive" onchange="loadCompanies(1)"><option value="true">${t("status.ACTIVE")}</option><option value="false">${t("status.INACTIVE")}</option><option value="all">${t("form.allStatuses")}</option></select></div>
           <div class="field"><label>${t("filter.country")}</label><input id="coCountry" data-i18n-placeholder="placeholder.country" placeholder="Country" oninput="debouncedCompanies()"></div>
           <button class="btn btn-outline" onclick="resetCompanyFilters()">${icon("rotate-ccw")}${t("btn.reset")}</button>
         </div>
@@ -495,16 +509,20 @@ function debouncedCompanies() {
 
 function resetCompanyFilters() {
   ["coSearch", "coTier", "coActive", "coCountry"].forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+  const active = document.getElementById("coActive");
+  if (active) active.value = "true";
   loadCompanies(1);
 }
 
 async function loadCompanies(page = state.companyFilters.page) {
+  const activeValue = document.getElementById("coActive")?.value || "true";
   state.companyFilters = {
     page,
     limit: 20,
     search: document.getElementById("coSearch")?.value || "",
     tier: document.getElementById("coTier")?.value || "",
-    isActive: document.getElementById("coActive")?.value || "",
+    isActive: activeValue === "all" ? "" : activeValue,
+    includeInactive: activeValue === "all" ? "true" : "",
     country: document.getElementById("coCountry")?.value || "",
   };
   const params = new URLSearchParams(Object.entries(state.companyFilters).filter(([, v]) => v !== ""));
@@ -1040,7 +1058,8 @@ async function bulkDeactivate() {
 }
 
 async function renderUsers() {
-  renderSimpleList("users", "/users?limit=100", [
+  const endpoint = `/users?limit=100${state.userFilters.includeInactive ? "&includeInactive=true" : ""}`;
+  renderSimpleList("users", endpoint, [
     ["th.name", u => `<span class="primary-text">${escapeHtml(u.name)}</span>`],
     ["th.email", u => escapeHtml(u.email)],
     ["th.company", u => escapeHtml(u.company?.name || "—")],
@@ -1052,7 +1071,12 @@ async function renderUsers() {
       <button class="icon-button btn-icon" title="${t("btn.resetPassword", "Reset Password")}" onclick="resetUserPassword('${u.id}')">${icon("key-round")}</button>
       <button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deleteUserRecord('${u.id}')">${icon("trash-2")}</button>
     </div>`],
-  ], `<button class="btn btn-primary" onclick="showUserModal()">${icon("plus")}${t("btn.newUser", "New User")}</button>`);
+  ], `<label class="check-row btn btn-outline" style="min-height:36px"><input type="checkbox" ${state.userFilters.includeInactive ? "checked" : ""} onchange="toggleInactiveUsers(this.checked)"> ${t("filter.showInactive", "Show inactive")}</label><button class="btn btn-primary" onclick="showUserModal()">${icon("plus")}${t("btn.newUser", "New User")}</button>`);
+}
+
+function toggleInactiveUsers(checked) {
+  state.userFilters.includeInactive = checked;
+  renderUsers();
 }
 
 async function showUserModal(id = "") {
@@ -1132,7 +1156,7 @@ function deleteUserRecord(id) {
   confirmAction(`${t("btn.delete")} ${user?.email || ""}?`, async () => {
     const res = await apiFetch(`/users/${id}`, { method: "DELETE" });
     if (res?.success) {
-      toast(t("toast.deleted"), "success");
+      toast(res.data?.mode === "DEACTIVATED" ? t("toast.deactivated", "Deactivated and hidden") : t("toast.deleted"), "success");
       renderUsers();
     }
   });
@@ -1347,7 +1371,7 @@ async function renderSimpleList(page, endpoint, columns, extraActions = "") {
   state.page = page;
   content(pageHeader(`${extraActions}<button class="btn btn-outline" onclick="exportRows('${page}', state.cache['${page}Rows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>`) + `
     <section class="table-card">
-      <div class="table-toolbar"><strong>${t(pageMeta[page]?.[0] || "nav."+page)}</strong><div class="toolbar-actions"><span class="refresh-pill">${icon("refresh-cw")}${t("topbar.justNow")}</span></div></div>
+      <div class="table-toolbar"><strong>${t(pageMeta[page]?.[0] || "nav."+page)}</strong><div class="toolbar-actions"><button class="refresh-pill" onclick="refreshCurrentPage()">${icon("refresh-cw")}${t("topbar.justNow")}</button></div></div>
       <div class="table-scroll"><table class="data-table"><thead><tr>${columns.map(([k]) => `<th>${labelText(k)}</th>`).join("")}</tr></thead><tbody id="simpleTbody">${skeletonRows(columns.length, 8)}</tbody></table></div>
     </section>`);
   const res = await apiFetch(endpoint);

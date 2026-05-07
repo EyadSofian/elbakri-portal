@@ -21,11 +21,14 @@ export async function listCompanies(req: Request, res: Response): Promise<void> 
   const tier = req.query.tier as string | undefined;
   const country = req.query.country ? String(req.query.country) : undefined;
   const status = req.query.status ? String(req.query.status).toUpperCase() : undefined;
-  const isActive = req.query.isActive !== undefined
-    ? req.query.isActive === 'true'
-    : status
-      ? status === 'ACTIVE'
-      : undefined;
+  const includeInactive = req.query.includeInactive === 'true';
+  const isActive = includeInactive
+    ? undefined
+    : req.query.isActive !== undefined
+      ? req.query.isActive === 'true'
+      : status
+        ? status === 'ACTIVE'
+        : true;
 
   const where: Prisma.CompanyWhereInput = {
     ...(search && {
