@@ -79,13 +79,38 @@ export function bookingConfirmationEmail(booking: {
   };
 }
 
+export function bookingRequestEmail(booking: {
+  refNumber: string; type: string; totalAmount: unknown;
+  currency: string; createdAt: Date;
+  company?: { name: string; email: string } | null;
+  hotel?: { name: string; city: string } | null;
+}): EmailResult {
+  return {
+    subject: `New Booking Request - ${booking.refNumber}`,
+    html: wrap(`
+      <h2 style="color:#C4920A;">New booking request pending approval</h2>
+      <p style="color:#666;">طلب حجز جديد يحتاج مراجعة الأدمن - ${booking.refNumber}</p>
+      <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><th>Reference</th><td>${booking.refNumber}</td></tr>
+        <tr><th>Type</th><td>${booking.type}</td></tr>
+        <tr><th>Company</th><td>${booking.company?.name ?? '—'}</td></tr>
+        ${booking.hotel ? `<tr><th>Hotel</th><td>${booking.hotel.name}, ${booking.hotel.city}</td></tr>` : ''}
+        <tr><th>Requested Amount</th><td style="font-weight:700;color:#1B2B6B;">${String(booking.totalAmount)} ${booking.currency}</td></tr>
+        <tr><th>Created</th><td>${new Date(booking.createdAt).toLocaleDateString()}</td></tr>
+      </table>
+      <p style="margin-top:18px;color:#666;">Approve the request from the admin bookings page to deduct wallet balance and issue the invoice.</p>
+    `),
+  };
+}
+
 export function bookingStatusEmail(booking: {
   refNumber: string; type: string; totalAmount: unknown;
   currency: string; cancellationReason?: string | null;
   company?: { name: string; email: string } | null;
 }, newStatus: string): EmailResult {
   const statusColor: Record<string, string> = {
-    CONFIRMED: '#1F8A56', CANCELLED: '#B83A3A', COMPLETED: '#1B2B6B',
+    CONFIRMED: '#1F8A56', CANCELLED: '#B83A3A', REJECTED: '#B83A3A', COMPLETED: '#1B2B6B',
   };
 
   return {

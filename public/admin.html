@@ -702,7 +702,7 @@ const masterConfigs = {
     fields: [
       { name: "name", label: "form.name", required: true },
       { name: "nameAr", label: "form.nameAr" },
-      { name: "city", label: "th.city", required: true },
+      { name: "city", label: "form.destination", fallback: "Destination / Area", required: true, help: "Example: Sharm El Sheikh, Dahab, Hurghada, Marsa Alam" },
       { name: "cityAr", label: "form.cityAr", fallback: "Arabic City" },
       { name: "country", label: "form.country", required: true, default: "EG" },
       { name: "stars", label: "th.stars", type: "number", required: true, default: 5 },
@@ -1004,7 +1004,7 @@ function formatCell(value) {
   if (value === false) return statusBadge("INACTIVE");
   if (typeof value === "number") return formatMoney(value, "USD");
   if (String(value || "").match(/^\d{4}-\d{2}-\d{2}T/)) return formatDate(value);
-  if (["PENDING","CONFIRMED","CANCELLED","COMPLETED","PAID","UNPAID","OVERDUE","CREDIT","DEBIT","REFUND"].includes(String(value))) return statusBadge(value);
+  if (["PENDING","CONFIRMED","CANCELLED","REJECTED","COMPLETED","PAID","UNPAID","OVERDUE","CREDIT","DEBIT","REFUND"].includes(String(value))) return statusBadge(value);
   return escapeHtml(value ?? "—");
 }
 
@@ -1227,9 +1227,46 @@ async function renderBookings() {
     ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
     ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
     ["th.status", b => statusBadge(b.status)],
-    ["th.commission", b => formatMoney(Number(b.totalAmount || 0) * 0.1, b.currency || "USD")],
+    ["th.commission", b => formatMoney(b.commissionAmount || 0, b.currency || "USD")],
     ["th.date", b => formatDate(b.createdAt)],
+    ["th.actions", b => bookingRowActions(b)],
   ]);
+}
+
+function bookingRowActions(booking) {
+  const pending = booking.status === "PENDING";
+  return `<div class="row-actions">
+    ${pending ? `<button class="icon-button btn-icon" title="${t("btn.approve", "Approve")}" onclick="approveBooking('${booking.id}')">${icon("check")}</button>
+    <button class="icon-button btn-icon" title="${t("btn.reject", "Reject")}" onclick="rejectBookingRequest('${booking.id}')">${icon("x")}</button>` : ""}
+    ${booking.invoice?.id ? `<button class="icon-button btn-icon" title="${t("btn.downloadPdf")}" onclick="downloadInvoicePdf('${booking.invoice.id}')">${icon("file-down")}</button>` : ""}
+  </div>`;
+}
+
+async function approveBooking(id) {
+  confirmAction(t("booking.approveConfirm", "Approve this booking request and deduct the company wallet?"), async () => {
+    const res = await apiFetch(`/bookings/${id}/confirm`, { method: "PATCH" });
+    if (res?.success) {
+      toast(t("toast.approved", "Approved"), "success");
+      renderBookings();
+    }
+  });
+}
+
+async function rejectBookingRequest(id) {
+  const body = `<div class="form-field full"><label>${t("form.reason", "Reason")}</label><textarea id="rejectReason" rows="3">${t("booking.defaultRejectReason", "Rejected by admin")}</textarea></div>`;
+  openModal(t("btn.reject", "Reject"), body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-danger" id="rejectBookingBtn">${t("btn.reject", "Reject")}</button>
+  `);
+  document.getElementById("rejectBookingBtn").onclick = async () => {
+    const reason = document.getElementById("rejectReason").value.trim() || "Rejected by admin";
+    const res = await apiFetch(`/bookings/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) });
+    if (res?.success) {
+      closeModal();
+      toast(t("toast.rejected", "Rejected"), "success");
+      renderBookings();
+    }
+  };
 }
 
 async function renderInvoices() {

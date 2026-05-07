@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '../../config/db';
 import { generateBookingRef, generateInvoiceNumber, paginate, paginateMeta } from '../../shared/helpers';
-import { sendEmail, bookingConfirmationEmail, bookingStatusEmail } from '../../shared/email.templates';
+import { sendEmail, bookingConfirmationEmail, bookingRequestEmail, bookingStatusEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 
 const bookingInclude = {
@@ -39,7 +39,7 @@ export async function listBookings(req: Request, res: Response): Promise<void> {
 
   const where = {
     ...companyFilter,
-    ...(req.query.status && { status: req.query.status as 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED' }),
+    ...(req.query.status && { status: req.query.status as 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'REJECTED' | 'COMPLETED' }),
     ...(req.query.type && { type: req.query.type as 'HOTEL' | 'FLIGHT' | 'PACKAGE' }),
     ...(req.query.from && { createdAt: { gte: new Date(String(req.query.from)) } }),
     ...(req.query.to && { createdAt: { lte: new Date(String(req.query.to)) } }),
@@ -77,7 +77,7 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
 
   const discount = new Decimal(body.discount ?? 0);
 
-  let result: { booking: { id: string; refNumber: string }; invoice: { id: string; invoiceNumber: string } };
+  let result: { booking: { id: string; refNumber: string } };
 
   try {
     result = await prisma.$transaction(async (tx) => {
@@ -147,7 +147,7 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
             _sum: { roomsCount: true },
             where: {
               hotelId,
-              status: { not: 'CANCELLED' },
+              status: { in: ['PENDING', 'CONFIRMED', 'COMPLETED'] },
               checkIn: { lt: checkOut },
               checkOut: { gt: checkIn },
             },
@@ -162,15 +162,7 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
 
       const totalAmount = baseAmount.add(commissionAmount).sub(discount);
       if (totalAmount.lte(0)) throw new Error('INVALID_TOTAL');
-      if (company.balance.lt(totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
-
       const refNumber = await generateBookingRef(prisma);
-      const invoiceNumber = await generateInvoiceNumber(prisma);
-
-      const balanceBefore = company.balance;
-      const balanceAfter = company.balance.sub(totalAmount);
-
-      await tx.company.update({ where: { id: companyId }, data: { balance: balanceAfter } });
 
       const booking = await tx.booking.create({
         data: {
@@ -205,37 +197,7 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
         },
       });
 
-      await tx.walletTransaction.create({
-        data: {
-          companyId,
-          type: 'DEBIT',
-          amount: totalAmount,
-          balanceBefore,
-          balanceAfter,
-          reference: refNumber,
-          description: `Booking ${refNumber}`,
-          createdById: caller.id,
-        },
-      });
-
-      const subtotal = totalAmount;
-      const taxAmount = subtotal.mul(new Decimal('0.14'));
-      const total = subtotal.add(taxAmount);
-
-      const invoice = await tx.invoice.create({
-        data: {
-          invoiceNumber,
-          bookingId: booking.id,
-          companyId,
-          subtotal,
-          taxAmount,
-          total,
-          currency,
-          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        },
-      });
-
-      return { booking, invoice };
+      return { booking };
     });
   } catch (err) {
     const message = String((err as Error).message);
@@ -255,32 +217,10 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
   }
 
   const fullBooking = await prisma.booking.findUnique({ where: { id: result.booking.id }, include: bookingInclude });
-  const fullInvoice = await prisma.invoice.findUnique({
-    where: { id: result.invoice.id },
-    include: {
-      booking: {
-        include: {
-          company: true,
-          hotel: true,
-        },
-      },
-    },
-  });
-
-  if (fullInvoice) {
-    generateInvoicePdf(fullInvoice as Parameters<typeof generateInvoicePdf>[0])
-      .then(async ({ path: pdfPath }) => {
-        await prisma.invoice.update({ where: { id: fullInvoice.id }, data: { pdfPath } });
-      })
-      .catch(console.error);
-  }
-
   if (fullBooking) {
-    const { subject, html } = bookingConfirmationEmail(fullBooking);
-    const company = fullBooking.company;
-    if (company) {
-      sendEmail([company.email, process.env.INTERNAL_TEAM_EMAIL!], subject, html).catch(console.error);
-    }
+    const { subject, html } = bookingRequestEmail(fullBooking);
+    const recipients = [process.env.INTERNAL_TEAM_EMAIL!].filter(Boolean);
+    if (recipients.length) sendEmail(recipients, subject, html).catch(console.error);
   }
 
   res.status(201).json({ success: true, data: fullBooking });
@@ -301,15 +241,117 @@ export async function getBooking(req: Request, res: Response): Promise<void> {
 }
 
 export async function confirmBooking(req: Request, res: Response): Promise<void> {
-  const booking = await prisma.booking.update({
-    where: { id: req.params.id },
-    data: { status: 'CONFIRMED', confirmedAt: new Date() },
-    include: bookingInclude,
+  let bookingId = req.params.id;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const booking = await tx.booking.findUniqueOrThrow({
+        where: { id: bookingId },
+        include: { company: true, invoice: true },
+      });
+
+      if (booking.status !== 'PENDING') throw new Error('INVALID_STATUS');
+      if (!booking.company.isActive) throw new Error('COMPANY_INACTIVE');
+
+      if (booking.hotelId && booking.checkIn && booking.checkOut) {
+        const hotel = await tx.hotel.findUnique({
+          where: { id: booking.hotelId },
+          select: { availableRooms: true },
+        });
+        if ((hotel?.availableRooms ?? 0) > 0) {
+          const occupied = await tx.booking.aggregate({
+            _sum: { roomsCount: true },
+            where: {
+              id: { not: booking.id },
+              hotelId: booking.hotelId,
+              status: { in: ['CONFIRMED', 'COMPLETED'] },
+              checkIn: { lt: booking.checkOut },
+              checkOut: { gt: booking.checkIn },
+            },
+          });
+          const occupiedRooms = occupied._sum.roomsCount ?? 0;
+          if (occupiedRooms + booking.roomsCount > (hotel?.availableRooms ?? 0)) throw new Error('HOTEL_NOT_AVAILABLE');
+        }
+      }
+
+      if (!booking.invoice) {
+        if (booking.company.balance.lt(booking.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
+
+        const balanceBefore = booking.company.balance;
+        const balanceAfter = balanceBefore.sub(booking.totalAmount);
+        const invoiceNumber = await generateInvoiceNumber(prisma);
+
+        await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
+        await tx.walletTransaction.create({
+          data: {
+            companyId: booking.companyId,
+            type: 'DEBIT',
+            amount: booking.totalAmount,
+            balanceBefore,
+            balanceAfter,
+            reference: booking.refNumber,
+            description: `Approved booking ${booking.refNumber}`,
+            createdById: req.user!.id,
+          },
+        });
+
+        const subtotal = booking.totalAmount;
+        const taxAmount = subtotal.mul(new Decimal('0.14'));
+        const total = subtotal.add(taxAmount);
+        await tx.invoice.create({
+          data: {
+            invoiceNumber,
+            bookingId: booking.id,
+            companyId: booking.companyId,
+            subtotal,
+            taxAmount,
+            total,
+            currency: booking.currency,
+            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
+
+      await tx.booking.update({
+        where: { id: booking.id },
+        data: { status: 'CONFIRMED', confirmedAt: new Date() },
+      });
+    });
+  } catch (err) {
+    const message = String((err as Error).message);
+    if (message === 'INVALID_STATUS') {
+      res.status(400).json({ success: false, error: 'INVALID_STATUS', message: 'Only pending requests can be approved' });
+    } else if (message === 'COMPANY_INACTIVE') {
+      res.status(400).json({ success: false, error: 'COMPANY_INACTIVE', message: 'Company account is inactive' });
+    } else if (message === 'INSUFFICIENT_BALANCE') {
+      res.status(400).json({ success: false, error: 'INSUFFICIENT_BALANCE', message: 'Insufficient wallet balance' });
+    } else if (message === 'HOTEL_NOT_AVAILABLE') {
+      res.status(400).json({ success: false, error: 'HOTEL_NOT_AVAILABLE', message: 'Hotel is not available for the selected dates and guests' });
+    } else {
+      console.error(err);
+      res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
+    }
+    return;
+  }
+
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: bookingInclude });
+  const fullInvoice = await prisma.invoice.findUnique({
+    where: { bookingId },
+    include: { booking: { include: { company: true, hotel: true } } },
   });
 
-  const { subject, html } = bookingStatusEmail(booking, 'CONFIRMED');
-  if (booking.company) {
-    sendEmail([booking.company.email, process.env.INTERNAL_TEAM_EMAIL!], subject, html).catch(console.error);
+  if (fullInvoice && !fullInvoice.pdfPath) {
+    generateInvoicePdf(fullInvoice as Parameters<typeof generateInvoicePdf>[0])
+      .then(async ({ path: pdfPath }) => {
+        await prisma.invoice.update({ where: { id: fullInvoice.id }, data: { pdfPath } });
+      })
+      .catch(console.error);
+  }
+
+  if (booking) {
+    const { subject, html } = bookingConfirmationEmail(booking);
+    const emails = [booking.company?.email, process.env.INTERNAL_TEAM_EMAIL!].filter(Boolean) as string[];
+    if (emails.length) sendEmail(emails, subject, html).catch(console.error);
   }
 
   res.json({ success: true, data: booking });
@@ -319,14 +361,17 @@ export async function cancelBooking(req: Request, res: Response): Promise<void> 
   const caller = req.user!;
   const { reason } = req.body as { reason: string };
 
-  const booking = await prisma.booking.findUniqueOrThrow({ where: { id: req.params.id } });
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: req.params.id },
+    include: { invoice: true },
+  });
 
   if (caller.role !== 'SUPERADMIN' && booking.status !== 'PENDING') {
     res.status(400).json({ success: false, error: 'INVALID_STATUS', message: 'Can only cancel PENDING bookings' });
     return;
   }
 
-  if (['CONFIRMED', 'PENDING'].includes(booking.status)) {
+  if (['CONFIRMED', 'PENDING'].includes(booking.status) && booking.invoice && booking.invoice.status !== 'CANCELLED') {
     await prisma.$transaction(async (tx) => {
       const company = await tx.company.findUniqueOrThrow({ where: { id: booking.companyId } });
       const balanceBefore = company.balance;
@@ -359,6 +404,60 @@ export async function cancelBooking(req: Request, res: Response): Promise<void> 
   });
 
   const { subject, html } = bookingStatusEmail(updated, 'CANCELLED');
+  if (updated.company) {
+    sendEmail([updated.company.email, process.env.INTERNAL_TEAM_EMAIL!], subject, html).catch(console.error);
+  }
+
+  res.json({ success: true, data: updated });
+}
+
+export async function rejectBooking(req: Request, res: Response): Promise<void> {
+  const caller = req.user!;
+  const { reason } = req.body as { reason: string };
+
+  const booking = await prisma.booking.findUniqueOrThrow({
+    where: { id: req.params.id },
+    include: { invoice: true },
+  });
+
+  if (booking.status !== 'PENDING') {
+    res.status(400).json({ success: false, error: 'INVALID_STATUS', message: 'Only pending requests can be rejected' });
+    return;
+  }
+
+  if (booking.invoice && booking.invoice.status !== 'CANCELLED') {
+    await prisma.$transaction(async (tx) => {
+      const company = await tx.company.findUniqueOrThrow({ where: { id: booking.companyId } });
+      const balanceBefore = company.balance;
+      const balanceAfter = balanceBefore.add(booking.totalAmount);
+
+      await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
+      await tx.walletTransaction.create({
+        data: {
+          companyId: booking.companyId,
+          type: 'REFUND',
+          amount: booking.totalAmount,
+          balanceBefore,
+          balanceAfter,
+          reference: booking.refNumber,
+          description: `Refund for rejected booking ${booking.refNumber}`,
+          createdById: caller.id,
+        },
+      });
+      await tx.invoice.updateMany({
+        where: { bookingId: booking.id },
+        data: { status: 'CANCELLED' },
+      });
+    });
+  }
+
+  const updated = await prisma.booking.update({
+    where: { id: req.params.id },
+    data: { status: 'REJECTED', cancelledAt: new Date(), cancellationReason: reason || 'Rejected by admin' },
+    include: bookingInclude,
+  });
+
+  const { subject, html } = bookingStatusEmail(updated, 'REJECTED');
   if (updated.company) {
     sendEmail([updated.company.email, process.env.INTERNAL_TEAM_EMAIL!], subject, html).catch(console.error);
   }

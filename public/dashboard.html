@@ -404,7 +404,7 @@ function renderBookings() {
     ["th.date", b => formatDate(b.createdAt)],
   ], {
     filters: [
-      ["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]],
+      ["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "REJECTED", "COMPLETED"]],
       ["type", "form.type", ["", "HOTEL", "FLIGHT", "PACKAGE"]],
       ["currency", "form.currency", ["", "USD", "EGP", "EUR"]],
     ],
@@ -421,7 +421,7 @@ function renderHotels() {
     ["th.actions", h => `<button class="btn btn-primary" onclick="openBookingWizard('HOTEL','${h.id}')">${t("btn.bookNow")}</button>`],
   ], {
     filters: [
-      ["city", "th.city", "text"],
+      ["city", "form.destination", ["", "Sharm El Sheikh", "Dahab", "Hurghada", "Marsa Alam", "Cairo", "Luxor", "Aswan", "Alexandria", "Ain Sokhna", "North Coast", "El Gouna", "Soma Bay"]],
       ["stars", "th.stars", ["", "3", "4", "5", "6", "7"]],
       ["currency", "form.currency", ["", "USD", "EGP", "EUR"]],
     ],
