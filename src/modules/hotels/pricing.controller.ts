@@ -1,6 +1,42 @@
 import { Request, Response } from 'express';
 import * as XLSX from 'xlsx';
+import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '../../config/db';
+import { paginate, paginateMeta } from '../../shared/helpers';
+
+function pricingPayload(body: Record<string, unknown>, hotelId?: string) {
+  const data: Record<string, unknown> = {};
+  if (hotelId) data.hotelId = hotelId;
+  if (body.hotelId) data.hotelId = String(body.hotelId);
+  if (body.roomType) data.roomType = String(body.roomType).toUpperCase();
+  if (body.season) data.season = String(body.season).toUpperCase();
+  if (body.pricePerNight !== undefined) data.pricePerNight = new Decimal(String(body.pricePerNight || 0));
+  if (body.currency) data.currency = String(body.currency).toUpperCase();
+  if (body.validFrom) data.validFrom = new Date(String(body.validFrom));
+  if (body.validTo) data.validTo = new Date(String(body.validTo));
+  if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
+  return data;
+}
+
+export async function listAllHotelPricing(req: Request, res: Response): Promise<void> {
+  const page = parseInt(String(req.query.page ?? '1'));
+  const limit = parseInt(String(req.query.limit ?? '20'));
+  const { skip, take } = paginate(page, limit);
+  const where = req.query.includeInactive === 'true' ? {} : { isActive: true };
+
+  const [pricing, total] = await Promise.all([
+    prisma.hotelPricing.findMany({
+      where,
+      skip,
+      take,
+      include: { hotel: { select: { id: true, name: true, city: true, country: true } } },
+      orderBy: [{ createdAt: 'desc' }],
+    }),
+    prisma.hotelPricing.count({ where }),
+  ]);
+
+  res.json({ success: true, data: pricing, meta: paginateMeta(total, page, limit) });
+}
 
 export async function getHotelPricing(req: Request, res: Response): Promise<void> {
   const pricing = await prisma.hotelPricing.findMany({
@@ -12,9 +48,32 @@ export async function getHotelPricing(req: Request, res: Response): Promise<void
 
 export async function addHotelPricing(req: Request, res: Response): Promise<void> {
   const pricing = await prisma.hotelPricing.create({
-    data: { ...req.body, hotelId: req.params.id },
+    data: pricingPayload(req.body, req.params.id) as never,
   });
   res.status(201).json({ success: true, data: pricing });
+}
+
+export async function createHotelPricing(req: Request, res: Response): Promise<void> {
+  const data = pricingPayload(req.body);
+  if (!data.hotelId) {
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'hotelId is required' });
+    return;
+  }
+  const pricing = await prisma.hotelPricing.create({ data: data as never });
+  res.status(201).json({ success: true, data: pricing });
+}
+
+export async function updateHotelPricing(req: Request, res: Response): Promise<void> {
+  const pricing = await prisma.hotelPricing.update({
+    where: { id: req.params.id },
+    data: pricingPayload(req.body) as never,
+  });
+  res.json({ success: true, data: pricing });
+}
+
+export async function deleteHotelPricing(req: Request, res: Response): Promise<void> {
+  await prisma.hotelPricing.update({ where: { id: req.params.id }, data: { isActive: false } });
+  res.json({ success: true, data: null });
 }
 
 export async function importHotelsExcel(req: Request, res: Response): Promise<void> {

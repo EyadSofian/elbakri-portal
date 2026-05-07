@@ -20,6 +20,7 @@ import visaRouter from './modules/visa/visa.routes';
 import receptionRouter from './modules/airport-reception/reception.routes';
 import adminRouter from './admin/admin.routes';
 import { entitySheetsRouter } from './modules/sheets-sync/sheets-sync.routes';
+import masterDataRouter from './modules/master-data/master-data.routes';
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3000');
@@ -44,6 +45,7 @@ app.use('/api/invoices', authenticate, invoicesRouter);
 app.use('/api/wallet', authenticate, walletRouter);
 app.use('/api/reports', authenticate, reportsRouter);
 app.use('/api', authenticate, entitySheetsRouter);
+app.use('/api', authenticate, masterDataRouter);
 app.use('/api', authenticate, cruiseRouter);
 app.use('/api/transport-bookings', authenticate, transportRouter);
 app.use('/api', authenticate, activitiesRouter);

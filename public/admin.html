@@ -138,7 +138,7 @@ const pageMeta = {
   wallet: ["page.walletTitle", "page.walletSub"],
   reports: ["page.reportsTitle", "page.reportsSub"],
   cruises: ["nav.nileCruises", "page.servicesSub"],
-  transport: ["nav.transportBookings", "page.servicesSub"],
+  transport: ["nav.transport", "page.servicesSub"],
   activities: ["nav.activities", "page.servicesSub"],
   visa: ["nav.visa", "page.servicesSub"],
   reception: ["nav.reception", "page.servicesSub"],
@@ -228,6 +228,16 @@ function skeletonRows(cols = 8, rows = 8) {
 
 function emptyBlock(messageKey, action = "") {
   return `<div class="empty-state"><div class="empty-illustration"></div><strong>${t(messageKey)}</strong><span>${t("empty.adjustFilters")}</span>${action}</div>`;
+}
+
+function labelText(key) {
+  const fallback = String(key || "")
+    .split(".")
+    .pop()
+    .replace(/([A-Z])/g, " $1")
+    .replace(/_/g, " ")
+    .replace(/^./, char => char.toUpperCase());
+  return t(key, fallback);
 }
 
 function sortable(labelKey, key) {
@@ -408,7 +418,7 @@ function miniTable(titleKey, rows, columns) {
   const body = rows.length ? rows.map(row => `<tr>${columns.map(([, fn]) => `<td>${fn(row)}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length}">${emptyBlock("empty.noData")}</td></tr>`;
   return `<section class="panel">
     <div class="panel-header"><div><div class="panel-title">${t(titleKey)}</div><div class="panel-subtitle">${t("topbar.justNow")}</div></div></div>
-    <div class="table-scroll"><table class="data-table"><thead><tr>${columns.map(([k]) => `<th>${t(k)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>
+    <div class="table-scroll"><table class="data-table"><thead><tr>${columns.map(([k]) => `<th>${labelText(k)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>
   </section>`;
 }
 
@@ -630,6 +640,236 @@ function field(id, labelKey, value = "", required = false, type = "text", extra 
   return `<div class="form-field ${cls}"><label>${t(labelKey)} ${required ? '<span class="required">*</span>' : ""}</label><input id="${id}" type="${type}" value="${escapeHtml(value ?? "")}" ${extra}></div>`;
 }
 
+const masterConfigs = {
+  hotels: {
+    titleKey: "nav.hotels",
+    endpoint: "/hotels",
+    listEndpoint: "/hotels?limit=100",
+    syncEntity: "hotels",
+    fields: [
+      { name: "name", label: "form.name", required: true },
+      { name: "nameAr", label: "form.nameAr" },
+      { name: "city", label: "th.city", required: true },
+      { name: "cityAr", label: "form.cityAr", fallback: "Arabic City" },
+      { name: "country", label: "form.country", required: true, default: "EG" },
+      { name: "stars", label: "th.stars", type: "number", required: true, default: 5 },
+      { name: "address", label: "form.address", required: true, cls: "full" },
+      { name: "description", label: "form.description", type: "textarea", cls: "full" },
+      { name: "amenities", label: "form.amenities", fallback: "Amenities", type: "list", cls: "full", help: "Separate values with commas" },
+      { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
+      { name: "pricePerNight", label: "th.amount", type: "number", required: true, default: 1 },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+    ],
+  },
+  "hotel-pricing": {
+    titleKey: "nav.hotelPricing",
+    endpoint: "/hotels/pricing",
+    listEndpoint: "/hotels/pricing/all?limit=100",
+    syncEntity: "hotel-pricing",
+    fields: [
+      { name: "hotelId", label: "nav.hotels", type: "hotelSelect", required: true },
+      { name: "roomType", label: "form.roomType", fallback: "Room Type", type: "select", default: "STANDARD", options: ["STANDARD", "DELUXE", "SUITE", "EXECUTIVE"] },
+      { name: "season", label: "form.season", fallback: "Season", type: "select", default: "REGULAR", options: ["LOW", "REGULAR", "HIGH", "PEAK"] },
+      { name: "pricePerNight", label: "th.amount", type: "number", required: true, default: 1 },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "validFrom", label: "form.validFrom", fallback: "Valid From", type: "date", required: true },
+      { name: "validTo", label: "form.validTo", fallback: "Valid To", type: "date", required: true },
+    ],
+  },
+  cruises: {
+    titleKey: "nav.nileCruises",
+    endpoint: "/cruises",
+    listEndpoint: "/cruises?limit=100",
+    syncEntity: "cruises",
+    fields: [
+      { name: "name", label: "form.name", required: true },
+      { name: "nameAr", label: "form.nameAr" },
+      { name: "shipType", label: "th.type", type: "select", default: "CRUISE", options: ["CRUISE", "DAHABIYA", "FELUCCA"] },
+      { name: "operator", label: "form.operator", fallback: "Operator" },
+      { name: "cabins", label: "form.cabins", fallback: "Cabins", type: "number", default: 40 },
+      { name: "route", label: "th.route", type: "select", default: "LUXOR_ASWAN", options: ["LUXOR_ASWAN", "ASWAN_LUXOR", "LUXOR_ASWAN_LUXOR"] },
+      { name: "departureDays", label: "form.departureDays", fallback: "Departure Days", type: "list", cls: "full", help: "Example: Monday, Thursday" },
+      { name: "duration", label: "form.duration", fallback: "Duration", type: "number", default: 4 },
+      { name: "description", label: "form.description", type: "textarea", cls: "full" },
+      { name: "priceFrom", label: "th.amount", type: "number", required: true, default: 1 },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
+    ],
+  },
+  activities: {
+    titleKey: "nav.activities",
+    endpoint: "/activities",
+    listEndpoint: "/activities?limit=100",
+    syncEntity: "activities",
+    fields: [
+      { name: "name", label: "form.name", required: true },
+      { name: "nameAr", label: "form.nameAr" },
+      { name: "city", label: "th.city", type: "select", default: "CAIRO", options: ["CAIRO", "SHARM_EL_SHEIKH", "DAHAB", "HURGHADA", "EL_GOUNA", "ALEXANDRIA"] },
+      { name: "category", label: "th.type", type: "select", default: "SIGHTSEEING", options: ["SIGHTSEEING", "DIVING", "SNORKELING", "DESERT_SAFARI", "WATER_SPORTS", "CULTURAL", "FOOD_TOUR", "ADVENTURE", "RELAXATION"] },
+      { name: "duration", label: "form.duration", fallback: "Duration" },
+      { name: "description", label: "form.description", type: "textarea", cls: "full" },
+      { name: "includes", label: "form.includes", fallback: "Includes", type: "list", cls: "full" },
+      { name: "excludes", label: "form.excludes", fallback: "Excludes", type: "list", cls: "full" },
+      { name: "priceAdult", label: "form.priceAdult", fallback: "Adult Price", type: "number", required: true, default: 1 },
+      { name: "priceChild", label: "form.priceChild", fallback: "Child Price", type: "number", required: true, default: 1 },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "minPax", label: "form.minPax", fallback: "Min Pax", type: "number", default: 1 },
+      { name: "maxPax", label: "form.maxPax", fallback: "Max Pax", type: "number", default: 20 },
+      { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
+    ],
+  },
+  transport: {
+    titleKey: "nav.transport",
+    endpoint: "/transport-rates",
+    listEndpoint: "/transport-rates?limit=100",
+    syncEntity: "transport-rates",
+    fields: [
+      { name: "type", label: "th.type", type: "select", default: "PRIVATE_TRANSFER", options: ["AIRPORT_TRANSFER", "PRIVATE_TRANSFER", "DAY_TOUR_TRANSPORT", "INTERCITY"] },
+      { name: "vehicleType", label: "form.vehicleType", fallback: "Vehicle Type", type: "select", default: "SEDAN", options: ["SEDAN", "SUV", "VAN_6", "VAN_12", "MINIBUS_20", "BUS_45", "LUXURY_LIMO"] },
+      { name: "city", label: "th.city" },
+      { name: "fromLocation", label: "form.from", fallback: "From" },
+      { name: "toLocation", label: "form.to", fallback: "To" },
+      { name: "rate", label: "th.amount", type: "number", required: true, default: 1 },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "notes", label: "placeholder.notes", type: "textarea", cls: "full" },
+    ],
+  },
+  visa: {
+    titleKey: "nav.visa",
+    endpoint: "/visa-fees",
+    listEndpoint: "/visa-fees?limit=100",
+    syncEntity: "visa-fees",
+    fields: [
+      { name: "visaType", label: "th.type", type: "select", default: "TOURIST", options: ["TOURIST", "BUSINESS", "TRANSIT", "STUDENT", "MEDICAL", "UMRAH", "HAJJ"] },
+      { name: "destinationCountry", label: "th.country", required: true, default: "Egypt" },
+      { name: "processingType", label: "form.processingType", fallback: "Processing", type: "select", default: "NORMAL", options: ["NORMAL", "EXPRESS", "URGENT"] },
+      { name: "fee", label: "th.amount", type: "number", required: true, default: 1 },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "notes", label: "placeholder.notes", type: "textarea", cls: "full" },
+    ],
+  },
+  reception: {
+    titleKey: "nav.reception",
+    endpoint: "/reception-services",
+    listEndpoint: "/reception-services?limit=100",
+    syncEntity: "reception-services",
+    fields: [
+      { name: "serviceType", label: "th.service", type: "select", default: "MEET_AND_GREET", options: ["MEET_AND_GREET", "AHLAN_SERVICE", "VIP_LOUNGE", "FULL_ASSISTANCE"] },
+      { name: "airport", label: "th.route", type: "select", default: "CAI", options: ["CAI", "HRG", "SSH", "LXR", "ASW", "HBE", "MHH"] },
+      { name: "rate", label: "th.amount", type: "number", required: true, default: 1 },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "notes", label: "placeholder.notes", type: "textarea", cls: "full" },
+    ],
+  },
+};
+
+function masterActions(entity) {
+  const cfg = masterConfigs[entity];
+  return `<button class="btn btn-primary" onclick="showMasterModal('${entity}')">${icon("plus")}${t("btn.addNew")}</button>
+    <button class="btn btn-outline" onclick="syncEntity('${cfg.syncEntity}')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`;
+}
+
+function masterRowActions(entity, row) {
+  return `<div class="row-actions">
+    <button class="icon-button btn-icon" title="${t("btn.edit")}" onclick="showMasterModal('${entity}', '${row.id}')">${icon("pencil")}</button>
+    <button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deleteMasterRecord('${entity}', '${row.id}')">${icon("trash-2")}</button>
+  </div>`;
+}
+
+function masterField(entity, fieldDef, row) {
+  const id = `m_${entity.replace(/[^a-z0-9]/gi, "_")}_${fieldDef.name}`;
+  const raw = row?.[fieldDef.name] ?? fieldDef.default ?? "";
+  const value = Array.isArray(raw) ? raw.join(", ") : (fieldDef.type === "date" && raw ? String(raw).slice(0, 10) : raw);
+  const required = fieldDef.required ? '<span class="required">*</span>' : "";
+  const help = fieldDef.help ? `<div class="secondary-text" style="margin-top:4px">${escapeHtml(fieldDef.help)}</div>` : "";
+  const label = `${t(fieldDef.label, fieldDef.fallback || fieldDef.name)} ${required}`;
+
+  if (fieldDef.type === "textarea" || fieldDef.type === "list") {
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><textarea id="${id}" rows="3">${escapeHtml(value)}</textarea>${help}</div>`;
+  }
+  if (fieldDef.type === "select") {
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><select id="${id}">${fieldDef.options.map(opt => `<option value="${opt}" ${opt === value ? "selected" : ""}>${escapeHtml(opt.replace(/_/g, " "))}</option>`).join("")}</select>${help}</div>`;
+  }
+  if (fieldDef.type === "hotelSelect") {
+    const hotels = state.cache.hotelOptions || [];
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><select id="${id}">${hotels.map(h => `<option value="${h.id}" ${h.id === value ? "selected" : ""}>${escapeHtml(h.name)} - ${escapeHtml(h.city || "")}</option>`).join("")}</select>${help}</div>`;
+  }
+  if (fieldDef.type === "checkbox") {
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><label class="check-row"><input id="${id}" type="checkbox" ${value ? "checked" : ""}> ${t("status.ACTIVE")}</label>${help}</div>`;
+  }
+  return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><input id="${id}" type="${fieldDef.type || "text"}" value="${escapeHtml(value)}" ${fieldDef.type === "number" ? 'step="0.01" min="0"' : ""}>${help}</div>`;
+}
+
+async function ensureHotelOptions() {
+  if (state.cache.hotelOptions?.length) return;
+  const res = await apiFetch("/hotels?limit=300");
+  state.cache.hotelOptions = res?.data || [];
+}
+
+async function showMasterModal(entity, id = "") {
+  const cfg = masterConfigs[entity];
+  if (!cfg) return;
+  if (entity === "hotel-pricing") await ensureHotelOptions();
+  const rows = state.cache[entity + "Rows"] || [];
+  const row = id ? rows.find(item => item.id === id) : null;
+  const title = `${id ? t("btn.edit") : t("btn.addNew")} ${t(cfg.titleKey)}`;
+  const body = `<div class="form-section"><div class="form-section-title">${t("form.basicInfo")}</div><div class="form-grid">
+    ${cfg.fields.map(fieldDef => masterField(entity, fieldDef, row)).join("")}
+  </div></div>`;
+  openModal(title, body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" onclick="saveMasterRecord('${entity}', '${id}')">${t("btn.save")}</button>
+  `);
+}
+
+function collectMasterPayload(entity) {
+  const cfg = masterConfigs[entity];
+  const payload = {};
+  let valid = true;
+  for (const fieldDef of cfg.fields) {
+    const id = `m_${entity.replace(/[^a-z0-9]/gi, "_")}_${fieldDef.name}`;
+    const el = document.getElementById(id);
+    if (!el) continue;
+    let value = fieldDef.type === "checkbox" ? el.checked : el.value.trim();
+    if (fieldDef.required && (value === "" || value === null || value === undefined)) valid = false;
+    if (fieldDef.type === "number") value = value === "" ? 0 : Number(value);
+    if (fieldDef.type === "list") value = String(value || "").split(",").map(item => item.trim()).filter(Boolean);
+    if (value !== "" || fieldDef.required || fieldDef.type === "number" || fieldDef.type === "list") {
+      payload[fieldDef.name] = value;
+    }
+  }
+  return valid ? payload : null;
+}
+
+async function saveMasterRecord(entity, id = "") {
+  const cfg = masterConfigs[entity];
+  const payload = collectMasterPayload(entity);
+  if (!payload) {
+    toast(t("toast.validationError"), "error");
+    return;
+  }
+  const res = await apiFetch(id ? `${cfg.endpoint}/${id}` : cfg.endpoint, {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify(payload),
+  });
+  if (res?.success) {
+    closeModal();
+    toast(id ? t("toast.updated") : t("toast.created"), "success");
+    setPage(entity);
+  }
+}
+
+async function deleteMasterRecord(entity, id) {
+  const cfg = masterConfigs[entity];
+  confirmAction(t("modal.confirmDelete"), async () => {
+    const res = await apiFetch(`${cfg.endpoint}/${id}`, { method: "DELETE" });
+    if (res?.success) {
+      toast(t("toast.deleted"), "success");
+      setPage(entity);
+    }
+  });
+}
+
 async function saveCompany(id) {
   const payload = {
     name: document.getElementById("mCoName").value.trim(),
@@ -793,18 +1033,27 @@ async function renderUsers() {
 }
 
 async function renderHotels() {
-  renderSimpleList("hotels", "/hotels?limit=100", [
+  renderSimpleList("hotels", masterConfigs.hotels.listEndpoint, [
     ["th.name", h => `<span class="primary-text">${escapeHtml(h.name)}</span><div class="secondary-text">${escapeHtml(h.city)}, ${escapeHtml(h.country)}</div>`],
     ["th.stars", h => "★".repeat(Math.min(h.stars || 0, 5))],
     ["th.amount", h => `<span class="numeric">${formatMoney(h.pricePerNight, h.currency)}</span>`],
     ["th.currency", h => escapeHtml(h.currency)],
     ["th.status", h => statusBadge(h.isActive ? "ACTIVE" : "INACTIVE")],
-    ["th.actions", h => `<div class="row-actions"><button class="icon-button btn-icon" onclick="syncEntity('hotels')">${icon("refresh-cw")}</button></div>`],
-  ], `<button class="btn btn-outline" onclick="syncEntity('hotels')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
+    ["th.actions", h => masterRowActions("hotels", h)],
+  ], masterActions("hotels"));
 }
 
 async function renderHotelPricing() {
-  renderSheetsEntity("hotelPricing");
+  renderSimpleList("hotel-pricing", masterConfigs["hotel-pricing"].listEndpoint, [
+    ["th.name", p => `<span class="primary-text">${escapeHtml(p.hotel?.name || "—")}</span><div class="secondary-text">${escapeHtml(p.hotel?.city || "")}</div>`],
+    ["th.type", p => escapeHtml(p.roomType)],
+    ["form.season", p => escapeHtml(p.season)],
+    ["th.amount", p => `<span class="numeric">${formatMoney(p.pricePerNight, p.currency)}</span>`],
+    ["form.validFrom", p => formatDate(p.validFrom)],
+    ["form.validTo", p => formatDate(p.validTo)],
+    ["th.status", p => statusBadge(p.isActive ? "ACTIVE" : "INACTIVE")],
+    ["th.actions", p => masterRowActions("hotel-pricing", p)],
+  ], masterActions("hotel-pricing"));
 }
 
 async function renderBookings() {
@@ -849,26 +1098,37 @@ async function renderReports() {
 }
 
 async function renderCruises() {
-  renderSimpleList("cruises", "/cruises?limit=100", [
+  renderSimpleList("cruises", masterConfigs.cruises.listEndpoint, [
     ["th.name", c => `<span class="primary-text">${escapeHtml(c.name)}</span>`],
     ["th.type", c => escapeHtml(c.shipType)],
     ["th.route", c => escapeHtml(c.route)],
     ["th.amount", c => formatMoney(c.priceFrom, c.currency)],
     ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
-  ], `<button class="btn btn-outline" onclick="syncEntity('cruises')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
+    ["th.actions", c => masterRowActions("cruises", c)],
+  ], masterActions("cruises"));
 }
 
 async function renderActivities() {
-  renderSimpleList("activities", "/activities?limit=100", [
+  renderSimpleList("activities", masterConfigs.activities.listEndpoint, [
     ["th.name", a => `<span class="primary-text">${escapeHtml(a.name)}</span>`],
     ["th.city", a => escapeHtml(a.city)],
     ["th.type", a => escapeHtml(a.category)],
     ["th.amount", a => formatMoney(a.priceAdult, a.currency)],
     ["th.status", a => statusBadge(a.isActive ? "ACTIVE" : "INACTIVE")],
-  ], `<button class="btn btn-outline" onclick="syncEntity('activities')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
+    ["th.actions", a => masterRowActions("activities", a)],
+  ], masterActions("activities"));
 }
 
 async function renderTransport() {
+  return renderSimpleList("transport", masterConfigs.transport.listEndpoint, [
+    ["th.type", r => escapeHtml(r.type)],
+    ["form.vehicleType", r => escapeHtml(r.vehicleType)],
+    ["th.city", r => escapeHtml(r.city || "—")],
+    ["th.route", r => `${escapeHtml(r.fromLocation || "—")} → ${escapeHtml(r.toLocation || "—")}`],
+    ["th.amount", r => formatMoney(r.rate, r.currency)],
+    ["th.status", r => statusBadge(r.isActive ? "ACTIVE" : "INACTIVE")],
+    ["th.actions", r => masterRowActions("transport", r)],
+  ], masterActions("transport"));
   renderSimpleList("transport", "/transport-bookings?limit=100", [
     ["th.ref", b => escapeHtml(b.refNumber)],
     ["th.type", b => escapeHtml(b.type)],
@@ -880,6 +1140,14 @@ async function renderTransport() {
 }
 
 async function renderVisa() {
+  return renderSimpleList("visa", masterConfigs.visa.listEndpoint, [
+    ["th.type", v => escapeHtml(v.visaType)],
+    ["th.country", v => escapeHtml(v.destinationCountry)],
+    ["form.processingType", v => escapeHtml(v.processingType)],
+    ["th.amount", v => formatMoney(v.fee, v.currency)],
+    ["th.status", v => statusBadge(v.isActive ? "ACTIVE" : "INACTIVE")],
+    ["th.actions", v => masterRowActions("visa", v)],
+  ], masterActions("visa"));
   renderSimpleList("visa", "/visa-applications?limit=100", [
     ["th.ref", v => escapeHtml(v.refNumber)],
     ["th.name", v => escapeHtml(v.applicantName)],
@@ -891,6 +1159,13 @@ async function renderVisa() {
 }
 
 async function renderReception() {
+  return renderSimpleList("reception", masterConfigs.reception.listEndpoint, [
+    ["th.service", r => escapeHtml(r.serviceType)],
+    ["th.route", r => escapeHtml(r.airport || "—")],
+    ["th.amount", r => formatMoney(r.rate, r.currency)],
+    ["th.status", r => statusBadge(r.isActive ? "ACTIVE" : "INACTIVE")],
+    ["th.actions", r => masterRowActions("reception", r)],
+  ], masterActions("reception"));
   renderSimpleList("reception", "/airport-receptions?limit=100", [
     ["th.ref", r => escapeHtml(r.refNumber)],
     ["th.name", r => escapeHtml(r.guestName)],
@@ -906,7 +1181,7 @@ async function renderSimpleList(page, endpoint, columns, extraActions = "") {
   content(pageHeader(`${extraActions}<button class="btn btn-outline" onclick="exportRows('${page}', state.cache['${page}Rows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>`) + `
     <section class="table-card">
       <div class="table-toolbar"><strong>${t(pageMeta[page]?.[0] || "nav."+page)}</strong><div class="toolbar-actions"><span class="refresh-pill">${icon("refresh-cw")}${t("topbar.justNow")}</span></div></div>
-      <div class="table-scroll"><table class="data-table"><thead><tr>${columns.map(([k]) => `<th>${t(k)}</th>`).join("")}</tr></thead><tbody id="simpleTbody">${skeletonRows(columns.length, 8)}</tbody></table></div>
+      <div class="table-scroll"><table class="data-table"><thead><tr>${columns.map(([k]) => `<th>${labelText(k)}</th>`).join("")}</tr></thead><tbody id="simpleTbody">${skeletonRows(columns.length, 8)}</tbody></table></div>
     </section>`);
   const res = await apiFetch(endpoint);
   const rows = res?.data || [];
