@@ -1240,16 +1240,188 @@ function deleteUserRecord(id) {
   });
 }
 
+const hotelFilters = { search: "", city: "", stars: "", priceVisible: "", amenities: new Set() };
+
+const AMENITY_PRESETS = [
+  "Sea-front", "Private beach", "Sandy beach", "Coral reefs",
+  "Aqua Park (small)", "Aqua Park (medium)", "Aqua Park (large)",
+  "Kids pool", "Kids club", "All-inclusive",
+  "Diving center", "Spa", "Gym", "Animation", "Tennis", "Marina",
+  "Family friendly", "Quiet",
+];
+
+function hotelThumb(h) {
+  if (h.imageUrl) return `<img src="${escapeHtml(h.imageUrl)}" alt="" style="width:48px;height:48px;border-radius:8px;object-fit:cover">`;
+  const initials = (h.name || "?").split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase();
+  return `<div style="width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--accent-2,#5b8def),var(--accent,#7c5cff));color:#fff;font-weight:700;font-size:14px">${escapeHtml(initials)}</div>`;
+}
+
+function amenityChip(name) {
+  return `<span class="badge badge-outline" style="font-size:10px;padding:2px 6px">${escapeHtml(name)}</span>`;
+}
+
+function applyHotelFilters(rows) {
+  const f = hotelFilters;
+  const search = f.search.trim().toLowerCase();
+  const wanted = Array.from(f.amenities);
+  return rows.filter(h => {
+    if (search && !`${h.name} ${h.city || ""} ${h.cityAr || ""}`.toLowerCase().includes(search)) return false;
+    if (f.city && (h.city || "").toLowerCase() !== f.city.toLowerCase()) return false;
+    if (f.stars && Number(h.stars || 0) !== Number(f.stars)) return false;
+    if (f.priceVisible === "yes" && !h.showPriceToAgents) return false;
+    if (f.priceVisible === "no" && h.showPriceToAgents) return false;
+    if (wanted.length) {
+      const has = new Set((h.amenities || []).map(String));
+      if (!wanted.every(a => has.has(a))) return false;
+    }
+    return true;
+  });
+}
+
 async function renderHotels() {
-  renderSimpleList("hotels", masterConfigs.hotels.listEndpoint, [
-    ["th.name", h => `<span class="primary-text">${escapeHtml(h.name)}</span><div class="secondary-text">${escapeHtml(h.city)}, ${escapeHtml(h.country)}</div>`],
-    ["th.stars", h => "★".repeat(Math.min(h.stars || 0, 5))],
-    ["th.amount", h => `<span class="numeric">${h.pricePerNight != null ? formatMoney(h.pricePerNight, h.currency) : "—"}</span>`],
-    ["form.commissionPercent", h => `${Number(h.commissionPercent || 0).toFixed(2)}%`],
-    ["th.priceVisibility", h => `<button class="badge ${h.showPriceToAgents ? "badge-confirmed" : "badge-pending"}" style="cursor:pointer;border:none" onclick="togglePriceVisibility('${h.id}', ${!h.showPriceToAgents})" title="${h.showPriceToAgents ? t("hotel.hidePrices","Hide Prices") : t("hotel.showPrices","Show Prices")}">${h.showPriceToAgents ? icon("eye") + " " + t("hotel.visible","Visible") : icon("eye-off") + " " + t("hotel.hidden","Hidden")}</button>`],
-    ["th.status", h => statusBadge(h.isActive ? "ACTIVE" : "INACTIVE")],
-    ["th.actions", h => masterRowActions("hotels", h)],
-  ], masterActions("hotels"));
+  const capturedToken = state.renderToken;
+  state.page = "hotels";
+
+  // Fetch once and cache; subsequent filter changes re-render from cache.
+  let rows = state.cache.hotelsRows || [];
+  if (!rows.length) {
+    content(pageHeader(masterActions("hotels")) + `
+      <div class="table-card"><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(7, 8)}</tbody></table></div></div>`);
+    const res = await apiFetch("/hotels?limit=500");
+    if (state.renderToken !== capturedToken) return;
+    rows = res?.data || [];
+    state.cache.hotelsRows = rows;
+  }
+
+  drawHotelsPage(rows);
+}
+
+function drawHotelsPage(rows) {
+  const f = hotelFilters;
+  const cities = [...new Set(rows.map(h => h.city).filter(Boolean))].sort();
+  const filtered = applyHotelFilters(rows);
+
+  const cityOpts = `<option value="">${t("filter.all", "All cities")}</option>` +
+    cities.map(c => `<option value="${escapeHtml(c)}" ${f.city === c ? "selected" : ""}>${escapeHtml(c)}</option>`).join("");
+  const starsOpts = `<option value="">${t("filter.all", "Any")}</option>` +
+    ["3","4","5"].map(s => `<option value="${s}" ${f.stars === s ? "selected" : ""}>${s}★</option>`).join("");
+
+  const amenityChips = AMENITY_PRESETS.map(a => `
+    <label class="check-row" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid var(--border);border-radius:999px;cursor:pointer;font-size:12px;background:${f.amenities.has(a) ? "var(--accent-2-bg,#e7eeff)" : "transparent"}">
+      <input type="checkbox" ${f.amenities.has(a) ? "checked" : ""} onchange="toggleHotelAmenity('${a}')" style="margin:0">
+      ${escapeHtml(a)}
+    </label>`).join("");
+
+  const tableBody = filtered.length
+    ? filtered.map(h => {
+        const amenities = (h.amenities || []).slice(0, 4).map(amenityChip).join(" ");
+        const extra = (h.amenities || []).length > 4 ? `<span style="color:var(--text-secondary);font-size:10px"> +${(h.amenities||[]).length - 4}</span>` : "";
+        return `<tr>
+          <td>${hotelThumb(h)}</td>
+          <td>
+            <div class="primary-text">${escapeHtml(h.name)}</div>
+            <div class="secondary-text">${escapeHtml(h.city || "—")}${h.cityAr ? ' · ' + escapeHtml(h.cityAr) : ''}</div>
+            <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${amenities}${extra}</div>
+          </td>
+          <td style="white-space:nowrap">${"★".repeat(Math.min(h.stars || 0, 5))}</td>
+          <td class="numeric">${Number(h.pricePerNight || 0) > 0 ? formatMoney(h.pricePerNight, h.currency) : `<span style="color:var(--text-secondary)">${t("hotel.priceOnRequest","On request")}</span>`}</td>
+          <td>
+            <button class="badge ${h.showPriceToAgents ? "badge-confirmed" : "badge-pending"}" style="cursor:pointer;border:none" onclick="togglePriceVisibility('${h.id}', ${!h.showPriceToAgents})" title="${h.showPriceToAgents ? t("hotel.hidePrices","Hide Prices") : t("hotel.showPrices","Show Prices")}">${h.showPriceToAgents ? icon("eye") + " " + t("hotel.visible","Visible") : icon("eye-off") + " " + t("hotel.hidden","Hidden")}</button>
+          </td>
+          <td>${statusBadge(h.isActive ? "ACTIVE" : "INACTIVE")}</td>
+          <td><div class="row-actions">
+            <button class="icon-button btn-icon" title="${t("btn.view","View")}" onclick="showHotelDetails('${h.id}')">${icon("eye")}</button>
+            <button class="icon-button btn-icon" title="${t("btn.edit")}" onclick="showMasterModal('hotels', '${h.id}')">${icon("pencil")}</button>
+            <button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deleteMasterRecord('hotels', '${h.id}')">${icon("trash-2")}</button>
+          </div></td>
+        </tr>`;
+      }).join("")
+    : `<tr><td colspan="7" style="text-align:center;padding:32px">${emptyBlock("empty.noData")}</td></tr>`;
+
+  content(pageHeader(masterActions("hotels")) + `
+    <div class="table-card">
+      <div class="filter-body" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr auto;gap:8px;padding:12px;border-bottom:1px solid var(--border);align-items:end">
+        <div class="field"><label style="font-size:11px">${t("filter.search","Search")}</label><input id="hotelsSearch" value="${escapeHtml(f.search)}" placeholder="${t("placeholder.searchAny","Quick search")}" oninput="hotelFilters.search=this.value;drawHotelsPage(state.cache.hotelsRows||[])"></div>
+        <div class="field"><label style="font-size:11px">${t("th.city","City")}</label><select onchange="hotelFilters.city=this.value;drawHotelsPage(state.cache.hotelsRows||[])">${cityOpts}</select></div>
+        <div class="field"><label style="font-size:11px">${t("th.stars","Stars")}</label><select onchange="hotelFilters.stars=this.value;drawHotelsPage(state.cache.hotelsRows||[])">${starsOpts}</select></div>
+        <div class="field"><label style="font-size:11px">${t("th.priceVisibility","Price visibility")}</label><select onchange="hotelFilters.priceVisible=this.value;drawHotelsPage(state.cache.hotelsRows||[])">
+          <option value="" ${f.priceVisible===""?"selected":""}>${t("filter.all","All")}</option>
+          <option value="yes" ${f.priceVisible==="yes"?"selected":""}>${t("hotel.visible","Visible")}</option>
+          <option value="no" ${f.priceVisible==="no"?"selected":""}>${t("hotel.hidden","Hidden")}</option>
+        </select></div>
+        <button class="btn btn-outline" onclick="resetHotelFilters()">${icon("rotate-ccw")}${t("btn.reset","Reset")}</button>
+      </div>
+      <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>
+      <div class="table-toolbar"><strong>${formatNumber(filtered.length)} / ${formatNumber(rows.length)} ${t("nav.hotels","Hotels")}</strong></div>
+      <div class="table-scroll"><table class="data-table"><thead><tr>
+        <th></th><th>${t("th.name","Name")}</th><th>${t("th.stars","Stars")}</th>
+        <th>${t("th.amount","Price/Night")}</th><th>${t("th.priceVisibility","Visibility")}</th>
+        <th>${t("th.status","Status")}</th><th>${t("th.actions","Actions")}</th>
+      </tr></thead><tbody>${tableBody}</tbody></table></div>
+    </div>`);
+}
+
+function toggleHotelAmenity(name) {
+  if (hotelFilters.amenities.has(name)) hotelFilters.amenities.delete(name);
+  else hotelFilters.amenities.add(name);
+  drawHotelsPage(state.cache.hotelsRows || []);
+}
+
+function resetHotelFilters() {
+  hotelFilters.search = ""; hotelFilters.city = ""; hotelFilters.stars = "";
+  hotelFilters.priceVisible = ""; hotelFilters.amenities.clear();
+  drawHotelsPage(state.cache.hotelsRows || []);
+}
+
+async function showHotelDetails(id) {
+  const res = await apiFetch(`/hotels/${id}`);
+  if (!res?.data) return;
+  const h = res.data;
+  const amenityChips = (h.amenities || []).map(amenityChip).join(" ");
+  const seasonal = (h.pricing || []).filter(p => p.isActive);
+  const seasonalTable = seasonal.length ? `
+    <h4 style="margin:16px 0 8px">${t("page.hotelPricingTitle","Seasonal Pricing")}</h4>
+    <div class="table-scroll"><table class="data-table"><thead><tr>
+      <th>${t("form.roomType","Room Type")}</th><th>${t("form.season","Season")}</th>
+      <th>${t("th.amount","Price/Night")}</th><th>${t("form.validFrom","From")}</th><th>${t("form.validTo","To")}</th>
+    </tr></thead><tbody>${seasonal.map(p => `<tr>
+      <td>${escapeHtml(p.roomType)}</td><td>${escapeHtml(p.season)}</td>
+      <td class="numeric">${formatMoney(p.pricePerNight, p.currency)}</td>
+      <td>${formatDate(p.validFrom)}</td><td>${formatDate(p.validTo)}</td>
+    </tr>`).join("")}</tbody></table></div>` : "";
+
+  const headerImg = h.imageUrl
+    ? `<img src="${escapeHtml(h.imageUrl)}" alt="" style="width:100%;height:200px;object-fit:cover;border-radius:8px;margin-bottom:16px">`
+    : `<div style="height:120px;border-radius:8px;background:linear-gradient(135deg,#5b8def,#7c5cff);display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px;font-weight:800;margin-bottom:16px">${escapeHtml((h.name||"?").charAt(0).toUpperCase())}</div>`;
+
+  const body = `
+    ${headerImg}
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:20px;font-weight:700">${escapeHtml(h.name)}${h.nameAr ? ` · <span dir="rtl" style="font-size:16px;color:var(--text-secondary)">${escapeHtml(h.nameAr)}</span>` : ""}</div>
+        <div style="color:var(--text-secondary);margin-top:4px">${"★".repeat(Math.min(h.stars||0,5))} · ${escapeHtml(h.city||"")}${h.cityAr ? ` · ${escapeHtml(h.cityAr)}` : ""}, ${escapeHtml(h.country||"EG")}</div>
+        <div style="color:var(--text-secondary);font-size:12px;margin-top:4px">${escapeHtml(h.address||"")}</div>
+      </div>
+      <div style="text-align:right">
+        ${statusBadge(h.isActive ? "ACTIVE" : "INACTIVE")}
+        <div style="margin-top:6px">${h.showPriceToAgents ? `<span class="badge badge-confirmed">${icon("eye")} ${t("hotel.visible","Visible")}</span>` : `<span class="badge badge-pending">${icon("eye-off")} ${t("hotel.hidden","Hidden")}</span>`}</div>
+      </div>
+    </div>
+    ${h.description ? `<p style="white-space:pre-wrap;color:var(--text-secondary);line-height:1.5">${escapeHtml(h.description)}</p>` : ""}
+    ${h.amenities?.length ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>` : ""}
+    <div class="info-grid" style="margin-top:16px">
+      <div class="info-item"><div class="info-label">${t("th.amount","Price/Night")}</div><div class="info-value">${Number(h.pricePerNight||0) > 0 ? formatMoney(h.pricePerNight, h.currency) : t("hotel.priceOnRequest","On request")}</div></div>
+      <div class="info-item"><div class="info-label">${t("form.commissionPercent","Commission %")}</div><div class="info-value">${Number(h.commissionPercent||0).toFixed(2)}%</div></div>
+      <div class="info-item"><div class="info-label">${t("form.availableRooms","Available rooms")}</div><div class="info-value">${formatNumber(h.availableRooms||0)}</div></div>
+      <div class="info-item"><div class="info-label">${t("form.maxGuestsPerRoom","Guests per room")}</div><div class="info-value">${formatNumber(h.maxGuestsPerRoom||2)}</div></div>
+    </div>
+    ${seasonalTable}`;
+
+  openModal(`${t("nav.hotels","Hotel")} — ${escapeHtml(h.name)}`, body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.close")}</button>
+    <button class="btn ${h.showPriceToAgents ? "btn-outline" : "btn-primary"}" onclick="togglePriceVisibility('${h.id}', ${!h.showPriceToAgents});closeModal()">${icon(h.showPriceToAgents ? "eye-off" : "eye")}${h.showPriceToAgents ? t("hotel.hidePrices","Hide Prices") : t("hotel.showPrices","Show Prices")}</button>
+    <button class="btn btn-primary" onclick="closeModal();showMasterModal('hotels','${h.id}')">${icon("pencil")}${t("btn.edit")}</button>
+  `);
 }
 
 async function togglePriceVisibility(id, show) {
@@ -1259,6 +1431,8 @@ async function togglePriceVisibility(id, show) {
   });
   if (res?.success) {
     toast(t(show ? "hotel.pricesNowVisible" : "hotel.pricesNowHidden", show ? "Prices are now visible to agents" : "Prices are now hidden"), "success");
+    // Refresh cache so the row reflects the new state.
+    state.cache.hotelsRows = null;
     renderHotels();
   }
 }

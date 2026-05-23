@@ -454,15 +454,70 @@ function renderBookings() {
 
 // ─── Price display helper ────────────────────────────────────────────────────
 function hotelPriceCell(h) {
-  if (h.priceVisible === false || h.pricePerNight == null) {
+  if (h.priceVisible === false || h.pricePerNight == null || Number(h.pricePerNight) <= 0) {
     return `<span class="badge badge-pending" style="font-size:11px">${t("hotel.priceOnRequest","Price on request")}</span>`;
   }
   return `<span class="numeric">${formatMoney(h.pricePerNight, h.currency)}</span>`;
 }
 
+function hotelThumbAgent(h) {
+  if (h.imageUrl) return `<img src="${escapeHtml(h.imageUrl)}" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover">`;
+  const initials = (h.name || "?").split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase();
+  return `<div style="width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#5b8def,#7c5cff);color:#fff;font-weight:700;font-size:13px">${escapeHtml(initials)}</div>`;
+}
+
+function hotelNameCell(h) {
+  const amenities = (h.amenities || []).slice(0, 3)
+    .map(a => `<span class="badge badge-outline" style="font-size:10px;padding:1px 6px">${escapeHtml(a)}</span>`)
+    .join(" ");
+  const more = (h.amenities || []).length > 3 ? `<span style="color:var(--text-secondary);font-size:10px"> +${(h.amenities||[]).length - 3}</span>` : "";
+  return `<div style="display:flex;gap:10px;align-items:center">
+    ${hotelThumbAgent(h)}
+    <div style="min-width:0">
+      <div class="primary-text">${escapeHtml(h.name)}</div>
+      <div class="secondary-text">${escapeHtml(h.city)}, ${escapeHtml(h.country)}</div>
+      <div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${amenities}${more}</div>
+    </div>
+  </div>`;
+}
+
 function hotelActionCell(h) {
-  if (!h.canRequestQuote && !h.allowQuoteRequest) return "—";
-  return `<button class="btn btn-primary" onclick="openQuoteRequestModal('HOTEL','${h.id}',${JSON.stringify(escapeHtml(h.name))})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`;
+  const view = `<button class="btn btn-outline btn-sm" onclick="showAgentHotelDetails('${h.id}')" title="${t("btn.view","View")}">${icon("eye")}</button>`;
+  const quote = (h.canRequestQuote === false || h.allowQuoteRequest === false)
+    ? ""
+    : `<button class="btn btn-primary btn-sm" onclick="openQuoteRequestModal('HOTEL','${h.id}',${JSON.stringify(escapeHtml(h.name))})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`;
+  return `<div style="display:flex;gap:6px;align-items:center">${view}${quote}</div>`;
+}
+
+async function showAgentHotelDetails(id) {
+  const res = await apiFetch(`/hotels/${id}`);
+  if (!res?.data) return;
+  const h = res.data;
+  const amenityChips = (h.amenities || []).map(a => `<span class="badge badge-outline" style="font-size:11px;padding:3px 8px">${escapeHtml(a)}</span>`).join(" ");
+  const headerImg = h.imageUrl
+    ? `<img src="${escapeHtml(h.imageUrl)}" alt="" style="width:100%;height:200px;object-fit:cover;border-radius:8px;margin-bottom:16px">`
+    : `<div style="height:140px;border-radius:8px;background:linear-gradient(135deg,#5b8def,#7c5cff);display:flex;align-items:center;justify-content:center;color:#fff;font-size:36px;font-weight:800;margin-bottom:16px">${escapeHtml((h.name||"?").charAt(0).toUpperCase())}</div>`;
+
+  const body = `
+    ${headerImg}
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:20px;font-weight:700">${escapeHtml(h.name)}</div>
+        <div style="color:var(--text-secondary);margin-top:4px">${"★".repeat(Math.min(h.stars||0,5))} · ${escapeHtml(h.city||"")}, ${escapeHtml(h.country||"EG")}</div>
+        ${h.address ? `<div style="color:var(--text-secondary);font-size:12px;margin-top:4px">${escapeHtml(h.address)}</div>` : ""}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:18px;font-weight:700">${hotelPriceCell(h)}</div>
+        ${Number(h.pricePerNight||0) > 0 && h.priceVisible !== false ? `<div style="color:var(--text-secondary);font-size:11px">${t("form.nights","per night")}</div>` : ""}
+      </div>
+    </div>
+    ${h.description ? `<p style="white-space:pre-wrap;color:var(--text-secondary);line-height:1.5;margin:8px 0">${escapeHtml(h.description)}</p>` : ""}
+    ${h.amenities?.length ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>` : ""}`;
+
+  openModal(`${escapeHtml(h.name)}`, body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.close")}</button>
+    ${(h.canRequestQuote === false || h.allowQuoteRequest === false) ? "" : `<button class="btn btn-primary" onclick="closeModal();openQuoteRequestModal('HOTEL','${h.id}',${JSON.stringify(escapeHtml(h.name))})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`}
+  `);
 }
 
 async function renderHotels() {
@@ -475,18 +530,15 @@ async function renderHotels() {
   } catch {}
   if (state.renderToken !== capturedToken) return;
 
-  renderListPage("hotels", "/hotels", [
-    ["th.name", h => `<span class="primary-text">${escapeHtml(h.name)}</span><div class="secondary-text">${escapeHtml(h.city)}, ${escapeHtml(h.country)}</div>`],
+  renderListPage("hotels", "/hotels?limit=500", [
+    ["th.name", hotelNameCell],
     ["th.stars", h => "★".repeat(Math.min(h.stars || 0, 5))],
     ["th.amount", hotelPriceCell],
-    ["th.currency", h => escapeHtml(h.currency)],
-    ["th.status", h => statusBadge(h.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", hotelActionCell],
   ], {
     filters: [
       ["city", "form.destination", destOptions],
-      ["stars", "th.stars", ["", "3", "4", "5", "6", "7"]],
-      ["currency", "form.currency", ["", "USD", "EGP", "EUR"]],
+      ["stars", "th.stars", ["", "3", "4", "5"]],
     ],
   });
 }
