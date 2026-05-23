@@ -7,3 +7,4 @@ uploads/*
 !uploads/.gitkeep
 *.js.map
 *.log
+outputs/

@@ -291,6 +291,40 @@ document.getElementById("modalHost").addEventListener("click", e => {
   if (e.target.id === "modalHost") closeModal();
 });
 
+// ─── WhatsApp helpers ─────────────────────────────────────────────────────────
+function waIconSvg(size = 18) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>`;
+}
+
+/** Build a pre-filled WhatsApp message URL for quote follow-up.
+ *  @param {object} data – { ref, serviceType, serviceName, destination, from, to,
+ *                           checkIn, checkOut, checkInTime, adults, children, rooms,
+ *                           isRoundTrip, notes }
+ */
+function buildWhatsAppQuoteUrl(data = {}) {
+  const user = state.user || {};
+  const company = user.company || {};
+  const lines = [
+    data.ref    ? `*${t("btn.requestQuote","Quote Request")} ${data.ref}*` : null,
+    `${t("th.company","Company")}: ${company.name || "—"}`,
+    user.name   ? `${t("form.name","Name")}: ${user.name}`         : null,
+    user.email  ? `Email: ${user.email}`                            : null,
+    `${t("th.type","Type")}: ${data.serviceType || "—"}`,
+    data.serviceName    ? `${t("th.service","Service")}: ${data.serviceName}`           : null,
+    data.destination    ? `${t("th.destination","Destination")}: ${data.destination}`   : null,
+    data.from           ? `${t("form.from","From")}: ${data.from}`                      : null,
+    data.to             ? `${t("form.to","To")}: ${data.to}`                            : null,
+    data.checkIn        ? `${t("form.checkIn","Date")}: ${data.checkIn}${data.checkInTime ? " " + data.checkInTime : ""}` : null,
+    data.checkOut       ? `${t("form.checkOut","Check-out")}: ${data.checkOut}`          : null,
+    data.adults         ? `${t("form.adults","Adults/Pax")}: ${data.adults}`            : null,
+    data.children       ? `${t("form.children","Children")}: ${data.children}`          : null,
+    data.rooms          ? `${t("form.rooms","Rooms")}: ${data.rooms}`                   : null,
+    data.isRoundTrip    ? `${t("form.roundTrip","Round Trip")}: ✓`                      : null,
+    data.notes          ? `${t("form.notes","Notes")}: ${data.notes}`                   : null,
+  ].filter(Boolean).join("\n");
+  return `https://wa.me/201147515456?text=${encodeURIComponent(lines)}`;
+}
+
 function setPage(page) {
   state.page = page;
   state.selected.clear();
@@ -546,26 +580,26 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
     const res = await apiFetch("/quote-requests", { method: "POST", body: JSON.stringify(payload) });
     if (res?.success) {
       const ref = res.data.refNumber;
-      const waMsg = encodeURIComponent(
-        `*${t("btn.requestQuote","Quote Request")} ${ref}*\n` +
-        `${t("th.company","Company")}: ${state.user?.company?.name || ""}\n` +
-        `${t("th.type","Type")}: ${serviceType}\n` +
-        `${t("th.service","Service")}: ${serviceName}\n` +
-        `${t("th.destination","Destination")}: ${document.getElementById("qrDest")?.selectedOptions?.[0]?.text || "—"}\n` +
-        (checkIn ? `${t("form.checkIn","Check-in")}: ${checkIn}\n` : "") +
-        (checkOut ? `${t("form.checkOut","Check-out")}: ${checkOut}\n` : "") +
-        `${t("form.adults","Adults")}: ${adults}  ${t("form.children","Children")}: ${children}`
-      );
-      const waUrl = `https://wa.me/201147515456?text=${waMsg}`;
+      const waUrl = buildWhatsAppQuoteUrl({
+        ref,
+        serviceType,
+        serviceName,
+        destination: document.getElementById("qrDest")?.selectedOptions?.[0]?.text || undefined,
+        checkIn:  checkIn  || undefined,
+        checkOut: checkOut || undefined,
+        adults,
+        children: children || undefined,
+        rooms:    rooms    || undefined,
+        notes,
+      });
       closeModal();
       toast(`✅ ${t("toast.quoteSubmitted","Quote request submitted")} — ${ref}`, "success");
       loadMyQuotesBadge();
-      // Show WhatsApp follow-up dialog
       openModal(
         `✅ ${t("toast.quoteSubmitted","Request Submitted")}`,
         `<p style="margin:0 0 16px;color:var(--text-secondary)">${ref} — ${t("quoteRequest.intro","Our team will contact you shortly.")}</p>
          <a href="${waUrl}" target="_blank" rel="noopener" class="btn btn-success" style="display:flex;align-items:center;gap:8px;justify-content:center;text-decoration:none;background:#25d366;color:#fff;border-color:#25d366">
-           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+           ${waIconSvg()}
            ${t("contact.whatsapp","WhatsApp")} — +20 11 4751 5456
          </a>`,
         `<button class="btn btn-outline" onclick="closeModal();setPage('my-quotes')">${icon("file-question")} ${t("nav.myQuotes","My Quotes")}</button>
@@ -579,13 +613,114 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
 
 function renderTransport() {
   renderListPage("transport", "/transport-bookings", [
-    ["th.ref", r => escapeHtml(r.refNumber)],
-    ["th.type", r => escapeHtml(r.type)],
-    ["th.route", r => `${escapeHtml(r.fromLocation)} → ${escapeHtml(r.toLocation)}`],
+    ["th.ref",    r => escapeHtml(r.refNumber)],
+    ["th.type",   r => escapeHtml(r.type)],
+    ["th.route",  r => `${escapeHtml(r.fromLocation)} → ${escapeHtml(r.toLocation)}`],
     ["th.amount", r => `<span class="numeric">${formatMoney(r.totalAmount, r.currency)}</span>`],
     ["th.status", r => statusBadge(r.status)],
-    ["th.date", r => formatDate(r.pickupDateTime)],
-  ], { filters: [["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]]] });
+    ["th.date",   r => formatDate(r.pickupDateTime)],
+  ], {
+    filters: [["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]]],
+    extraActions: `<button class="btn btn-success" onclick="openTransportQuoteModal()">${icon("send")}&nbsp;${t("btn.requestTransportQuote","Request Transport Quote")}</button>`,
+  });
+}
+
+function openTransportQuoteModal() {
+  const body = `
+    <div class="form-grid">
+      <div class="form-field"><label>${t("form.from","From Location")} *</label>
+        <input id="trFrom" placeholder="${t("form.from","Airport, Hotel, City...")}"></div>
+      <div class="form-field"><label>${t("form.to","To Location")} *</label>
+        <input id="trTo" placeholder="${t("form.to","Hotel, City, Destination...")}"></div>
+      <div class="form-field"><label>${t("form.date","Pickup Date")} *</label>
+        <input id="trDate" type="date"></div>
+      <div class="form-field"><label>${t("form.time","Pickup Time")}</label>
+        <input id="trTime" type="time" value="10:00"></div>
+      <div class="form-field"><label>${t("form.passengers","Passengers")}</label>
+        <input id="trPax" type="number" min="1" value="2"></div>
+      <div class="form-field"><label>${t("form.vehicleType","Vehicle Type (optional)")}</label>
+        <select id="trVehicle">
+          <option value="">${t("filter.any","Any")}</option>
+          <option value="SEDAN">Sedan</option>
+          <option value="SUV">SUV</option>
+          <option value="VAN_6">Van (6 pax)</option>
+          <option value="VAN_12">Van (12 pax)</option>
+          <option value="MINIBUS_20">Minibus (20 pax)</option>
+          <option value="BUS_45">Bus (45 pax)</option>
+          <option value="LUXURY_LIMO">Luxury Limo</option>
+        </select></div>
+      <div class="form-field" style="align-self:center"><label class="check-row" style="margin-top:18px">
+        <input id="trRoundTrip" type="checkbox"> ${t("form.roundTrip","Round Trip")}
+      </label></div>
+      <div class="form-field full"><label>${t("form.notes","Notes / Special Requests")}</label>
+        <textarea id="trNotes" rows="2"></textarea></div>
+    </div>`;
+
+  openModal(t("btn.requestTransportQuote","Request Transport Quote"), body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" id="submitTrQuoteBtn">${icon("send")}&nbsp;${t("btn.sendRequest","Send Request")}</button>
+  `);
+
+  document.getElementById("submitTrQuoteBtn").onclick = async () => {
+    const from        = document.getElementById("trFrom").value.trim();
+    const to          = document.getElementById("trTo").value.trim();
+    const date        = document.getElementById("trDate").value;
+    const time        = document.getElementById("trTime").value;
+    const passengers  = parseInt(document.getElementById("trPax").value || "2");
+    const isRoundTrip = document.getElementById("trRoundTrip").checked;
+    const vehicle     = document.getElementById("trVehicle").value;
+    const notes       = document.getElementById("trNotes").value.trim();
+
+    if (!from || !to || !date) {
+      toast(t("validation.requiredFields","From, To, and Date are required"), "error");
+      return;
+    }
+
+    document.getElementById("submitTrQuoteBtn").disabled = true;
+
+    const serviceName = `Transport: ${from} → ${to}${isRoundTrip ? " (Round Trip)" : ""}${vehicle ? " — " + vehicle.replace(/_/g, " ") : ""}`;
+    const payload = {
+      serviceType:   "MULTI_SERVICE",
+      serviceName,
+      adultsCount:   passengers,
+      checkIn:       date,
+      customerNotes: [notes, `From: ${from}`, `To: ${to}`, isRoundTrip ? "Round Trip" : ""].filter(Boolean).join(" | ") || undefined,
+      currency:      "USD",
+    };
+
+    const res = await apiFetch("/quote-requests", { method: "POST", body: JSON.stringify(payload) });
+
+    if (res?.success) {
+      const ref = res.data.refNumber;
+      const waUrl = buildWhatsAppQuoteUrl({
+        ref,
+        serviceType:  "TRANSPORT",
+        serviceName,
+        from,
+        to,
+        checkIn:      date,
+        checkInTime:  time || undefined,
+        adults:       passengers,
+        isRoundTrip:  isRoundTrip || undefined,
+        notes:        notes || undefined,
+      });
+      closeModal();
+      toast(`✅ ${t("toast.quoteSubmitted","Quote request submitted")} — ${ref}`, "success");
+      loadMyQuotesBadge();
+      openModal(
+        `✅ ${t("toast.quoteSubmitted","Request Submitted")}`,
+        `<p style="margin:0 0 16px;color:var(--text-secondary)">${ref} — ${t("quoteRequest.intro","Our team will contact you shortly.")}</p>
+         <a href="${waUrl}" target="_blank" rel="noopener" class="btn btn-success" style="display:flex;align-items:center;gap:8px;justify-content:center;text-decoration:none;background:#25d366;color:#fff;border-color:#25d366">
+           ${waIconSvg()}
+           ${t("contact.whatsapp","WhatsApp")} — +20 11 4751 5456
+         </a>`,
+        `<button class="btn btn-outline" onclick="closeModal();setPage('my-quotes')">${icon("file-question")} ${t("nav.myQuotes","My Quotes")}</button>
+         <button class="btn btn-ghost" onclick="closeModal()">${t("btn.close","Close")}</button>`
+      );
+    } else {
+      document.getElementById("submitTrQuoteBtn").disabled = false;
+    }
+  };
 }
 
 function renderActivities() {
@@ -626,9 +761,9 @@ function openActivityBookingModal(activityId, activityName, priceAdult, priceChi
       <div class="form-field"><label>${t("form.date","Activity Date")} *</label>
         <input id="actDate" type="date" required></div>
       <div class="form-field"><label>${t("form.adults","Adults")}</label>
-        <input id="actAdults" type="number" min="1" value="2" oninput="(${calcPreview.toString()})()"></div>
+        <input id="actAdults" type="number" min="1" value="2"></div>
       <div class="form-field"><label>${t("form.children","Children")}</label>
-        <input id="actChildren" type="number" min="0" value="0" oninput="(${calcPreview.toString()})()"></div>
+        <input id="actChildren" type="number" min="0" value="0"></div>
       <div class="form-field full"><label>${t("form.notes","Notes")}</label>
         <textarea id="actNotes" rows="2"></textarea></div>
     </div>
@@ -652,6 +787,10 @@ function openActivityBookingModal(activityId, activityName, priceAdult, priceChi
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
     <button class="btn btn-primary" id="submitActivityBtn">${icon("calendar-check")}&nbsp;${t("btn.submitRequest","Submit Request")}</button>
   `);
+
+  // Wire live-preview now that DOM is ready — avoids calcPreview.toString() scope bug
+  document.getElementById("actAdults").addEventListener("input", calcPreview);
+  document.getElementById("actChildren").addEventListener("input", calcPreview);
 
   document.getElementById("submitActivityBtn").onclick = async () => {
     const date = document.getElementById("actDate").value;
@@ -692,9 +831,23 @@ function renderMyQuotes() {
     }],
     ["th.status",      q => statusBadge(q.status)],
     ["th.date",        q => formatDate(q.createdAt)],
-    ["th.actions",     q => ["NEW", "IN_REVIEW"].includes(q.status)
-      ? `<button class="btn btn-danger" onclick="cancelMyQuote('${q.id}')">${icon("x")}&nbsp;${t("btn.cancel","Cancel")}</button>`
-      : "—"],
+    ["th.actions", q => {
+      const waUrl = buildWhatsAppQuoteUrl({
+        ref:         q.refNumber,
+        serviceType: q.serviceType,
+        serviceName: q.serviceName || q.hotel?.name,
+        destination: q.destination?.name,
+        checkIn:     q.checkIn  ? String(q.checkIn).slice(0, 10)  : undefined,
+        checkOut:    q.checkOut ? String(q.checkOut).slice(0, 10) : undefined,
+        adults:      q.adultsCount   || undefined,
+        children:    q.childrenCount || undefined,
+        rooms:       q.roomsCount    || undefined,
+      });
+      const cancelBtn = ["NEW","IN_REVIEW"].includes(q.status)
+        ? `<button class="btn btn-danger btn-sm" onclick="cancelMyQuote('${q.id}')" title="${t("btn.cancel","Cancel")}">${icon("x")}</button>`
+        : "";
+      return `<div style="display:flex;gap:6px;align-items:center">${cancelBtn}<a href="${waUrl}" target="_blank" rel="noopener" title="${t("contact.whatsapp","WhatsApp")}" class="btn btn-outline btn-sm" style="color:#25d366;border-color:#25d366;text-decoration:none;padding:4px 8px;display:inline-flex;align-items:center;gap:4px">${waIconSvg(14)}</a></div>`;
+    }],
   ], {
     filters: [
       ["status",      "form.status",  ["", "NEW", "IN_REVIEW", "QUOTED", "ACCEPTED", "CLOSED", "CANCELLED"]],
@@ -798,8 +951,10 @@ async function renderListPage(page, endpoint, columns, options = {}) {
   state.page = page;
   state.listConfigs[page] = { endpoint, columns };
   const filters = options.filters || [];
+  const extraActions = options.extraActions || "";
   content(pageHeader(`
     <button class="btn btn-primary" onclick="openBookingWizard()">${icon("plus")}${t("btn.createBooking")}</button>
+    ${extraActions}
     <button class="btn btn-outline" onclick="exportRows('${page}', state.cache['${page}Rows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>
   `) + `
     <div class="workbench">

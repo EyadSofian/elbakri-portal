@@ -45,7 +45,9 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     pickupDateTime: string; returnDateTime?: string;
     isRoundTrip?: boolean; passengerCount?: number;
     passengerNames?: string[]; flightNumber?: string;
-    totalAmount: number; currency?: string; notes?: string;
+    destinationId?: string;
+    // totalAmount / currency intentionally not accepted — resolved server-side from TransportRate
+    notes?: string;
   };
 
   const companyId = caller.role === 'SUPERADMIN' ? (body.companyId ?? caller.companyId!) : caller.companyId!;
@@ -54,16 +56,47 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     return;
   }
 
-  // No wallet debit at creation — booking goes PENDING for admin review
   const company = await prisma.company.findUnique({ where: { id: companyId }, select: { isActive: true, email: true } });
   if (!company?.isActive) {
     res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
     return;
   }
 
+  const passengerCount = Math.max(1, body.passengerCount ?? 1);
+
+  // Resolve price server-side — client totalAmount is ignored entirely
+  const matchingRate = await prisma.transportRate.findFirst({
+    where: {
+      isActive: true,
+      type: body.type,
+      ...(body.vehicleType && { vehicleType: body.vehicleType }),
+      ...(body.fromLocation && { fromLocation: { equals: body.fromLocation, mode: 'insensitive' as const } }),
+      ...(body.toLocation && { toLocation: { equals: body.toLocation, mode: 'insensitive' as const } }),
+      ...(body.destinationId && { destinationId: body.destinationId }),
+      minCapacity: { lte: passengerCount },
+      OR: [
+        { maxCapacity: null },
+        { maxCapacity: { gte: passengerCount } },
+      ],
+    },
+    orderBy: { rate: 'asc' }, // cheapest matching rate wins
+  });
+
+  if (!matchingRate) {
+    res.status(400).json({
+      success: false,
+      error: 'USE_QUOTE_REQUEST',
+      message: 'No matching transport rate found for the selected route and vehicle. Please submit a quote request via /api/quote-requests.',
+    });
+    return;
+  }
+
+  // Round-trip doubles the one-way rate (no dedicated round-trip rate field in TransportRate)
+  const totalAmount = body.isRoundTrip ? matchingRate.rate.mul(2) : matchingRate.rate;
+  const currency = matchingRate.currency;
+
   try {
     const refNumber = await generateRef(prisma, 'TRN');
-    const totalAmount = new Decimal(body.totalAmount);
 
     const booking = await prisma.transportBooking.create({
       data: {
@@ -77,11 +110,11 @@ export async function createTransportBooking(req: Request, res: Response): Promi
         pickupDateTime: new Date(body.pickupDateTime),
         returnDateTime: body.returnDateTime ? new Date(body.returnDateTime) : null,
         isRoundTrip: body.isRoundTrip ?? false,
-        passengerCount: body.passengerCount ?? 1,
+        passengerCount,
         passengerNames: body.passengerNames ?? [],
         flightNumber: body.flightNumber,
-        totalAmount,
-        currency: body.currency ?? 'USD',
+        totalAmount,  // server-calculated from TransportRate
+        currency,     // from TransportRate record
         notes: body.notes,
         status: 'PENDING',
       },
