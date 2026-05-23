@@ -44,7 +44,7 @@
           <button class="nav-item" data-page="cruises"><i data-lucide="ship"></i><span data-i18n="nav.nileCruises">Nile Cruises</span></button>
           <button class="nav-item" data-page="activities"><i data-lucide="map-pin"></i><span data-i18n="nav.activities">Activities</span></button>
           <button class="nav-item" data-page="transport"><i data-lucide="bus"></i><span data-i18n="nav.transport">Transport</span></button>
-          <button class="nav-item" data-page="visa"><i data-lucide="passport"></i><span data-i18n="nav.visa">Visa Applications</span></button>
+          <button class="nav-item" data-page="visa"><i data-lucide="file-text"></i><span data-i18n="nav.visa">Visa Applications</span></button>
           <button class="nav-item" data-page="reception"><i data-lucide="plane-landing"></i><span data-i18n="nav.reception">Airport Reception</span></button>
         </div>
         <div class="nav-group">
@@ -435,16 +435,18 @@ async function renderDashboard() {
       <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.wallet")}</div><div class="panel-subtitle">${t("topbar.lastRefresh")}</div></div></div><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(4, 6)}</tbody></table></div></section>
     </div>`);
 
-  const [overview, bookings, tx, platform] = await Promise.all([
+  const [overview, bookings, tx, platform, hotelsMeta] = await Promise.all([
     apiFetch("/admin/reports/overview"),
     apiFetch("/bookings?limit=8"),
     apiFetch("/admin/wallet/transactions?limit=8"),
     apiFetch("/admin/wallet/platform?currency=USD"),
+    apiFetch("/hotels?page=1&limit=1"),
   ]);
   if (state.renderToken !== capturedToken) return;
   const d = overview?.data || {};
   const platformWallet = platform?.data?.wallet || { balance: 0, currency: "USD" };
   const platformBalance = Number(platformWallet.balance || 0);
+  const hotelsCount = hotelsMeta?.meta?.total ?? d.bookingsByType?.HOTEL ?? 0;
   document.getElementById("walletPillValue").textContent = formatMoney(platformBalance, platformWallet.currency || "USD");
   document.getElementById("pendingCount").textContent = d.pendingBookings || 0;
 
@@ -455,7 +457,7 @@ async function renderDashboard() {
       ${statCard("stat.pending", d.pendingBookings || 0, "toast.validationError", "clock")}
       ${statCard("stat.activeCompanies", d.activeCompanies || 0, "status.ACTIVE", "building-2")}
       ${statCard("topbar.platformWallet", formatMoney(platformBalance, platformWallet.currency || "USD"), "stat.walletExposure", "wallet")}
-      ${statCard("stat.hotels", d.bookingsByType?.HOTEL || 0, "nav.hotels", "hotel")}
+      ${statCard("stat.hotels", hotelsCount, "nav.hotels", "hotel")}
     </div>
     <div class="grid-2">
       ${miniTable("nav.bookings", bookings?.data || [], [
@@ -1287,9 +1289,18 @@ async function renderHotels() {
   if (!rows.length) {
     content(pageHeader(masterActions("hotels")) + `
       <div class="table-card"><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(7, 8)}</tbody></table></div></div>`);
-    const res = await apiFetch("/hotels?limit=500");
+    const rowsFetched = [];
+    let page = 1;
+    let pages = 1;
+    do {
+      const res = await apiFetch(`/hotels?page=${page}&limit=100`);
+      if (state.renderToken !== capturedToken) return;
+      rowsFetched.push(...(res?.data || []));
+      pages = res?.meta?.pages || page;
+      page += 1;
+    } while (page <= pages);
     if (state.renderToken !== capturedToken) return;
-    rows = res?.data || [];
+    rows = rowsFetched;
     state.cache.hotelsRows = rows;
   }
 

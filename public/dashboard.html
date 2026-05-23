@@ -40,7 +40,7 @@
           <button class="nav-item" data-page="cruises"><i data-lucide="ship"></i><span data-i18n="nav.nileCruises">Nile Cruises</span></button>
           <button class="nav-item" data-page="transport"><i data-lucide="bus"></i><span data-i18n="nav.transport">Transport</span></button>
           <button class="nav-item" data-page="activities"><i data-lucide="map-pin"></i><span data-i18n="nav.activities">Activities</span></button>
-          <button class="nav-item" data-page="visa"><i data-lucide="passport"></i><span data-i18n="nav.visa">Visa Applications</span></button>
+          <button class="nav-item" data-page="visa"><i data-lucide="file-text"></i><span data-i18n="nav.visa">Visa Applications</span></button>
           <button class="nav-item" data-page="reception"><i data-lucide="plane-landing"></i><span data-i18n="nav.reception">Airport Reception</span></button>
         </div>
         <div class="nav-group">
@@ -138,6 +138,10 @@ const pageMeta = {
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function inlineJsonArg(value) {
+  return escapeHtml(JSON.stringify(String(value ?? "")));
 }
 
 function icon(name) {
@@ -485,7 +489,7 @@ function hotelActionCell(h) {
   const view = `<button class="btn btn-outline btn-sm" onclick="showAgentHotelDetails('${h.id}')" title="${t("btn.view","View")}">${icon("eye")}</button>`;
   const quote = (h.canRequestQuote === false || h.allowQuoteRequest === false)
     ? ""
-    : `<button class="btn btn-primary btn-sm" onclick="openQuoteRequestModal('HOTEL','${h.id}',${JSON.stringify(escapeHtml(h.name))})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`;
+    : `<button class="btn btn-primary btn-sm" onclick="openQuoteRequestModal('HOTEL','${h.id}',${inlineJsonArg(h.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`;
   return `<div style="display:flex;gap:6px;align-items:center">${view}${quote}</div>`;
 }
 
@@ -516,7 +520,7 @@ async function showAgentHotelDetails(id) {
 
   openModal(`${escapeHtml(h.name)}`, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.close")}</button>
-    ${(h.canRequestQuote === false || h.allowQuoteRequest === false) ? "" : `<button class="btn btn-primary" onclick="closeModal();openQuoteRequestModal('HOTEL','${h.id}',${JSON.stringify(escapeHtml(h.name))})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`}
+    ${(h.canRequestQuote === false || h.allowQuoteRequest === false) ? "" : `<button class="btn btn-primary" onclick="closeModal();openQuoteRequestModal('HOTEL','${h.id}',${inlineJsonArg(h.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`}
   `);
 }
 
@@ -530,7 +534,7 @@ async function renderHotels() {
   } catch {}
   if (state.renderToken !== capturedToken) return;
 
-  renderListPage("hotels", "/hotels?limit=500", [
+  renderListPage("hotels", "/hotels", [
     ["th.name", hotelNameCell],
     ["th.stars", h => "★".repeat(Math.min(h.stars || 0, 5))],
     ["th.amount", hotelPriceCell],
@@ -553,7 +557,7 @@ function renderCruises() {
       : `<span class="badge badge-pending" style="font-size:11px">${t("hotel.priceOnRequest","Price on request")}</span>`],
     ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", c => c.canRequestQuote !== false
-      ? `<button class="btn btn-primary" onclick="openQuoteRequestModal('CRUISE','${c.id}',${JSON.stringify(escapeHtml(c.name))})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`
+      ? `<button class="btn btn-primary" onclick="openQuoteRequestModal('CRUISE','${c.id}',${inlineJsonArg(c.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`
       : "—"],
   ]);
 }
@@ -792,8 +796,8 @@ function renderActivities() {
     ["th.amount", a => `<span class="numeric">${formatMoney(a.priceAdult, a.currency)}</span>${a.priceChild ? `<div class="secondary-text">${t("form.child","Child")}: ${formatMoney(a.priceChild, a.currency)}</div>` : ""}`],
     ["th.status", a => statusBadge(a.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", a => a.isConfirmableInApp !== false
-      ? `<button class="btn btn-primary" onclick="openActivityBookingModal('${a.id}',${JSON.stringify(escapeHtml(a.name))},${Number(a.priceAdult)},${Number(a.priceChild||a.priceAdult)},'${escapeHtml(a.currency||'USD')}')">${icon("calendar-check")}&nbsp;${t("btn.book","Book")}</button>`
-      : `<button class="btn btn-outline" onclick="openQuoteRequestModal('MULTI_SERVICE','${a.id}',${JSON.stringify(escapeHtml(a.name))})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`],
+      ? `<button class="btn btn-primary" onclick="openActivityBookingModal('${a.id}',${inlineJsonArg(a.name)},${Number(a.priceAdult)},${Number(a.priceChild||a.priceAdult)},'${escapeHtml(a.currency||'USD')}')">${icon("calendar-check")}&nbsp;${t("btn.book","Book")}</button>`
+      : `<button class="btn btn-outline" onclick="openQuoteRequestModal('MULTI_SERVICE','${a.id}',${inlineJsonArg(a.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`],
   ], {
     filters: [
       ["city", "th.city", ["", "Sharm El Sheikh", "Dahab", "Cairo", "Hurghada", "El Gouna", "Alexandria", "North Coast"]],
