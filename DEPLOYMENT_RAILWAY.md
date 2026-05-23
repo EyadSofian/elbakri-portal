@@ -38,9 +38,17 @@ In the Railway service settings:
 Seeding should only run **once** when first setting up the database — not on every deploy.
 
 ```bash
-# Run manually from your local machine (with DATABASE_URL pointed at Railway):
-DATABASE_URL="<railway-internal-url>" npx ts-node prisma/seed.ts
+# Base seed (SuperAdmin + 2 demo companies + demo bookings):
+DATABASE_URL="<railway-internal-url>" npm run db:seed
+
+# MEA rate sheet seed (real 2026 rates: 10 destinations, 10 hotels with
+# seasonal pricing, 45 activities, 102 transport rates):
+DATABASE_URL="<railway-internal-url>" npm run db:seed:mea
 ```
+
+The MEA seed is **idempotent** — re-running it refreshes hotel pricing periods,
+activities, and transport rates to match the latest sheet. Safe to re-run after
+rate updates. Source data lives in [prisma/seed-mea.ts](prisma/seed-mea.ts).
 
 Or via Railway's one-off command runner after the first deploy.
 
@@ -58,6 +66,7 @@ node dist/app.js       → start the server (start command)
 ```bash
 cp .env.example .env          # fill in DATABASE_URL etc.
 npm run db:migrate            # create/apply dev migrations
-npm run db:seed               # seed initial data (once)
+npm run db:seed               # seed SuperAdmin + demo companies (once)
+npm run db:seed:mea           # seed MEA 2026 rate sheet (once, then re-run after edits)
 npm run dev                   # start with hot-reload (ts-node + nodemon)
 ```

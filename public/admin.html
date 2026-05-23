@@ -835,8 +835,39 @@ const masterConfigs = {
 
 function masterActions(entity) {
   const cfg = masterConfigs[entity];
+  const importBtn = entity === "hotels"
+    ? `<button class="btn btn-outline" onclick="document.getElementById('hotelsImportFile').click()">${icon("upload")}${t("btn.importExcel", "Import Excel")}</button>
+       <input type="file" id="hotelsImportFile" accept=".xlsx,.xls" style="display:none" onchange="importHotelsExcel(this)">`
+    : "";
   return `<button class="btn btn-primary" onclick="showMasterModal('${entity}')">${icon("plus")}${t("btn.addNew")}</button>
+    ${importBtn}
     <button class="btn btn-outline" onclick="syncEntity('${cfg.syncEntity}')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`;
+}
+
+async function importHotelsExcel(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append("file", file);
+  const token = localStorage.getItem("accessToken");
+  toast(t("toast.syncStarted", "Import started"), "");
+  try {
+    const res = await fetch("/api/hotels/import-excel", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+      credentials: "include",
+    });
+    const json = await res.json();
+    if (!res.ok || json.success === false) throw new Error(json.message || json.error || "Import failed");
+    const { created = 0, updated = 0, total = 0 } = json.data || {};
+    toast(`${t("toast.syncComplete", "Import complete")} — +${created}, ~${updated} / ${total}`, "success");
+    renderHotels();
+  } catch (err) {
+    toast(err.message || "Import failed", "error");
+  } finally {
+    input.value = "";
+  }
 }
 
 function masterRowActions(entity, row) {
