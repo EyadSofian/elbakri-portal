@@ -41,7 +41,6 @@
           <div class="nav-label" data-i18n="nav.services">Services</div>
           <button class="nav-item" data-page="destinations"><i data-lucide="map"></i><span data-i18n="nav.destinations">Destinations</span></button>
           <button class="nav-item" data-page="hotels"><i data-lucide="hotel"></i><span data-i18n="nav.hotels">Hotels</span></button>
-          <button class="nav-item" data-page="hotel-pricing"><i data-lucide="badge-dollar-sign"></i><span data-i18n="nav.hotelPricing">Hotel Pricing</span></button>
           <button class="nav-item" data-page="cruises"><i data-lucide="ship"></i><span data-i18n="nav.nileCruises">Nile Cruises</span></button>
           <button class="nav-item" data-page="activities"><i data-lucide="map-pin"></i><span data-i18n="nav.activities">Activities</span></button>
           <button class="nav-item" data-page="transport"><i data-lucide="bus"></i><span data-i18n="nav.transport">Transport</span></button>
@@ -137,7 +136,6 @@ const pageMeta = {
   companies: ["page.companiesTitle", "page.companiesSub"],
   users: ["page.usersTitle", "page.usersSub"],
   hotels: ["page.hotelsTitle", "page.hotelsSub"],
-  "hotel-pricing": ["page.hotelPricingTitle", "page.hotelPricingSub"],
   "sheets-config": ["page.sheetsTitle", "page.sheetsSub"],
   bookings: ["page.bookingsTitle", "page.bookingsSub"],
   invoices: ["page.invoicesTitle", "page.invoicesSub"],
@@ -155,6 +153,25 @@ const pageMeta = {
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ─── WhatsApp helpers (admin uses fixed business number) ─────────────────────
+const ADMIN_WA_NUMBER = "201147515456";
+function waIconSvg(size = 16) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>`;
+}
+function buildAdminWaUrl(lines) {
+  const text = (Array.isArray(lines) ? lines.filter(Boolean).join("\n") : String(lines || "")).trim();
+  return `https://wa.me/${ADMIN_WA_NUMBER}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
+}
+function waButton(lines, label) {
+  const url = buildAdminWaUrl(lines);
+  const text = label || t("contact.whatsapp", "WhatsApp");
+  return `<a href="${url}" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="color:#25d366;border-color:#25d366;text-decoration:none;display:inline-flex;align-items:center;gap:6px">${waIconSvg(14)}${text}</a>`;
+}
+function waIconButton(lines, title) {
+  const url = buildAdminWaUrl(lines);
+  return `<a href="${url}" target="_blank" rel="noopener" class="icon-button btn-icon" title="${title || t("contact.whatsapp", "WhatsApp")}" style="color:#25d366;text-decoration:none">${waIconSvg(16)}</a>`;
 }
 
 function apiFetch(path, options = {}) {
@@ -591,6 +608,7 @@ function renderCompaniesTable() {
         <td><div class="row-actions">
           <button class="icon-button btn-icon" title="${t("btn.view")}" onclick="showCompanyDetails('${c.id}')">${icon("eye")}</button>
           <button class="icon-button btn-icon" title="${t("btn.edit")}" onclick="showCompanyModal('${c.id}')">${icon("pencil")}</button>
+          ${waIconButton([`Hello *${c.name}*,`], t("contact.whatsapp", "WhatsApp"))}
           <button class="icon-button btn-icon" title="${t("btn.topup")}" onclick="showTopupModal('${c.id}')">${icon("wallet")}</button>
           <button class="icon-button btn-icon" title="${t("btn.toggle")}" onclick="toggleCompany('${c.id}', ${!c.isActive})">${icon(c.isActive ? "ban" : "check-circle")}</button>
           <button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deleteCompany('${c.id}')">${icon("trash-2")}</button>
@@ -728,21 +746,6 @@ const masterConfigs = {
       { name: "minVisibleTier", label: "hotel.minVisibleTier", fallback: "Min Visible Tier", type: "select", nullable: true, options: ["STANDARD", "SILVER", "GOLD", "PLATINUM"] },
     ],
   },
-  "hotel-pricing": {
-    titleKey: "nav.hotelPricing",
-    endpoint: "/hotels/pricing",
-    listEndpoint: "/hotels/pricing/all?limit=100",
-    syncEntity: "hotel-pricing",
-    fields: [
-      { name: "hotelId", label: "nav.hotels", type: "hotelSelect", required: true },
-      { name: "roomType", label: "form.roomType", fallback: "Room Type", type: "select", default: "STANDARD", options: ["STANDARD", "DELUXE", "SUITE", "EXECUTIVE"] },
-      { name: "season", label: "form.season", fallback: "Season", type: "select", default: "REGULAR", options: ["LOW", "REGULAR", "HIGH", "PEAK"] },
-      { name: "pricePerNight", label: "th.amount", type: "number", required: true, default: 1 },
-      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
-      { name: "validFrom", label: "form.validFrom", fallback: "Valid From", type: "date", required: true },
-      { name: "validTo", label: "form.validTo", fallback: "Valid To", type: "date", required: true },
-    ],
-  },
   cruises: {
     titleKey: "nav.nileCruises",
     endpoint: "/cruises",
@@ -877,7 +880,6 @@ async function ensureHotelOptions() {
 async function showMasterModal(entity, id = "") {
   const cfg = masterConfigs[entity];
   if (!cfg) return;
-  if (entity === "hotel-pricing") await ensureHotelOptions();
   const rows = state.cache[entity + "Rows"] || [];
   const row = id ? rows.find(item => item.id === id) : null;
   const title = `${id ? t("btn.edit") : t("btn.addNew")} ${t(cfg.titleKey)}`;
@@ -998,6 +1000,7 @@ async function showCompanyDetails(id) {
     <div id="pane-wallet" class="detail-pane">${detailTable(c.transactions || [], ["type","amount","balanceBefore","balanceAfter","description","createdAt"])}</div>
     <div id="pane-invoices" class="detail-pane">${detailTable(c.invoices || [], ["invoiceNumber","total","status","dueDate"])}</div>`;
   openModal(`${t("modal.companyDetails")} - ${escapeHtml(c.name)}`, body, `
+    ${waButton([`Hello *${c.name}*,`], t("contact.whatsapp", "WhatsApp"))}
     <button class="btn btn-outline" onclick="showCompanyModal('${c.id}')">${icon("pencil")}${t("btn.edit")}</button>
     <button class="btn btn-primary" onclick="showTopupModal('${c.id}')">${icon("wallet")}${t("btn.topup")}</button>
   `);
@@ -1367,6 +1370,14 @@ async function renderQuoteRequests() {
       <td>${formatDate(q.createdAt)}</td>
       <td><div class="row-actions">
         <button class="btn btn-outline btn-sm" onclick="openQuoteRequestModal('${q.id}')">${icon("eye")}${t("btn.review","Review")}</button>
+        ${waIconButton([
+          `*Quote ${q.refNumber}*`,
+          `Company: ${q.company?.name || "—"}`,
+          `Type: ${q.serviceType}`,
+          dest !== "—" ? `Destination: ${dest}` : "",
+          hotel !== "—" ? `Service: ${hotel}` : "",
+          dates !== "—" ? `Dates: ${dates}` : "",
+        ], t("contact.whatsapp", "WhatsApp"))}
       </div></td>
     </tr>`;
   }).join("");
@@ -1421,7 +1432,19 @@ async function openQuoteRequestModal(id) {
         <input id="qrQuotedAmount" type="number" step="0.01" value="${q.quotedAmount||""}" placeholder="0.00"></div>
     </div>`;
 
+  const waLines = [
+    `*Quote ${q.refNumber}*`,
+    `Company: ${q.company?.name || "—"}`,
+    `Type: ${q.serviceType}`,
+    dest !== "Not specified" ? `Destination: ${dest}` : "",
+    hotel !== "Not specified" ? `Service: ${hotel}` : "",
+    dates !== "Not specified" ? `Dates: ${dates}` : "",
+    `Pax: ${q.adultsCount}A / ${q.childrenCount}C${q.infantsCount ? " / " + q.infantsCount + "I" : ""}`,
+    q.nationality ? `Nationality: ${q.nationality}` : "",
+    q.budget ? `Budget: ${q.budget} ${q.currency || "USD"}` : "",
+  ];
   openModal(`${t("nav.quoteRequests","Quote Request")} — ${q.refNumber}`, body, `
+    ${waButton(waLines, t("contact.whatsapp", "WhatsApp"))}
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
     <button class="btn btn-primary" onclick="updateQuoteRequest('${q.id}')">${t("btn.save","Save & Update")}</button>
   `);
@@ -1443,19 +1466,6 @@ async function updateQuoteRequest(id) {
   }
 }
 
-async function renderHotelPricing() {
-  renderSimpleList("hotel-pricing", masterConfigs["hotel-pricing"].listEndpoint, [
-    ["th.name", p => `<span class="primary-text">${escapeHtml(p.hotel?.name || "—")}</span><div class="secondary-text">${escapeHtml(p.hotel?.city || "")}</div>`],
-    ["th.type", p => escapeHtml(p.roomType)],
-    ["form.season", p => escapeHtml(p.season)],
-    ["th.amount", p => `<span class="numeric">${formatMoney(p.pricePerNight, p.currency)}</span>`],
-    ["form.validFrom", p => formatDate(p.validFrom)],
-    ["form.validTo", p => formatDate(p.validTo)],
-    ["th.status", p => statusBadge(p.isActive ? "ACTIVE" : "INACTIVE")],
-    ["th.actions", p => masterRowActions("hotel-pricing", p)],
-  ], masterActions("hotel-pricing"));
-}
-
 async function renderBookings() {
   renderSimpleList("bookings", "/bookings?limit=100", [
     ["th.ref", b => `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`],
@@ -1471,18 +1481,69 @@ async function renderBookings() {
 }
 
 function bookingRowActions(booking) {
-  const pending = booking.status === "PENDING";
   return `<div class="row-actions">
-    ${pending ? `<button class="icon-button btn-icon" title="${t("btn.approve", "Approve")}" onclick="approveBooking('${booking.id}')">${icon("check")}</button>
-    <button class="icon-button btn-icon" title="${t("btn.reject", "Reject")}" onclick="rejectBookingRequest('${booking.id}')">${icon("x")}</button>` : ""}
+    <button class="icon-button btn-icon" title="${t("btn.view", "View")}" onclick="showBookingDetails('${booking.id}')">${icon("eye")}</button>
+    ${waIconButton([
+      `*Booking ${booking.refNumber}*`,
+      `Company: ${booking.company?.name || "—"}`,
+      `Type: ${booking.type}`,
+      booking.hotel?.name ? `Hotel: ${booking.hotel.name}` : "",
+      `Amount: ${booking.totalAmount} ${booking.currency || "USD"}`,
+      `Status: ${booking.status}`,
+    ], t("contact.whatsapp", "WhatsApp"))}
     ${booking.invoice?.id ? `<button class="icon-button btn-icon" title="${t("btn.downloadPdf")}" onclick="downloadInvoicePdf('${booking.invoice.id}')">${icon("file-down")}</button>` : ""}
   </div>`;
+}
+
+async function showBookingDetails(id) {
+  const res = await apiFetch(`/bookings/${id}`);
+  if (!res?.data) return;
+  const b = res.data;
+  const dates = b.checkIn ? `${formatDate(b.checkIn)} – ${formatDate(b.checkOut || "")}` : "—";
+  const pax = `${b.adultsCount || 0}A${b.childrenCount ? " / " + b.childrenCount + "C" : ""}${b.roomsCount ? " / " + b.roomsCount + " " + t("form.rooms", "rooms") : ""}`;
+  const isPending = b.status === "PENDING";
+  const body = `
+    <div class="info-grid">
+      ${info("th.ref", `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`)}
+      ${info("th.status", statusBadge(b.status))}
+      ${info("th.company", escapeHtml(b.company?.name || "—"))}
+      ${info("th.type", escapeHtml(b.type))}
+      ${info("th.hotel", escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—")))}
+      ${info("th.city", escapeHtml(b.hotel?.city || "—"))}
+      ${info("th.travelDates", dates)}
+      ${info("form.pax", pax)}
+      ${info("th.amount", `<span class="numeric">${formatMoney(b.totalAmount, b.currency || "USD")}</span>`)}
+      ${info("th.commission", formatMoney(b.commissionAmount || 0, b.currency || "USD"))}
+      ${info("th.invoice", b.invoice ? `${escapeHtml(b.invoice.invoiceNumber)} · ${statusBadge(b.invoice.status)}` : "—")}
+      ${info("th.date", formatDate(b.createdAt))}
+    </div>
+    ${b.notes ? `<div class="info-item full" style="grid-column:1/-1;margin-top:12px"><div class="info-label">${t("form.notes", "Notes")}</div><div class="info-value" style="white-space:pre-wrap">${escapeHtml(b.notes)}</div></div>` : ""}`;
+
+  const waLines = [
+    `*Booking ${b.refNumber}*`,
+    `Company: ${b.company?.name || "—"}`,
+    `Type: ${b.type}`,
+    b.hotel?.name ? `Hotel: ${b.hotel.name}` : "",
+    `Dates: ${dates}`,
+    `Pax: ${pax}`,
+    `Amount: ${b.totalAmount} ${b.currency || "USD"}`,
+    `Status: ${b.status}`,
+  ];
+
+  const footer = `
+    ${waButton(waLines, t("contact.whatsapp", "WhatsApp"))}
+    ${b.invoice?.id ? `<button class="btn btn-outline" onclick="downloadInvoicePdf('${b.invoice.id}')">${icon("file-down")}${t("btn.downloadPdf")}</button>` : ""}
+    ${isPending ? `<button class="btn btn-danger" onclick="rejectBookingRequest('${b.id}')">${icon("x")}${t("btn.reject", "Reject")}</button>
+    <button class="btn btn-primary" onclick="approveBooking('${b.id}')">${icon("check")}${t("btn.approve", "Approve")}</button>` : `<button class="btn btn-outline" onclick="closeModal()">${t("btn.close")}</button>`}`;
+
+  openModal(`${t("modal.details", "Booking")} — ${escapeHtml(b.refNumber)}`, body, footer);
 }
 
 async function approveBooking(id) {
   confirmAction(t("booking.approveConfirm", "Approve this booking request and deduct the company wallet?"), async () => {
     const res = await apiFetch(`/bookings/${id}/confirm`, { method: "PATCH" });
     if (res?.success) {
+      closeModal();
       toast(t("toast.approved", "Approved"), "success");
       renderBookings();
     }
@@ -1687,7 +1748,6 @@ async function renderSheetsConfig() {
   state.page = "sheets-config";
   const entities = [
     ["hotels", "sync.hotels"],
-    ["hotel-pricing", "sync.hotelPricing"],
     ["cruises", "sync.cruises"],
     ["activities", "sync.activities"],
     ["transport-rates", "sync.transportRates"],
@@ -1824,7 +1884,6 @@ const pageLoaders = {
   users: renderUsers,
   destinations: renderDestinations,
   hotels: renderHotels,
-  "hotel-pricing": renderHotelPricing,
   "sheets-config": renderSheetsConfig,
   "quote-requests": renderQuoteRequests,
   bookings: renderBookings,
