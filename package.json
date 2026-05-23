@@ -11,6 +11,7 @@
     "db:reset": "prisma migrate reset --force",
     "db:seed": "ts-node prisma/seed.ts",
     "db:seed:mea": "ts-node prisma/seed-mea.ts",
+    "db:seed:hotels": "ts-node prisma/seed-hotels.ts",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate"
   },

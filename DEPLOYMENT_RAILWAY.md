@@ -44,6 +44,10 @@ DATABASE_URL="<railway-internal-url>" npm run db:seed
 # MEA rate sheet seed (real 2026 rates: 10 destinations, 10 hotels with
 # seasonal pricing, 45 activities, 102 transport rates):
 DATABASE_URL="<railway-internal-url>" npm run db:seed:mea
+
+# Bulk hotel catalog (199 hotels from the Elbakri dashboard, with city,
+# stars, amenities, structured features — no prices, quote-request only):
+DATABASE_URL="<railway-internal-url>" npm run db:seed:hotels
 ```
 
 The MEA seed is **idempotent** — re-running it refreshes hotel pricing periods,
