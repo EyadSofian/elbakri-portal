@@ -121,6 +121,7 @@ const { t, initI18n, applyTranslations, formatMoney, formatDate, formatNumber } 
 
 const state = {
   page: "dashboard",
+  renderToken: 0,
   companies: [],
   companiesMeta: { page: 1, limit: 20, total: 0, pages: 1 },
   companyFilters: { page: 1, limit: 20, search: "", tier: "", isActive: "", country: "" },
@@ -368,6 +369,7 @@ function confirmAction(message, callback) {
 
 function setPage(page) {
   state.page = page;
+  state.renderToken = (state.renderToken || 0) + 1;
   document.querySelectorAll(".nav-item").forEach(btn => btn.classList.toggle("active", btn.dataset.page === page));
   const loader = pageLoaders[page] || renderDashboard;
   loader();
@@ -408,6 +410,7 @@ function logout() {
 }
 
 async function renderDashboard() {
+  const capturedToken = state.renderToken;
   content(pageHeader(`<button class="btn btn-outline" onclick="renderDashboard()">${icon("refresh-cw")}${t("btn.refresh")}</button>`) + `
     <div class="stats-grid">${Array.from({ length: 6 }, () => `<div class="stat-card"><div class="skeleton" style="height:12px;width:70%"></div><div class="skeleton" style="height:28px;width:48%;margin-top:14px"></div><div class="skeleton" style="height:12px;width:58%;margin-top:12px"></div></div>`).join("")}</div>
     <div class="grid-2">
@@ -421,6 +424,7 @@ async function renderDashboard() {
     apiFetch("/admin/wallet/transactions?limit=8"),
     apiFetch("/admin/wallet/platform?currency=USD"),
   ]);
+  if (state.renderToken !== capturedToken) return;
   const d = overview?.data || {};
   const platformWallet = platform?.data?.wallet || { balance: 0, currency: "USD" };
   const platformBalance = Number(platformWallet.balance || 0);
@@ -1226,8 +1230,9 @@ async function togglePriceVisibility(id, show) {
 }
 
 async function renderDestinations() {
+  const capturedToken = state.renderToken;
   const res = await apiFetch("/destinations?isActive=false&limit=200");
-  if (!res) return;
+  if (!res || state.renderToken !== capturedToken) return;
   const dests = res.data || [];
   const rows = dests.map(d => `
     <tr>
@@ -1326,11 +1331,12 @@ async function deleteDestination(id, name) {
 let qrFilters = { status: "", serviceType: "", page: 1, limit: 20 };
 
 async function renderQuoteRequests() {
+  const capturedToken = state.renderToken;
   const params = new URLSearchParams({ limit: qrFilters.limit, page: qrFilters.page });
   if (qrFilters.status) params.set("status", qrFilters.status);
   if (qrFilters.serviceType) params.set("serviceType", qrFilters.serviceType);
   const res = await apiFetch("/quote-requests?" + params);
-  if (!res) return;
+  if (!res || state.renderToken !== capturedToken) return;
   const quotes = res.data || [];
   const meta = res.meta || {};
 
@@ -1524,6 +1530,7 @@ async function markInvoicePaid(id) {
 }
 
 async function renderWallet() {
+  const capturedToken = state.renderToken;
   state.page = "wallet";
   content(pageHeader(`<button class="btn btn-primary" onclick="showPlatformFundModal()">${icon("plus")}${t("btn.addFunds", "Add Funds")}</button>`) + `
     <div class="grid-2">
@@ -1538,6 +1545,7 @@ async function renderWallet() {
     apiFetch("/admin/wallet/platform?currency=USD"),
     apiFetch("/admin/wallet/transactions?limit=100"),
   ]);
+  if (state.renderToken !== capturedToken) return;
   const wallet = platform?.data?.wallet || { balance: 0, currency: "USD" };
   const platformRows = platform?.data?.transactions || [];
   const rows = companyTx?.data || [];
@@ -1656,6 +1664,7 @@ async function renderReception() {
 }
 
 async function renderSimpleList(page, endpoint, columns, extraActions = "") {
+  const capturedToken = state.renderToken;
   state.page = page;
   content(pageHeader(`${extraActions}<button class="btn btn-outline" onclick="exportRows('${page}', state.cache['${page}Rows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>`) + `
     <section class="table-card">
@@ -1663,12 +1672,15 @@ async function renderSimpleList(page, endpoint, columns, extraActions = "") {
       <div class="table-scroll"><table class="data-table"><thead><tr>${columns.map(([k]) => `<th>${labelText(k)}</th>`).join("")}</tr></thead><tbody id="simpleTbody">${skeletonRows(columns.length, 8)}</tbody></table></div>
     </section>`);
   const res = await apiFetch(endpoint);
+  if (state.renderToken !== capturedToken) return;
   const rows = res?.data || [];
   state.cache[page + "Rows"] = rows;
-  document.getElementById("simpleTbody").innerHTML = rows.length
+  const tbody = document.getElementById("simpleTbody");
+  if (!tbody) return;
+  tbody.innerHTML = rows.length
     ? rows.map(row => `<tr>${columns.map(([, fn]) => `<td>${fn(row)}</td>`).join("")}</tr>`).join("")
     : `<tr><td colspan="${columns.length}">${emptyBlock("empty.noData")}</td></tr>`;
-  refreshIcons(document.getElementById("simpleTbody"));
+  refreshIcons(tbody);
 }
 
 async function renderSheetsConfig() {
@@ -1827,7 +1839,7 @@ const pageLoaders = {
   calculators: renderCalculators,
 };
 
-document.addEventListener("portal:lang", () => setPage(state.page));
+document.addEventListener("portal:lang", () => { closeSidebar(); setPage(state.page); });
 
 (function init() {
   const token = localStorage.getItem("accessToken");

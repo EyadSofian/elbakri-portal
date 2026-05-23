@@ -14,13 +14,29 @@ const cruiseInclude = {
 // ── Cruise catalog ────────────────────────────────────────────────────────────
 
 export async function listCruises(req: Request, res: Response): Promise<void> {
+  const caller = req.user!;
   const where = {
     isActive: true,
     ...(req.query.route && { route: req.query.route as CruiseRoute }),
     ...(req.query.shipType && { shipType: req.query.shipType as ShipType }),
   };
   const cruises = await prisma.nileCruise.findMany({ where, orderBy: { priceFrom: 'asc' } });
-  res.json({ success: true, data: cruises });
+
+  // SUPERADMIN sees full data
+  if (caller.role === 'SUPERADMIN') {
+    res.json({ success: true, data: cruises });
+    return;
+  }
+
+  // Company users: mask price when showPriceToAgents=false
+  const data = cruises.map(cruise => ({
+    ...cruise,
+    priceFrom: cruise.showPriceToAgents ? cruise.priceFrom : null,
+    priceVisible: cruise.showPriceToAgents,
+    canRequestQuote: cruise.allowQuoteRequest,
+  }));
+
+  res.json({ success: true, data });
 }
 
 export async function createCruise(req: Request, res: Response): Promise<void> {

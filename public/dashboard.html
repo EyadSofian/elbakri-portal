@@ -109,6 +109,7 @@ const { t, initI18n, applyTranslations, formatMoney, formatDate, formatNumber } 
 
 const state = {
   page: "dashboard",
+  renderToken: 0,
   user: null,
   wallet: null,
   selected: new Set(),
@@ -327,6 +328,7 @@ function buildWhatsAppQuoteUrl(data = {}) {
 
 function setPage(page) {
   state.page = page;
+  state.renderToken = (state.renderToken || 0) + 1;
   state.selected.clear();
   document.querySelectorAll(".nav-item").forEach(btn => btn.classList.toggle("active", btn.dataset.page === page));
   (pageLoaders[page] || renderDashboard)();
@@ -365,6 +367,7 @@ function logout() {
 }
 
 async function renderDashboard() {
+  const capturedToken = state.renderToken;
   content(pageHeader(`<button class="btn btn-primary" onclick="openBookingWizard()">${icon("plus")}${t("btn.createBooking")}</button>`) + `
     <div class="stats-grid">${Array.from({ length: 6 }, () => `<div class="stat-card"><div class="skeleton" style="height:12px;width:62%"></div><div class="skeleton" style="height:28px;width:44%;margin-top:14px"></div><div class="skeleton" style="height:12px;width:55%;margin-top:12px"></div></div>`).join("")}</div>
     <div class="grid-2">
@@ -377,6 +380,7 @@ async function renderDashboard() {
     apiFetch("/bookings?limit=8"),
     apiFetch("/wallet/balance"),
   ]);
+  if (state.renderToken !== capturedToken) return;
   if (wallet?.data) updateWallet(wallet.data);
   const d = report?.data || {};
   document.getElementById("pendingBadge").textContent = d.pendingBookings || 0;
@@ -444,6 +448,7 @@ function renderBookings() {
       ["type", "form.type", ["", "HOTEL", "FLIGHT", "PACKAGE"]],
       ["currency", "form.currency", ["", "USD", "EGP", "EUR"]],
     ],
+    showCreateBooking: true,
   });
 }
 
@@ -461,12 +466,14 @@ function hotelActionCell(h) {
 }
 
 async function renderHotels() {
+  const capturedToken = state.renderToken;
   // Fetch destinations for the filter dropdown
   let destOptions = [""];
   try {
     const dr = await apiFetch("/destinations?limit=200");
     if (dr?.data) destOptions = ["", ...dr.data.map(d => d.name)];
   } catch {}
+  if (state.renderToken !== capturedToken) return;
 
   renderListPage("hotels", "/hotels", [
     ["th.name", h => `<span class="primary-text">${escapeHtml(h.name)}</span><div class="secondary-text">${escapeHtml(h.city)}, ${escapeHtml(h.country)}</div>`],
@@ -489,11 +496,13 @@ function renderCruises() {
     ["th.name", c => `<span class="primary-text">${escapeHtml(c.name)}</span>`],
     ["th.type", c => escapeHtml(c.shipType)],
     ["th.route", c => escapeHtml(c.route)],
-    ["th.amount", c => c.showPriceToAgents
+    ["th.amount", c => c.priceFrom != null && c.priceVisible !== false
       ? `<span class="numeric">${formatMoney(c.priceFrom, c.currency)}</span>`
       : `<span class="badge badge-pending" style="font-size:11px">${t("hotel.priceOnRequest","Price on request")}</span>`],
     ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
-    ["th.actions", c => `<button class="btn btn-primary" onclick="openQuoteRequestModal('CRUISE','${c.id}',${JSON.stringify(escapeHtml(c.name))})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`],
+    ["th.actions", c => c.canRequestQuote !== false
+      ? `<button class="btn btn-primary" onclick="openQuoteRequestModal('CRUISE','${c.id}',${JSON.stringify(escapeHtml(c.name))})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`
+      : "—"],
   ]);
 }
 
@@ -922,7 +931,9 @@ function renderWallet() {
 
 async function renderReports() {
   state.page = "reports";
+  const capturedToken = state.renderToken;
   const res = state.user?.companyId ? await apiFetch(`/reports/company/${state.user.companyId}`) : null;
+  if (state.renderToken !== capturedToken) return;
   const d = res?.data || {};
   content(pageHeader(`<button class="btn btn-outline" onclick="renderReports()">${icon("refresh-cw")}${t("btn.refresh")}</button>`) + `
     <div class="stats-grid">
@@ -952,8 +963,9 @@ async function renderListPage(page, endpoint, columns, options = {}) {
   state.listConfigs[page] = { endpoint, columns };
   const filters = options.filters || [];
   const extraActions = options.extraActions || "";
+  const showCreateBooking = options.showCreateBooking ?? false;
   content(pageHeader(`
-    <button class="btn btn-primary" onclick="openBookingWizard()">${icon("plus")}${t("btn.createBooking")}</button>
+    ${showCreateBooking ? `<button class="btn btn-primary" onclick="openBookingWizard()">${icon("plus")}${t("btn.createBooking")}</button>` : ""}
     ${extraActions}
     <button class="btn btn-outline" onclick="exportRows('${page}', state.cache['${page}Rows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>
   `) + `
@@ -1336,7 +1348,7 @@ const pageLoaders = {
   "my-quotes": renderMyQuotes,
 };
 
-document.addEventListener("portal:lang", () => setPage(state.page));
+document.addEventListener("portal:lang", () => { closeSidebar(); setPage(state.page); });
 
 (async function init() {
   initI18n();
