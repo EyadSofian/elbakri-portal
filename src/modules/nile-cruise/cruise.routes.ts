@@ -14,7 +14,7 @@ router.delete('/cruises/:id', requireRole('SUPERADMIN'), deleteCruise);
 
 router.get('/cruise-bookings', listCruiseBookings);
 router.post('/cruise-bookings', createCruiseBooking);
-router.patch('/cruise-bookings/:id/confirm', requireRole('SUPERADMIN', 'COMPANY_ADMIN'), confirmCruiseBooking);
+router.patch('/cruise-bookings/:id/confirm', requireRole('SUPERADMIN'), confirmCruiseBooking);
 router.patch('/cruise-bookings/:id/cancel', cancelCruiseBooking);
 
 export default router;

@@ -104,7 +104,7 @@ export async function me(req: Request, res: Response): Promise<void> {
     select: {
       id: true, email: true, name: true, nameAr: true, role: true,
       companyId: true, isActive: true, lastLoginAt: true, createdAt: true,
-      company: { select: { id: true, name: true, nameAr: true, balance: true } },
+      company: { select: { id: true, name: true, nameAr: true, tier: true, creditLimit: true, currency: true, balance: true } },
     },
   });
 

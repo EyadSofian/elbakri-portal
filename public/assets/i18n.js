@@ -161,6 +161,9 @@
     },
     status: {
       PENDING: "قيد الانتظار",
+      NEW: "جديد",
+      IN_REVIEW: "قيد المراجعة",
+      ACCEPTED: "مقبول",
       CONFIRMED: "مؤكد",
       CANCELLED: "ملغي",
       COMPLETED: "مكتمل",
@@ -575,7 +578,8 @@
       slug: "Slug", region: "Region", priceVisibility: "Price Visibility",
     },
     status: {
-      PENDING: "Pending", CONFIRMED: "Confirmed", CANCELLED: "Cancelled", COMPLETED: "Completed", PAID: "Paid", UNPAID: "Unpaid",
+      PENDING: "Pending", NEW: "New", IN_REVIEW: "In Review", ACCEPTED: "Accepted",
+      CONFIRMED: "Confirmed", CANCELLED: "Cancelled", COMPLETED: "Completed", PAID: "Paid", UNPAID: "Unpaid",
       OVERDUE: "Overdue", APPROVED: "Approved", REJECTED: "Rejected", SUBMITTED: "Submitted", UNDER_REVIEW: "Under Review",
       ACTIVE: "Active", INACTIVE: "Inactive", CREDIT: "Credit", DEBIT: "Debit", REFUND: "Refund", ADJUSTMENT: "Adjustment",
       SUCCESS: "Success", FAILED: "Failed", RUNNING: "Running", PARTIAL: "Partial",

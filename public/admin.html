@@ -719,6 +719,9 @@ const masterConfigs = {
       { name: "commissionPercent", label: "form.commissionPercent", fallback: "Hotel commission %", type: "number", default: 0, help: "Added to the hotel base price for client bookings" },
       { name: "availableRooms", label: "form.availableRooms", fallback: "Available rooms", type: "number", default: 0, help: "0 means no inventory cap" },
       { name: "maxGuestsPerRoom", label: "form.maxGuestsPerRoom", fallback: "Guests per room", type: "number", default: 2 },
+      { name: "showPriceToAgents", label: "hotel.showPriceToAgents", fallback: "Show Prices to Agents", type: "checkbox" },
+      { name: "allowQuoteRequest", label: "hotel.allowQuoteRequest", fallback: "Allow Quote Request", type: "checkbox" },
+      { name: "minVisibleTier", label: "hotel.minVisibleTier", fallback: "Min Visible Tier", type: "select", nullable: true, options: ["STANDARD", "SILVER", "GOLD", "PLATINUM"] },
     ],
   },
   "hotel-pricing": {
@@ -764,7 +767,7 @@ const masterConfigs = {
     fields: [
       { name: "name", label: "form.name", required: true },
       { name: "nameAr", label: "form.nameAr" },
-      { name: "city", label: "th.city", type: "select", default: "CAIRO", options: ["CAIRO", "SHARM_EL_SHEIKH", "DAHAB", "HURGHADA", "EL_GOUNA", "ALEXANDRIA"] },
+      { name: "city", label: "th.city", fallback: "City (free text)", help: "e.g. Cairo, Sharm El Sheikh, Dahab, Hurghada" },
       { name: "category", label: "th.type", type: "select", default: "SIGHTSEEING", options: ["SIGHTSEEING", "DIVING", "SNORKELING", "DESERT_SAFARI", "WATER_SPORTS", "CULTURAL", "FOOD_TOUR", "ADVENTURE", "RELAXATION"] },
       { name: "duration", label: "form.duration", fallback: "Duration" },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
@@ -848,7 +851,8 @@ function masterField(entity, fieldDef, row) {
     return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><textarea id="${id}" rows="3">${escapeHtml(value)}</textarea>${help}</div>`;
   }
   if (fieldDef.type === "select") {
-    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><select id="${id}">${fieldDef.options.map(opt => `<option value="${opt}" ${opt === value ? "selected" : ""}>${escapeHtml(opt.replace(/_/g, " "))}</option>`).join("")}</select>${help}</div>`;
+    const emptyOpt = fieldDef.nullable ? `<option value="" ${!value ? "selected" : ""}>— None —</option>` : "";
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><select id="${id}">${emptyOpt}${fieldDef.options.map(opt => `<option value="${opt}" ${opt === value ? "selected" : ""}>${escapeHtml(opt.replace(/_/g, " "))}</option>`).join("")}</select>${help}</div>`;
   }
   if (fieldDef.type === "hotelSelect") {
     const hotels = state.cache.hotelOptions || [];
@@ -894,7 +898,8 @@ function collectMasterPayload(entity) {
     if (fieldDef.required && (value === "" || value === null || value === undefined)) valid = false;
     if (fieldDef.type === "number") value = value === "" ? 0 : Number(value);
     if (fieldDef.type === "list") value = String(value || "").split(",").map(item => item.trim()).filter(Boolean);
-    if (value !== "" || fieldDef.required || fieldDef.type === "number" || fieldDef.type === "list") {
+    if (fieldDef.nullable && value === "") value = null;
+    if (value !== "" || value === null || fieldDef.required || fieldDef.type === "number" || fieldDef.type === "list") {
       payload[fieldDef.name] = value;
     }
   }
@@ -1342,7 +1347,7 @@ async function renderQuoteRequests() {
 
   const rows = quotes.map(q => {
     const dest = q.destination?.name || q.destinationName || "—";
-    const hotel = q.hotel?.name || "—";
+    const hotel = q.serviceName || q.hotel?.name || "—";
     const dates = q.checkIn ? `${formatDate(q.checkIn)} – ${formatDate(q.checkOut||"")}` : "—";
     return `<tr>
       <td><span class="primary-text">${escapeHtml(q.refNumber)}</span></td>
@@ -1379,7 +1384,7 @@ async function openQuoteRequestModal(id) {
   if (!res?.data) return;
   const q = res.data;
   const dest = q.destination?.name || q.destinationName || "Not specified";
-  const hotel = q.hotel?.name || "Not specified";
+  const hotel = q.serviceName || q.hotel?.name || "Not specified";
   const dates = q.checkIn ? `${formatDate(q.checkIn)} – ${formatDate(q.checkOut||"")}` : "Not specified";
 
   const body = `
@@ -1627,14 +1632,6 @@ async function renderTransport() {
     ["th.status", r => statusBadge(r.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", r => masterRowActions("transport", r)],
   ], masterActions("transport"));
-  renderSimpleList("transport", "/transport-bookings?limit=100", [
-    ["th.ref", b => escapeHtml(b.refNumber)],
-    ["th.type", b => escapeHtml(b.type)],
-    ["th.route", b => `${escapeHtml(b.fromLocation)} → ${escapeHtml(b.toLocation)}`],
-    ["th.amount", b => formatMoney(b.totalAmount, b.currency)],
-    ["th.status", b => statusBadge(b.status)],
-    ["th.date", b => formatDate(b.pickupDateTime)],
-  ], `<button class="btn btn-outline" onclick="syncEntity('transport-rates')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
 }
 
 async function renderVisa() {
@@ -1646,14 +1643,6 @@ async function renderVisa() {
     ["th.status", v => statusBadge(v.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", v => masterRowActions("visa", v)],
   ], masterActions("visa"));
-  renderSimpleList("visa", "/visa-applications?limit=100", [
-    ["th.ref", v => escapeHtml(v.refNumber)],
-    ["th.name", v => escapeHtml(v.applicantName)],
-    ["th.type", v => escapeHtml(v.visaType)],
-    ["th.country", v => escapeHtml(v.destinationCountry)],
-    ["th.amount", v => formatMoney(v.totalAmount, v.currency)],
-    ["th.status", v => statusBadge(v.status)],
-  ], `<button class="btn btn-outline" onclick="syncEntity('visa-fees')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
 }
 
 async function renderReception() {
@@ -1664,14 +1653,6 @@ async function renderReception() {
     ["th.status", r => statusBadge(r.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", r => masterRowActions("reception", r)],
   ], masterActions("reception"));
-  renderSimpleList("reception", "/airport-receptions?limit=100", [
-    ["th.ref", r => escapeHtml(r.refNumber)],
-    ["th.name", r => escapeHtml(r.guestName)],
-    ["th.service", r => escapeHtml(r.serviceType)],
-    ["th.route", r => escapeHtml(r.airport)],
-    ["th.amount", r => formatMoney(r.totalAmount, r.currency)],
-    ["th.status", r => statusBadge(r.status)],
-  ], `<button class="btn btn-outline" onclick="syncEntity('reception-services')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`);
 }
 
 async function renderSimpleList(page, endpoint, columns, extraActions = "") {

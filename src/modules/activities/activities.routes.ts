@@ -14,7 +14,7 @@ router.delete('/activities/:id', requireRole('SUPERADMIN'), deleteActivity);
 
 router.get('/activity-bookings', listActivityBookings);
 router.post('/activity-bookings', createActivityBooking);
-router.patch('/activity-bookings/:id/confirm', requireRole('SUPERADMIN', 'COMPANY_ADMIN'), confirmActivityBooking);
+router.patch('/activity-bookings/:id/confirm', requireRole('SUPERADMIN'), confirmActivityBooking);
 router.patch('/activity-bookings/:id/cancel', cancelActivityBooking);
 
 export default router;

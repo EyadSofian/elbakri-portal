@@ -89,6 +89,11 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     destinationId?: string;
     destinationName?: string;
     hotelId?: string;
+    // Service identity for non-hotel services
+    serviceId?: string;
+    serviceName?: string;
+    cruiseId?: string;
+    activityId?: string;
     checkIn?: string;
     checkOut?: string;
     adultsCount?: number;
@@ -131,6 +136,10 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       destinationId: body.destinationId ?? null,
       destinationName: body.destinationName ?? null,
       hotelId: body.hotelId ?? null,
+      serviceId: body.serviceId ?? body.cruiseId ?? body.activityId ?? null,
+      serviceName: body.serviceName ?? null,
+      cruiseId: body.cruiseId ?? null,
+      activityId: body.activityId ?? null,
       checkIn: body.checkIn ? new Date(body.checkIn) : null,
       checkOut: body.checkOut ? new Date(body.checkOut) : null,
       adultsCount: body.adultsCount ?? 1,

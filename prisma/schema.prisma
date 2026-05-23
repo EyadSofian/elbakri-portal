@@ -468,6 +468,11 @@ model QuoteRequest {
   destinationName  String?
   hotelId          String?
   hotel            Hotel?             @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  // Service identity for non-hotel services (soft refs — no FK constraint for flexibility)
+  serviceId        String?            // cruiseId, activityId, or transportRateId as plain text
+  serviceName      String?            // Human-readable display name of the quoted service
+  cruiseId         String?            // NileCruise.id — soft reference
+  activityId       String?            // Activity.id — soft reference
   checkIn          DateTime?
   checkOut         DateTime?
   adultsCount      Int                @default(1)

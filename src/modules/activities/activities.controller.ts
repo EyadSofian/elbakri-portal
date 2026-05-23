@@ -89,12 +89,27 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     activityDate: string;
     adultsCount?: number; childrenCount?: number;
     passengerNames?: string[];
-    totalAmount: number; currency?: string; notes?: string;
+    // totalAmount is intentionally ignored — computed server-side from activity prices
+    notes?: string;
   };
 
   const companyId = caller.role === 'SUPERADMIN' ? (body.companyId ?? caller.companyId!) : caller.companyId!;
   if (!companyId) {
     res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'companyId required' });
+    return;
+  }
+
+  // Resolve activity to compute amount server-side — never trust client totals
+  const activity = await prisma.activity.findUnique({
+    where: { id: body.activityId },
+    select: { priceAdult: true, priceChild: true, currency: true, isActive: true, isConfirmableInApp: true },
+  });
+  if (!activity || !activity.isActive) {
+    res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Activity not found or inactive' });
+    return;
+  }
+  if (!activity.isConfirmableInApp) {
+    res.status(400).json({ success: false, error: 'USE_QUOTE_REQUEST', message: 'This activity requires a quote request' });
     return;
   }
 
@@ -105,9 +120,14 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     return;
   }
 
+  const adultsCount = Math.max(1, body.adultsCount ?? 1);
+  const childrenCount = Math.max(0, body.childrenCount ?? 0);
+  // Server-side calculation — authoritative amount
+  const totalAmount = activity.priceAdult.mul(adultsCount).add(activity.priceChild.mul(childrenCount));
+  const currency = activity.currency;
+
   try {
     const refNumber = await generateRef(prisma, 'ACT');
-    const totalAmount = new Decimal(body.totalAmount);
 
     const booking = await prisma.activityBooking.create({
       data: {
@@ -116,11 +136,11 @@ export async function createActivityBooking(req: Request, res: Response): Promis
         companyId,
         createdById: caller.id,
         activityDate: new Date(body.activityDate),
-        adultsCount: body.adultsCount ?? 1,
-        childrenCount: body.childrenCount ?? 0,
+        adultsCount,
+        childrenCount,
         passengerNames: body.passengerNames ?? [],
-        totalAmount,
-        currency: body.currency ?? 'USD',
+        totalAmount,   // server-calculated
+        currency,      // from Activity record
         notes: body.notes,
         status: 'PENDING',
       },

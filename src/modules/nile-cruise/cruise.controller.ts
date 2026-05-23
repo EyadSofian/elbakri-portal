@@ -65,6 +65,17 @@ export async function listCruiseBookings(req: Request, res: Response): Promise<v
 
 export async function createCruiseBooking(req: Request, res: Response): Promise<void> {
   const caller = req.user!;
+
+  // Customers must use the quote request flow — cruise bookings are SUPERADMIN-only operations
+  if (caller.role !== 'SUPERADMIN') {
+    res.status(400).json({
+      success: false,
+      error: 'USE_QUOTE_REQUEST',
+      message: 'Cruise bookings are managed by the operations team. Please submit a quote request via /api/quote-requests.',
+    });
+    return;
+  }
+
   const body = req.body as {
     cruiseId: string; companyId?: string;
     checkIn: string; checkOut: string;
@@ -73,7 +84,7 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     totalAmount: number; currency?: string; notes?: string;
   };
 
-  const companyId = caller.role === 'SUPERADMIN' ? (body.companyId ?? caller.companyId!) : caller.companyId!;
+  const companyId = body.companyId ?? caller.companyId!;
   if (!companyId) {
     res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'companyId required' });
     return;
