@@ -71,11 +71,33 @@ export async function listCompanies(req: Request, res: Response): Promise<void> 
 
 export async function createCompany(req: Request, res: Response): Promise<void> {
   const body = req.body as {
-    name: string; nameAr?: string; email: string; phone: string;
+    name: string; nameAr?: string;
+    // company.email is the company contact/billing email (unique identifier)
+    email: string;
+    // adminEmail is the login email for the COMPANY_ADMIN user.
+    // If not provided, falls back to company email — but MUST be unique in User table.
+    adminEmail?: string;
+    adminName?: string;
+    phone: string;
     address?: string; billingAddress?: string; country?: string; taxId?: string;
     website?: string; creditLimit?: number; tier?: string; currency?: string;
     logoUrl?: string; themeColor?: string;
   };
+
+  // Determine admin user email — prefer explicit adminEmail to avoid collision
+  const adminEmail = body.adminEmail?.trim() || body.email;
+
+  // Guard: if adminEmail == company email, that's fine (legacy) but warn.
+  // Guard: if adminEmail already exists in User table, fail with clear error.
+  const existingUser = await prisma.user.findUnique({ where: { email: adminEmail } });
+  if (existingUser) {
+    res.status(409).json({
+      success: false,
+      error: 'EMAIL_EXISTS',
+      message: `A user with email "${adminEmail}" already exists. Use adminEmail to specify a different login email for the company admin.`,
+    });
+    return;
+  }
 
   const tempPassword = generatePassword(12);
   const hashedPassword = await bcrypt.hash(tempPassword, 12);
@@ -84,7 +106,8 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
     data: {
       name: body.name,
       nameAr: body.nameAr,
-      email: body.email,
+      email: body.email,             // company contact/billing email
+      contactEmail: nullable(body.adminEmail !== body.email ? body.adminEmail : undefined),
       phone: body.phone,
       address: nullable(body.address),
       billingAddress: nullable(body.billingAddress),
@@ -102,9 +125,9 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
 
   const adminUser = await prisma.user.create({
     data: {
-      email: body.email,
+      email: adminEmail,
       password: hashedPassword,
-      name: `${body.name} Admin`,
+      name: body.adminName ?? `${body.name} Admin`,
       role: 'COMPANY_ADMIN',
       companyId: company.id,
     },
@@ -114,7 +137,8 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
   });
 
   const { subject, html } = welcomeEmail(company, { ...adminUser, nameAr: null }, tempPassword);
-  const recipients = [body.email, process.env.INTERNAL_TEAM_EMAIL].filter(Boolean) as string[];
+  // Notify both the company email and the admin login email
+  const recipients = [...new Set([body.email, adminEmail, process.env.INTERNAL_TEAM_EMAIL].filter(Boolean) as string[])];
   if (recipients.length) sendEmail(recipients, subject, html).catch(console.error);
 
   res.status(201).json({ success: true, data: { company, adminUser } });
@@ -171,7 +195,7 @@ export async function getCompany(req: Request, res: Response): Promise<void> {
 
 export async function updateCompany(req: Request, res: Response): Promise<void> {
   const body = req.body as {
-    name?: string; nameAr?: string; email?: string; phone?: string; address?: string;
+    name?: string; nameAr?: string; email?: string; contactEmail?: string; phone?: string; address?: string;
     billingAddress?: string; country?: string; taxId?: string; website?: string;
     tier?: string; creditLimit?: number; currency?: string; logoUrl?: string;
     themeColor?: string; isActive?: boolean;
@@ -187,6 +211,7 @@ export async function updateCompany(req: Request, res: Response): Promise<void> 
       ...(body.address !== undefined && { address: nullable(body.address) }),
       ...(body.billingAddress !== undefined && { billingAddress: nullable(body.billingAddress) }),
       ...(body.country && { country: body.country }),
+      ...(body.contactEmail !== undefined && { contactEmail: nullable(body.contactEmail) }),
       ...(body.taxId !== undefined && { taxId: nullable(body.taxId) }),
       ...(body.website !== undefined && { website: nullable(body.website) }),
       ...(body.tier && { tier: body.tier as 'STANDARD' | 'SILVER' | 'GOLD' | 'PLATINUM' }),

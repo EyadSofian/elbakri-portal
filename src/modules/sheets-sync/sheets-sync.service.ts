@@ -10,7 +10,8 @@ export type SyncEntity =
   | 'activities'
   | 'transport-rates'
   | 'visa-fees'
-  | 'reception-services';
+  | 'reception-services'
+  | 'destinations';
 
 export interface SyncResult {
   entity: SyncEntity;
@@ -27,6 +28,7 @@ export interface SyncResult {
 type SheetRow = Record<string, string>;
 
 export const SHEETS_ENTITIES: Record<SyncEntity, { sheetName: string; label: string }> = {
+  destinations: { sheetName: 'Destinations', label: 'Destinations' },
   hotels: { sheetName: 'Hotels', label: 'Hotels' },
   'hotel-pricing': { sheetName: 'Hotel Pricing', label: 'Hotel Pricing' },
   cruises: { sheetName: 'Cruises', label: 'Nile Cruises' },
@@ -293,11 +295,52 @@ async function upsertCruises(rows: SheetRow[], errors: string[]): Promise<{ crea
   return { created, updated, skipped };
 }
 
+async function upsertDestinations(rows: SheetRow[], errors: string[]): Promise<{ created: number; updated: number; skipped: number }> {
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  const types = ['CITY', 'RESORT', 'AREA', 'REGION'] as const;
+
+  for (const row of rows) {
+    try {
+      const sheetsRowId = rowId(row, 'destinations');
+      const name = pick(row, 'name');
+      const slug = pick(row, 'slug') || name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      if (!name || !slug) {
+        skipped++;
+        continue;
+      }
+
+      const data = {
+        name,
+        nameAr: pick(row, 'nameAr') || null,
+        slug,
+        country: pick(row, 'country') || 'EG',
+        region: pick(row, 'region') || null,
+        type: enumCell(pick(row, 'type'), types, 'CITY'),
+        isActive: parseBool(pick(row, 'isActive', 'active'), true),
+      };
+
+      const existing = await prisma.destination.findUnique({ where: { slug } });
+      if (existing) {
+        await prisma.destination.update({ where: { id: existing.id }, data });
+        updated++;
+      } else {
+        await prisma.destination.create({ data });
+        created++;
+      }
+    } catch (error) {
+      errors.push(`Destinations row ${pick(row, 'rowNumber')}: ${(error as Error).message}`);
+    }
+  }
+
+  return { created, updated, skipped };
+}
+
 async function upsertActivities(rows: SheetRow[], errors: string[]): Promise<{ created: number; updated: number; skipped: number }> {
   let created = 0;
   let updated = 0;
   let skipped = 0;
-  const cities = ['CAIRO', 'SHARM_EL_SHEIKH', 'DAHAB', 'HURGHADA', 'EL_GOUNA', 'ALEXANDRIA'] as const;
   const categories = ['SIGHTSEEING', 'DIVING', 'SNORKELING', 'DESERT_SAFARI', 'WATER_SPORTS', 'CULTURAL', 'FOOD_TOUR', 'ADVENTURE', 'RELAXATION'] as const;
 
   for (const row of rows) {
@@ -309,10 +352,27 @@ async function upsertActivities(rows: SheetRow[], errors: string[]): Promise<{ c
         continue;
       }
 
+      // city is now free-text — normalize but keep human-readable
+      const cityRaw = pick(row, 'city', 'destination');
+      // Convert legacy enum-style values to readable names
+      const cityMap: Record<string, string> = {
+        CAIRO: 'Cairo',
+        SHARM_EL_SHEIKH: 'Sharm El Sheikh',
+        DAHAB: 'Dahab',
+        HURGHADA: 'Hurghada',
+        EL_GOUNA: 'El Gouna',
+        ALEXANDRIA: 'Alexandria',
+      };
+      const city = (cityMap[cityRaw.toUpperCase().replace(/[\s-]+/g, '_')] ?? cityRaw) || 'Cairo';
+
+      // Try to link to a Destination record by slug
+      const slug = city.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const destination = await prisma.destination.findUnique({ where: { slug } });
+
       const data = {
         name,
         nameAr: pick(row, 'nameAr') || null,
-        city: enumCell(pick(row, 'city'), cities, 'CAIRO'),
+        city,
         category: enumCell(pick(row, 'category'), categories, 'SIGHTSEEING'),
         duration: pick(row, 'duration') || null,
         description: pick(row, 'description') || null,
@@ -327,6 +387,7 @@ async function upsertActivities(rows: SheetRow[], errors: string[]): Promise<{ c
         minPax: parseIntCell(pick(row, 'minPax'), 1),
         maxPax: parseIntCell(pick(row, 'maxPax'), 20),
         isActive: parseBool(pick(row, 'isActive', 'active'), true),
+        ...(destination && { destinationId: destination.id }),
       };
 
       const existing = await prisma.activity.findFirst({ where: { sheetsRowId } });
@@ -476,6 +537,7 @@ async function upsertReceptionServices(rows: SheetRow[], errors: string[]): Prom
 
 async function persistRows(entity: SyncEntity, rows: SheetRow[], errors: string[]) {
   switch (entity) {
+    case 'destinations': return upsertDestinations(rows, errors);
     case 'hotels': return upsertHotels(rows, errors);
     case 'hotel-pricing': return upsertHotelPricing(rows, errors);
     case 'cruises': return upsertCruises(rows, errors);

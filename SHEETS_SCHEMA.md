@@ -1,151 +1,280 @@
 # Elbakri Portal Google Sheets Schema
 
 Google Sheets is the source of truth for master data. Sync is one-way:
-Sheets to database. Each row must include a stable `sheetsRowId`; the sync
-process uses it to update an existing record or create a new one.
+Sheets → database. Each row must include a stable `sheetsRowId` (where applicable);
+the sync process uses it to update an existing record or create a new one.
 
 ## Workbook
 
 - One workbook per Elbakri Portal instance.
-- Configure the workbook ID in Admin -> Sheets Config.
-- Each tab name must match the names below.
+- Configure the workbook ID in Admin → Sheets Config.
+- Each tab name must match the names below exactly.
 - Boolean values accept `true/false`, `yes/no`, `1/0`, `active/inactive`.
 - Multi-value columns accept semicolon, comma, or pipe separators.
 - Amount columns are decimal numbers without currency symbols.
+- Rows with missing required fields are **skipped** and logged as errors — they are never silently imported with bad defaults.
+
+---
 
 ## Tabs
 
+### Destinations
+
+Dynamic destination/area master list. Replaces the old `ActivityCity` enum.
+Import this sheet **before** Hotels and Activities so foreign keys resolve correctly.
+
+| Column  | Required | Notes |
+| ------- | -------- | ----- |
+| name    | Yes      | English destination name, e.g. `North Coast`, `Sharm El Sheikh`. |
+| nameAr  | No       | Arabic name. |
+| slug    | Yes      | URL-safe unique identifier, e.g. `north-coast`. Auto-generated from name if blank. |
+| country | No       | ISO-2 country code. Default `EG`. |
+| region  | No       | Broader region, e.g. `Red Sea`, `Mediterranean`, `Upper Egypt`. |
+| type    | No       | `CITY`, `RESORT`, `AREA`, or `REGION`. Default `CITY`. |
+| isActive| No       | Default `true`. |
+
+---
+
 ### Hotels
 
-| Column | Required | Notes |
-| --- | --- | --- |
-| sheetsRowId | Yes | Stable row ID, never reuse for another hotel. |
-| name | Yes | English hotel name. |
-| nameAr | No | Arabic hotel name. |
-| city | Yes | City text. |
-| cityAr | No | Arabic city name. |
-| country | Yes | ISO code or country name, default `EG`. |
-| stars | No | Number, default `3`. |
-| address | Yes | Street/location. |
-| description | No | English description. |
-| descriptionAr | No | Arabic description. |
-| amenities | No | List separated by `;`, `,`, or `|`. |
-| pricePerNight | Yes | Base rate. |
-| currency | No | `USD`, `EGP`, `EUR`, etc. Default `USD`. |
-| commissionPercent | No | Percentage added to the base hotel price when an agent books. Default `0`. |
-| availableRooms | No | Inventory cap used by booking availability checks. `0` means open inventory. |
-| maxGuestsPerRoom | No | Guest capacity used to calculate required rooms. Default `2`. |
-| imageUrl | No | Public or uploaded image URL. |
-| isActive | No | Default `true`. |
+| Column            | Required | Notes |
+| ----------------- | -------- | ----- |
+| sheetsRowId       | Yes      | Stable row ID, never reuse for another hotel. |
+| name              | Yes      | English hotel name. |
+| nameAr            | No       | Arabic hotel name. |
+| city              | Yes      | City/area text. Should match a Destination name. |
+| cityAr            | No       | Arabic city name. |
+| country           | No       | ISO code. Default `EG`. |
+| stars             | No       | Number 1–5. Default `3`. |
+| address           | Yes      | Street/location. |
+| description       | No       | English description. |
+| descriptionAr     | No       | Arabic description. |
+| amenities         | No       | Semicolon-separated list. |
+| pricePerNight     | Yes      | Base/fallback rate (used when no HotelPricing row applies). |
+| currency          | No       | `USD`, `EGP`, `EUR`. Default `USD`. |
+| commissionPercent | No       | Agent markup %. Default `0`. |
+| availableRooms    | No       | `0` = open inventory. Default `0`. |
+| maxGuestsPerRoom  | No       | Used to auto-calculate rooms from pax. Default `2`. |
+| showPriceToAgents | No       | `true/false`. When `false` agents see "Price on request". Default `false`. |
+| allowQuoteRequest | No       | `true/false`. Default `true`. |
+| minVisibleTier    | No       | `STANDARD`, `SILVER`, `GOLD`, or `PLATINUM`. Leave blank for all tiers. |
+| imageUrl          | No       | Public image URL. |
+| isActive          | No       | Default `true`. |
+
+---
 
 ### Hotel Pricing
 
-| Column | Required | Notes |
-| --- | --- | --- |
-| sheetsRowId | Yes | Stable pricing row ID. |
-| hotelSheetsRowId | Preferred | Links to Hotels.sheetsRowId. |
-| hotelId | Optional | Database ID fallback. |
-| hotelName | Optional | Name fallback when row ID is unavailable. |
-| roomType | Yes | `STANDARD`, `DELUXE`, `SUITE`, `EXECUTIVE`. |
-| season | No | `LOW`, `REGULAR`, `HIGH`, `PEAK`. |
-| pricePerNight | Yes | Rate per room/night. |
-| currency | No | Defaults to hotel currency or `USD`. |
-| validFrom | Yes | ISO date or spreadsheet date text. |
-| validTo | Yes | ISO date or spreadsheet date text. |
-| isActive | No | Default `true`. |
+Seasonal/date-range pricing. Rows here override the Hotel base `pricePerNight`.
 
-### Cruises
+| Column           | Required | Notes |
+| ---------------- | -------- | ----- |
+| sheetsRowId      | Yes      | Stable pricing row ID. |
+| hotelSheetsRowId | Preferred| Links to Hotels.sheetsRowId. |
+| hotelId          | Optional | Database ID fallback. |
+| hotelName        | Optional | Name fallback when row ID unavailable. |
+| roomType         | Yes      | `STANDARD`, `DELUXE`, `SUITE`, `EXECUTIVE`. |
+| season           | No       | `LOW`, `REGULAR`, `HIGH`, `PEAK`. |
+| pricePerNight    | Yes      | Rate per room/night. |
+| currency         | No       | Defaults to hotel currency or `USD`. |
+| validFrom        | Yes      | ISO date `YYYY-MM-DD` or spreadsheet date. |
+| validTo          | Yes      | ISO date `YYYY-MM-DD` or spreadsheet date. |
+| isActive         | No       | Default `true`. |
 
-| Column | Required | Notes |
-| --- | --- | --- |
-| sheetsRowId | Yes | Stable cruise row ID. |
-| name | Yes | Ship/cruise name. |
-| nameAr | No | Arabic name. |
-| shipType | No | `CRUISE`, `DAHABIYA`, `FELUCCA`. |
-| operator | No | Supplier/operator. |
-| cabins | No | Cabin count. |
-| route | No | `LUXOR_ASWAN`, `ASWAN_LUXOR`, `LUXOR_ASWAN_LUXOR`. |
-| departureDays | No | List such as `Mon;Thu`. |
-| duration | No | Nights/days count, default `4`. |
-| description | No | English description. |
-| descriptionAr | No | Arabic description. |
-| priceFrom | Yes | Lead-in rate. |
-| currency | No | Default `USD`. |
-| imageUrl | No | Image URL. |
-| isActive | No | Default `true`. |
+---
+
+### Hotel Supplements
+
+Per-room-type or per-package supplements (e.g. SGL supplement, chalet rates).
+Stored the same as HotelPricing with a `supplementType` label column.
+
+| Column          | Required | Notes |
+| --------------- | -------- | ----- |
+| sheetsRowId     | Yes      | Stable row ID. |
+| hotelSheetsRowId| Yes      | Links to Hotels.sheetsRowId. |
+| supplementType  | Yes      | Free text label, e.g. `SGL Supplement`, `Chalet GV 6pax`. |
+| amount          | Yes      | Extra charge amount. |
+| currency        | No       | Default hotel currency or `USD`. |
+| validFrom       | No       | ISO date. |
+| validTo         | No       | ISO date. |
+| isActive        | No       | Default `true`. |
+
+> **Note:** Supplement rows are imported into HotelPricing with `roomType = SUITE`
+> and a description note until a dedicated Supplements table is added.
+
+---
+
+### On-Request Hotels
+
+Hotels that Elbakri can quote but does not manage inventory for.
+Appears in "Other hotels available upon request" sections (e.g. Rixos, Palma Bay).
+
+| Column          | Required | Notes |
+| --------------- | -------- | ----- |
+| sheetsRowId     | Yes      | Stable row ID. |
+| name            | Yes      | Hotel name. |
+| nameAr          | No       | Arabic name. |
+| city            | Yes      | City/area text. |
+| stars           | No       | Number. |
+| notes           | No       | Availability conditions or supplier notes. |
+| isActive        | No       | Default `true`. |
+
+> **Note:** On-request hotels are imported as Hotels with `allowQuoteRequest = true`
+> and `showPriceToAgents = false` so agents see "Available on request."
+
+---
 
 ### Activities
 
-| Column | Required | Notes |
-| --- | --- | --- |
-| sheetsRowId | Yes | Stable activity row ID. |
-| name | Yes | Activity name. |
-| nameAr | No | Arabic name. |
-| city | Yes | `CAIRO`, `SHARM_EL_SHEIKH`, `DAHAB`, `HURGHADA`, `EL_GOUNA`, `ALEXANDRIA`. |
-| category | No | `SIGHTSEEING`, `DIVING`, `SNORKELING`, `DESERT_SAFARI`, `WATER_SPORTS`, `CULTURAL`, `FOOD_TOUR`, `ADVENTURE`, `RELAXATION`. |
-| duration | No | Free text, e.g. `4 hours`. |
-| description | No | English description. |
-| descriptionAr | No | Arabic description. |
-| includes | No | List. |
-| excludes | No | List. |
-| priceAdult | Yes | Adult rate. |
-| priceChild | No | Child rate, defaults to adult rate when blank. |
-| currency | No | Default `USD`. |
-| minPax | No | Default `1`. |
-| maxPax | No | Default `20`. |
-| imageUrl | No | Image URL. |
-| isActive | No | Default `true`. |
+Activities, day tours, excursions, and attraction tickets.
+
+| Column            | Required | Notes |
+| ----------------- | -------- | ----- |
+| sheetsRowId       | Yes      | Stable activity row ID. |
+| name              | Yes      | Activity name. |
+| nameAr            | No       | Arabic name. |
+| city              | Yes      | Free-text city/destination name (not a fixed enum). |
+| category          | No       | `SIGHTSEEING`, `DIVING`, `SNORKELING`, `DESERT_SAFARI`, `WATER_SPORTS`, `CULTURAL`, `FOOD_TOUR`, `ADVENTURE`, `RELAXATION`. |
+| duration          | No       | Free text, e.g. `4 hours`, `Full day`. |
+| description       | No       | English description. |
+| descriptionAr     | No       | Arabic description. |
+| includes          | No       | Semicolon-separated list. |
+| excludes          | No       | Semicolon-separated list. |
+| priceAdult        | Yes      | Adult rate. Must be a clean decimal (e.g. `45` not `45$` or `45USD`). |
+| priceChild        | No       | Child rate. Defaults to adult rate if blank. |
+| currency          | No       | Default `USD`. |
+| minPax            | No       | Minimum participants. Default `1`. |
+| maxPax            | No       | Maximum participants. Default `20`. |
+| isConfirmableInApp| No       | `true/false`. If `false`, creates a quote request instead of a confirmable booking. Default `true`. |
+| imageUrl          | No       | Image URL. |
+| isActive          | No       | Default `true`. |
+
+> **Data quality warning:** Values like `110$CHLD` in the source sheet must be cleaned
+> before import. The sync will log an error and **skip** any row where `priceAdult`
+> cannot be parsed as a plain number.
+
+---
+
+### Attraction Tickets
+
+Museum and attraction entry tickets with adult/child prices.
+Same columns as Activities with `category = SIGHTSEEING`.
+
+---
 
 ### Transport Rates
 
-| Column | Required | Notes |
-| --- | --- | --- |
-| sheetsRowId | Yes | Stable transport rate row ID. |
-| type | Yes | `AIRPORT_TRANSFER`, `PRIVATE_TRANSFER`, `DAY_TOUR_TRANSPORT`, `INTERCITY`. |
-| vehicleType | Yes | `SEDAN`, `SUV`, `VAN_6`, `VAN_12`, `MINIBUS_20`, `BUS_45`, `LUXURY_LIMO`. |
-| city | No | City/operating area. |
-| fromLocation | No | Origin. |
-| toLocation | No | Destination. |
-| rate | Yes | Base rate. |
-| currency | No | Default `USD`. |
-| notes | No | Internal pricing notes. |
-| isActive | No | Default `true`. |
+Point-to-point transfer matrix (FROM → TO × vehicle type).
+
+| Column       | Required | Notes |
+| ------------ | -------- | ----- |
+| sheetsRowId  | Yes      | Stable transport rate row ID. |
+| type         | Yes      | `AIRPORT_TRANSFER`, `PRIVATE_TRANSFER`, `DAY_TOUR_TRANSPORT`, `INTERCITY`. |
+| vehicleType  | Yes      | `SEDAN`, `SUV`, `VAN_6`, `VAN_12`, `MINIBUS_20`, `BUS_45`, `LUXURY_LIMO`. |
+| fromLocation | No       | Origin city/point (free text). |
+| toLocation   | No       | Destination city/point (free text). |
+| city         | No       | Operating city/area (for day-tour transport). |
+| rate         | Yes      | Price. Must be a clean decimal. "By request" cells must be left blank. |
+| currency     | No       | Default `USD`. |
+| minCapacity  | No       | Min passengers (inclusive). Default `1`. |
+| maxCapacity  | No       | Max passengers (inclusive). |
+| notes        | No       | Internal notes, e.g. `Includes 2 bags`, `Toll not included`. |
+| isActive     | No       | Default `true`. |
+
+> **MEA.xlsx mapping:** Each vehicle column (Sedan/SUV/Van) in the TRANSFER EGYPT
+> sheet becomes a separate row. Routes with "cars by request" in the rate column
+> are imported as `isActive = false` with a note so they become quote-only.
+
+---
+
+### Cruises
+
+| Column           | Required | Notes |
+| ---------------- | -------- | ----- |
+| sheetsRowId      | Yes      | Stable cruise row ID. |
+| name             | Yes      | Ship/cruise name. |
+| nameAr           | No       | Arabic name. |
+| shipType         | No       | `CRUISE`, `DAHABIYA`, `FELUCCA`. |
+| operator         | No       | Supplier/operator. |
+| cabins           | No       | Cabin count. |
+| route            | No       | `LUXOR_ASWAN`, `ASWAN_LUXOR`, `LUXOR_ASWAN_LUXOR`. |
+| departureDays    | No       | e.g. `Mon;Thu`. |
+| duration         | No       | Nights/days. Default `4`. |
+| description      | No       | English description. |
+| descriptionAr    | No       | Arabic description. |
+| priceFrom        | Yes      | Lead-in rate. |
+| currency         | No       | Default `USD`. |
+| showPriceToAgents| No       | `true/false`. Default `false`. |
+| allowQuoteRequest| No       | `true/false`. Default `true`. |
+| imageUrl         | No       | Image URL. |
+| isActive         | No       | Default `true`. |
+
+---
 
 ### Visa Fees
 
-| Column | Required | Notes |
-| --- | --- | --- |
-| sheetsRowId | Yes | Stable visa fee row ID. |
-| visaType | Yes | `TOURIST`, `BUSINESS`, `TRANSIT`, `STUDENT`, `MEDICAL`, `UMRAH`, `HAJJ`. |
-| destinationCountry | Yes | Destination country. |
-| processingType | No | `NORMAL`, `EXPRESS`, `URGENT`. |
-| fee | Yes | Fee amount. |
-| currency | No | Default `USD`. |
-| notes | No | Supplier or condition notes. |
-| isActive | No | Default `true`. |
+| Column             | Required | Notes |
+| ------------------ | -------- | ----- |
+| sheetsRowId        | Yes      | Stable visa fee row ID. |
+| visaType           | Yes      | `TOURIST`, `BUSINESS`, `TRANSIT`, `STUDENT`, `MEDICAL`, `UMRAH`, `HAJJ`. |
+| destinationCountry | Yes      | Destination country name or ISO code. |
+| processingType     | No       | `NORMAL`, `EXPRESS`, `URGENT`. |
+| fee                | Yes      | Fee amount. |
+| currency           | No       | Default `USD`. |
+| notes              | No       | Conditions or supplier notes. |
+| isActive           | No       | Default `true`. |
+
+---
 
 ### Reception Services
 
-| Column | Required | Notes |
-| --- | --- | --- |
-| sheetsRowId | Yes | Stable reception service row ID. |
-| serviceType | Yes | `MEET_AND_GREET`, `AHLAN_SERVICE`, `VIP_LOUNGE`, `FULL_ASSISTANCE`. |
-| airport | No | `CAI`, `HRG`, `SSH`, `LXR`, `ASW`, `HBE`, `MHH`. |
-| rate | Yes | Service rate. |
-| currency | No | Default `USD`. |
-| notes | No | Service conditions. |
-| isActive | No | Default `true`. |
+| Column      | Required | Notes |
+| ----------- | -------- | ----- |
+| sheetsRowId | Yes      | Stable reception service row ID. |
+| serviceType | Yes      | `MEET_AND_GREET`, `AHLAN_SERVICE`, `VIP_LOUNGE`, `FULL_ASSISTANCE`. |
+| airport     | No       | `CAI`, `HRG`, `SSH`, `LXR`, `ASW`, `HBE`, `MHH`. |
+| rate        | Yes      | Service rate. |
+| currency    | No       | Default `USD`. |
+| notes       | No       | Service conditions. |
+| isActive    | No       | Default `true`. |
+
+---
 
 ## Sync Endpoints
 
-- `POST /api/hotels/sync-sheets`
-- `POST /api/hotel-pricing/sync-sheets`
-- `POST /api/cruises/sync-sheets`
-- `POST /api/activities/sync-sheets`
-- `POST /api/transport-rates/sync-sheets`
-- `POST /api/visa-fees/sync-sheets`
-- `POST /api/reception-services/sync-sheets`
-- `POST /api/admin/sheets/sync/:entity`
-- `GET /api/admin/sheets/history?limit=10`
+| Method | Path | Entity |
+| ------ | ---- | ------ |
+| POST | `/api/destinations/sync-sheets` | Destinations |
+| POST | `/api/hotels/sync-sheets` | Hotels |
+| POST | `/api/hotel-pricing/sync-sheets` | Hotel Pricing |
+| POST | `/api/cruises/sync-sheets` | Cruises |
+| POST | `/api/activities/sync-sheets` | Activities |
+| POST | `/api/transport-rates/sync-sheets` | Transport Rates |
+| POST | `/api/visa-fees/sync-sheets` | Visa Fees |
+| POST | `/api/reception-services/sync-sheets` | Reception Services |
+| POST | `/api/admin/sheets/sync/:entity` | Any entity (admin UI) |
+| GET  | `/api/admin/sheets/history?limit=10` | Sync history |
 
-All sync endpoints require `SUPERADMIN`.
+All sync endpoints require `SUPERADMIN` role.
+
+## Import Order
+
+To avoid foreign-key resolution failures, sync tabs in this order:
+
+1. **Destinations** — must be imported first so Hotels and Activities can link to them.
+2. **Hotels**
+3. **Hotel Pricing**
+4. **Activities** / **Attraction Tickets**
+5. **Transport Rates**
+6. **Cruises**
+7. **Visa Fees**
+8. **Reception Services**
+
+## Error Handling
+
+- Rows with missing required fields are **skipped** (counted in `skipped`).
+- Rows that fail validation (bad amounts, invalid enums) are **logged as errors** and skipped.
+- Errors do not abort the sync — the full sheet is always processed.
+- The sync result returns `{ status, synced, created, updated, skipped, errors[] }`.
+- `status = PARTIAL` when some rows succeed and some error.
+- `status = FAILED` when no rows succeed.

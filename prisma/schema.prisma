@@ -120,15 +120,6 @@ enum VehicleType {
   LUXURY_LIMO
 }
 
-enum ActivityCity {
-  CAIRO
-  SHARM_EL_SHEIKH
-  DAHAB
-  HURGHADA
-  EL_GOUNA
-  ALEXANDRIA
-}
-
 enum ActivityCategory {
   SIGHTSEEING
   DIVING
@@ -184,31 +175,61 @@ enum EgyptAirport {
 }
 
 // ─────────────────────────────────────────────
+// NEW ENUMS (B2B Refactor)
+// ─────────────────────────────────────────────
+
+enum DestinationType {
+  CITY
+  RESORT
+  AREA
+  REGION
+}
+
+enum QuoteRequestStatus {
+  NEW
+  IN_REVIEW
+  QUOTED
+  ACCEPTED
+  CLOSED
+  CANCELLED
+}
+
+enum QuoteServiceType {
+  HOTEL
+  PACKAGE
+  CRUISE
+  FLIGHT
+  MULTI_SERVICE
+}
+
+// ─────────────────────────────────────────────
 // AUTH
 // ─────────────────────────────────────────────
 
 model User {
-  id                String              @id @default(cuid())
-  email             String              @unique
-  password          String
-  name              String
-  nameAr            String?
-  role              Role                @default(AGENT)
-  companyId         String?
-  company           Company?            @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  bookings          Booking[]           @relation("BookingCreatedBy")
-  transactions      WalletTransaction[] @relation("TransactionCreatedBy")
+  id                   String               @id @default(cuid())
+  email                String               @unique
+  password             String
+  name                 String
+  nameAr               String?
+  role                 Role                 @default(AGENT)
+  companyId            String?
+  company              Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  bookings             Booking[]            @relation("BookingCreatedBy")
+  transactions         WalletTransaction[]  @relation("TransactionCreatedBy")
   platformTransactions PlatformWalletTransaction[] @relation("PlatformWalletTransactionCreatedBy")
-  cruiseBookings    CruiseBooking[]     @relation("CruiseBookingCreatedBy")
-  transportBookings TransportBooking[]  @relation("TransportBookingCreatedBy")
-  activityBookings  ActivityBooking[]   @relation("ActivityBookingCreatedBy")
-  visaApplications  VisaApplication[]   @relation("VisaCreatedBy")
-  airportReceptions AirportReception[]  @relation("ReceptionCreatedBy")
-  refreshTokens     RefreshToken[]
-  isActive          Boolean             @default(true)
-  lastLoginAt       DateTime?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  cruiseBookings       CruiseBooking[]      @relation("CruiseBookingCreatedBy")
+  transportBookings    TransportBooking[]   @relation("TransportBookingCreatedBy")
+  activityBookings     ActivityBooking[]    @relation("ActivityBookingCreatedBy")
+  visaApplications     VisaApplication[]   @relation("VisaCreatedBy")
+  airportReceptions    AirportReception[]   @relation("ReceptionCreatedBy")
+  quoteRequests        QuoteRequest[]       @relation("QuoteRequestCreatedBy")
+  assignedQuotes       QuoteRequest[]       @relation("QuoteRequestAssignedTo")
+  refreshTokens        RefreshToken[]
+  isActive             Boolean              @default(true)
+  lastLoginAt          DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
 
   @@index([email])
   @@index([companyId])
@@ -231,38 +252,65 @@ model RefreshToken {
 // ─────────────────────────────────────────────
 
 model Company {
-  id                String              @id @default(cuid())
-  name              String
-  nameAr            String?
-  email             String              @unique
-  phone             String
-  address           String?
-  billingAddress    String?
-  country           String              @default("EG")
-  taxId             String?
-  website           String?
-  creditLimit       Decimal             @default(0)  @db.Decimal(12, 2)
-  balance           Decimal             @default(0)  @db.Decimal(12, 2)
-  currency          String              @default("USD")
-  tier              CompanyTier         @default(STANDARD)
-  logoUrl           String?
-  themeColor        String?
-  isActive          Boolean             @default(true)
-  lastActivityAt    DateTime?
-  users             User[]
-  bookings          Booking[]
-  invoices          Invoice[]
-  transactions      WalletTransaction[]
+  id                   String                      @id @default(cuid())
+  name                 String
+  nameAr               String?
+  email                String                      @unique
+  contactEmail         String?                     // Separate contact email from admin user login email
+  phone                String
+  address              String?
+  billingAddress       String?
+  country              String                      @default("EG")
+  taxId                String?
+  website              String?
+  creditLimit          Decimal                     @default(0) @db.Decimal(12, 2)
+  balance              Decimal                     @default(0) @db.Decimal(12, 2)
+  currency             String                      @default("USD")
+  tier                 CompanyTier                 @default(STANDARD)
+  logoUrl              String?
+  themeColor           String?
+  isActive             Boolean                     @default(true)
+  lastActivityAt       DateTime?
+  users                User[]
+  bookings             Booking[]
+  invoices             Invoice[]
+  transactions         WalletTransaction[]
   platformTransactions PlatformWalletTransaction[]
-  cruiseBookings    CruiseBooking[]
-  transportBookings TransportBooking[]
-  activityBookings  ActivityBooking[]
-  visaApplications  VisaApplication[]
-  airportReceptions AirportReception[]
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  cruiseBookings       CruiseBooking[]
+  transportBookings    TransportBooking[]
+  activityBookings     ActivityBooking[]
+  visaApplications     VisaApplication[]
+  airportReceptions    AirportReception[]
+  quoteRequests        QuoteRequest[]
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
 
   @@index([email])
+}
+
+// ─────────────────────────────────────────────
+// DESTINATIONS (Dynamic, replaces ActivityCity enum)
+// ─────────────────────────────────────────────
+
+model Destination {
+  id             String          @id @default(cuid())
+  name           String
+  nameAr         String?
+  slug           String          @unique
+  country        String          @default("EG")
+  region         String?
+  type           DestinationType @default(CITY)
+  isActive       Boolean         @default(true)
+  hotels         Hotel[]
+  activities     Activity[]
+  transportRates TransportRate[]
+  quoteRequests  QuoteRequest[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([slug])
+  @@index([country])
+  @@index([isActive])
 }
 
 // ─────────────────────────────────────────────
@@ -270,35 +318,43 @@ model Company {
 // ─────────────────────────────────────────────
 
 model Hotel {
-  id             String         @id @default(cuid())
-  name           String
-  nameAr         String?
-  city           String
-  cityAr         String?
-  country        String
-  stars          Int            @default(3)
-  address        String
-  description    String?
-  descriptionAr  String?
-  amenities      String[]       @default([])
-  imageUrl       String?
-  pricePerNight  Decimal        @db.Decimal(10, 2)
-  currency       String         @default("USD")
-  commissionPercent Decimal     @default(0) @db.Decimal(5, 2)
-  availableRooms Int            @default(0)
-  maxGuestsPerRoom Int          @default(2)
-  source         HotelSource    @default(MANUAL)
-  sheetsRowId    String?
-  isActive       Boolean        @default(true)
-  rooms          Room[]
-  bookings       Booking[]
-  pricing        HotelPricing[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                String         @id @default(cuid())
+  name              String
+  nameAr            String?
+  city              String
+  cityAr            String?
+  country           String
+  stars             Int            @default(3)
+  address           String
+  description       String?
+  descriptionAr     String?
+  amenities         String[]       @default([])
+  imageUrl          String?
+  pricePerNight     Decimal        @db.Decimal(10, 2)
+  currency          String         @default("USD")
+  commissionPercent Decimal        @default(0) @db.Decimal(5, 2)
+  availableRooms    Int            @default(0)
+  maxGuestsPerRoom  Int            @default(2)
+  // Price visibility controls
+  showPriceToAgents Boolean        @default(false)
+  allowQuoteRequest Boolean        @default(true)
+  minVisibleTier    CompanyTier?
+  source            HotelSource    @default(MANUAL)
+  sheetsRowId       String?
+  isActive          Boolean        @default(true)
+  destinationId     String?
+  destination       Destination?   @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  rooms             Room[]
+  bookings          Booking[]
+  pricing           HotelPricing[]
+  quoteRequests     QuoteRequest[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   @@index([city])
   @@index([country])
   @@index([sheetsRowId])
+  @@index([destinationId])
 }
 
 model Room {
@@ -326,7 +382,7 @@ model HotelPricing {
   currency      String   @default("USD")
   validFrom     DateTime
   validTo       DateTime
-  sheetsRowId    String?
+  sheetsRowId   String?
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -336,7 +392,7 @@ model HotelPricing {
 }
 
 // ─────────────────────────────────────────────
-// BOOKINGS
+// BOOKINGS (only for truly confirmable in-app services)
 // ─────────────────────────────────────────────
 
 model Booking {
@@ -395,28 +451,84 @@ model BookingCounter {
 }
 
 // ─────────────────────────────────────────────
+// QUOTE REQUESTS (for hotel / package / cruise)
+// ─────────────────────────────────────────────
+
+model QuoteRequest {
+  id               String             @id @default(cuid())
+  refNumber        String             @unique
+  serviceType      QuoteServiceType
+  status           QuoteRequestStatus @default(NEW)
+  companyId        String
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdById      String
+  createdBy        User               @relation("QuoteRequestCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  destinationId    String?
+  destination      Destination?       @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  destinationName  String?
+  hotelId          String?
+  hotel            Hotel?             @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  checkIn          DateTime?
+  checkOut         DateTime?
+  adultsCount      Int                @default(1)
+  childrenCount    Int                @default(0)
+  infantsCount     Int                @default(0)
+  roomsCount       Int?
+  nationality      String?
+  budget           Decimal?           @db.Decimal(12, 2)
+  quotedAmount     Decimal?           @db.Decimal(12, 2)
+  currency         String             @default("USD")
+  customerNotes    String?
+  internalNotes    String?
+  contactPreference String?
+  assignedToId     String?
+  assignedTo       User?              @relation("QuoteRequestAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  respondedAt      DateTime?
+  closedAt         DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@index([serviceType])
+  @@index([refNumber])
+  @@index([createdAt])
+  @@index([assignedToId])
+}
+
+model QuoteRequestCounter {
+  year    Int @id
+  lastSeq Int @default(0)
+}
+
+// ─────────────────────────────────────────────
 // INVOICES
 // ─────────────────────────────────────────────
 
 model Invoice {
-  id            String        @id @default(cuid())
-  invoiceNumber String        @unique
-  bookingId     String        @unique
-  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Restrict)
-  companyId     String
-  company       Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  subtotal      Decimal       @db.Decimal(12, 2)
-  taxRate       Decimal       @default(0.14) @db.Decimal(5, 4)
-  taxAmount     Decimal       @db.Decimal(12, 2)
-  total         Decimal       @db.Decimal(12, 2)
-  currency      String        @default("USD")
-  status        InvoiceStatus @default(UNPAID)
-  pdfPath       String?
-  dueDate       DateTime
-  paidAt        DateTime?
-  notes         String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id                 String           @id @default(cuid())
+  invoiceNumber      String           @unique
+  // bookingId is now optional — invoice may belong to activity or transport booking
+  bookingId          String?          @unique
+  booking            Booking?         @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  activityBookingId  String?          @unique
+  activityBooking    ActivityBooking? @relation(fields: [activityBookingId], references: [id], onDelete: Restrict)
+  transportBookingId String?          @unique
+  transportBooking   TransportBooking? @relation(fields: [transportBookingId], references: [id], onDelete: Restrict)
+  companyId          String
+  company            Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  subtotal           Decimal          @db.Decimal(12, 2)
+  taxRate            Decimal          @default(0.14) @db.Decimal(5, 4)
+  taxAmount          Decimal          @db.Decimal(12, 2)
+  total              Decimal          @db.Decimal(12, 2)
+  currency           String           @default("USD")
+  status             InvoiceStatus    @default(UNPAID)
+  pdfPath            String?
+  dueDate            DateTime
+  paidAt             DateTime?
+  notes              String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   @@index([companyId])
   @@index([status])
@@ -482,25 +594,27 @@ model PlatformWalletTransaction {
 // ─────────────────────────────────────────────
 
 model NileCruise {
-  id            String          @id @default(cuid())
-  name          String
-  nameAr        String?
-  shipType      ShipType        @default(CRUISE)
-  operator      String?
-  cabins        Int             @default(0)
-  route         CruiseRoute     @default(LUXOR_ASWAN)
-  departureDays String[]        @default([])
-  duration      Int             @default(4)
-  description   String?
-  descriptionAr String?
-  imageUrl      String?
-  priceFrom     Decimal         @db.Decimal(10, 2)
-  currency      String          @default("USD")
-  sheetsRowId    String?
-  isActive      Boolean         @default(true)
-  bookings      CruiseBooking[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                String          @id @default(cuid())
+  name              String
+  nameAr            String?
+  shipType          ShipType        @default(CRUISE)
+  operator          String?
+  cabins            Int             @default(0)
+  route             CruiseRoute     @default(LUXOR_ASWAN)
+  departureDays     String[]        @default([])
+  duration          Int             @default(4)
+  description       String?
+  descriptionAr     String?
+  imageUrl          String?
+  priceFrom         Decimal         @db.Decimal(10, 2)
+  currency          String          @default("USD")
+  showPriceToAgents Boolean         @default(false)
+  allowQuoteRequest Boolean         @default(true)
+  sheetsRowId       String?
+  isActive          Boolean         @default(true)
+  bookings          CruiseBooking[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   @@index([sheetsRowId])
 }
@@ -556,6 +670,7 @@ model TransportBooking {
   currency       String        @default("USD")
   status         BookingStatus @default(PENDING)
   notes          String?
+  invoice        Invoice?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -564,23 +679,28 @@ model TransportBooking {
 }
 
 model TransportRate {
-  id           String        @id @default(cuid())
-  sheetsRowId  String?
-  type         TransportType @default(PRIVATE_TRANSFER)
-  vehicleType  VehicleType   @default(SEDAN)
-  city         String?
-  fromLocation String?
-  toLocation   String?
-  rate         Decimal       @db.Decimal(10, 2)
-  currency     String        @default("USD")
-  notes        String?
-  isActive     Boolean       @default(true)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id            String        @id @default(cuid())
+  sheetsRowId   String?
+  type          TransportType @default(PRIVATE_TRANSFER)
+  vehicleType   VehicleType   @default(SEDAN)
+  city          String?
+  fromLocation  String?
+  toLocation    String?
+  rate          Decimal       @db.Decimal(10, 2)
+  currency      String        @default("USD")
+  minCapacity   Int           @default(1)
+  maxCapacity   Int?
+  notes         String?
+  isActive      Boolean       @default(true)
+  destinationId String?
+  destination   Destination?  @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   @@index([sheetsRowId])
   @@index([type])
   @@index([vehicleType])
+  @@index([destinationId])
 }
 
 // ─────────────────────────────────────────────
@@ -588,30 +708,36 @@ model TransportRate {
 // ─────────────────────────────────────────────
 
 model Activity {
-  id            String            @id @default(cuid())
-  name          String
-  nameAr        String?
-  city          ActivityCity
-  category      ActivityCategory  @default(SIGHTSEEING)
-  duration      String?
-  description   String?
-  descriptionAr String?
-  includes      String[]          @default([])
-  excludes      String[]          @default([])
-  imageUrl      String?
-  priceAdult    Decimal           @db.Decimal(10, 2)
-  priceChild    Decimal           @db.Decimal(10, 2)
-  currency      String            @default("USD")
-  sheetsRowId    String?
-  minPax        Int               @default(1)
-  maxPax        Int               @default(20)
-  isActive      Boolean           @default(true)
-  bookings      ActivityBooking[]
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  id                 String            @id @default(cuid())
+  name               String
+  nameAr             String?
+  // city is now free-text (replaces ActivityCity enum) — dynamic destinations
+  city               String
+  category           ActivityCategory  @default(SIGHTSEEING)
+  duration           String?
+  description        String?
+  descriptionAr      String?
+  includes           String[]          @default([])
+  excludes           String[]          @default([])
+  imageUrl           String?
+  priceAdult         Decimal           @db.Decimal(10, 2)
+  priceChild         Decimal           @db.Decimal(10, 2)
+  currency           String            @default("USD")
+  sheetsRowId        String?
+  minPax             Int               @default(1)
+  maxPax             Int               @default(20)
+  isActive           Boolean           @default(true)
+  // If false, creates a quote request instead of a confirmed booking
+  isConfirmableInApp Boolean           @default(true)
+  destinationId      String?
+  destination        Destination?      @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  bookings           ActivityBooking[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([city])
   @@index([sheetsRowId])
+  @@index([destinationId])
 }
 
 model ActivityBooking {
@@ -631,6 +757,7 @@ model ActivityBooking {
   currency       String        @default("USD")
   status         BookingStatus @default(PENDING)
   notes          String?
+  invoice        Invoice?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 

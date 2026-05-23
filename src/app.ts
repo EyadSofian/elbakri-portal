@@ -15,12 +15,15 @@ import walletRouter from './modules/wallet/wallet.routes';
 import reportsRouter from './modules/reports/reports.routes';
 import cruiseRouter from './modules/nile-cruise/cruise.routes';
 import transportRouter from './modules/transport/transport.routes';
+import { transportRatesRouter } from './modules/transport/transport.routes';
 import activitiesRouter from './modules/activities/activities.routes';
 import visaRouter from './modules/visa/visa.routes';
 import receptionRouter from './modules/airport-reception/reception.routes';
 import adminRouter from './admin/admin.routes';
 import { entitySheetsRouter } from './modules/sheets-sync/sheets-sync.routes';
 import masterDataRouter from './modules/master-data/master-data.routes';
+import destinationsRouter from './modules/destinations/destinations.routes';
+import quoteRequestsRouter from './modules/quote-requests/quote-requests.routes';
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3000');
@@ -48,12 +51,19 @@ app.use('/api', authenticate, entitySheetsRouter);
 app.use('/api', authenticate, masterDataRouter);
 app.use('/api', authenticate, cruiseRouter);
 app.use('/api/transport-bookings', authenticate, transportRouter);
+app.use('/api/transport-rates', authenticate, transportRatesRouter);
 app.use('/api', authenticate, activitiesRouter);
 app.use('/api/visa-applications', authenticate, visaRouter);
 app.use('/api/airport-receptions', authenticate, receptionRouter);
+app.use('/api/destinations', authenticate, destinationsRouter);
+app.use('/api/quote-requests', authenticate, quoteRequestsRouter);
 app.use('/api/admin', authenticate, adminRouter);
 
-// SPA fallback
+// SPA fallback — serve admin for /admin, dashboard for everything else
+app.get('/admin*', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'admin.html'));
+});
+
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
 });

@@ -1,33 +1,60 @@
 import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
-import { ActivityCity, ActivityCategory, BookingStatus } from '@prisma/client';
+import { ActivityCategory, BookingStatus } from '@prisma/client';
 import { prisma } from '../../config/db';
-import { generateRef, paginate, paginateMeta } from '../../shared/helpers';
+import { generateRef, generateInvoiceNumber, paginate, paginateMeta } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
+import { generateInvoicePdf } from '../invoices/pdf.generator';
 
 const activityInclude = {
   activity: { select: { id: true, name: true, city: true, category: true } },
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
+  invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
 };
 
 export async function listActivities(req: Request, res: Response): Promise<void> {
   const where = {
     isActive: true,
-    ...(req.query.city && { city: req.query.city as ActivityCity }),
+    // city is now a free-text field (case-insensitive contains)
+    ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' as const } }),
     ...(req.query.category && { category: req.query.category as ActivityCategory }),
+    ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
+    ...(req.query.confirmableOnly && { isConfirmableInApp: true }),
   };
-  const activities = await prisma.activity.findMany({ where, orderBy: { name: 'asc' } });
+  const activities = await prisma.activity.findMany({
+    where,
+    orderBy: { name: 'asc' },
+    include: {
+      destination: { select: { id: true, name: true, nameAr: true, slug: true } },
+    },
+  });
   res.json({ success: true, data: activities });
 }
 
 export async function createActivity(req: Request, res: Response): Promise<void> {
-  const activity = await prisma.activity.create({ data: req.body });
+  const body = req.body as Record<string, unknown>;
+  // Normalize — city is now a plain string
+  const data = {
+    ...body,
+    city: String(body.city ?? ''),
+    priceAdult: new Decimal(Number(body.priceAdult ?? 0)),
+    priceChild: new Decimal(Number(body.priceChild ?? body.priceAdult ?? 0)),
+    isConfirmableInApp: body.isConfirmableInApp !== undefined ? Boolean(body.isConfirmableInApp) : true,
+  };
+  const activity = await prisma.activity.create({ data: data as Parameters<typeof prisma.activity.create>[0]['data'] });
   res.status(201).json({ success: true, data: activity });
 }
 
 export async function updateActivity(req: Request, res: Response): Promise<void> {
-  const activity = await prisma.activity.update({ where: { id: req.params.id }, data: req.body });
+  const body = req.body as Record<string, unknown>;
+  const data: Record<string, unknown> = { ...body };
+  if (body.priceAdult !== undefined) data.priceAdult = new Decimal(Number(body.priceAdult));
+  if (body.priceChild !== undefined) data.priceChild = new Decimal(Number(body.priceChild));
+  if (body.city !== undefined) data.city = String(body.city);
+  if (body.isConfirmableInApp !== undefined) data.isConfirmableInApp = Boolean(body.isConfirmableInApp);
+
+  const activity = await prisma.activity.update({ where: { id: req.params.id }, data });
   res.json({ success: true, data: activity });
 }
 
@@ -71,68 +98,150 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     return;
   }
 
-  const totalAmount = new Decimal(body.totalAmount);
+  // Verify company is active — no wallet debit at creation; booking is PENDING
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { isActive: true, email: true } });
+  if (!company?.isActive) {
+    res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
+    return;
+  }
 
   try {
     const refNumber = await generateRef(prisma, 'ACT');
+    const totalAmount = new Decimal(body.totalAmount);
 
-    const booking = await prisma.$transaction(async (tx) => {
-      const company = await tx.company.findUniqueOrThrow({
-        where: { id: companyId }, select: { balance: true, isActive: true },
-      });
-      if (!company.isActive) throw new Error('COMPANY_INACTIVE');
-      if (company.balance.lt(totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
-
-      const balanceBefore = company.balance;
-      const balanceAfter = company.balance.sub(totalAmount);
-
-      await tx.company.update({ where: { id: companyId }, data: { balance: balanceAfter } });
-      await tx.walletTransaction.create({
-        data: {
-          companyId, type: 'DEBIT', amount: totalAmount, balanceBefore, balanceAfter,
-          reference: refNumber, description: `Activity booking ${refNumber}`, createdById: caller.id,
-        },
-      });
-
-      return tx.activityBooking.create({
-        data: {
-          refNumber, activityId: body.activityId, companyId, createdById: caller.id,
-          activityDate: new Date(body.activityDate),
-          adultsCount: body.adultsCount ?? 1,
-          childrenCount: body.childrenCount ?? 0,
-          passengerNames: body.passengerNames ?? [],
-          totalAmount, currency: body.currency ?? 'USD', notes: body.notes,
-        },
-        include: activityInclude,
-      });
+    const booking = await prisma.activityBooking.create({
+      data: {
+        refNumber,
+        activityId: body.activityId,
+        companyId,
+        createdById: caller.id,
+        activityDate: new Date(body.activityDate),
+        adultsCount: body.adultsCount ?? 1,
+        childrenCount: body.childrenCount ?? 0,
+        passengerNames: body.passengerNames ?? [],
+        totalAmount,
+        currency: body.currency ?? 'USD',
+        notes: body.notes,
+        status: 'PENDING',
+      },
+      include: activityInclude,
     });
 
-    const companyEmail = (await prisma.company.findUnique({ where: { id: companyId }, select: { email: true } }))?.email;
-    if (companyEmail && process.env.INTERNAL_TEAM_EMAIL) {
-      sendEmail([companyEmail, process.env.INTERNAL_TEAM_EMAIL], `Activity Booking — ${booking.refNumber}`, `<p>Activity booking <strong>${booking.refNumber}</strong> created.</p>`).catch(console.error);
+    // Notify internal team
+    if (company.email && process.env.INTERNAL_TEAM_EMAIL) {
+      sendEmail(
+        [company.email, process.env.INTERNAL_TEAM_EMAIL],
+        `Activity Booking Request — ${booking.refNumber}`,
+        `<p>Activity booking request <strong>${booking.refNumber}</strong> submitted and is pending admin review.</p>`,
+      ).catch(console.error);
     }
 
     res.status(201).json({ success: true, data: booking });
   } catch (err) {
-    const msg = String((err as Error).message);
-    if (msg === 'COMPANY_INACTIVE') res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
-    else if (msg === 'INSUFFICIENT_BALANCE') res.status(400).json({ success: false, error: 'INSUFFICIENT_BALANCE', message: 'Insufficient wallet balance' });
-    else { console.error(err); res.status(500).json({ success: false, error: 'INTERNAL_ERROR' }); }
+    console.error(err);
+    res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
   }
 }
 
+/** Admin: confirm an activity booking → debit wallet + generate invoice */
 export async function confirmActivityBooking(req: Request, res: Response): Promise<void> {
-  const booking = await prisma.activityBooking.update({
-    where: { id: req.params.id }, data: { status: 'CONFIRMED' }, include: activityInclude,
-  });
-  res.json({ success: true, data: booking });
+  const bookingId = req.params.id;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const booking = await tx.activityBooking.findUniqueOrThrow({
+        where: { id: bookingId },
+        include: { company: true, invoice: true },
+      });
+
+      if (booking.status !== 'PENDING') throw new Error('INVALID_STATUS');
+      if (!booking.company.isActive) throw new Error('COMPANY_INACTIVE');
+
+      if (!booking.invoice) {
+        if (booking.company.balance.lt(booking.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
+
+        const balanceBefore = booking.company.balance;
+        const balanceAfter = balanceBefore.sub(booking.totalAmount);
+        const invoiceNumber = await generateInvoiceNumber(prisma);
+
+        await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
+        await tx.walletTransaction.create({
+          data: {
+            companyId: booking.companyId,
+            type: 'DEBIT',
+            amount: booking.totalAmount,
+            balanceBefore,
+            balanceAfter,
+            reference: booking.refNumber,
+            description: `Confirmed activity booking ${booking.refNumber}`,
+            createdById: req.user!.id,
+          },
+        });
+
+        const subtotal = booking.totalAmount;
+        const taxAmount = subtotal.mul(new Decimal('0.14'));
+        const total = subtotal.add(taxAmount);
+
+        await tx.invoice.create({
+          data: {
+            invoiceNumber,
+            activityBookingId: booking.id,
+            companyId: booking.companyId,
+            subtotal,
+            taxAmount,
+            total,
+            currency: booking.currency,
+            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
+
+      await tx.activityBooking.update({
+        where: { id: bookingId },
+        data: { status: 'CONFIRMED' },
+      });
+    });
+  } catch (err) {
+    const msg = String((err as Error).message);
+    if (msg === 'INVALID_STATUS') {
+      res.status(400).json({ success: false, error: 'INVALID_STATUS', message: 'Only pending bookings can be confirmed' });
+    } else if (msg === 'COMPANY_INACTIVE') {
+      res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
+    } else if (msg === 'INSUFFICIENT_BALANCE') {
+      res.status(400).json({ success: false, error: 'INSUFFICIENT_BALANCE', message: 'Insufficient wallet balance' });
+    } else {
+      console.error(err);
+      res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
+    }
+    return;
+  }
+
+  const updated = await prisma.activityBooking.findUnique({ where: { id: bookingId }, include: activityInclude });
+
+  // Generate PDF in background
+  if (updated?.invoice) {
+    const fullInvoice = await prisma.invoice.findUnique({
+      where: { id: (updated.invoice as { id: string }).id },
+      include: { activityBooking: { include: { company: true, activity: true } }, company: true },
+    });
+    if (fullInvoice && !fullInvoice.pdfPath) {
+      generateInvoicePdf(fullInvoice as Parameters<typeof generateInvoicePdf>[0])
+        .then(async ({ path: pdfPath }) => {
+          await prisma.invoice.update({ where: { id: fullInvoice.id }, data: { pdfPath } });
+        })
+        .catch(console.error);
+    }
+  }
+
+  res.json({ success: true, data: updated });
 }
 
 export async function cancelActivityBooking(req: Request, res: Response): Promise<void> {
   const caller = req.user!;
-  const booking = await prisma.activityBooking.findUniqueOrThrow({ where: { id: req.params.id } });
+  const booking = await prisma.activityBooking.findUniqueOrThrow({ where: { id: req.params.id }, include: { invoice: true } });
 
-  if (['CONFIRMED', 'PENDING'].includes(booking.status)) {
+  // Only refund if already confirmed (wallet was debited)
+  if (booking.status === 'CONFIRMED' && booking.invoice && booking.invoice.status !== 'CANCELLED') {
     await prisma.$transaction(async (tx) => {
       const company = await tx.company.findUniqueOrThrow({ where: { id: booking.companyId } });
       const balanceBefore = company.balance;
@@ -140,16 +249,24 @@ export async function cancelActivityBooking(req: Request, res: Response): Promis
       await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
       await tx.walletTransaction.create({
         data: {
-          companyId: booking.companyId, type: 'REFUND',
-          amount: booking.totalAmount, balanceBefore, balanceAfter,
-          reference: booking.refNumber, description: `Refund activity ${booking.refNumber}`, createdById: caller.id,
+          companyId: booking.companyId,
+          type: 'REFUND',
+          amount: booking.totalAmount,
+          balanceBefore,
+          balanceAfter,
+          reference: booking.refNumber,
+          description: `Refund activity ${booking.refNumber}`,
+          createdById: caller.id,
         },
       });
+      await tx.invoice.updateMany({ where: { activityBookingId: booking.id }, data: { status: 'CANCELLED' } });
     });
   }
 
   const updated = await prisma.activityBooking.update({
-    where: { id: req.params.id }, data: { status: 'CANCELLED' }, include: activityInclude,
+    where: { id: req.params.id },
+    data: { status: 'CANCELLED' },
+    include: activityInclude,
   });
   res.json({ success: true, data: updated });
 }

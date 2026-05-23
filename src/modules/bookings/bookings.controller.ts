@@ -69,6 +69,17 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
     baseAmount?: number; discount?: number; currency?: string; notes?: string;
   };
 
+  // Hotel and Package bookings are now handled via QuoteRequest — not direct booking creation.
+  // Only FLIGHT bookings (or SUPERADMIN manual overrides) can still use this endpoint.
+  if ((body.type === 'HOTEL' || body.type === 'PACKAGE') && caller.role !== 'SUPERADMIN') {
+    res.status(400).json({
+      success: false,
+      error: 'USE_QUOTE_REQUEST',
+      message: 'Hotel and package bookings must be submitted as quote requests. Use POST /api/quote-requests instead.',
+    });
+    return;
+  }
+
   const companyId = caller.role === 'SUPERADMIN' ? (body.companyId ?? caller.companyId!) : caller.companyId!;
   if (!companyId) {
     res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'companyId is required' });
@@ -341,7 +352,7 @@ export async function confirmBooking(req: Request, res: Response): Promise<void>
   });
 
   if (fullInvoice && !fullInvoice.pdfPath) {
-    generateInvoicePdf(fullInvoice as Parameters<typeof generateInvoicePdf>[0])
+    generateInvoicePdf(fullInvoice as unknown as Parameters<typeof generateInvoicePdf>[0])
       .then(async ({ path: pdfPath }) => {
         await prisma.invoice.update({ where: { id: fullInvoice.id }, data: { pdfPath } });
       })

@@ -4,17 +4,33 @@ import path from 'path';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
 import { generateInvoicePdf } from './pdf.generator';
-import { sendEmail, invoiceEmail } from '../../shared/email.templates';
+import { sendEmail } from '../../shared/email.templates';
 
 const invoiceInclude = {
-  company: { select: { id: true, name: true, email: true } },
+  company: { select: { id: true, name: true, email: true, address: true, taxId: true, phone: true } },
   booking: {
     select: {
       id: true, refNumber: true, type: true, totalAmount: true,
       currency: true, checkIn: true, checkOut: true, nights: true,
       origin: true, destination: true, adultsCount: true,
-      company: true,
+      company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
       hotel: { select: { id: true, name: true, city: true, country: true } },
+    },
+  },
+  activityBooking: {
+    select: {
+      id: true, refNumber: true, activityDate: true, adultsCount: true, childrenCount: true,
+      totalAmount: true, currency: true,
+      activity: { select: { id: true, name: true, city: true, category: true } },
+      company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
+    },
+  },
+  transportBooking: {
+    select: {
+      id: true, refNumber: true, type: true, vehicleType: true,
+      fromLocation: true, toLocation: true, pickupDateTime: true, passengerCount: true,
+      totalAmount: true, currency: true,
+      company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
     },
   },
 };
@@ -83,9 +99,21 @@ export async function markPaid(req: Request, res: Response): Promise<void> {
     include: invoiceInclude,
   });
 
-  const { subject, html } = invoiceEmail(invoice, invoice.booking);
-  const emails = [invoice.company.email, process.env.INTERNAL_TEAM_EMAIL!].filter(Boolean);
-  sendEmail(emails, subject, html).catch(console.error);
+  // Notify company about payment confirmation
+  const companyEmail = invoice.company.email
+    ?? invoice.booking?.company.email
+    ?? invoice.activityBooking?.company.email
+    ?? invoice.transportBooking?.company.email;
+
+  const teamEmail = process.env.INTERNAL_TEAM_EMAIL;
+  const recipients = [companyEmail, teamEmail].filter(Boolean) as string[];
+  if (recipients.length) {
+    sendEmail(
+      recipients,
+      `Invoice ${invoice.invoiceNumber} — Marked as Paid`,
+      `<p>Invoice <strong>${invoice.invoiceNumber}</strong> has been marked as PAID. Thank you!</p>`,
+    ).catch(console.error);
+  }
 
   res.json({ success: true, data: invoice });
 }

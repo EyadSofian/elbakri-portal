@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
-import { listHotels, createHotel, updateHotel, deleteHotel, syncSheets } from './hotels.controller';
+import { listHotels, getHotel, createHotel, updateHotel, deleteHotel, syncSheets, toggleHotelPriceVisibility } from './hotels.controller';
 import {
   addHotelPricing,
   createHotelPricing,
@@ -34,8 +34,10 @@ router.post('/pricing', requireRole('SUPERADMIN'), createHotelPricing);
 router.patch('/pricing/:id', requireRole('SUPERADMIN'), updateHotelPricing);
 router.delete('/pricing/:id', requireRole('SUPERADMIN'), deleteHotelPricing);
 router.get('/', listHotels);
+router.get('/:id', getHotel);
 router.post('/', requireRole('SUPERADMIN'), upload.single('image'), validate(createHotelSchema), createHotel);
 router.patch('/:id', requireRole('SUPERADMIN'), validate(updateHotelSchema), updateHotel);
+router.patch('/:id/price-visibility', requireRole('SUPERADMIN'), toggleHotelPriceVisibility);
 router.delete('/:id', requireRole('SUPERADMIN'), deleteHotel);
 router.post('/sync-sheets', requireRole('SUPERADMIN'), syncSheets);
 router.get('/:id/pricing', getHotelPricing);
