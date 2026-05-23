@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
-import { CompanyTier } from '@prisma/client';
+import { CompanyTier, Prisma } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
 import { syncEntityFromSheets } from '../sheets-sync/sheets-sync.service';
@@ -16,7 +16,8 @@ const TIER_ORDER: Record<CompanyTier, number> = {
 function canSeePrices(hotel: {
   showPriceToAgents: boolean;
   minVisibleTier: CompanyTier | null;
-}, companyTier: CompanyTier): boolean {
+}, companyTier: CompanyTier, override?: { canViewPrice: boolean } | null): boolean {
+  if (override) return override.canViewPrice;
   if (!hotel.showPriceToAgents) return false;
   if (!hotel.minVisibleTier) return true;
   return TIER_ORDER[companyTier] >= TIER_ORDER[hotel.minVisibleTier];
@@ -27,39 +28,67 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
   const page = parseInt(String(req.query.page ?? '1'));
   const limit = parseInt(String(req.query.limit ?? '20'));
   const { skip, take } = paginate(page, limit);
+  const search = String(req.query.search ?? '').trim();
 
-  const where = {
-    isActive: true,
-    ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' as const } }),
+  const priceFilter: Prisma.DecimalFilter | undefined = req.query.minPrice || req.query.maxPrice
+    ? {
+        ...(req.query.minPrice ? { gte: new Decimal(String(req.query.minPrice)) } : {}),
+        ...(req.query.maxPrice ? { lte: new Decimal(String(req.query.maxPrice)) } : {}),
+      }
+    : undefined;
+
+  const where: Prisma.HotelWhereInput = {
+    ...(caller.role !== 'SUPERADMIN' && { isActive: true }),
+    ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' } }),
     ...(req.query.stars && { stars: parseInt(String(req.query.stars)) }),
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
-    ...(req.query.minPrice && { pricePerNight: { gte: new Decimal(String(req.query.minPrice)) } }),
-    ...(req.query.maxPrice && {
-      pricePerNight: {
-        ...(req.query.minPrice ? { gte: new Decimal(String(req.query.minPrice)) } : {}),
-        lte: new Decimal(String(req.query.maxPrice)),
-      },
-    }),
+    ...(priceFilter && { pricePerNight: priceFilter }),
     ...(req.query.currency && { currency: String(req.query.currency) }),
+    ...(search && {
+      OR: [
+        { name: { contains: search, mode: 'insensitive' } },
+        { nameAr: { contains: search, mode: 'insensitive' } },
+        { city: { contains: search, mode: 'insensitive' } },
+        { cityAr: { contains: search, mode: 'insensitive' } },
+        { country: { contains: search, mode: 'insensitive' } },
+        { address: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { descriptionAr: { contains: search, mode: 'insensitive' } },
+        {
+          destination: {
+            is: {
+              OR: [
+                { name: { contains: search, mode: 'insensitive' } },
+                { nameAr: { contains: search, mode: 'insensitive' } },
+                { slug: { contains: search, mode: 'insensitive' } },
+              ],
+            },
+          },
+        },
+      ],
+    }),
   };
-
-  // For admin, include all hotels including inactive
-  const adminWhere = caller.role === 'SUPERADMIN'
-    ? { ...where, isActive: undefined }
-    : where;
 
   const [hotels, total] = await Promise.all([
     prisma.hotel.findMany({
-      where: adminWhere,
+      where,
       skip,
       take,
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { rooms: true } },
         destination: { select: { id: true, name: true, nameAr: true, slug: true } },
+        ...(caller.role !== 'SUPERADMIN' && caller.companyId
+          ? {
+              companyVisibility: {
+                where: { companyId: caller.companyId },
+                select: { canViewPrice: true, canRequestQuote: true },
+              },
+            }
+          : {}),
       },
     }),
-    prisma.hotel.count({ where: adminWhere }),
+    prisma.hotel.count({ where }),
   ]);
 
   // For non-admin users, determine price visibility based on company tier
@@ -76,13 +105,14 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
     if (caller.role === 'SUPERADMIN') {
       return hotel; // Admin sees everything
     }
-    const showPrice = canSeePrices(hotel, companyTier);
+    const visibilityOverride = 'companyVisibility' in hotel ? hotel.companyVisibility[0] : null;
+    const showPrice = canSeePrices(hotel, companyTier, visibilityOverride);
+    const { companyVisibility: _companyVisibility, ...hotelData } = hotel as typeof hotel & { companyVisibility?: unknown };
     return {
-      ...hotel,
+      ...hotelData,
       pricePerNight: showPrice ? hotel.pricePerNight : null,
       priceVisible: showPrice,
-      // Always allow quote requests unless explicitly disabled
-      canRequestQuote: hotel.allowQuoteRequest,
+      canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,
     };
   });
 
@@ -98,6 +128,14 @@ export async function getHotel(req: Request, res: Response): Promise<void> {
       destination: { select: { id: true, name: true, nameAr: true, slug: true } },
       pricing: { where: { isActive: true }, orderBy: { validFrom: 'asc' } },
       _count: { select: { rooms: true } },
+      ...(caller.role !== 'SUPERADMIN' && caller.companyId
+        ? {
+            companyVisibility: {
+              where: { companyId: caller.companyId },
+              select: { canViewPrice: true, canRequestQuote: true },
+            },
+          }
+        : {}),
     },
   });
 
@@ -115,16 +153,18 @@ export async function getHotel(req: Request, res: Response): Promise<void> {
     ? await prisma.company.findUnique({ where: { id: caller.companyId }, select: { tier: true } })
     : null;
   const companyTier: CompanyTier = company?.tier ?? 'STANDARD';
-  const showPrice = canSeePrices(hotel, companyTier);
+  const visibilityOverride = 'companyVisibility' in hotel ? hotel.companyVisibility[0] : null;
+  const showPrice = canSeePrices(hotel, companyTier, visibilityOverride);
+  const { companyVisibility: _companyVisibility, ...hotelData } = hotel as typeof hotel & { companyVisibility?: unknown };
 
   res.json({
     success: true,
     data: {
-      ...hotel,
+      ...hotelData,
       pricePerNight: showPrice ? hotel.pricePerNight : null,
       pricing: showPrice ? hotel.pricing : [],
       priceVisible: showPrice,
-      canRequestQuote: hotel.allowQuoteRequest,
+      canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,
     },
   });
 }
@@ -228,6 +268,64 @@ export async function toggleHotelPriceVisibility(req: Request, res: Response): P
   });
 
   res.json({ success: true, data: hotel });
+}
+
+export async function listHotelCompanyVisibility(req: Request, res: Response): Promise<void> {
+  const records = await prisma.hotelCompanyVisibility.findMany({
+    where: { hotelId: req.params.id },
+    include: {
+      company: {
+        select: { id: true, name: true, email: true, tier: true, currency: true, isActive: true },
+      },
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
+
+  res.json({ success: true, data: records });
+}
+
+export async function upsertHotelCompanyVisibility(req: Request, res: Response): Promise<void> {
+  const body = req.body as {
+    companyId?: string;
+    canViewPrice?: boolean;
+    canRequestQuote?: boolean | null;
+    note?: string | null;
+  };
+
+  if (!body.companyId) {
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'companyId is required' });
+    return;
+  }
+
+  const record = await prisma.hotelCompanyVisibility.upsert({
+    where: { hotelId_companyId: { hotelId: req.params.id, companyId: body.companyId } },
+    create: {
+      hotelId: req.params.id,
+      companyId: body.companyId,
+      canViewPrice: body.canViewPrice ?? false,
+      canRequestQuote: body.canRequestQuote ?? null,
+      note: body.note?.trim() || null,
+    },
+    update: {
+      canViewPrice: body.canViewPrice ?? false,
+      canRequestQuote: body.canRequestQuote ?? null,
+      note: body.note?.trim() || null,
+    },
+    include: {
+      company: {
+        select: { id: true, name: true, email: true, tier: true, currency: true, isActive: true },
+      },
+    },
+  });
+
+  res.json({ success: true, data: record });
+}
+
+export async function deleteHotelCompanyVisibility(req: Request, res: Response): Promise<void> {
+  await prisma.hotelCompanyVisibility.delete({
+    where: { hotelId_companyId: { hotelId: req.params.id, companyId: req.params.companyId } },
+  });
+  res.json({ success: true, data: null });
 }
 
 export async function syncSheets(req: Request, res: Response): Promise<void> {

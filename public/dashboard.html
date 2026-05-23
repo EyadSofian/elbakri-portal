@@ -1029,7 +1029,7 @@ async function renderListPage(page, endpoint, columns, options = {}) {
       <aside class="filter-rail">
         <div class="filter-head"><span>${t("filter.title")}</span>${icon("sliders-horizontal")}</div>
         <div class="filter-body">
-          <div class="field"><label>${t("filter.search")}</label><input id="${page}Search" placeholder="${t("placeholder.searchAny")}" oninput="debouncedList('${page}')"></div>
+          <div class="field"><label>${t("filter.search")}</label><input id="${page}Search" placeholder="${t("placeholder.searchAny")}" oninput="debouncedList('${page}')" onkeydown="if(event.key==='Enter'){event.preventDefault();loadCurrentList('${page}')}"></div>
           ${filters.map(([key, labelKey, values]) => renderFilterControl(page, key, labelKey, values)).join("")}
           <button class="btn btn-outline" onclick="clearListFilters('${page}')">${icon("rotate-ccw")}${t("btn.reset")}</button>
         </div>
@@ -1049,7 +1049,7 @@ async function renderListPage(page, endpoint, columns, options = {}) {
 }
 
 function renderFilterControl(page, key, labelKey, values) {
-  if (values === "text") return `<div class="field"><label>${t(labelKey)}</label><input id="${page}-${key}" oninput="debouncedList('${page}')"></div>`;
+  if (values === "text") return `<div class="field"><label>${t(labelKey)}</label><input id="${page}-${key}" oninput="debouncedList('${page}')" onkeydown="if(event.key==='Enter'){event.preventDefault();loadCurrentList('${page}')}"></div>`;
   return `<div class="field"><label>${t(labelKey)}</label><select id="${page}-${key}" onchange="loadCurrentList('${page}')">${values.map(v => `<option value="${v}">${v ? t("status."+v, v) : t("form.allTypes")}</option>`).join("")}</select></div>`;
 }
 

@@ -1399,11 +1399,34 @@ async function showHotelDetails(id) {
     <div class="table-scroll"><table class="data-table"><thead><tr>
       <th>${t("form.roomType","Room Type")}</th><th>${t("form.season","Season")}</th>
       <th>${t("th.amount","Price/Night")}</th><th>${t("form.validFrom","From")}</th><th>${t("form.validTo","To")}</th>
+      <th>${t("th.actions","Actions")}</th>
     </tr></thead><tbody>${seasonal.map(p => `<tr>
       <td>${escapeHtml(p.roomType)}</td><td>${escapeHtml(p.season)}</td>
       <td class="numeric">${formatMoney(p.pricePerNight, p.currency)}</td>
       <td>${formatDate(p.validFrom)}</td><td>${formatDate(p.validTo)}</td>
+      <td><button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deleteHotelPricingRecord('${h.id}', '${p.id}')">${icon("trash-2")}</button></td>
     </tr>`).join("")}</tbody></table></div>` : "";
+  const pricingEditor = `
+    <div class="form-section" style="margin-top:16px">
+      <div class="form-section-title">${t("page.hotelPricingTitle","Seasonal Pricing")}</div>
+      <div class="form-grid">
+        <div class="form-field"><label>${t("form.roomType","Room Type")}</label><select id="hotelPriceRoomType">${["STANDARD","DELUXE","SUITE","EXECUTIVE"].map(v => `<option value="${v}">${v}</option>`).join("")}</select></div>
+        <div class="form-field"><label>${t("form.season","Season")}</label><select id="hotelPriceSeason">${["LOW","REGULAR","HIGH","PEAK"].map(v => `<option value="${v}">${v}</option>`).join("")}</select></div>
+        <div class="form-field"><label>${t("th.amount","Price/Night")} <span class="required">*</span></label><input id="hotelPriceAmount" type="number" min="0" step="0.01" value="${escapeHtml(h.pricePerNight || 0)}"></div>
+        <div class="form-field"><label>${t("form.currency","Currency")}</label><select id="hotelPriceCurrency">${["USD","EGP","EUR","SAR","AED"].map(v => `<option value="${v}" ${v === (h.currency || "USD") ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+        <div class="form-field"><label>${t("form.validFrom","From")} <span class="required">*</span></label><input id="hotelPriceFrom" type="date"></div>
+        <div class="form-field"><label>${t("form.validTo","To")} <span class="required">*</span></label><input id="hotelPriceTo" type="date"></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-outline" onclick="addHotelPricingFromDetails('${h.id}')">${icon("plus")}${t("btn.addPricing","Add price period")}</button>
+      </div>
+      ${seasonalTable || `<div style="margin-top:12px">${emptyBlock("empty.noData")}</div>`}
+    </div>
+    <div class="form-section" style="margin-top:16px">
+      <div class="form-section-title">${t("hotel.companyVisibility","Company price visibility")}</div>
+      <div class="secondary-text" style="margin-bottom:8px">${t("hotel.companyVisibilityHelp","Use this to show or hide this hotel price for one specific company, overriding the tier rule.")}</div>
+      <div id="hotelCompanyVisibilityBox">${emptyBlock("empty.loading")}</div>
+    </div>`;
 
   const headerImg = h.imageUrl
     ? `<img src="${escapeHtml(h.imageUrl)}" alt="" style="width:100%;height:200px;object-fit:cover;border-radius:8px;margin-bottom:16px">`
@@ -1430,13 +1453,112 @@ async function showHotelDetails(id) {
       <div class="info-item"><div class="info-label">${t("form.availableRooms","Available rooms")}</div><div class="info-value">${formatNumber(h.availableRooms||0)}</div></div>
       <div class="info-item"><div class="info-label">${t("form.maxGuestsPerRoom","Guests per room")}</div><div class="info-value">${formatNumber(h.maxGuestsPerRoom||2)}</div></div>
     </div>
-    ${seasonalTable}`;
+    ${pricingEditor}`;
 
   openModal(`${t("nav.hotels","Hotel")} — ${escapeHtml(h.name)}`, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.close")}</button>
     <button class="btn ${h.showPriceToAgents ? "btn-outline" : "btn-primary"}" onclick="togglePriceVisibility('${h.id}', ${!h.showPriceToAgents});closeModal()">${icon(h.showPriceToAgents ? "eye-off" : "eye")}${h.showPriceToAgents ? t("hotel.hidePrices","Hide Prices") : t("hotel.showPrices","Show Prices")}</button>
     <button class="btn btn-primary" onclick="closeModal();showMasterModal('hotels','${h.id}')">${icon("pencil")}${t("btn.edit")}</button>
   `);
+  loadHotelCompanyVisibility(h.id);
+}
+
+async function addHotelPricingFromDetails(hotelId) {
+  const amount = Number(document.getElementById("hotelPriceAmount")?.value || 0);
+  const validFrom = document.getElementById("hotelPriceFrom")?.value;
+  const validTo = document.getElementById("hotelPriceTo")?.value;
+  if (!amount || !validFrom || !validTo) {
+    toast(t("toast.validationError"), "error");
+    return;
+  }
+  if (new Date(validTo) < new Date(validFrom)) {
+    toast(t("toast.invalidDateRange", "Valid To must be after Valid From"), "error");
+    return;
+  }
+  const payload = {
+    roomType: document.getElementById("hotelPriceRoomType")?.value || "STANDARD",
+    season: document.getElementById("hotelPriceSeason")?.value || "REGULAR",
+    pricePerNight: amount,
+    currency: document.getElementById("hotelPriceCurrency")?.value || "USD",
+    validFrom,
+    validTo,
+  };
+  const res = await apiFetch(`/hotels/${hotelId}/pricing`, { method: "POST", body: JSON.stringify(payload) });
+  if (res?.success) {
+    toast(t("toast.created"), "success");
+    showHotelDetails(hotelId);
+  }
+}
+
+async function deleteHotelPricingRecord(hotelId, pricingId) {
+  confirmAction(t("modal.confirmDelete"), async () => {
+    const res = await apiFetch(`/hotels/pricing/${pricingId}`, { method: "DELETE" });
+    if (res?.success) {
+      toast(t("toast.deleted"), "success");
+      showHotelDetails(hotelId);
+    }
+  });
+}
+
+async function loadHotelCompanyVisibility(hotelId) {
+  const box = document.getElementById("hotelCompanyVisibilityBox");
+  if (!box) return;
+  await ensureCompanyOptions();
+  const res = await apiFetch(`/hotels/${hotelId}/company-visibility`);
+  const records = res?.data || [];
+  const companies = state.cache.companyOptions || [];
+  const companyOptions = companies.map(c => `<option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.tier || "STANDARD")})</option>`).join("");
+  const rows = records.length ? records.map(r => `<tr>
+    <td>${escapeHtml(r.company?.name || "")}<div class="secondary-text">${escapeHtml(r.company?.email || "")}</div></td>
+    <td>${r.canViewPrice ? `<span class="badge badge-confirmed">${t("hotel.visible","Visible")}</span>` : `<span class="badge badge-danger">${t("hotel.hidden","Hidden")}</span>`}</td>
+    <td>${r.canRequestQuote === null || r.canRequestQuote === undefined ? "Default" : (r.canRequestQuote ? "Allowed" : "Blocked")}</td>
+    <td>${escapeHtml(r.note || "-")}</td>
+    <td><button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deleteHotelCompanyVisibility('${hotelId}', '${r.companyId}')">${icon("trash-2")}</button></td>
+  </tr>`).join("") : `<tr><td colspan="5" style="padding:16px">${emptyBlock("empty.noData")}</td></tr>`;
+  box.innerHTML = `
+    <div class="form-grid">
+      <div class="form-field"><label>${t("nav.companies","Company")}</label><select id="hotelVisibilityCompany">${companyOptions}</select></div>
+      <div class="form-field"><label>${t("th.priceVisibility","Price visibility")}</label><select id="hotelVisibilityCanView"><option value="true">${t("hotel.visible","Visible")}</option><option value="false">${t("hotel.hidden","Hidden")}</option></select></div>
+      <div class="form-field"><label>${t("hotel.quoteRequest","Quote request")}</label><select id="hotelVisibilityQuote"><option value="">Default</option><option value="true">Allowed</option><option value="false">Blocked</option></select></div>
+      <div class="form-field"><label>${t("placeholder.notes","Notes")}</label><input id="hotelVisibilityNote"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-outline" onclick="saveHotelCompanyVisibility('${hotelId}')">${icon("save")}${t("btn.save","Save")}</button>
+    </div>
+    <div class="table-scroll" style="margin-top:12px"><table class="data-table"><thead><tr>
+      <th>${t("nav.companies","Company")}</th><th>${t("th.priceVisibility","Visibility")}</th><th>${t("hotel.quoteRequest","Quote")}</th><th>${t("placeholder.notes","Notes")}</th><th>${t("th.actions","Actions")}</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  refreshIcons(box);
+}
+
+async function saveHotelCompanyVisibility(hotelId) {
+  const companyId = document.getElementById("hotelVisibilityCompany")?.value;
+  if (!companyId) {
+    toast(t("toast.validationError"), "error");
+    return;
+  }
+  const quoteValue = document.getElementById("hotelVisibilityQuote")?.value || "";
+  const payload = {
+    companyId,
+    canViewPrice: document.getElementById("hotelVisibilityCanView")?.value === "true",
+    canRequestQuote: quoteValue === "" ? null : quoteValue === "true",
+    note: document.getElementById("hotelVisibilityNote")?.value || "",
+  };
+  const res = await apiFetch(`/hotels/${hotelId}/company-visibility`, { method: "PUT", body: JSON.stringify(payload) });
+  if (res?.success) {
+    toast(t("toast.updated"), "success");
+    loadHotelCompanyVisibility(hotelId);
+  }
+}
+
+async function deleteHotelCompanyVisibility(hotelId, companyId) {
+  confirmAction(t("modal.confirmDelete"), async () => {
+    const res = await apiFetch(`/hotels/${hotelId}/company-visibility/${companyId}`, { method: "DELETE" });
+    if (res?.success) {
+      toast(t("toast.deleted"), "success");
+      loadHotelCompanyVisibility(hotelId);
+    }
+  });
 }
 
 async function togglePriceVisibility(id, show) {

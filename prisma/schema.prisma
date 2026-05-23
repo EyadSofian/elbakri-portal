@@ -282,6 +282,7 @@ model Company {
   visaApplications     VisaApplication[]
   airportReceptions    AirportReception[]
   quoteRequests        QuoteRequest[]
+  hotelVisibility       HotelCompanyVisibility[]
   createdAt            DateTime                    @default(now())
   updatedAt            DateTime                    @updatedAt
 
@@ -348,6 +349,7 @@ model Hotel {
   bookings          Booking[]
   pricing           HotelPricing[]
   quoteRequests     QuoteRequest[]
+  companyVisibility HotelCompanyVisibility[]
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -389,6 +391,23 @@ model HotelPricing {
 
   @@index([hotelId])
   @@index([sheetsRowId])
+}
+
+model HotelCompanyVisibility {
+  id              String   @id @default(cuid())
+  hotelId         String
+  hotel           Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  canViewPrice    Boolean  @default(true)
+  canRequestQuote Boolean?
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([hotelId, companyId])
+  @@index([hotelId])
+  @@index([companyId])
 }
 
 // ─────────────────────────────────────────────

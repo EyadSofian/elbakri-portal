@@ -17,6 +17,10 @@ export const createHotelSchema = z.object({
   commissionPercent: z.number().min(0).max(100).default(0),
   availableRooms: z.number().int().min(0).default(0),
   maxGuestsPerRoom: z.number().int().min(1).max(12).default(2),
+  showPriceToAgents: z.boolean().default(false),
+  allowQuoteRequest: z.boolean().default(true),
+  minVisibleTier: z.enum(['STANDARD', 'SILVER', 'GOLD', 'PLATINUM']).nullable().optional(),
+  destinationId: z.string().nullable().optional(),
 });
 
 export const updateHotelSchema = createHotelSchema.partial();
