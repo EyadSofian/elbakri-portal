@@ -554,9 +554,9 @@ function option(value, key) {
   return `<option value="${value}">${t(key)}</option>`;
 }
 
-async function ensureCompanyOptions() {
-  if (state.cache.companyOptions?.length) return;
-  const res = await apiFetch("/admin/companies?limit=300");
+async function ensureCompanyOptions(force = false) {
+  if (!force && state.cache.companyOptions?.length) return;
+  const res = await apiFetch("/admin/companies?includeInactive=true&limit=1000");
   state.cache.companyOptions = res?.data || [];
 }
 
@@ -1005,7 +1005,19 @@ async function saveCompany(id) {
   });
   if (res?.success) {
     closeModal();
-    toast(id ? t("toast.updated") : t("toast.created"), "success");
+    state.cache.companyOptions = null;
+    const tempPassword = res.data?.tempPassword;
+    const adminUser = res.data?.adminUser;
+    if (!id && tempPassword && adminUser) {
+      openModal(t("modal.passwordReset", "Temporary Password"), `
+        <div class="info-grid">
+          <div class="info-item"><div class="info-label">${t("form.email")}</div><div class="info-value">${escapeHtml(adminUser.email)}</div></div>
+          <div class="info-item"><div class="info-label">${t("form.password")}</div><div class="info-value">${escapeHtml(tempPassword)}</div></div>
+        </div>
+      `, `<button class="btn btn-primary" onclick="closeModal(); loadCompanies()">${t("btn.close")}</button>`);
+    } else {
+      toast(id ? t("toast.updated") : t("toast.created"), "success");
+    }
     loadCompanies();
   }
 }
@@ -1164,7 +1176,7 @@ function toggleInactiveUsers(checked) {
 }
 
 async function showUserModal(id = "") {
-  await ensureCompanyOptions();
+  await ensureCompanyOptions(true);
   const row = id ? (state.cache.usersRows || []).find(user => user.id === id) : null;
   const companyOptions = (state.cache.companyOptions || []).map(company => (
     `<option value="${company.id}" ${company.id === row?.companyId ? "selected" : ""}>${escapeHtml(company.name)}</option>`
@@ -1705,7 +1717,7 @@ async function renderQuoteRequests() {
   </div>`;
 
   const rows = quotes.map(q => {
-    const dest = q.destination?.name || q.destinationName || "—";
+    const dest = q.destination?.name || q.destinationName || q.hotel?.city || "—";
     const hotel = q.serviceName || q.hotel?.name || "—";
     const dates = q.checkIn ? `${formatDate(q.checkIn)} – ${formatDate(q.checkOut||"")}` : "—";
     return `<tr>
@@ -1727,6 +1739,8 @@ async function renderQuoteRequests() {
           dest !== "—" ? `Destination: ${dest}` : "",
           hotel !== "—" ? `Service: ${hotel}` : "",
           dates !== "—" ? `Dates: ${dates}` : "",
+          q.nationality ? `Nationality: ${q.nationality}` : "",
+          q.travelFrom ? `Travelling from: ${q.travelFrom}` : "",
         ], t("contact.whatsapp", "WhatsApp"))}
       </div></td>
     </tr>`;
@@ -1750,7 +1764,7 @@ async function openQuoteRequestModal(id) {
   const res = await apiFetch(`/quote-requests/${id}`);
   if (!res?.data) return;
   const q = res.data;
-  const dest = q.destination?.name || q.destinationName || "Not specified";
+  const dest = q.destination?.name || q.destinationName || q.hotel?.city || "Not specified";
   const hotel = q.serviceName || q.hotel?.name || "Not specified";
   const dates = q.checkIn ? `${formatDate(q.checkIn)} – ${formatDate(q.checkOut||"")}` : "Not specified";
 
@@ -1765,6 +1779,7 @@ async function openQuoteRequestModal(id) {
       <div><strong>${t("th.travelDates","Dates")}:</strong> ${escapeHtml(dates)}</div>
       <div><strong>${t("form.pax","Pax")}:</strong> ${q.adultsCount}A / ${q.childrenCount}C / ${q.infantsCount}I</div>
       <div><strong>${t("form.nationality","Nationality")}:</strong> ${escapeHtml(q.nationality||"—")}</div>
+      <div><strong>${t("form.travelFrom","Travelling From")}:</strong> ${escapeHtml(q.travelFrom||"—")}</div>
       <div><strong>${t("form.budget","Budget")}:</strong> ${q.budget ? formatMoney(q.budget, q.currency) : "—"}</div>
       <div class="full" style="grid-column:1/-1"><strong>${t("form.customerNotes","Customer Notes")}:</strong><p style="margin:4px 0;white-space:pre-wrap">${escapeHtml(q.customerNotes||"—")}</p></div>
     </div>
@@ -1791,6 +1806,7 @@ async function openQuoteRequestModal(id) {
     dates !== "Not specified" ? `Dates: ${dates}` : "",
     `Pax: ${q.adultsCount}A / ${q.childrenCount}C${q.infantsCount ? " / " + q.infantsCount + "I" : ""}`,
     q.nationality ? `Nationality: ${q.nationality}` : "",
+    q.travelFrom ? `Travelling from: ${q.travelFrom}` : "",
     q.budget ? `Budget: ${q.budget} ${q.currency || "USD"}` : "",
   ];
   openModal(`${t("nav.quoteRequests","Quote Request")} — ${q.refNumber}`, body, `

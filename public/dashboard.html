@@ -317,6 +317,8 @@ function buildWhatsAppQuoteUrl(data = {}) {
     `${t("th.type","Type")}: ${data.serviceType || "—"}`,
     data.serviceName    ? `${t("th.service","Service")}: ${data.serviceName}`           : null,
     data.destination    ? `${t("th.destination","Destination")}: ${data.destination}`   : null,
+    data.nationality    ? `${t("form.nationality","Nationality")}: ${data.nationality}` : null,
+    data.travelFrom     ? `${t("form.travelFrom","Travelling From")}: ${data.travelFrom}` : null,
     data.from           ? `${t("form.from","From")}: ${data.from}`                      : null,
     data.to             ? `${t("form.to","To")}: ${data.to}`                            : null,
     data.checkIn        ? `${t("form.checkIn","Date")}: ${data.checkIn}${data.checkInTime ? " " + data.checkInTime : ""}` : null,
@@ -324,10 +326,23 @@ function buildWhatsAppQuoteUrl(data = {}) {
     data.adults         ? `${t("form.adults","Adults/Pax")}: ${data.adults}`            : null,
     data.children       ? `${t("form.children","Children")}: ${data.children}`          : null,
     data.rooms          ? `${t("form.rooms","Rooms")}: ${data.rooms}`                   : null,
+    data.budget         ? `${t("form.budget","Budget")}: ${data.budget}`                : null,
     data.isRoundTrip    ? `${t("form.roundTrip","Round Trip")}: ✓`                      : null,
     data.notes          ? `${t("form.notes","Notes")}: ${data.notes}`                   : null,
   ].filter(Boolean).join("\n");
   return `https://wa.me/201147515456?text=${encodeURIComponent(lines)}`;
+}
+
+function reserveWhatsAppWindow() {
+  return window.open("about:blank", "_blank");
+}
+
+function redirectToWhatsApp(url, reservedWindow) {
+  if (reservedWindow && !reservedWindow.closed) {
+    reservedWindow.location.href = url;
+    return;
+  }
+  window.location.href = url;
 }
 
 function setPage(page) {
@@ -564,23 +579,16 @@ function renderCruises() {
 
 // ─── Quote Request Modal ──────────────────────────────────────────────────────
 async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
-  // Load destinations for dropdown
-  let destOptions = '<option value="">— Not specified —</option>';
-  try {
-    const dr = await apiFetch("/destinations?limit=200");
-    if (dr?.data) {
-      destOptions += dr.data.map(d => `<option value="${d.id}">${escapeHtml(d.name)}${d.nameAr ? " / " + escapeHtml(d.nameAr) : ""}</option>`).join("");
-    }
-  } catch {}
-
   const isHotel = serviceType === "HOTEL";
   const body = `
     <p style="color:var(--text-secondary);margin:0 0 16px">${t("quoteRequest.intro","Fill in your travel details and our team will get back to you with a tailored quote.")}</p>
     <div class="form-grid">
       <div class="form-field full"><label>${t("th.service","Service")}</label>
         <input value="${escapeHtml(serviceName)} (${serviceType})" disabled style="opacity:0.7"></div>
-      <div class="form-field full"><label>${t("th.destination","Destination / Area")}</label>
-        <select id="qrDest">${destOptions}</select></div>
+      <div class="form-field"><label>${t("form.nationality","Client Nationality")}</label>
+        <input id="qrNationality" placeholder="${t("form.nationalityPlaceholder","e.g. Egyptian, Saudi, Italian")}"></div>
+      <div class="form-field"><label>${t("form.travelFrom","Travelling From (optional)")}</label>
+        <input id="qrTravelFrom" placeholder="${t("form.travelFromPlaceholder","e.g. Cairo, Riyadh, Milan")}"></div>
       <div class="form-field"><label>${t("form.checkIn","Check-in / Start Date")}</label>
         <input id="qrCheckIn" type="date"></div>
       <div class="form-field"><label>${t("form.checkOut","Check-out / End Date")}</label>
@@ -590,18 +598,10 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
       <div class="form-field"><label>${t("form.children","Children")}</label>
         <input id="qrChildren" type="number" min="0" value="0"></div>
       ${isHotel ? `<div class="form-field"><label>${t("form.rooms","Rooms")}</label><input id="qrRooms" type="number" min="1" value="1"></div>` : ""}
-      <div class="form-field"><label>${t("form.nationality","Nationality")}</label>
-        <input id="qrNationality" placeholder="${t("form.nationalityPlaceholder","e.g. Saudi Arabia")}"></div>
       <div class="form-field"><label>${t("form.budget","Budget (optional)")}</label>
         <input id="qrBudget" type="number" step="0.01" placeholder="0.00"></div>
       <div class="form-field full"><label>${t("form.notes","Notes / Special Requests")}</label>
         <textarea id="qrNotes" rows="3" placeholder="${t("form.notesPlaceholder","Dietary requirements, room preferences, accessibility needs...")}"></textarea></div>
-      <div class="form-field full"><label>${t("form.contactPreference","Preferred Contact Method")}</label>
-        <select id="qrContact">
-          <option value="email">${t("contact.email","Email")}</option>
-          <option value="whatsapp">${t("contact.whatsapp","WhatsApp")}</option>
-          <option value="phone">${t("contact.phone","Phone Call")}</option>
-        </select></div>
     </div>`;
 
   openModal(t("btn.requestQuote","Request a Quote"), body, `
@@ -616,10 +616,9 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
     const children = parseInt(document.getElementById("qrChildren").value || "0");
     const rooms = isHotel ? parseInt(document.getElementById("qrRooms")?.value || "1") : undefined;
     const nationality = document.getElementById("qrNationality").value.trim() || undefined;
+    const travelFrom = document.getElementById("qrTravelFrom").value.trim() || undefined;
     const budget = document.getElementById("qrBudget").value ? parseFloat(document.getElementById("qrBudget").value) : undefined;
     const notes = document.getElementById("qrNotes").value.trim() || undefined;
-    const contact = document.getElementById("qrContact").value;
-    const destId = document.getElementById("qrDest").value || undefined;
 
     const isCruise = serviceType === "CRUISE";
     const payload = {
@@ -628,20 +627,21 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
       cruiseId:   isCruise ? serviceId : undefined,
       serviceId:  (!isHotel && !isCruise) ? serviceId : undefined,
       serviceName: !isHotel ? serviceName : undefined,
-      destinationId: destId || undefined,
       checkIn: checkIn || undefined,
       checkOut: checkOut || undefined,
       adultsCount: adults,
       childrenCount: children,
       roomsCount: rooms,
       nationality,
+      travelFrom,
       budget,
       customerNotes: notes,
-      contactPreference: contact,
+      contactPreference: "whatsapp",
       currency: "USD",
     };
 
     document.getElementById("submitQuoteBtn").disabled = true;
+    const waWindow = reserveWhatsAppWindow();
     const res = await apiFetch("/quote-requests", { method: "POST", body: JSON.stringify(payload) });
     if (res?.success) {
       const ref = res.data.refNumber;
@@ -649,28 +649,22 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
         ref,
         serviceType,
         serviceName,
-        destination: document.getElementById("qrDest")?.selectedOptions?.[0]?.text || undefined,
+        nationality,
+        travelFrom,
         checkIn:  checkIn  || undefined,
         checkOut: checkOut || undefined,
         adults,
         children: children || undefined,
         rooms:    rooms    || undefined,
+        budget: budget ? `${budget} USD` : undefined,
         notes,
       });
       closeModal();
       toast(`✅ ${t("toast.quoteSubmitted","Quote request submitted")} — ${ref}`, "success");
       loadMyQuotesBadge();
-      openModal(
-        `✅ ${t("toast.quoteSubmitted","Request Submitted")}`,
-        `<p style="margin:0 0 16px;color:var(--text-secondary)">${ref} — ${t("quoteRequest.intro","Our team will contact you shortly.")}</p>
-         <a href="${waUrl}" target="_blank" rel="noopener" class="btn btn-success" style="display:flex;align-items:center;gap:8px;justify-content:center;text-decoration:none;background:#25d366;color:#fff;border-color:#25d366">
-           ${waIconSvg()}
-           ${t("contact.whatsapp","WhatsApp")} — +20 11 4751 5456
-         </a>`,
-        `<button class="btn btn-outline" onclick="closeModal();setPage('my-quotes')">${icon("file-question")} ${t("nav.myQuotes","My Quotes")}</button>
-         <button class="btn btn-ghost" onclick="closeModal()">${t("btn.close","Close")}</button>`
-      );
+      redirectToWhatsApp(waUrl, waWindow);
     } else {
+      if (waWindow && !waWindow.closed) waWindow.close();
       document.getElementById("submitQuoteBtn").disabled = false;
     }
   };
@@ -753,6 +747,7 @@ function openTransportQuoteModal() {
       currency:      "USD",
     };
 
+    const waWindow = reserveWhatsAppWindow();
     const res = await apiFetch("/quote-requests", { method: "POST", body: JSON.stringify(payload) });
 
     if (res?.success) {
@@ -772,17 +767,9 @@ function openTransportQuoteModal() {
       closeModal();
       toast(`✅ ${t("toast.quoteSubmitted","Quote request submitted")} — ${ref}`, "success");
       loadMyQuotesBadge();
-      openModal(
-        `✅ ${t("toast.quoteSubmitted","Request Submitted")}`,
-        `<p style="margin:0 0 16px;color:var(--text-secondary)">${ref} — ${t("quoteRequest.intro","Our team will contact you shortly.")}</p>
-         <a href="${waUrl}" target="_blank" rel="noopener" class="btn btn-success" style="display:flex;align-items:center;gap:8px;justify-content:center;text-decoration:none;background:#25d366;color:#fff;border-color:#25d366">
-           ${waIconSvg()}
-           ${t("contact.whatsapp","WhatsApp")} — +20 11 4751 5456
-         </a>`,
-        `<button class="btn btn-outline" onclick="closeModal();setPage('my-quotes')">${icon("file-question")} ${t("nav.myQuotes","My Quotes")}</button>
-         <button class="btn btn-ghost" onclick="closeModal()">${t("btn.close","Close")}</button>`
-      );
+      redirectToWhatsApp(waUrl, waWindow);
     } else {
+      if (waWindow && !waWindow.closed) waWindow.close();
       document.getElementById("submitTrQuoteBtn").disabled = false;
     }
   };
@@ -902,6 +889,8 @@ function renderMyQuotes() {
         serviceType: q.serviceType,
         serviceName: q.serviceName || q.hotel?.name,
         destination: q.destination?.name,
+        nationality: q.nationality || undefined,
+        travelFrom: q.travelFrom || undefined,
         checkIn:     q.checkIn  ? String(q.checkIn).slice(0, 10)  : undefined,
         checkOut:    q.checkOut ? String(q.checkOut).slice(0, 10) : undefined,
         adults:      q.adultsCount   || undefined,

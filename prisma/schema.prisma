@@ -499,6 +499,7 @@ model QuoteRequest {
   infantsCount     Int                @default(0)
   roomsCount       Int?
   nationality      String?
+  travelFrom       String?
   budget           Decimal?           @db.Decimal(12, 2)
   quotedAmount     Decimal?           @db.Decimal(12, 2)
   currency         String             @default("USD")

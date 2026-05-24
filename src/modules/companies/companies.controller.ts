@@ -141,7 +141,7 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
   const recipients = [...new Set([body.email, adminEmail, process.env.INTERNAL_TEAM_EMAIL].filter(Boolean) as string[])];
   if (recipients.length) sendEmail(recipients, subject, html).catch(console.error);
 
-  res.status(201).json({ success: true, data: { company, adminUser } });
+  res.status(201).json({ success: true, data: { company, adminUser, tempPassword } });
 }
 
 export async function getCompany(req: Request, res: Response): Promise<void> {

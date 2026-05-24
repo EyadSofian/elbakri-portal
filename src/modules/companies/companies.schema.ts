@@ -4,6 +4,8 @@ export const createCompanySchema = z.object({
   name: z.string().min(2),
   nameAr: z.string().optional(),
   email: z.string().email(),
+  adminEmail: z.string().email().optional().or(z.literal('')),
+  adminName: z.string().optional(),
   phone: z.string().min(5),
   address: z.string().optional(),
   billingAddress: z.string().optional(),

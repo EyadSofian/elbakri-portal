@@ -101,6 +101,7 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     infantsCount?: number;
     roomsCount?: number;
     nationality?: string;
+    travelFrom?: string;
     budget?: number;
     currency?: string;
     customerNotes?: string;
@@ -147,6 +148,7 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       infantsCount: body.infantsCount ?? 0,
       roomsCount: body.roomsCount ?? null,
       nationality: body.nationality ?? null,
+      travelFrom: body.travelFrom ?? null,
       budget: body.budget ? new Decimal(body.budget) : null,
       currency: body.currency ?? 'USD',
       customerNotes: body.customerNotes ?? null,
@@ -169,6 +171,8 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
         <tr><td><strong>Check-in:</strong></td><td>${body.checkIn ?? 'TBD'}</td></tr>
         <tr><td><strong>Check-out:</strong></td><td>${body.checkOut ?? 'TBD'}</td></tr>
         <tr><td><strong>Adults:</strong></td><td>${body.adultsCount ?? 1}</td></tr>
+        <tr><td><strong>Nationality:</strong></td><td>${body.nationality ?? 'N/A'}</td></tr>
+        <tr><td><strong>Travelling from:</strong></td><td>${body.travelFrom ?? 'N/A'}</td></tr>
         <tr><td><strong>Notes:</strong></td><td>${body.customerNotes ?? ''}</td></tr>
       </table>
     `;
