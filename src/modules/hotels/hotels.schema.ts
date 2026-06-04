@@ -12,6 +12,7 @@ export const createHotelSchema = z.object({
   descriptionAr: z.string().optional(),
   amenities: z.array(z.string()).default([]),
   imageUrl: z.string().url().optional(),
+  galleryUrls: z.array(z.string()).default([]),
   pricePerNight: z.number().positive(),
   currency: z.string().default('USD'),
   commissionPercent: z.number().min(0).max(100).default(0),

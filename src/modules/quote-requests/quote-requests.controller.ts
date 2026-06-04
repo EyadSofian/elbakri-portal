@@ -102,6 +102,8 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     roomsCount?: number;
     nationality?: string;
     travelFrom?: string;
+    mealPlan?: string;
+    childAges?: number[];
     budget?: number;
     currency?: string;
     customerNotes?: string;
@@ -149,6 +151,8 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       roomsCount: body.roomsCount ?? null,
       nationality: body.nationality ?? null,
       travelFrom: body.travelFrom ?? null,
+      mealPlan: (body.mealPlan as any) ?? null,
+      childAges: body.childAges ? body.childAges : undefined,
       budget: body.budget ? new Decimal(body.budget) : null,
       currency: body.currency ?? 'USD',
       customerNotes: body.customerNotes ?? null,
@@ -166,8 +170,8 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       <table>
         <tr><td><strong>Ref:</strong></td><td>${quote.refNumber}</td></tr>
         <tr><td><strong>Type:</strong></td><td>${quote.serviceType}</td></tr>
-        <tr><td><strong>Company:</strong></td><td>${quote.company.name}</td></tr>
-        <tr><td><strong>Destination:</strong></td><td>${quote.destination?.name ?? body.destinationName ?? 'N/A'}</td></tr>
+        <tr><td><strong>Company:</strong></td><td>${quote.companyId}</td></tr>
+        <tr><td><strong>Destination:</strong></td><td>${quote.destinationId ?? body.destinationName ?? 'N/A'}</td></tr>
         <tr><td><strong>Check-in:</strong></td><td>${body.checkIn ?? 'TBD'}</td></tr>
         <tr><td><strong>Check-out:</strong></td><td>${body.checkOut ?? 'TBD'}</td></tr>
         <tr><td><strong>Adults:</strong></td><td>${body.adultsCount ?? 1}</td></tr>

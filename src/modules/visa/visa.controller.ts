@@ -51,6 +51,8 @@ export async function createVisaApplication(req: Request, res: Response): Promis
     visaType: string; destinationCountry: string; travelDate: string;
     processingType?: string;
     totalAmount: number; currency?: string; notes?: string;
+    phone?: string; hotelName?: string; paxCount?: number;
+    passportUrl?: string; flightTicketUrl?: string;
   };
 
   const companyId = caller.role === 'SUPERADMIN' ? (body.companyId ?? caller.companyId!) : caller.companyId!;
@@ -94,6 +96,11 @@ export async function createVisaApplication(req: Request, res: Response): Promis
           travelDate: new Date(body.travelDate),
           processingType: (body.processingType as 'NORMAL' | 'EXPRESS' | 'URGENT') ?? 'NORMAL',
           totalAmount, currency: body.currency ?? 'USD', notes: body.notes,
+          phone: body.phone,
+          hotelName: body.hotelName,
+          paxCount: body.paxCount ?? 1,
+          passportUrl: body.passportUrl,
+          flightTicketUrl: body.flightTicketUrl,
         },
         include: visaInclude,
       });

@@ -40,11 +40,13 @@
           <button class="nav-item" data-page="cruises"><i data-lucide="ship"></i><span data-i18n="nav.nileCruises">Nile Cruises</span></button>
           <button class="nav-item" data-page="transport"><i data-lucide="bus"></i><span data-i18n="nav.transport">Transport</span></button>
           <button class="nav-item" data-page="activities"><i data-lucide="map-pin"></i><span data-i18n="nav.activities">Activities</span></button>
-          <button class="nav-item" data-page="visa"><i data-lucide="file-text"></i><span data-i18n="nav.visa">Visa Applications</span></button>
-          <button class="nav-item" data-page="reception"><i data-lucide="plane-landing"></i><span data-i18n="nav.reception">Airport Reception</span></button>
+          <button class="nav-item" data-page="security-approval"><i data-lucide="shield-check"></i><span data-i18n="nav.securityApproval">Security Approval</span></button>
+          <button class="nav-item" data-page="airport-assist"><i data-lucide="plane-landing"></i><span data-i18n="nav.airportAssist">Airport Assist</span></button>
+          <button class="nav-item" data-page="sim-card"><i data-lucide="credit-card"></i><span data-i18n="nav.simCard">SIM Card</span></button>
         </div>
         <div class="nav-group">
           <div class="nav-label" data-i18n="nav.operations">Operations</div>
+          <button class="nav-item" data-page="offers"><i data-lucide="tag"></i><span data-i18n="nav.offers">Offers</span></button>
           <button class="nav-item" data-page="invoices"><i data-lucide="receipt-text"></i><span data-i18n="nav.invoices">Invoices</span></button>
           <button class="nav-item" data-page="wallet"><i data-lucide="wallet-cards"></i><span data-i18n="nav.wallet">Wallet</span></button>
           <button class="nav-item" data-page="reports"><i data-lucide="chart-column"></i><span data-i18n="nav.reports">Reports</span></button>
@@ -126,8 +128,10 @@ const pageMeta = {
   cruises: ["nav.nileCruises", "page.servicesSub"],
   transport: ["nav.transport", "page.servicesSub"],
   activities: ["nav.activities", "page.servicesSub"],
-  visa: ["nav.visa", "page.servicesSub"],
-  reception: ["nav.reception", "page.servicesSub"],
+  "security-approval": ["page.securityApprovalTitle", "page.securityApprovalSub"],
+  "airport-assist": ["page.airportAssistTitle", "page.airportAssistSub"],
+  "sim-card": ["page.simCardTitle", "page.simCardSub"],
+  offers: ["page.offersTitle", "page.offersSub"],
   invoices: ["page.invoicesTitle", "page.invoicesSub"],
   wallet: ["page.walletTitle", "page.walletSub"],
   reports: ["page.reportsTitle", "page.reportsSub"],
@@ -387,11 +391,11 @@ function logout() {
 
 async function renderDashboard() {
   const capturedToken = state.renderToken;
-  content(pageHeader(`<button class="btn btn-primary" onclick="openBookingWizard()">${icon("plus")}${t("btn.createBooking")}</button>`) + `
-    <div class="stats-grid">${Array.from({ length: 6 }, () => `<div class="stat-card"><div class="skeleton" style="height:12px;width:62%"></div><div class="skeleton" style="height:28px;width:44%;margin-top:14px"></div><div class="skeleton" style="height:12px;width:55%;margin-top:12px"></div></div>`).join("")}</div>
+  content(pageHeader() + `
+    <div class="stats-grid">${Array.from({ length: 4 }, () => `<div class="stat-card"><div class="skeleton" style="height:12px;width:62%"></div><div class="skeleton" style="height:28px;width:44%;margin-top:14px"></div><div class="skeleton" style="height:12px;width:55%;margin-top:12px"></div></div>`).join("")}</div>
     <div class="grid-2">
-      <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.bookings")}</div><div class="panel-subtitle">${t("topbar.justNow")}</div></div></div><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(7, 6)}</tbody></table></div></section>
-      <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.wallet")}</div><div class="panel-subtitle">${t("form.currentBalance")}</div></div></div><div class="panel-body"><div class="skeleton" style="height:70px"></div></div></section>
+      <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.bookings")}</div></div></div><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(5, 6)}</tbody></table></div></section>
+      <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.wallet")}</div></div></div><div class="panel-body"><div class="skeleton" style="height:70px"></div></div></section>
     </div>`);
 
   const [report, bookings, wallet] = await Promise.all([
@@ -403,14 +407,18 @@ async function renderDashboard() {
   if (wallet?.data) updateWallet(wallet.data);
   const d = report?.data || {};
   document.getElementById("pendingBadge").textContent = d.pendingBookings || 0;
-  content(pageHeader(`<button class="btn btn-primary" onclick="openBookingWizard()">${icon("plus")}${t("btn.createBooking")}</button>`) + `
-    <div class="stats-grid">
-      ${statCard("stat.totalBookings", d.totalBookings || 0, "stat.allTime")}
-      ${statCard("stat.totalRevenue", formatMoney(d.totalRevenue || 0, "USD"), "stat.monthToDate")}
-      ${statCard("stat.pending", d.pendingBookings || 0, "toast.validationError")}
-      ${statCard("stat.commission", formatMoney((d.totalRevenue || 0) * 0.1, "USD"), "stat.vsMonth")}
-      ${statCard("stat.markup", "12.5%", "stat.lastThirty")}
-      ${statCard("stat.cancellations", d.bookingsByStatus?.CANCELLED || 0, "stat.lastThirty", true)}
+
+  const walletBal = Number(wallet?.data?.balance || 0);
+  const creditLim = Number(state.user?.company?.creditLimit || 0);
+  const available = walletBal + creditLim;
+  const cur = wallet?.data?.currency || "USD";
+
+  content(pageHeader() + `
+    <div class="stats-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+      ${statCard("stat.totalBookings", d.totalBookings || 0, "stat.allTime", "briefcase-business")}
+      ${statCard("stat.pending", d.pendingBookings || 0, "status.PENDING", "clock")}
+      ${statCard("stat.cancellations", d.bookingsByStatus?.CANCELLED || 0, "stat.lastThirty", "circle-x")}
+      ${statCard("wallet.availableToSpend", formatMoney(available, cur), "stat.allTime", "wallet")}
     </div>
     <div class="grid-2">
       ${bookingPanel(bookings?.data || [])}
@@ -418,18 +426,30 @@ async function renderDashboard() {
         <div class="panel-header"><div><div class="panel-title">${t("nav.wallet")}</div><div class="panel-subtitle">${t("form.currentBalance")}</div></div>${tierBadge(state.user?.company?.tier)}</div>
         <div class="panel-body">
           <div class="info-grid" style="grid-template-columns:1fr">
-            <div class="info-item"><div class="info-label">${t("th.balance")}</div><div class="info-value">${formatMoney(wallet?.data?.balance || 0, wallet?.data?.currency || "USD")}</div></div>
-            <div class="info-item"><div class="info-label">${t("th.creditLimit")}</div><div class="info-value">${formatMoney(state.user?.company?.creditLimit || 0, wallet?.data?.currency || "USD")}</div></div>
-            <div class="info-item"><div class="info-label">${t("topbar.lastRefresh")}</div><div class="info-value">${t("topbar.justNow")}</div></div>
+            <div class="info-item">
+              <div class="info-label">${t("wallet.walletBalance","Wallet Balance")}</div>
+              <div class="info-value" style="font-size:22px;font-weight:800">${formatMoney(walletBal, cur)}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">${t("th.creditLimit","Credit Limit")}</div>
+              <div class="info-value">${formatMoney(creditLim, cur)}</div>
+            </div>
+            <div class="info-item" style="background:var(--info-soft);border-radius:var(--r-8);padding:12px">
+              <div class="info-label" style="color:var(--info)">${t("wallet.availableToSpend","Available to Spend")}</div>
+              <div class="info-value" style="color:var(--info);font-weight:800;font-size:20px">${formatMoney(available, cur)}</div>
+            </div>
           </div>
         </div>
       </section>
     </div>`);
+
+  // Show offer popup after first dashboard load
+  maybeShowOfferPopup();
 }
 
-function statCard(labelKey, value, subKey, down = false) {
+function statCard(labelKey, value, subKey, iconName) {
   return `<div class="stat-card">
-    <div class="stat-row"><div class="stat-label">${t(labelKey)}</div><span class="trend ${down ? "down" : ""}">${icon(down ? "trending-down" : "trending-up")} ${down ? "-2%" : "+8%"}</span></div>
+    <div class="stat-row"><div class="stat-label">${t(labelKey)}</div><span class="stat-ico">${icon(iconName || "activity")}</span></div>
     <div class="stat-value">${value}</div>
     <div class="stat-sub">${t(subKey)}</div>
   </div>`;
@@ -441,7 +461,6 @@ function bookingPanel(rows) {
     ["th.type", b => escapeHtml(b.type)],
     ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
     ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
-    ["th.commission", b => `<span class="numeric">${formatMoney(b.commissionAmount || 0, b.currency || "USD")}</span>`],
     ["th.status", b => statusBadge(b.status)],
     ["th.date", b => formatDate(b.createdAt)],
   ];
@@ -453,18 +472,17 @@ function bookingPanel(rows) {
 
 function renderBookings() {
   renderListPage("bookings", "/bookings", [
-    ["th.ref", b => `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`],
-    ["th.type", b => escapeHtml(b.type)],
+    ["th.ref",     b => `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`],
+    ["th.type",    b => escapeHtml(b.type)],
     ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
-    ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
-    ["th.commission", b => formatMoney(b.commissionAmount || 0, b.currency || "USD")],
-    ["th.status", b => statusBadge(b.status)],
+    ["th.amount",  b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
+    ["th.status",  b => statusBadge(b.status)],
     ["th.invoice", b => b.invoice ? statusBadge(b.invoice.status) : "—"],
-    ["th.date", b => formatDate(b.createdAt)],
+    ["th.date",    b => formatDate(b.createdAt)],
   ], {
     filters: [
-      ["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "REJECTED", "COMPLETED"]],
-      ["type", "form.type", ["", "HOTEL", "FLIGHT", "PACKAGE"]],
+      ["status",   "form.status",   ["", "PENDING", "CONFIRMED", "CANCELLED", "REJECTED", "COMPLETED"]],
+      ["type",     "form.type",     ["", "HOTEL", "FLIGHT", "PACKAGE"]],
       ["currency", "form.currency", ["", "USD", "EGP", "EUR"]],
     ],
     showCreateBooking: true,
@@ -531,7 +549,8 @@ async function showAgentHotelDetails(id) {
       </div>
     </div>
     ${h.description ? `<p style="white-space:pre-wrap;color:var(--text-secondary);line-height:1.5;margin:8px 0">${escapeHtml(h.description)}</p>` : ""}
-    ${h.amenities?.length ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>` : ""}`;
+    ${h.amenities?.length ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>` : ""}
+    ${(h.galleryUrls && h.galleryUrls.length) ? `<div style="margin-top:16px"><div style="font-weight:800;margin-bottom:8px">${t("hotel.gallery","Gallery")}</div><div class="hotel-gallery">${h.galleryUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener"><img src="${escapeHtml(u)}" alt="" loading="lazy"></a>`).join("")}</div></div>` : ""}`;
 
   openModal(`${escapeHtml(h.name)}`, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.close")}</button>
@@ -539,26 +558,61 @@ async function showAgentHotelDetails(id) {
   `);
 }
 
+// ─── Destination-first hotel flow ────────────────────────────────────────────
 async function renderHotels() {
   const capturedToken = state.renderToken;
-  // Fetch destinations for the filter dropdown
-  let destOptions = [""];
-  try {
-    const dr = await apiFetch("/destinations?limit=200");
-    if (dr?.data) destOptions = ["", ...dr.data.map(d => d.name)];
-  } catch {}
+  state.page = "hotels";
+  content(pageHeader() + `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px">
+      ${Array.from({length:6},()=>`<div class="stat-card" style="height:120px"><div class="skeleton" style="height:100%"></div></div>`).join("")}
+    </div>`);
+
+  const [destRes, hotelCountRes] = await Promise.all([
+    apiFetch("/destinations?isActive=true&limit=100"),
+    apiFetch("/hotels?limit=1"),
+  ]);
   if (state.renderToken !== capturedToken) return;
 
-  renderListPage("hotels", "/hotels", [
+  const dests = destRes?.data || [];
+  const totalHotels = hotelCountRes?.meta?.total || 0;
+
+  const destCards = [
+    // "All" card
+    `<button class="dest-card" onclick="renderHotelsByDest('','${escapeHtml(t('hotel.allDestinations','All Destinations'))}')">
+      <div class="dest-card-icon"><i data-lucide="hotel"></i></div>
+      <div class="dest-card-name">${t("hotel.allDestinations","All Destinations")}</div>
+      <div class="dest-card-count">${totalHotels} ${t("nav.hotels","Hotels")}</div>
+    </button>`,
+    ...dests.map(d => `<button class="dest-card" onclick="renderHotelsByDest('${d.id}','${escapeHtml(d.name)}')">
+      <div class="dest-card-icon"><i data-lucide="map-pin"></i></div>
+      <div class="dest-card-name">${escapeHtml(d.name)}</div>
+      ${d.nameAr ? `<div class="dest-card-sub">${escapeHtml(d.nameAr)}</div>` : ""}
+      <div class="dest-card-count">${t("nav.hotels","Hotels")}</div>
+    </button>`),
+  ];
+
+  content(pageHeader() + `
+    <p style="color:var(--text-secondary);margin:0 0 20px">${t("hotel.chooseDest","Choose a destination to browse hotels")}</p>
+    <div class="dest-grid">${destCards.join("")}</div>`);
+  refreshIcons(document.getElementById("content"));
+}
+
+async function renderHotelsByDest(destId, destName) {
+  const capturedToken = state.renderToken;
+  state.page = "hotels";
+
+  const endpoint = destId ? `/hotels?destinationId=${destId}` : "/hotels";
+
+  renderListPage("hotels", endpoint, [
     ["th.name", hotelNameCell],
     ["th.stars", h => "★".repeat(Math.min(h.stars || 0, 5))],
     ["th.amount", hotelPriceCell],
     ["th.actions", hotelActionCell],
   ], {
     filters: [
-      ["city", "form.destination", destOptions],
       ["stars", "th.stars", ["", "3", "4", "5"]],
     ],
+    extraActions: `<button class="btn btn-outline" onclick="renderHotels()">${icon("arrow-left")}&nbsp;${t("btn.back","Back")}</button>`,
   });
 }
 
@@ -577,37 +631,81 @@ function renderCruises() {
   ]);
 }
 
+// ─── Nationality data ─────────────────────────────────────────────────────────
+const NATIONALITIES = [
+  "Egyptian","Saudi","Emirati","Kuwaiti","Qatari","Bahraini","Omani","Jordanian","Lebanese","Syrian",
+  "Iraqi","Libyan","Tunisian","Moroccan","Algerian","Sudanese","Yemeni","Palestinian","British","American",
+  "German","French","Italian","Spanish","Russian","Chinese","Indian","Pakistani","Turkish","Greek",
+  "Dutch","Belgian","Swiss","Swedish","Norwegian","Danish","Finnish","Polish","Czech","Romanian",
+  "Australian","Canadian","Brazilian","Mexican","South African","Japanese","Korean","Thai","Malaysian",
+  "Indonesian","Singaporean","Filipino","Vietnamese","Israeli","Iranian","Afghan","Bangladeshi","Sri Lankan",
+  "Nigerian","Ghanaian","Kenyan","Ethiopian","Ugandan","Argentinian","Chilean","Colombian","Peruvian",
+];
+
+function nationalityDatalist() {
+  return `<datalist id="nationalityList">${NATIONALITIES.map(n => `<option value="${n}">`).join("")}</datalist>`;
+}
+
+function childAgesHtml(count) {
+  if (!count || count < 1) return "";
+  return `<div class="form-field full" id="childAgesBox" style="display:${count > 0 ? 'block' : 'none'}">
+    <label>${t("form.children","Children Ages")}</label>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:6px">
+      ${Array.from({length: count}, (_, i) => `
+        <div>
+          <label style="font-size:11px;color:var(--text-secondary)">${t("hotel.childAge","Child {n} Age").replace("{n}", i+1)}</label>
+          <input type="number" min="0" max="17" value="7" id="childAge_${i}" placeholder="${i+1}" style="width:100%">
+        </div>`).join("")}
+    </div>
+  </div>`;
+}
+
 // ─── Quote Request Modal ──────────────────────────────────────────────────────
 async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
   const isHotel = serviceType === "HOTEL";
+  const mealPlanOptions = ["ROOM_ONLY","BREAKFAST","HALF_BOARD","FULL_BOARD","ALL_INCLUSIVE","ULTRA_ALL_INCLUSIVE"];
+
   const body = `
+    ${nationalityDatalist()}
     <p style="color:var(--text-secondary);margin:0 0 16px">${t("quoteRequest.intro","Fill in your travel details and our team will get back to you with a tailored quote.")}</p>
     <div class="form-grid">
       <div class="form-field full"><label>${t("th.service","Service")}</label>
         <input value="${escapeHtml(serviceName)} (${serviceType})" disabled style="opacity:0.7"></div>
-      <div class="form-field"><label>${t("form.nationality","Client Nationality")}</label>
-        <input id="qrNationality" placeholder="${t("form.nationalityPlaceholder","e.g. Egyptian, Saudi, Italian")}"></div>
-      <div class="form-field"><label>${t("form.travelFrom","Travelling From (optional)")}</label>
-        <input id="qrTravelFrom" placeholder="${t("form.travelFromPlaceholder","e.g. Cairo, Riyadh, Milan")}"></div>
-      <div class="form-field"><label>${t("form.checkIn","Check-in / Start Date")}</label>
+      <div class="form-field"><label>${t("form.nationality","Nationality")} *</label>
+        <input id="qrNationality" list="nationalityList" placeholder="${t("form.nationalityPlaceholder","e.g. Egyptian")}"></div>
+      <div class="form-field"><label>${t("form.checkIn","Check-in Date")} *</label>
         <input id="qrCheckIn" type="date"></div>
-      <div class="form-field"><label>${t("form.checkOut","Check-out / End Date")}</label>
+      <div class="form-field"><label>${t("form.checkOut","Check-out Date")} *</label>
         <input id="qrCheckOut" type="date"></div>
-      <div class="form-field"><label>${t("form.adults","Adults")}</label>
+      <div class="form-field"><label>${t("form.adults","Adults / Pax")} *</label>
         <input id="qrAdults" type="number" min="1" value="2"></div>
       <div class="form-field"><label>${t("form.children","Children")}</label>
-        <input id="qrChildren" type="number" min="0" value="0"></div>
-      ${isHotel ? `<div class="form-field"><label>${t("form.rooms","Rooms")}</label><input id="qrRooms" type="number" min="1" value="1"></div>` : ""}
-      <div class="form-field"><label>${t("form.budget","Budget (optional)")}</label>
-        <input id="qrBudget" type="number" step="0.01" placeholder="0.00"></div>
+        <input id="qrChildren" type="number" min="0" value="0" oninput="updateChildAges()"></div>
+      ${isHotel ? `<div class="form-field"><label>${t("hotel.rooms","Rooms")}</label>
+        <input id="qrRooms" type="number" min="1" value="1"></div>
+        <div class="form-field"><label>${t("hotel.mealPlan","Meal Plan")}</label>
+        <select id="qrMealPlan">
+          <option value="">${t("hotel.selectMealPlan","Select meal plan")}</option>
+          ${mealPlanOptions.map(mp => `<option value="${mp}">${t("mealPlan."+mp, mp.replace(/_/g," "))}</option>`).join("")}
+        </select></div>` : ""}
+      <div id="childAgesContainer" class="form-field full" style="display:none"></div>
       <div class="form-field full"><label>${t("form.notes","Notes / Special Requests")}</label>
-        <textarea id="qrNotes" rows="3" placeholder="${t("form.notesPlaceholder","Dietary requirements, room preferences, accessibility needs...")}"></textarea></div>
+        <textarea id="qrNotes" rows="3" placeholder="${t("form.notesPlaceholder","Room preferences, dietary needs, accessibility...")}"></textarea></div>
     </div>`;
 
   openModal(t("btn.requestQuote","Request a Quote"), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel","Cancel")}</button>
-    <button class="btn btn-primary" id="submitQuoteBtn">${icon("send")}&nbsp;${t("btn.sendRequest","Send Request")}</button>
+    <button class="btn btn-primary" id="submitQuoteBtn">${icon("brand-whatsapp")}&nbsp;${t("btn.sendRequest","Send via WhatsApp")}</button>
   `);
+
+  function updateChildAges() {
+    const count = parseInt(document.getElementById("qrChildren")?.value || "0");
+    const box = document.getElementById("childAgesContainer");
+    if (!box) return;
+    box.style.display = count > 0 ? "" : "none";
+    box.innerHTML = childAgesHtml(count);
+  }
+  document.getElementById("qrChildren").addEventListener("input", updateChildAges);
 
   document.getElementById("submitQuoteBtn").onclick = async () => {
     const checkIn = document.getElementById("qrCheckIn").value;
@@ -615,10 +713,17 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
     const adults = parseInt(document.getElementById("qrAdults").value || "2");
     const children = parseInt(document.getElementById("qrChildren").value || "0");
     const rooms = isHotel ? parseInt(document.getElementById("qrRooms")?.value || "1") : undefined;
+    const mealPlan = isHotel ? (document.getElementById("qrMealPlan")?.value || undefined) : undefined;
     const nationality = document.getElementById("qrNationality").value.trim() || undefined;
-    const travelFrom = document.getElementById("qrTravelFrom").value.trim() || undefined;
-    const budget = document.getElementById("qrBudget").value ? parseFloat(document.getElementById("qrBudget").value) : undefined;
     const notes = document.getElementById("qrNotes").value.trim() || undefined;
+
+    const childAges = Array.from({length: children}, (_, i) =>
+      parseInt(document.getElementById(`childAge_${i}`)?.value || "7"));
+
+    if (!checkIn || !checkOut) {
+      toast(t("validation.dateRequired","Please select check-in and check-out dates"), "error");
+      return;
+    }
 
     const isCruise = serviceType === "CRUISE";
     const payload = {
@@ -632,9 +737,9 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
       adultsCount: adults,
       childrenCount: children,
       roomsCount: rooms,
+      mealPlan: mealPlan || undefined,
       nationality,
-      travelFrom,
-      budget,
+      childAges: children > 0 ? childAges : undefined,
       customerNotes: notes,
       contactPreference: "whatsapp",
       currency: "USD",
@@ -645,19 +750,18 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
     const res = await apiFetch("/quote-requests", { method: "POST", body: JSON.stringify(payload) });
     if (res?.success) {
       const ref = res.data.refNumber;
+      const mealPlanLabel = mealPlan ? t("mealPlan."+mealPlan, mealPlan) : null;
+      const childAgesStr = children > 0 ? childAges.join(", ") + " yrs" : null;
       const waUrl = buildWhatsAppQuoteUrl({
         ref,
         serviceType,
         serviceName,
         nationality,
-        travelFrom,
-        checkIn:  checkIn  || undefined,
-        checkOut: checkOut || undefined,
+        checkIn, checkOut,
         adults,
         children: children || undefined,
         rooms:    rooms    || undefined,
-        budget: budget ? `${budget} USD` : undefined,
-        notes,
+        notes: [notes, mealPlanLabel ? `Meal Plan: ${mealPlanLabel}` : null, childAgesStr ? `Child ages: ${childAgesStr}` : null].filter(Boolean).join(" | ") || undefined,
       });
       closeModal();
       toast(`✅ ${t("toast.quoteSubmitted","Quote request submitted")} — ${ref}`, "success");
@@ -929,26 +1033,371 @@ async function loadMyQuotesBadge() {
   badge.style.display = count > 0 ? "" : "none";
 }
 
-function renderVisa() {
-  renderListPage("visa", "/visa-applications", [
-    ["th.ref", v => escapeHtml(v.refNumber)],
-    ["th.name", v => escapeHtml(v.applicantName)],
-    ["th.type", v => escapeHtml(v.visaType)],
-    ["th.country", v => escapeHtml(v.destinationCountry)],
+// ─── Security Approval (renamed from Visa) ───────────────────────────────────
+function renderSecurityApproval() {
+  const APPROVAL_TYPES = [
+    { label: t("securityApproval.sharm","Sharm El Sheikh"), dest: "SSH" },
+    { label: t("securityApproval.cairo","Cairo"),           dest: "CAI" },
+    { label: t("securityApproval.borgElArab","Borg El Arab"), dest: "HBE" },
+  ];
+
+  renderListPage("security-approval", "/visa-applications", [
+    ["th.ref",    v => `<span class="primary-text">${escapeHtml(v.refNumber)}</span>`],
+    ["th.name",   v => escapeHtml(v.applicantName)],
+    ["th.type",   v => {
+      const loc = APPROVAL_TYPES.find(x => x.dest === v.destinationCountry);
+      return escapeHtml(loc?.label || v.destinationCountry || v.visaType);
+    }],
+    ["form.phone","v => escapeHtml(v.phone || '—')"],
     ["th.amount", v => `<span class="numeric">${formatMoney(v.totalAmount, v.currency)}</span>`],
     ["th.status", v => statusBadge(v.status)],
-  ], { filters: [["status", "form.status", ["", "PENDING", "SUBMITTED", "APPROVED", "REJECTED"]]] });
+    ["th.actions",v => `<button class="btn btn-outline btn-sm" onclick="openSecurityApprovalForm()">${icon("plus")}&nbsp;${t("btn.add","New")}</button>`],
+  ], {
+    filters: [["status","form.status",["","PENDING","SUBMITTED","APPROVED","REJECTED"]]],
+    extraActions: `<button class="btn btn-primary" onclick="openSecurityApprovalForm()">${icon("plus")}&nbsp;${t("btn.add","New Request")}</button>`,
+  });
 }
 
-function renderReception() {
-  renderListPage("reception", "/airport-receptions", [
-    ["th.ref", r => escapeHtml(r.refNumber)],
-    ["th.name", r => escapeHtml(r.guestName)],
-    ["th.service", r => escapeHtml(r.serviceType)],
-    ["th.route", r => escapeHtml(r.airport)],
+function openSecurityApprovalForm() {
+  const types = [
+    { label: t("securityApproval.sharm","Sharm El Sheikh"), dest: "SSH" },
+    { label: t("securityApproval.cairo","Cairo"),           dest: "CAI" },
+    { label: t("securityApproval.borgElArab","Borg El Arab"), dest: "HBE" },
+  ];
+  const body = `
+    ${nationalityDatalist()}
+    <div class="form-grid">
+      <div class="form-field full"><label>${t("securityApproval.types","Approval Type")} *</label>
+        <select id="saType">
+          <option value="">${t("securityApproval.selectType","Select approval type")}</option>
+          ${types.map(x => `<option value="${x.dest}">${x.label}</option>`).join("")}
+        </select></div>
+      <div class="form-field"><label>${t("th.name","Client Name")} *</label>
+        <input id="saName" placeholder="Full name"></div>
+      <div class="form-field"><label>${t("form.phone","Phone")} *</label>
+        <input id="saPhone" type="tel" placeholder="+20..."></div>
+      <div class="form-field"><label>${t("form.nationality","Nationality")} *</label>
+        <input id="saNationality" list="nationalityList" placeholder="${t("form.nationalityPlaceholder","e.g. Saudi")}"></div>
+      <div class="form-field"><label>${t("securityApproval.hotelName","Hotel Name")}</label>
+        <input id="saHotel" placeholder="Hotel name"></div>
+      <div class="form-field"><label>${t("securityApproval.paxCount","Number of Passengers")}</label>
+        <input id="saPax" type="number" min="1" value="1"></div>
+      <div class="form-field full"><label>${t("securityApproval.passportUpload","Passport")} <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
+        <input type="file" id="saPassportFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'saPassportUrl')">
+        <input id="saPassportUrl" placeholder="or paste URL" style="margin-top:6px"></div>
+      <div class="form-field full"><label>${t("securityApproval.flightTicketUpload","Flight Ticket")} <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
+        <input type="file" id="saTicketFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'saTicketUrl')">
+        <input id="saTicketUrl" placeholder="or paste URL" style="margin-top:6px"></div>
+      <div class="form-field full"><label>${t("form.notes","Notes")}</label>
+        <textarea id="saNotes" rows="2"></textarea></div>
+    </div>`;
+  openModal(t("page.securityApprovalTitle","Security Approval Request"), body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" id="submitSaBtn">${icon("send")}&nbsp;${t("btn.sendRequest","Send Request")}</button>`);
+
+  document.getElementById("submitSaBtn").onclick = async () => {
+    const destCountry = document.getElementById("saType").value;
+    const name = document.getElementById("saName").value.trim();
+    const phone = document.getElementById("saPhone").value.trim();
+    const nationality = document.getElementById("saNationality").value.trim();
+    if (!destCountry || !name || !phone || !nationality) {
+      toast(t("toast.validationError","Check required fields"), "error"); return;
+    }
+    document.getElementById("submitSaBtn").disabled = true;
+    const res = await apiFetch("/visa-applications", { method: "POST", body: JSON.stringify({
+      applicantName: name,
+      nationality,
+      passportNumber: "PENDING",
+      passportExpiry: new Date(Date.now() + 365*24*60*60*1000).toISOString(),
+      visaType: "TOURIST",
+      destinationCountry: destCountry,
+      travelDate: new Date().toISOString(),
+      processingType: "NORMAL",
+      phone,
+      hotelName: document.getElementById("saHotel").value.trim() || undefined,
+      paxCount: parseInt(document.getElementById("saPax").value || "1"),
+      passportUrl: document.getElementById("saPassportUrl").value.trim() || undefined,
+      flightTicketUrl: document.getElementById("saTicketUrl").value.trim() || undefined,
+      notes: document.getElementById("saNotes").value.trim() || undefined,
+      totalAmount: 0,
+      currency: "USD",
+    })});
+    if (res?.success) {
+      closeModal();
+      toast(`✅ ${t("toast.created","Submitted")} — ${res.data.refNumber}`, "success");
+      renderSecurityApproval();
+    } else {
+      document.getElementById("submitSaBtn").disabled = false;
+    }
+  };
+}
+
+// ─── Airport Assist (renamed from Reception) ─────────────────────────────────
+function renderAirportAssist() {
+  renderListPage("airport-assist", "/airport-receptions", [
+    ["th.ref",    r => `<span class="primary-text">${escapeHtml(r.refNumber)}</span>`],
+    ["th.name",   r => escapeHtml(r.guestName)],
+    ["th.service",r => escapeHtml(r.serviceType)],
+    ["th.route",  r => escapeHtml(r.airport)],
     ["th.amount", r => `<span class="numeric">${formatMoney(r.totalAmount, r.currency)}</span>`],
     ["th.status", r => statusBadge(r.status)],
-  ], { filters: [["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]]] });
+  ], {
+    filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
+    extraActions: `<button class="btn btn-primary" onclick="openAirportAssistForm()">${icon("plus")}&nbsp;${t("btn.add","New Request")}</button>`,
+  });
+}
+
+function openAirportAssistForm() {
+  const airports = ["CAI","HRG","SSH","LXR","ASW","HBE","MHH"];
+  const serviceTypes = ["MEET_AND_GREET","AHLAN_SERVICE","VIP_LOUNGE","FULL_ASSISTANCE"];
+  const body = `
+    <div class="form-grid">
+      <div class="form-field"><label>${t("th.name","Guest Name")} *</label>
+        <input id="aaName" placeholder="Full name"></div>
+      <div class="form-field"><label>${t("form.phone","Phone")} *</label>
+        <input id="aaPhone" type="tel" placeholder="+20..."></div>
+      <div class="form-field"><label>${t("airportAssist.serviceType","Service Type")} *</label>
+        <select id="aaService">
+          ${serviceTypes.map(s => `<option value="${s}">${s.replace(/_/g," ")}</option>`).join("")}
+        </select></div>
+      <div class="form-field"><label>${t("th.route","Airport")} *</label>
+        <select id="aaAirport">
+          ${airports.map(a => `<option value="${a}">${a}</option>`).join("")}
+        </select></div>
+      <div class="form-field"><label>${t("th.name","Flight Number")} *</label>
+        <input id="aaFlight" placeholder="MS707"></div>
+      <div class="form-field"><label>${t("form.date","Flight Date & Time")} *</label>
+        <input id="aaDateTime" type="datetime-local"></div>
+      <div class="form-field"><label>${t("form.passengers","Number of Guests")}</label>
+        <input id="aaCount" type="number" min="1" value="1"></div>
+      <div class="form-field full"><label>${t("airportAssist.arrivalDeparture","Arrival / Departure Details")}</label>
+        <textarea id="aaTravelDetails" rows="2" placeholder="e.g. Arriving from Dubai, connecting to Sharm"></textarea></div>
+      <div class="form-field full"><label>${t("airportAssist.ticketUpload","Flight Ticket")} <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
+        <input type="file" id="aaTicketFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'aaTicketUrl')">
+        <input id="aaTicketUrl" placeholder="or paste URL" style="margin-top:6px"></div>
+      <div class="form-field full"><label>${t("form.notes","Notes")}</label>
+        <textarea id="aaNotes" rows="2"></textarea></div>
+    </div>`;
+  openModal(t("page.airportAssistTitle","Airport Assist Request"), body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" id="submitAaBtn">${icon("send")}&nbsp;${t("btn.sendRequest","Send Request")}</button>`);
+
+  document.getElementById("submitAaBtn").onclick = async () => {
+    const name = document.getElementById("aaName").value.trim();
+    const phone = document.getElementById("aaPhone").value.trim();
+    const flight = document.getElementById("aaFlight").value.trim();
+    const dt = document.getElementById("aaDateTime").value;
+    if (!name || !phone || !flight || !dt) {
+      toast(t("toast.validationError","Check required fields"), "error"); return;
+    }
+    document.getElementById("submitAaBtn").disabled = true;
+    const res = await apiFetch("/airport-receptions", { method: "POST", body: JSON.stringify({
+      serviceType: document.getElementById("aaService").value,
+      airport: document.getElementById("aaAirport").value,
+      flightNumber: flight,
+      flightDateTime: dt,
+      guestName: name,
+      guestCount: parseInt(document.getElementById("aaCount").value || "1"),
+      phone,
+      ticketUrl: document.getElementById("aaTicketUrl").value.trim() || undefined,
+      travelDetails: document.getElementById("aaTravelDetails").value.trim() || undefined,
+      notes: document.getElementById("aaNotes").value.trim() || undefined,
+      totalAmount: 0,
+      currency: "USD",
+    })});
+    if (res?.success) {
+      closeModal();
+      toast(`✅ ${t("toast.created","Submitted")} — ${res.data.refNumber}`, "success");
+      renderAirportAssist();
+    } else {
+      document.getElementById("submitAaBtn").disabled = false;
+    }
+  };
+}
+
+// ─── SIM Card ─────────────────────────────────────────────────────────────────
+async function renderSimCard() {
+  const capturedToken = state.renderToken;
+  state.page = "sim-card";
+  const pkgRes = await apiFetch("/sim-card/packages?activeOnly=true");
+  if (state.renderToken !== capturedToken) return;
+  const packages = pkgRes?.data || [];
+
+  content(pageHeader(`<button class="btn btn-primary" onclick="openSimRequestForm(${JSON.stringify(packages).replace(/"/g,'&quot;')})">${icon("plus")}&nbsp;${t("btn.add","New Request")}</button>`) + `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:24px">
+      ${packages.length ? packages.map(p => `
+        <div class="stat-card" style="cursor:pointer" onclick="openSimRequestForm(${JSON.stringify(packages).replace(/"/g,'&quot;')}, '${p.id}')">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div class="stat-label">${escapeHtml(p.name)}</div>
+            ${icon("credit-card")}
+          </div>
+          <div class="stat-value" style="font-size:18px;margin-top:12px">${escapeHtml(p.dataSize)}</div>
+          <div class="stat-sub">${p.minutes ? escapeHtml(p.minutes) + " · " : ""}${escapeHtml(p.validity)}</div>
+          <div style="margin-top:8px;font-weight:700;color:var(--brand-navy-3)">${formatMoney(p.price, p.currency)} <span style="font-weight:400;font-size:11px">${t("simCard.perSim","per SIM")}</span></div>
+        </div>`).join("") : `<div class="empty-state">${t("simCard.noPackages","No SIM packages available")}</div>`}
+    </div>`);
+
+  renderListPage("sim-card", "/sim-card/requests", [
+    ["th.ref",    r => `<span class="primary-text">${escapeHtml(r.refNumber)}</span>`],
+    ["th.name",   r => escapeHtml(r.clientName)],
+    ["form.phone",r => escapeHtml(r.phone)],
+    ["simCard.package", r => escapeHtml(r.package?.name || "—")],
+    ["form.date", r => r.arrivalDate ? formatDate(r.arrivalDate) : "—"],
+    ["th.amount", r => `<span class="numeric">${formatMoney(r.totalAmount, r.currency)}</span>`],
+    ["th.status", r => statusBadge(r.status)],
+  ], { filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]] });
+}
+
+function openSimRequestForm(packages, preselect) {
+  if (typeof packages === "string") try { packages = JSON.parse(packages); } catch { packages = []; }
+  const body = `
+    <div class="form-grid">
+      <div class="form-field full"><label>${t("simCard.package","SIM Package")}</label>
+        <select id="simPkg">
+          <option value="">${t("simCard.selectPackage","Select a package")}</option>
+          ${(packages||[]).map(p => `<option value="${p.id}" data-price="${p.price}" data-cur="${p.currency}" ${p.id===preselect?"selected":""}>${escapeHtml(p.name)} — ${escapeHtml(p.dataSize)} · ${formatMoney(p.price,p.currency)}</option>`).join("")}
+        </select></div>
+      <div class="form-field"><label>${t("simCard.clientName","Client Name")} *</label>
+        <input id="simName" placeholder="Full name"></div>
+      <div class="form-field"><label>${t("simCard.phone","Client Phone")} *</label>
+        <input id="simPhone" type="tel" placeholder="+20..."></div>
+      <div class="form-field"><label>${t("simCard.quantity","Quantity")}</label>
+        <input id="simQty" type="number" min="1" value="1" oninput="updateSimTotal()"></div>
+      <div class="form-field"><label>${t("simCard.arrivalDate","Arrival Date")}</label>
+        <input id="simArrival" type="date"></div>
+      <div class="form-field full"><label>${t("form.notes","Notes")}</label>
+        <textarea id="simNotes" rows="2"></textarea></div>
+    </div>
+    <div class="info-grid" style="margin-top:12px">
+      <div class="info-item"><div class="info-label">${t("th.total","Estimated Total")}</div>
+        <div class="info-value" id="simTotal" style="font-weight:800">—</div></div>
+    </div>`;
+  openModal(t("simCard.requestTitle","Request SIM Card"), body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" id="submitSimBtn">${icon("send")}&nbsp;${t("btn.sendRequest","Send Request")}</button>`);
+
+  document.getElementById("simPkg").addEventListener("change", updateSimTotal);
+  updateSimTotal();
+
+  function updateSimTotal() {
+    const sel = document.getElementById("simPkg");
+    const opt = sel?.options[sel.selectedIndex];
+    const price = parseFloat(opt?.dataset?.price || "0");
+    const cur = opt?.dataset?.cur || "USD";
+    const qty = parseInt(document.getElementById("simQty")?.value || "1");
+    const el = document.getElementById("simTotal");
+    if (el) el.textContent = price > 0 ? formatMoney(price * qty, cur) : "—";
+  }
+
+  document.getElementById("submitSimBtn").onclick = async () => {
+    const name = document.getElementById("simName").value.trim();
+    const phone = document.getElementById("simPhone").value.trim();
+    if (!name || !phone) { toast(t("toast.validationError","Check required fields"), "error"); return; }
+    document.getElementById("submitSimBtn").disabled = true;
+    const res = await apiFetch("/sim-card/requests", { method: "POST", body: JSON.stringify({
+      packageId: document.getElementById("simPkg").value || undefined,
+      clientName: name,
+      phone,
+      quantity: parseInt(document.getElementById("simQty").value || "1"),
+      arrivalDate: document.getElementById("simArrival").value || undefined,
+      notes: document.getElementById("simNotes").value.trim() || undefined,
+    })});
+    if (res?.success) {
+      closeModal();
+      toast(`✅ ${t("toast.created","Submitted")} — ${res.data.refNumber}`, "success");
+      renderSimCard();
+    } else {
+      document.getElementById("submitSimBtn").disabled = false;
+    }
+  };
+}
+
+// ─── Offers (view active offers) ─────────────────────────────────────────────
+async function renderOffers() {
+  const capturedToken = state.renderToken;
+  state.page = "offers";
+  const res = await apiFetch("/offers?activeOnly=true");
+  if (state.renderToken !== capturedToken) return;
+  const offers = res?.data || [];
+  const lang = localStorage.getItem("lang") || "en";
+  const isAr = lang === "ar";
+
+  const cards = offers.map(o => {
+    const title = (isAr && o.titleAr) ? o.titleAr : o.title;
+    const desc = (isAr && o.descriptionAr) ? o.descriptionAr : (o.description || "");
+    const cta = (isAr && o.ctaLabelAr) ? o.ctaLabelAr : (o.ctaLabel || t("offers.viewOffer","View Offer"));
+    return `<div class="panel" style="overflow:hidden">
+      ${o.imageUrl ? `<img src="${escapeHtml(o.imageUrl)}" alt="" style="width:100%;height:180px;object-fit:cover">` : `<div style="height:100px;background:linear-gradient(135deg,var(--brand-navy-2),var(--brand-navy-3));display:flex;align-items:center;justify-content:center">${icon("tag")}</div>`}
+      <div class="panel-body">
+        <div style="font-size:16px;font-weight:700;margin-bottom:6px">${escapeHtml(title)}</div>
+        ${desc ? `<p style="color:var(--text-secondary);margin:0 0 12px;line-height:1.5">${escapeHtml(desc)}</p>` : ""}
+        ${o.validFrom || o.validTo ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">${o.validFrom ? formatDate(o.validFrom) : ""}${o.validTo ? " – " + formatDate(o.validTo) : ""}</div>` : ""}
+        ${o.ctaAction ? `<button class="btn btn-primary btn-sm" onclick="setPage('${escapeHtml(o.ctaAction)}')">${icon("arrow-right")}&nbsp;${escapeHtml(cta)}</button>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+
+  content(pageHeader() + (offers.length
+    ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px">${cards}</div>`
+    : `<div class="empty-state">${t("offers.noOffer","No active offers at the moment")}</div>`));
+}
+
+// ─── Offer popup on dashboard load ───────────────────────────────────────────
+async function maybeShowOfferPopup() {
+  const today = new Date().toDateString();
+  const key = `offerDismissed_${state.user?.id || "anon"}`;
+  if (localStorage.getItem(key) === today) return;
+
+  const res = await apiFetch("/offers/active");
+  if (!res?.data) return;
+  const o = res.data;
+  const lang = localStorage.getItem("lang") || "en";
+  const isAr = lang === "ar";
+  const title = (isAr && o.titleAr) ? o.titleAr : o.title;
+  const desc = (isAr && o.descriptionAr) ? o.descriptionAr : (o.description || "");
+  const cta = (isAr && o.ctaLabelAr) ? o.ctaLabelAr : (o.ctaLabel || t("offers.viewOffer","View Offer"));
+
+  const body = `
+    <div style="text-align:center">
+      ${o.imageUrl ? `<img src="${escapeHtml(o.imageUrl)}" alt="" style="width:100%;max-height:240px;object-fit:cover;border-radius:var(--r-8);margin-bottom:16px">` : `<div style="font-size:48px;margin-bottom:16px">🎯</div>`}
+      <div style="font-size:20px;font-weight:800;margin-bottom:10px">${escapeHtml(title)}</div>
+      ${desc ? `<p style="color:var(--text-secondary);line-height:1.6;margin:0 0 16px">${escapeHtml(desc)}</p>` : ""}
+      ${o.validFrom || o.validTo ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">${o.validFrom ? formatDate(o.validFrom) : ""}${o.validTo ? " – " + formatDate(o.validTo) : ""}</div>` : ""}
+    </div>`;
+
+  openModal(`🎁 ${t("offers.popup","Special Offer")}`, body, `
+    <button class="btn btn-outline" onclick="dismissOfferToday('${escapeHtml(key)}')">${t("offers.dontShow","Don't show today")}</button>
+    ${o.ctaAction ? `<button class="btn btn-primary" onclick="closeModal();setPage('${escapeHtml(o.ctaAction)}')">${icon("arrow-right")}&nbsp;${escapeHtml(cta)}</button>` : `<button class="btn btn-primary" onclick="closeModal()">${t("btn.close","Close")}</button>`}`);
+}
+
+function dismissOfferToday(key) {
+  localStorage.setItem(key, new Date().toDateString());
+  closeModal();
+}
+
+// ─── File upload helper ───────────────────────────────────────────────────────
+async function uploadAndFill(input, targetId) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append("file", file);
+  const token = localStorage.getItem("accessToken");
+  try {
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+      credentials: "include",
+    });
+    const json = await res.json();
+    if (json?.data?.url) {
+      const target = document.getElementById(targetId);
+      if (target) target.value = json.data.url;
+      toast("✅ Uploaded", "success");
+    }
+  } catch {
+    toast("Upload failed", "error");
+  }
 }
 
 function renderInvoices() {
@@ -1383,8 +1832,10 @@ const pageLoaders = {
   cruises: renderCruises,
   transport: renderTransport,
   activities: renderActivities,
-  visa: renderVisa,
-  reception: renderReception,
+  "security-approval": renderSecurityApproval,
+  "airport-assist": renderAirportAssist,
+  "sim-card": renderSimCard,
+  offers: renderOffers,
   invoices: renderInvoices,
   wallet: renderWallet,
   reports: renderReports,

@@ -755,6 +755,187 @@
     },
   };
 
+  // ── Supplemental keys (full EN/AR coverage for strings referenced in the app) ──
+  Object.assign(en.btn, { addPricing: "Add price period", importExcel: "Import Excel", syncing: "Syncing…", importing: "Importing…" });
+  Object.assign(ar.btn, { addPricing: "إضافة فترة سعر", importExcel: "استيراد Excel", syncing: "جاري المزامنة…", importing: "جاري الاستيراد…" });
+  Object.assign(en.toast, { syncDetail: "{synced} synced · {created} new · {updated} updated · {errors} errors" });
+  Object.assign(ar.toast, { syncDetail: "{synced} تمت · {created} جديد · {updated} محدث · {errors} أخطاء" });
+  Object.assign(en.filter, { any: "Any" });
+  Object.assign(ar.filter, { any: "الكل" });
+  Object.assign(en.form, { travelFrom: "Travelling From", travelFromPlaceholder: "e.g. Cairo, Riyadh, Milan", gallery: "Gallery image URLs" });
+  Object.assign(ar.form, { travelFrom: "السفر من", travelFromPlaceholder: "مثال: القاهرة، الرياض، ميلان", gallery: "روابط صور المعرض" });
+  Object.assign(en.hotel, { gallery: "Gallery" });
+  Object.assign(ar.hotel, { gallery: "معرض الصور" });
+  Object.assign(en.hotel, {
+    companyVisibility: "Company price visibility",
+    companyVisibilityHelp: "Use this to show or hide this hotel price for one specific company, overriding the tier rule.",
+    quoteRequest: "Quote request",
+  });
+  Object.assign(ar.hotel, {
+    companyVisibility: "رؤية السعر حسب الشركة",
+    companyVisibilityHelp: "استخدم هذا لإظهار أو إخفاء سعر هذا الفندق لشركة محددة، متجاوزاً قاعدة الفئة.",
+    quoteRequest: "طلب السعر",
+  });
+  Object.assign(en.toast, { invalidDateRange: "Valid To must be after Valid From" });
+  Object.assign(ar.toast, { invalidDateRange: "تاريخ النهاية يجب أن يكون بعد تاريخ البداية" });
+  Object.assign(en.validation, { requiredFields: "From, To, and Date are required" });
+  Object.assign(ar.validation, { requiredFields: "الحقول: من، إلى، والتاريخ مطلوبة" });
+
+  // ── Security Approval (renamed Visa) ──────────────────────────────────────
+  en.nav.securityApproval = "Security Approval";
+  ar.nav.securityApproval = "الموافقة الأمنية";
+  en.nav.airportAssist = "Airport Assist";
+  ar.nav.airportAssist = "مساعدة المطار";
+  en.nav.simCard = "SIM Card";
+  ar.nav.simCard = "شريحة الاتصال";
+  en.nav.offers = "Offers";
+  ar.nav.offers = "العروض";
+
+  en.page.securityApprovalTitle = "Security Approval";
+  ar.page.securityApprovalTitle = "الموافقة الأمنية";
+  en.page.securityApprovalSub = "Sharm El Sheikh, Cairo & Borg El Arab entry approvals";
+  ar.page.securityApprovalSub = "موافقات الدخول — شرم الشيخ، القاهرة وبرج العرب";
+  en.page.airportAssistTitle = "Airport Assist";
+  ar.page.airportAssistTitle = "مساعدة المطار";
+  en.page.airportAssistSub = "Meet & greet, VIP lounge and transfer assistance";
+  ar.page.airportAssistSub = "الاستقبال والمرافقة وخدمات الترحيل";
+  en.page.simCardTitle = "SIM Card";
+  ar.page.simCardTitle = "شريحة الاتصال";
+  en.page.simCardSub = "Egyptian SIM packages for your clients";
+  ar.page.simCardSub = "باقات شريحة الاتصال المصرية لعملائكم";
+  en.page.offersTitle = "Offers & Promotions";
+  ar.page.offersTitle = "العروض والترويج";
+  en.page.offersSub = "Manage promotional offers shown to company users";
+  ar.page.offersSub = "إدارة العروض الترويجية المعروضة لمستخدمي الشركات";
+
+  // ── Security Approval types ────────────────────────────────────────────────
+  en.securityApproval = {
+    sharm: "Sharm El Sheikh", cairo: "Cairo", borgElArab: "Borg El Arab",
+    passportUpload: "Passport (image or PDF)", flightTicketUpload: "Flight Ticket (image or PDF)",
+    paxCount: "Number of Passengers", hotelName: "Hotel Name",
+    types: "Approval Type", selectType: "Select approval type",
+    priceNote: "Price is set per person by admin",
+    uploadNote: "Upload passport and flight ticket to proceed",
+  };
+  ar.securityApproval = {
+    sharm: "شرم الشيخ", cairo: "القاهرة", borgElArab: "برج العرب",
+    passportUpload: "جواز السفر (صورة أو PDF)", flightTicketUpload: "تذكرة الطيران (صورة أو PDF)",
+    paxCount: "عدد المسافرين", hotelName: "اسم الفندق",
+    types: "نوع الموافقة", selectType: "اختر نوع الموافقة",
+    priceNote: "السعر محدد للشخص الواحد من الإدارة",
+    uploadNote: "رفع جواز السفر وتذكرة الطيران للمتابعة",
+  };
+
+  // ── Airport Assist form ────────────────────────────────────────────────────
+  en.airportAssist = {
+    ticketUpload: "Flight Ticket (image or PDF)", arrivalDeparture: "Arrival / Departure Details",
+    form: "Request Airport Assist", serviceType: "Service Type",
+  };
+  ar.airportAssist = {
+    ticketUpload: "تذكرة الطيران (صورة أو PDF)", arrivalDeparture: "تفاصيل الوصول / المغادرة",
+    form: "طلب مساعدة المطار", serviceType: "نوع الخدمة",
+  };
+
+  // ── SIM Card ───────────────────────────────────────────────────────────────
+  en.simCard = {
+    package: "SIM Package", selectPackage: "Select a package", dataSize: "Data",
+    minutes: "Minutes / Calls", validity: "Validity", clientName: "Client Name",
+    phone: "Client Phone", quantity: "Quantity", arrivalDate: "Arrival Date",
+    requestTitle: "Request SIM Card", noPackages: "No SIM packages available",
+    perSim: "per SIM",
+  };
+  ar.simCard = {
+    package: "باقة الشريحة", selectPackage: "اختر باقة", dataSize: "البيانات",
+    minutes: "دقائق / مكالمات", validity: "الصلاحية", clientName: "اسم العميل",
+    phone: "هاتف العميل", quantity: "الكمية", arrivalDate: "تاريخ الوصول",
+    requestTitle: "طلب شريحة اتصال", noPackages: "لا توجد باقات متاحة",
+    perSim: "للشريحة",
+  };
+
+  // ── Offers ─────────────────────────────────────────────────────────────────
+  en.offers = {
+    popup: "Special Offer", dontShow: "Don't show today", viewOffer: "View Offer",
+    noOffer: "No active offers", active: "Active", inactive: "Inactive",
+    priority: "Priority", imageUrl: "Image URL", ctaAction: "CTA Page (service key)",
+    ctaLabel: "CTA Button Label", validDates: "Valid Dates",
+    titleAr: "Arabic Title", descAr: "Arabic Description",
+  };
+  ar.offers = {
+    popup: "عرض خاص", dontShow: "لا تُظهر اليوم", viewOffer: "عرض العرض",
+    noOffer: "لا توجد عروض نشطة", active: "نشط", inactive: "غير نشط",
+    priority: "الأولوية", imageUrl: "رابط الصورة", ctaAction: "صفحة CTA (مفتاح الخدمة)",
+    ctaLabel: "نص زر CTA", validDates: "تواريخ الصلاحية",
+    titleAr: "العنوان بالعربية", descAr: "الوصف بالعربية",
+  };
+
+  // ── Hotels flow additions ──────────────────────────────────────────────────
+  en.hotel.chooseDest = "Choose a destination to browse hotels";
+  ar.hotel.chooseDest = "اختر الوجهة لاستعراض الفنادق";
+  en.hotel.allDestinations = "All Destinations";
+  ar.hotel.allDestinations = "جميع الوجهات";
+  en.hotel.mealPlan = "Meal Plan";
+  ar.hotel.mealPlan = "برنامج الوجبات";
+  en.hotel.selectMealPlan = "Select meal plan";
+  ar.hotel.selectMealPlan = "اختر برنامج الوجبات";
+  en.hotel.childAge = "Child {n} Age";
+  ar.hotel.childAge = "عمر الطفل {n}";
+  en.hotel.pax = "Number of Pax";
+  ar.hotel.pax = "عدد المسافرين";
+  en.hotel.rooms = "Rooms";
+  ar.hotel.rooms = "الغرف";
+  en.hotel.terms = "Terms & Notes";
+  ar.hotel.terms = "الشروط والملاحظات";
+
+  // ── Wallet ─────────────────────────────────────────────────────────────────
+  en.wallet.availableToSpend = "Available to Spend";
+  ar.wallet.availableToSpend = "المتاح للإنفاق";
+  en.wallet.walletBalance = "Wallet Balance";
+  ar.wallet.walletBalance = "رصيد المحفظة";
+  en.wallet.creditLimit = "Credit Limit";
+  ar.wallet.creditLimit = "حد الائتمان";
+
+  // ── Meal plans ─────────────────────────────────────────────────────────────
+  en.mealPlan = {
+    ROOM_ONLY: "Room Only", BREAKFAST: "Breakfast Only", HALF_BOARD: "Half Board",
+    FULL_BOARD: "Full Board", ALL_INCLUSIVE: "All Inclusive", ULTRA_ALL_INCLUSIVE: "Ultra All Inclusive",
+  };
+  ar.mealPlan = {
+    ROOM_ONLY: "غرفة فقط", BREAKFAST: "إفطار فقط", HALF_BOARD: "نصف إقامة",
+    FULL_BOARD: "إقامة كاملة", ALL_INCLUSIVE: "شامل كل شيء", ULTRA_ALL_INCLUSIVE: "شامل كل شيء بالكامل",
+  };
+
+  // ── Transport additions ────────────────────────────────────────────────────
+  en.transport = {
+    requestTitle: "Book Transport", passengerName: "Lead Passenger Name",
+    contactPhone: "Contact Phone", priceEstimate: "Estimated Price",
+    livePrice: "Price updates automatically", bookConfirmed: "Book (Confirmed)",
+    confirmNote: "This creates a confirmed booking. Admin will be notified.",
+    vehicleHint: {
+      SEDAN: "1–3 pax", SUV: "1–5 pax", VAN_6: "4–6 pax", VAN_12: "7–12 pax",
+      MINIBUS_20: "13–20 pax", BUS_45: "21–45 pax", LUXURY_LIMO: "VIP",
+    },
+  };
+  ar.transport = {
+    requestTitle: "حجز نقل", passengerName: "اسم المسافر الرئيسي",
+    contactPhone: "هاتف التواصل", priceEstimate: "السعر التقديري",
+    livePrice: "السعر يتحدث تلقائياً", bookConfirmed: "احجز (مؤكد)",
+    confirmNote: "يُنشئ هذا حجزاً مؤكداً. سيتم إخطار الإدارة.",
+    vehicleHint: {
+      SEDAN: "1–3 مسافرين", SUV: "1–5 مسافرين", VAN_6: "4–6 مسافرين", VAN_12: "7–12 مسافرين",
+      MINIBUS_20: "13–20 مسافرين", BUS_45: "21–45 مسافرين", LUXURY_LIMO: "VIP",
+    },
+  };
+
+  // ── Activities additions ───────────────────────────────────────────────────
+  en.activity = {
+    requestTitle: "Activity Request", vipType: "Type", group: "Group", private: "Private", vip: "VIP",
+    timeSlot: "Date & Time",
+  };
+  ar.activity = {
+    requestTitle: "طلب نشاط", vipType: "النوع", group: "جماعي", private: "خاص", vip: "VIP",
+    timeSlot: "التاريخ والوقت",
+  };
+
   const dict = { en, ar };
 
   function deepGet(obj, path) {

@@ -24,6 +24,9 @@ import { entitySheetsRouter } from './modules/sheets-sync/sheets-sync.routes';
 import masterDataRouter from './modules/master-data/master-data.routes';
 import destinationsRouter from './modules/destinations/destinations.routes';
 import quoteRequestsRouter from './modules/quote-requests/quote-requests.routes';
+import offersRouter from './modules/offers/offers.routes';
+import simCardRouter from './modules/sim-card/sim-card.routes';
+import uploadRouter from './modules/upload/upload.routes';
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3000');
@@ -57,6 +60,9 @@ app.use('/api/visa-applications', authenticate, visaRouter);
 app.use('/api/airport-receptions', authenticate, receptionRouter);
 app.use('/api/destinations', authenticate, destinationsRouter);
 app.use('/api/quote-requests', authenticate, quoteRequestsRouter);
+app.use('/api/offers', authenticate, offersRouter);
+app.use('/api/sim-card', authenticate, simCardRouter);
+app.use('/api/upload', authenticate, uploadRouter);
 app.use('/api/admin', authenticate, adminRouter);
 
 // SPA fallback — serve admin for /admin, dashboard for everything else

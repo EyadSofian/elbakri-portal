@@ -174,7 +174,7 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
     name: string; nameAr?: string; city: string; cityAr?: string;
     country: string; stars?: number; address: string;
     description?: string; descriptionAr?: string;
-    amenities?: string[]; imageUrl?: string;
+    amenities?: string[]; imageUrl?: string; galleryUrls?: string[];
     pricePerNight: number; currency?: string;
     commissionPercent?: number; availableRooms?: number; maxGuestsPerRoom?: number;
     showPriceToAgents?: boolean; allowQuoteRequest?: boolean; minVisibleTier?: CompanyTier;
@@ -196,6 +196,7 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
       descriptionAr: body.descriptionAr,
       amenities: body.amenities ?? [],
       imageUrl,
+      galleryUrls: body.galleryUrls ?? [],
       pricePerNight: new Decimal(body.pricePerNight),
       currency: body.currency ?? 'USD',
       commissionPercent: new Decimal(body.commissionPercent ?? 0),
@@ -226,6 +227,7 @@ export async function updateHotel(req: Request, res: Response): Promise<void> {
   if (body.description !== undefined) data.description = body.description ? String(body.description) : null;
   if (body.descriptionAr !== undefined) data.descriptionAr = body.descriptionAr ? String(body.descriptionAr) : null;
   if (body.amenities) data.amenities = body.amenities as string[];
+  if (body.galleryUrls !== undefined) data.galleryUrls = Array.isArray(body.galleryUrls) ? (body.galleryUrls as string[]) : [];
   if (body.imageUrl !== undefined) data.imageUrl = body.imageUrl ? String(body.imageUrl) : null;
   if (body.pricePerNight !== undefined) data.pricePerNight = new Decimal(Number(body.pricePerNight));
   if (body.currency) data.currency = String(body.currency);

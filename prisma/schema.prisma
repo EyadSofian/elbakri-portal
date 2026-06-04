@@ -142,6 +142,15 @@ enum VisaType {
   HAJJ
 }
 
+enum MealPlan {
+  ROOM_ONLY
+  BREAKFAST
+  HALF_BOARD
+  FULL_BOARD
+  ALL_INCLUSIVE
+  ULTRA_ALL_INCLUSIVE
+}
+
 enum ProcessingType {
   NORMAL
   EXPRESS
@@ -225,6 +234,7 @@ model User {
   airportReceptions    AirportReception[]   @relation("ReceptionCreatedBy")
   quoteRequests        QuoteRequest[]       @relation("QuoteRequestCreatedBy")
   assignedQuotes       QuoteRequest[]       @relation("QuoteRequestAssignedTo")
+  simRequests          SimRequest[]         @relation("SimRequestCreatedBy")
   refreshTokens        RefreshToken[]
   isActive             Boolean              @default(true)
   lastLoginAt          DateTime?
@@ -282,6 +292,7 @@ model Company {
   visaApplications     VisaApplication[]
   airportReceptions    AirportReception[]
   quoteRequests        QuoteRequest[]
+  simRequests          SimRequest[]
   hotelVisibility       HotelCompanyVisibility[]
   createdAt            DateTime                    @default(now())
   updatedAt            DateTime                    @updatedAt
@@ -331,6 +342,7 @@ model Hotel {
   descriptionAr     String?
   amenities         String[]       @default([])
   imageUrl          String?
+  galleryUrls       String[]       @default([])
   pricePerNight     Decimal        @db.Decimal(10, 2)
   currency          String         @default("USD")
   commissionPercent Decimal        @default(0) @db.Decimal(5, 2)
@@ -500,6 +512,8 @@ model QuoteRequest {
   roomsCount       Int?
   nationality      String?
   travelFrom       String?
+  mealPlan         MealPlan?
+  childAges        Json?
   budget           Decimal?           @db.Decimal(12, 2)
   quotedAmount     Decimal?           @db.Decimal(12, 2)
   currency         String             @default("USD")
@@ -813,6 +827,11 @@ model VisaApplication {
   totalAmount        Decimal        @db.Decimal(12, 2)
   currency           String         @default("USD")
   notes              String?
+  phone              String?
+  hotelName          String?
+  paxCount           Int            @default(1)
+  passportUrl        String?
+  flightTicketUrl    String?
   submittedAt        DateTime?
   approvedAt         DateTime?
   rejectedAt         DateTime?
@@ -863,6 +882,9 @@ model AirportReception {
   signboardName   String?
   hotelName       String?
   specialRequests String?
+  phone           String?
+  ticketUrl       String?
+  travelDetails   String?
   totalAmount     Decimal       @db.Decimal(12, 2)
   currency        String        @default("USD")
   status          BookingStatus @default(PENDING)
@@ -889,6 +911,77 @@ model ReceptionServiceRate {
   @@index([sheetsRowId])
   @@index([serviceType])
   @@index([airport])
+}
+
+// ─────────────────────────────────────────────
+// OFFERS
+// ─────────────────────────────────────────────
+
+model Offer {
+  id            String    @id @default(cuid())
+  title         String
+  titleAr       String?
+  description   String?
+  descriptionAr String?
+  imageUrl      String?
+  serviceType   String?
+  ctaLabel      String?
+  ctaLabelAr    String?
+  ctaAction     String?
+  validFrom     DateTime?
+  validTo       DateTime?
+  priority      Int       @default(0)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([priority])
+}
+
+// ─────────────────────────────────────────────
+// SIM CARD
+// ─────────────────────────────────────────────
+
+model SimPackage {
+  id        String       @id @default(cuid())
+  name      String
+  nameAr    String?
+  dataSize  String
+  minutes   String?
+  validity  String
+  price     Decimal      @db.Decimal(10, 2)
+  currency  String       @default("USD")
+  isActive  Boolean      @default(true)
+  requests  SimRequest[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([isActive])
+}
+
+model SimRequest {
+  id          String        @id @default(cuid())
+  refNumber   String        @unique
+  companyId   String
+  company     Company       @relation(fields: [companyId], references: [id])
+  createdById String
+  createdBy   User          @relation("SimRequestCreatedBy", fields: [createdById], references: [id])
+  packageId   String?
+  package     SimPackage?   @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  clientName  String
+  phone       String
+  quantity    Int           @default(1)
+  arrivalDate DateTime?
+  notes       String?
+  status      BookingStatus @default(PENDING)
+  totalAmount Decimal       @db.Decimal(12, 2)
+  currency    String        @default("USD")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([companyId])
+  @@index([status])
 }
 
 model SheetsConfig {

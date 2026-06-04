@@ -16,6 +16,54 @@ the sync process uses it to update an existing record or create a new one.
 
 ---
 
+## Google Sheets setup
+
+The live sync reads a Google Sheet through a **service account**. One-time setup:
+
+1. **Create a service account** in Google Cloud → IAM → Service Accounts, and generate a JSON key.
+2. **Share the spreadsheet** (Share button) with the service account's email
+   (`...@...iam.gserviceaccount.com`) as **Viewer**. Sync is read-only.
+3. **Set environment variables** (never commit these — `.env` is git-ignored):
+
+   ```bash
+   GOOGLE_SERVICE_ACCOUNT_EMAIL=elbakri-sync@your-project.iam.gserviceaccount.com
+   # Wrap in quotes and escape newlines as \n (the app un-escapes them at runtime):
+   GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
+   GOOGLE_SHEETS_ID=1MdYMNfpSEbXLRV8hkthqH-iEcy5pofoHdg-HQwRE5sg
+   ```
+
+   `GOOGLE_SHEETS_ID` is the long ID in the sheet URL:
+   `https://docs.google.com/spreadsheets/d/`**`<THIS PART>`**`/edit`.
+   It can also be set/overridden at runtime in **Admin → Sheets Config**.
+4. **Test the connection** in Admin → Sheets Config → *Test Connection*.
+5. **Run a sync** per entity from the module toolbar (*Sync from Sheets*) or the
+   Sheets Config table. Each run reports `synced / created / updated / skipped / errors`.
+
+> If credentials are missing the sync endpoints return a clear, non-fatal error
+> (`GOOGLE_SHEETS_ID is not configured`) — they never crash the server.
+
+---
+
+## Preparing data from the raw "MEA" rate workbook
+
+The raw operator workbook (`MEA (1).xlsx`) is **not directly syncable**. Its tabs
+(`NORTH COAST`, `SSH TRIPS`, `TRANSFER EGYPT`, `SSH LIST`, `CAIRO HOTELS`,
+`CAIRO+ALEX TRIPS`) use merged cells, title rows, multi-row records and free-text
+prices like `20$ ADULT 12$CHILD`. To get this data into the DB there are three paths:
+
+| Data | How it gets in | Notes |
+| ---- | -------------- | ----- |
+| Sharm hotel directory (`SSH LIST`) + Cairo hotel names (`CAIRO HOTELS`) | `npm run db:import:mea -- "<path to MEA.xlsx>"` | Idempotent. Parses the clean directory + best-effort Cairo names. Upserts by `sheetsRowId = mea-ssh-<slug>` / `mea-cairo-<slug>`. |
+| North-Coast hotels + seasonal pricing, Sharm/Cairo activities, transfers | `npm run db:seed:mea` | Curated, normalized transcription of the dirty rate matrices (correct prices, Arabic names, categories). |
+| Ongoing master-data updates | Google Sheets sync | Maintain the **normalized tabs documented below** in your Google Sheet, then *Sync from Sheets*. |
+
+**To use Google Sheets sync going forward**, re-shape the raw rates into the clean,
+one-row-per-record tabs below (each row carrying a stable `sheetsRowId`). The raw
+workbook's layout will not import correctly through the sync — the normalized tabs are
+the contract.
+
+---
+
 ## Tabs
 
 ### Destinations

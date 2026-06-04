@@ -44,6 +44,7 @@ export async function createReception(req: Request, res: Response): Promise<void
     passengerNames?: string[]; signboardName?: string;
     hotelName?: string; specialRequests?: string;
     totalAmount: number; currency?: string; notes?: string;
+    phone?: string; ticketUrl?: string; travelDetails?: string;
   };
 
   const companyId = caller.role === 'SUPERADMIN' ? (body.companyId ?? caller.companyId!) : caller.companyId!;
@@ -88,6 +89,9 @@ export async function createReception(req: Request, res: Response): Promise<void
           hotelName: body.hotelName,
           specialRequests: body.specialRequests,
           totalAmount, currency: body.currency ?? 'USD', notes: body.notes,
+          phone: body.phone,
+          ticketUrl: body.ticketUrl,
+          travelDetails: body.travelDetails,
         },
         include: receptionInclude,
       });

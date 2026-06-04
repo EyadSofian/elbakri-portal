@@ -44,8 +44,10 @@
           <button class="nav-item" data-page="cruises"><i data-lucide="ship"></i><span data-i18n="nav.nileCruises">Nile Cruises</span></button>
           <button class="nav-item" data-page="activities"><i data-lucide="map-pin"></i><span data-i18n="nav.activities">Activities</span></button>
           <button class="nav-item" data-page="transport"><i data-lucide="bus"></i><span data-i18n="nav.transport">Transport</span></button>
-          <button class="nav-item" data-page="visa"><i data-lucide="file-text"></i><span data-i18n="nav.visa">Visa Applications</span></button>
-          <button class="nav-item" data-page="reception"><i data-lucide="plane-landing"></i><span data-i18n="nav.reception">Airport Reception</span></button>
+          <button class="nav-item" data-page="security-approval"><i data-lucide="shield-check"></i><span data-i18n="nav.securityApproval">Security Approval</span></button>
+          <button class="nav-item" data-page="airport-assist"><i data-lucide="plane-landing"></i><span data-i18n="nav.airportAssist">Airport Assist</span></button>
+          <button class="nav-item" data-page="sim-card"><i data-lucide="credit-card"></i><span data-i18n="nav.simCard">SIM Card</span></button>
+          <button class="nav-item" data-page="offers"><i data-lucide="tag"></i><span data-i18n="nav.offers">Offers</span></button>
         </div>
         <div class="nav-group">
           <div class="nav-label" data-i18n="nav.finance">Finance</div>
@@ -144,8 +146,10 @@ const pageMeta = {
   cruises: ["nav.nileCruises", "page.servicesSub"],
   transport: ["nav.transport", "page.servicesSub"],
   activities: ["nav.activities", "page.servicesSub"],
-  visa: ["nav.visa", "page.servicesSub"],
-  reception: ["nav.reception", "page.servicesSub"],
+  "security-approval": ["page.securityApprovalTitle", "page.securityApprovalSub"],
+  "airport-assist": ["page.airportAssistTitle", "page.airportAssistSub"],
+  "sim-card": ["page.simCardTitle", "page.simCardSub"],
+  offers: ["page.offersTitle", "page.offersSub"],
   calculators: ["page.calculatorsTitle", "page.calculatorsSub"],
   destinations: ["nav.destinations", "page.destinationsSub"],
   "quote-requests": ["nav.quoteRequests", "page.quoteRequestsSub"],
@@ -239,6 +243,20 @@ function toast(message, type = "") {
   el.className = `toast ${type} show`;
   clearTimeout(el._timer);
   el._timer = setTimeout(() => { el.className = "toast"; }, 3600);
+}
+
+// Disable a submit button and show a spinner while an async action runs.
+function setBtnLoading(btn, loading, labelKey) {
+  if (!btn) return;
+  if (loading) {
+    if (btn._restore === undefined) btn._restore = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="btn-spin">${icon("loader-2")}</span>${t(labelKey || "btn.saving", "Saving")}`;
+    refreshIcons(btn);
+  } else {
+    btn.disabled = false;
+    if (btn._restore !== undefined) { btn.innerHTML = btn._restore; btn._restore = undefined; refreshIcons(btn); }
+  }
 }
 
 function icon(name) {
@@ -482,7 +500,7 @@ async function renderDashboard() {
 
 function statCard(labelKey, value, subKey, iconName) {
   return `<div class="stat-card">
-    <div class="stat-row"><div class="stat-label">${t(labelKey)}</div><span class="trend">${icon("trending-up")}+12%</span></div>
+    <div class="stat-row"><div class="stat-label">${t(labelKey)}</div><span class="stat-ico">${icon(iconName || "activity")}</span></div>
     <div class="stat-value">${value}</div>
     <div class="stat-sub">${t(subKey)}</div>
   </div>`;
@@ -614,7 +632,14 @@ function renderCompaniesTable() {
         <td><div class="row-actions">
           <button class="icon-button btn-icon" title="${t("btn.view")}" onclick="showCompanyDetails('${c.id}')">${icon("eye")}</button>
           <button class="icon-button btn-icon" title="${t("btn.edit")}" onclick="showCompanyModal('${c.id}')">${icon("pencil")}</button>
-          ${waIconButton([`Hello *${c.name}*,`], t("contact.whatsapp", "WhatsApp"))}
+          ${waIconButton([
+            `*${t("th.company", "Company")}: ${c.name}*`,
+            c.email ? `${t("th.email", "Email")}: ${c.email}` : null,
+            c.phone ? `${t("th.phone", "Phone")}: ${c.phone}` : null,
+            `${t("th.tier", "Tier")}: ${t("tier." + String(c.tier || "STANDARD").toUpperCase(), c.tier || "STANDARD")}`,
+            `${t("th.balance", "Balance")}: ${formatMoney(c.balance, c.currency || "USD")}`,
+            `${t("th.status", "Status")}: ${t("status." + (c.isActive ? "ACTIVE" : "INACTIVE"))}`,
+          ], `${t("contact.whatsapp", "WhatsApp")} — ${escapeHtml(c.name)}`)}
           <button class="icon-button btn-icon" title="${t("btn.topup")}" onclick="showTopupModal('${c.id}')">${icon("wallet")}</button>
           <button class="icon-button btn-icon" title="${t("btn.toggle")}" onclick="toggleCompany('${c.id}', ${!c.isActive})">${icon(c.isActive ? "ban" : "check-circle")}</button>
           <button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deleteCompany('${c.id}')">${icon("trash-2")}</button>
@@ -741,7 +766,8 @@ const masterConfigs = {
       { name: "address", label: "form.address", required: true, cls: "full" },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
       { name: "amenities", label: "form.amenities", fallback: "Amenities", type: "list", cls: "full", help: "Separate values with commas" },
-      { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
+      { name: "imageUrl", label: "form.logo", fallback: "Main Image URL" },
+      { name: "galleryUrls", label: "form.gallery", fallback: "Gallery image URLs", type: "list", cls: "full", help: "One image URL per line — shown to agents as a gallery." },
       { name: "pricePerNight", label: "th.amount", type: "number", required: true, default: 1 },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
       { name: "commissionPercent", label: "form.commissionPercent", fallback: "Hotel commission %", type: "number", default: 0, help: "Added to the hotel base price for client bookings" },
@@ -842,12 +868,12 @@ const masterConfigs = {
 function masterActions(entity) {
   const cfg = masterConfigs[entity];
   const importBtn = entity === "hotels"
-    ? `<button class="btn btn-outline" onclick="document.getElementById('hotelsImportFile').click()">${icon("upload")}${t("btn.importExcel", "Import Excel")}</button>
+    ? `<button class="btn btn-outline" id="hotelsImportBtn" onclick="document.getElementById('hotelsImportFile').click()">${icon("upload")}${t("btn.importExcel", "Import Excel")}</button>
        <input type="file" id="hotelsImportFile" accept=".xlsx,.xls" style="display:none" onchange="importHotelsExcel(this)">`
     : "";
   return `<button class="btn btn-primary" onclick="showMasterModal('${entity}')">${icon("plus")}${t("btn.addNew")}</button>
     ${importBtn}
-    <button class="btn btn-outline" onclick="syncEntity('${cfg.syncEntity}')">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`;
+    <button class="btn btn-outline" onclick="syncEntity('${cfg.syncEntity}', event)">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`;
 }
 
 async function importHotelsExcel(input) {
@@ -856,6 +882,8 @@ async function importHotelsExcel(input) {
   const formData = new FormData();
   formData.append("file", file);
   const token = localStorage.getItem("accessToken");
+  const importBtn = document.getElementById("hotelsImportBtn");
+  setBtnLoading(importBtn, true, "btn.importing");
   toast(t("toast.syncStarted", "Import started"), "");
   try {
     const res = await fetch("/api/hotels/import-excel", {
@@ -872,6 +900,7 @@ async function importHotelsExcel(input) {
   } catch (err) {
     toast(err.message || "Import failed", "error");
   } finally {
+    setBtnLoading(importBtn, false);
     input.value = "";
   }
 }
@@ -886,7 +915,7 @@ function masterRowActions(entity, row) {
 function masterField(entity, fieldDef, row) {
   const id = `m_${entity.replace(/[^a-z0-9]/gi, "_")}_${fieldDef.name}`;
   const raw = row?.[fieldDef.name] ?? fieldDef.default ?? "";
-  const value = Array.isArray(raw) ? raw.join(", ") : (fieldDef.type === "date" && raw ? String(raw).slice(0, 10) : raw);
+  const value = Array.isArray(raw) ? raw.join(fieldDef.name === "galleryUrls" ? "\n" : ", ") : (fieldDef.type === "date" && raw ? String(raw).slice(0, 10) : raw);
   const required = fieldDef.required ? '<span class="required">*</span>' : "";
   const help = fieldDef.help ? `<div class="secondary-text" style="margin-top:4px">${escapeHtml(fieldDef.help)}</div>` : "";
   const label = `${t(fieldDef.label, fieldDef.fallback || fieldDef.name)} ${required}`;
@@ -940,7 +969,7 @@ function collectMasterPayload(entity) {
     let value = fieldDef.type === "checkbox" ? el.checked : el.value.trim();
     if (fieldDef.required && (value === "" || value === null || value === undefined)) valid = false;
     if (fieldDef.type === "number") value = value === "" ? 0 : Number(value);
-    if (fieldDef.type === "list") value = String(value || "").split(",").map(item => item.trim()).filter(Boolean);
+    if (fieldDef.type === "list") value = String(value || "").split(/[\n,]+/).map(item => item.trim()).filter(Boolean);
     if (fieldDef.nullable && value === "") value = null;
     if (value !== "" || value === null || fieldDef.required || fieldDef.type === "number" || fieldDef.type === "list") {
       payload[fieldDef.name] = value;
@@ -999,10 +1028,13 @@ async function saveCompany(id) {
     toast(t("toast.validationError"), "error");
     return;
   }
+  const submitBtn = document.querySelector(".modal-footer .btn-primary");
+  setBtnLoading(submitBtn, true);
   const res = await apiFetch(id ? `/admin/companies/${id}` : "/admin/companies", {
     method: id ? "PATCH" : "POST",
     body: JSON.stringify(payload),
   });
+  if (!res?.success) { setBtnLoading(submitBtn, false); return; }
   if (res?.success) {
     closeModal();
     state.cache.companyOptions = null;
@@ -1217,10 +1249,13 @@ async function saveUser(id = "") {
     const password = document.getElementById("userPassword").value.trim();
     if (password) payload.password = password;
   }
+  const submitBtn = document.querySelector(".modal-footer .btn-primary");
+  setBtnLoading(submitBtn, true);
   const res = await apiFetch(id ? `/users/${id}` : "/users", {
     method: id ? "PATCH" : "POST",
     body: JSON.stringify(payload),
   });
+  if (!res?.success) { setBtnLoading(submitBtn, false); return; }
   if (res?.success) {
     closeModal();
     const tempPassword = res.data?.tempPassword;
@@ -1459,6 +1494,7 @@ async function showHotelDetails(id) {
     </div>
     ${h.description ? `<p style="white-space:pre-wrap;color:var(--text-secondary);line-height:1.5">${escapeHtml(h.description)}</p>` : ""}
     ${h.amenities?.length ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>` : ""}
+    ${(h.galleryUrls && h.galleryUrls.length) ? `<div style="margin-top:16px"><div class="form-section-title">${t("hotel.gallery","Gallery")}</div><div class="hotel-gallery">${h.galleryUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener"><img src="${escapeHtml(u)}" alt="" loading="lazy"></a>`).join("")}</div></div>` : ""}
     <div class="info-grid" style="margin-top:16px">
       <div class="info-item"><div class="info-label">${t("th.amount","Price/Night")}</div><div class="info-value">${Number(h.pricePerNight||0) > 0 ? formatMoney(h.pricePerNight, h.currency) : t("hotel.priceOnRequest","On request")}</div></div>
       <div class="info-item"><div class="info-label">${t("form.commissionPercent","Commission %")}</div><div class="info-value">${Number(h.commissionPercent||0).toFixed(2)}%</div></div>
@@ -2142,7 +2178,7 @@ async function renderSheetsConfig() {
     <section class="table-card" style="margin-top:16px">
       <div class="table-toolbar"><strong>${t("btn.syncSheets")}</strong><button class="btn btn-outline" onclick="loadSyncHistory()">${icon("refresh-cw")}${t("btn.refresh")}</button></div>
       <div class="table-scroll"><table class="data-table"><thead><tr><th>${t("th.entity")}</th><th>${t("th.sheet")}</th><th>${t("th.lastSync")}</th><th>${t("th.result")}</th><th>${t("th.actions")}</th></tr></thead><tbody>
-        ${entities.map(([entity, key]) => `<tr><td class="primary-text">${t(key)}</td><td>${entity}</td><td id="last-${entity}">—</td><td id="result-${entity}">—</td><td><button class="btn btn-primary" onclick="syncEntity('${entity}')">${icon("refresh-cw")}${t("btn.syncSheets")}</button></td></tr>`).join("")}
+        ${entities.map(([entity, key]) => `<tr><td class="primary-text">${t(key)}</td><td>${entity}</td><td id="last-${entity}">—</td><td id="result-${entity}">—</td><td><button class="btn btn-primary" onclick="syncEntity('${entity}', event)">${icon("refresh-cw")}${t("btn.syncSheets")}</button></td></tr>`).join("")}
       </tbody></table></div>
     </section>`);
   loadSheetsSettings();
@@ -2186,20 +2222,26 @@ async function saveSheetsConfig() {
   toast(res?.success ? t("toast.saved") : t("toast.validationError"), res?.success ? "success" : "error");
 }
 
-async function syncEntity(entity) {
+async function syncEntity(entity, ev) {
+  const btn = ev?.currentTarget || (ev?.target && ev.target.closest("button")) || null;
+  setBtnLoading(btn, true, "btn.syncing");
   toast(t("toast.syncStarted"), "");
   const res = await apiFetch(`/admin/sheets/sync/${entity}`, { method: "POST", body: JSON.stringify({ spreadsheetId: document.getElementById("sheetsId")?.value || undefined }) });
-  if (res?.success) {
-    const d = res.data || {};
-    const resultEl = document.getElementById("result-" + entity);
-    const lastEl = document.getElementById("last-" + entity);
-    if (resultEl) resultEl.textContent = `${d.synced || 0} ${t("th.synced")} (${d.created || 0}/${d.updated || 0})`;
-    if (lastEl) lastEl.textContent = formatDate(new Date());
-    toast(`${t("toast.syncComplete")}: ${d.synced || 0}`, "success");
-    loadSyncHistory();
-  } else {
-    toast(t("toast.syncFailed"), "error");
-  }
+  setBtnLoading(btn, false);
+  // On failure apiFetch already surfaces the real error (e.g. "GOOGLE_SHEETS_ID is not configured");
+  // don't overwrite it with a generic message.
+  if (!res?.success) return;
+  const d = res.data || {};
+  const errCount = (d.errors || []).length;
+  const resultEl = document.getElementById("result-" + entity);
+  const lastEl = document.getElementById("last-" + entity);
+  if (resultEl) resultEl.textContent = `${d.synced || 0} ${t("th.synced")} (${d.created || 0}/${d.updated || 0}/${errCount})`;
+  if (lastEl) lastEl.textContent = formatDate(new Date());
+  const detail = t("toast.syncDetail")
+    .replace("{synced}", d.synced || 0).replace("{created}", d.created || 0)
+    .replace("{updated}", d.updated || 0).replace("{errors}", errCount);
+  toast(detail, errCount ? "warning" : "success");
+  loadSyncHistory();
 }
 
 async function loadSyncHistory() {
@@ -2244,6 +2286,362 @@ function calcMarkupAdmin() {
   document.getElementById("calcMarkupResult").textContent = formatMoney(cost * (1 + rate / 100), "USD");
 }
 
+// ─── Security Approval (admin view of visa applications) ─────────────────────
+async function renderSecurityApproval() {
+  const APPROVAL_TYPES = [
+    { label: "Sharm El Sheikh", dest: "SSH" },
+    { label: "Cairo", dest: "CAI" },
+    { label: "Borg El Arab", dest: "HBE" },
+  ];
+  return renderAdminList("security-approval", "/visa-applications", [
+    ["th.ref",    v => `<span class="primary-text">${escapeHtml(v.refNumber)}</span>`],
+    ["th.name",   v => escapeHtml(v.applicantName)],
+    ["th.type",   v => {
+      const loc = APPROVAL_TYPES.find(x => x.dest === v.destinationCountry);
+      return escapeHtml(loc?.label || v.destinationCountry || v.visaType);
+    }],
+    ["th.company",v => escapeHtml(v.company?.name || "—")],
+    ["form.phone",v => escapeHtml(v.phone || "—")],
+    ["th.amount", v => formatMoney(v.totalAmount, v.currency)],
+    ["th.status", v => statusBadge(v.status)],
+    ["th.actions",v => `
+      ${v.passportUrl ? `<a href="${escapeHtml(v.passportUrl)}" target="_blank" class="btn btn-outline btn-sm">${icon("file-text")} Passport</a>` : ""}
+      ${v.flightTicketUrl ? `<a href="${escapeHtml(v.flightTicketUrl)}" target="_blank" class="btn btn-outline btn-sm">${icon("ticket")} Ticket</a>` : ""}
+      <button class="btn btn-success btn-sm" onclick="adminApproveVisa('${v.id}')">${icon("check")} Approve</button>
+      <button class="btn btn-danger btn-sm" onclick="adminRejectVisa('${v.id}')">${icon("x")} Reject</button>`],
+  ], {
+    filters: [["status","form.status",["","PENDING","SUBMITTED","APPROVED","REJECTED"]]],
+  });
+}
+
+async function adminApproveVisa(id) {
+  if (!confirm("Approve this security approval?")) return;
+  const res = await apiFetch(`/visa-applications/${id}/approve`, { method: "POST" });
+  if (res?.success) { toast("Approved", "success"); renderSecurityApproval(); }
+}
+async function adminRejectVisa(id) {
+  const reason = prompt("Rejection reason:");
+  if (reason === null) return;
+  const res = await apiFetch(`/visa-applications/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
+  if (res?.success) { toast("Rejected", "success"); renderSecurityApproval(); }
+}
+
+// ─── Airport Assist (admin view of receptions) ───────────────────────────────
+async function renderAirportAssist() {
+  return renderAdminList("airport-assist", "/airport-receptions", [
+    ["th.ref",    r => `<span class="primary-text">${escapeHtml(r.refNumber)}</span>`],
+    ["th.name",   r => escapeHtml(r.guestName)],
+    ["th.service",r => escapeHtml(r.serviceType?.replace(/_/g," "))],
+    ["th.route",  r => escapeHtml(r.airport)],
+    ["th.company",r => escapeHtml(r.company?.name || "—")],
+    ["form.phone",r => escapeHtml(r.phone || "—")],
+    ["th.amount", r => formatMoney(r.totalAmount, r.currency)],
+    ["th.status", r => statusBadge(r.status)],
+    ["th.actions",r => `
+      ${r.ticketUrl ? `<a href="${escapeHtml(r.ticketUrl)}" target="_blank" class="btn btn-outline btn-sm">${icon("ticket")} Ticket</a>` : ""}
+      <button class="btn btn-success btn-sm" onclick="adminConfirmReception('${r.id}')">${icon("check")} Confirm</button>
+      <button class="btn btn-danger btn-sm" onclick="adminCancelReception('${r.id}')">${icon("x")} Cancel</button>`],
+  ], {
+    filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
+  });
+}
+
+async function adminConfirmReception(id) {
+  const res = await apiFetch(`/airport-receptions/${id}/confirm`, { method: "POST" });
+  if (res?.success) { toast("Confirmed", "success"); renderAirportAssist(); }
+}
+async function adminCancelReception(id) {
+  const res = await apiFetch(`/airport-receptions/${id}/cancel`, { method: "POST" });
+  if (res?.success) { toast("Cancelled", "success"); renderAirportAssist(); }
+}
+
+// ─── SIM Card admin (packages + requests) ────────────────────────────────────
+async function renderSimCardAdmin() {
+  state.page = "sim-card";
+  const capturedToken = state.renderToken;
+  const [pkgRes, reqRes] = await Promise.all([
+    apiFetch("/sim-card/packages"),
+    apiFetch("/sim-card/requests?limit=50"),
+  ]);
+  if (state.renderToken !== capturedToken) return;
+  const packages = pkgRes?.data || [];
+  const requests = reqRes?.data || [];
+
+  content(pageHeader(`<button class="btn btn-primary" onclick="openSimPackageForm()">${icon("plus")}&nbsp;New Package</button>`) + `
+    <div class="grid-2" style="align-items:start">
+      <section class="panel">
+        <div class="panel-header"><div class="panel-title">SIM Packages</div></div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>Name</th><th>Data</th><th>Validity</th><th>Price</th><th>Status</th><th>Actions</th>
+        </tr></thead><tbody>
+          ${packages.map(p => `<tr>
+            <td><strong>${escapeHtml(p.name)}</strong>${p.nameAr ? `<div class="secondary-text">${escapeHtml(p.nameAr)}</div>` : ""}</td>
+            <td>${escapeHtml(p.dataSize)}${p.minutes ? `<div class="secondary-text">${escapeHtml(p.minutes)}</div>` : ""}</td>
+            <td>${escapeHtml(p.validity)}</td>
+            <td>${formatMoney(p.price, p.currency)}</td>
+            <td>${statusBadge(p.isActive ? "ACTIVE" : "INACTIVE")}</td>
+            <td><button class="btn btn-outline btn-sm" onclick="openSimPackageForm('${p.id}')">${icon("edit-2")}</button>
+                <button class="btn btn-outline btn-sm" onclick="toggleSimPackage('${p.id}',${!p.isActive})">${p.isActive ? icon("eye-off") : icon("eye")}</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteSimPackage('${p.id}')">${icon("trash-2")}</button></td>
+          </tr>`).join("") || `<tr><td colspan="6">${emptyBlock("empty.noData")}</td></tr>`}
+        </tbody></table></div>
+      </section>
+      <section class="panel">
+        <div class="panel-header"><div class="panel-title">SIM Requests</div></div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>${t("th.ref")}</th><th>Client</th><th>Package</th><th>Qty</th><th>${t("th.status")}</th><th>${t("th.actions")}</th>
+        </tr></thead><tbody>
+          ${requests.map(r => `<tr>
+            <td class="primary-text">${escapeHtml(r.refNumber)}</td>
+            <td>${escapeHtml(r.clientName)}<div class="secondary-text">${escapeHtml(r.phone)}</div></td>
+            <td>${escapeHtml(r.package?.name || "—")}</td>
+            <td>${r.quantity}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td>
+              <button class="btn btn-success btn-sm" onclick="updateSimStatus('${r.id}','CONFIRMED')">${icon("check")}</button>
+              <button class="btn btn-danger btn-sm" onclick="updateSimStatus('${r.id}','CANCELLED')">${icon("x")}</button>
+            </td>
+          </tr>`).join("") || `<tr><td colspan="6">${emptyBlock("empty.noData")}</td></tr>`}
+        </tbody></table></div>
+      </section>
+    </div>`);
+}
+
+async function openSimPackageForm(id) {
+  let pkg = null;
+  if (id) {
+    const res = await apiFetch(`/sim-card/packages`);
+    pkg = res?.data?.find(p => p.id === id);
+  }
+  const body = `<div class="form-grid">
+    <div class="form-field"><label>Name *</label><input id="spName" value="${escapeHtml(pkg?.name||"")}"></div>
+    <div class="form-field"><label>Arabic Name</label><input id="spNameAr" value="${escapeHtml(pkg?.nameAr||"")}"></div>
+    <div class="form-field"><label>Data Size *</label><input id="spData" value="${escapeHtml(pkg?.dataSize||"")}" placeholder="e.g. 10 GB"></div>
+    <div class="form-field"><label>Minutes</label><input id="spMin" value="${escapeHtml(pkg?.minutes||"")}" placeholder="e.g. Unlimited"></div>
+    <div class="form-field"><label>Validity *</label><input id="spValid" value="${escapeHtml(pkg?.validity||"")}" placeholder="e.g. 30 days"></div>
+    <div class="form-field"><label>Price *</label><input id="spPrice" type="number" step="0.01" value="${pkg?.price||""}"></div>
+    <div class="form-field"><label>Currency</label><select id="spCur"><option value="USD" ${(!pkg||pkg.currency==="USD")?"selected":""}>USD</option><option value="EGP" ${pkg?.currency==="EGP"?"selected":""}>EGP</option></select></div>
+    <div class="form-field"><label><input type="checkbox" id="spActive" ${!pkg||pkg.isActive?"checked":""}> Active</label></div>
+  </div>`;
+  openModal(id ? "Edit SIM Package" : "New SIM Package", body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" onclick="saveSimPackage('${id||""}')">${t("btn.save")}</button>`);
+}
+
+async function saveSimPackage(id) {
+  const payload = {
+    name: document.getElementById("spName").value.trim(),
+    nameAr: document.getElementById("spNameAr").value.trim() || undefined,
+    dataSize: document.getElementById("spData").value.trim(),
+    minutes: document.getElementById("spMin").value.trim() || undefined,
+    validity: document.getElementById("spValid").value.trim(),
+    price: parseFloat(document.getElementById("spPrice").value || "0"),
+    currency: document.getElementById("spCur").value,
+    isActive: document.getElementById("spActive").checked,
+  };
+  if (!payload.name || !payload.dataSize || !payload.validity) { toast(t("toast.validationError"), "error"); return; }
+  const method = id ? "PATCH" : "POST";
+  const url = id ? `/sim-card/packages/${id}` : "/sim-card/packages";
+  const res = await apiFetch(url, { method, body: JSON.stringify(payload) });
+  if (res?.success) { closeModal(); toast(t("toast.saved"), "success"); renderSimCardAdmin(); }
+}
+
+async function toggleSimPackage(id, isActive) {
+  await apiFetch(`/sim-card/packages/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) });
+  renderSimCardAdmin();
+}
+
+async function deleteSimPackage(id) {
+  if (!confirm("Delete this SIM package?")) return;
+  await apiFetch(`/sim-card/packages/${id}`, { method: "DELETE" });
+  renderSimCardAdmin();
+}
+
+async function updateSimStatus(id, status) {
+  const res = await apiFetch(`/sim-card/requests/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+  if (res?.success) { toast(t("toast.statusChanged"), "success"); renderSimCardAdmin(); }
+}
+
+// ─── Offers CRUD ─────────────────────────────────────────────────────────────
+async function renderOffers() {
+  const capturedToken = state.renderToken;
+  state.page = "offers";
+  const res = await apiFetch("/offers?limit=100");
+  if (state.renderToken !== capturedToken) return;
+  const offers = res?.data || [];
+
+  content(pageHeader(`<button class="btn btn-primary" onclick="openOfferForm()">${icon("plus")}&nbsp;New Offer</button>`) + `
+    <section class="table-card">
+      <div class="table-scroll"><table class="data-table"><thead><tr>
+        <th>Title</th><th>Service</th><th>Valid From</th><th>Valid To</th><th>Priority</th><th>Status</th><th>Actions</th>
+      </tr></thead><tbody>
+        ${offers.map(o => `<tr>
+          <td>
+            <div style="font-weight:600">${escapeHtml(o.title)}</div>
+            ${o.titleAr ? `<div class="secondary-text">${escapeHtml(o.titleAr)}</div>` : ""}
+            ${o.imageUrl ? `<div style="margin-top:4px"><img src="${escapeHtml(o.imageUrl)}" style="height:36px;border-radius:4px;object-fit:cover" onerror="this.style.display='none'"></div>` : ""}
+          </td>
+          <td>${escapeHtml(o.serviceType || "—")}</td>
+          <td>${o.validFrom ? formatDate(o.validFrom) : "—"}</td>
+          <td>${o.validTo ? formatDate(o.validTo) : "—"}</td>
+          <td><strong>${o.priority}</strong></td>
+          <td>${statusBadge(o.isActive ? "ACTIVE" : "INACTIVE")}</td>
+          <td style="display:flex;gap:6px">
+            <button class="btn btn-outline btn-sm" onclick="openOfferForm('${o.id}')">${icon("edit-2")}</button>
+            <button class="btn btn-outline btn-sm" onclick="toggleOffer('${o.id}',${!o.isActive})">${o.isActive ? icon("eye-off") : icon("eye")}</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteOffer('${o.id}')">${icon("trash-2")}</button>
+          </td>
+        </tr>`).join("") || `<tr><td colspan="7">${emptyBlock("empty.noData")}</td></tr>`}
+      </tbody></table></div>
+    </section>`);
+}
+
+async function openOfferForm(id) {
+  let o = null;
+  if (id) {
+    const res = await apiFetch(`/offers/${id}`);
+    o = res?.data;
+  }
+  const serviceTypes = ["hotels","transport","activities","security-approval","airport-assist","sim-card","cruises",""];
+  const body = `<div class="form-grid">
+    <div class="form-field"><label>Title (EN) *</label><input id="ofTitle" value="${escapeHtml(o?.title||"")}"></div>
+    <div class="form-field"><label>${t("offers.titleAr","Arabic Title")}</label><input id="ofTitleAr" value="${escapeHtml(o?.titleAr||"")}"></div>
+    <div class="form-field full"><label>Description (EN)</label><textarea id="ofDesc" rows="2">${escapeHtml(o?.description||"")}</textarea></div>
+    <div class="form-field full"><label>${t("offers.descAr","Arabic Description")}</label><textarea id="ofDescAr" rows="2">${escapeHtml(o?.descriptionAr||"")}</textarea></div>
+    <div class="form-field full"><label>${t("offers.imageUrl","Image URL")}</label><input id="ofImg" value="${escapeHtml(o?.imageUrl||"")}" placeholder="https://..."></div>
+    <div class="form-field"><label>${t("offers.ctaLabel","CTA Label")} (EN)</label><input id="ofCtaLabel" value="${escapeHtml(o?.ctaLabel||"")}"></div>
+    <div class="form-field"><label>CTA Label (AR)</label><input id="ofCtaLabelAr" value="${escapeHtml(o?.ctaLabelAr||"")}"></div>
+    <div class="form-field"><label>${t("offers.ctaAction","CTA Page")}</label>
+      <select id="ofCtaAction">
+        <option value="">None</option>
+        ${serviceTypes.map(s => `<option value="${s}" ${o?.ctaAction===s?"selected":""}>${s||"—"}</option>`).join("")}
+      </select></div>
+    <div class="form-field"><label>Service Type</label>
+      <select id="ofSvcType">
+        <option value="">All</option>
+        ${serviceTypes.filter(Boolean).map(s => `<option value="${s}" ${o?.serviceType===s?"selected":""}>${s}</option>`).join("")}
+      </select></div>
+    <div class="form-field"><label>${t("form.validFrom","Valid From")}</label><input id="ofFrom" type="date" value="${o?.validFrom ? o.validFrom.slice(0,10) : ""}"></div>
+    <div class="form-field"><label>${t("form.validTo","Valid To")}</label><input id="ofTo" type="date" value="${o?.validTo ? o.validTo.slice(0,10) : ""}"></div>
+    <div class="form-field"><label>${t("offers.priority","Priority")} (higher = shown first)</label><input id="ofPriority" type="number" value="${o?.priority??0}"></div>
+    <div class="form-field"><label><input type="checkbox" id="ofActive" ${!o||o.isActive?"checked":""}> Active</label></div>
+  </div>`;
+  openModal(id ? "Edit Offer" : "New Offer", body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" onclick="saveOffer('${id||""}')">${t("btn.save")}</button>`, "modal-wide");
+}
+
+async function saveOffer(id) {
+  const payload = {
+    title: document.getElementById("ofTitle").value.trim(),
+    titleAr: document.getElementById("ofTitleAr").value.trim() || null,
+    description: document.getElementById("ofDesc").value.trim() || null,
+    descriptionAr: document.getElementById("ofDescAr").value.trim() || null,
+    imageUrl: document.getElementById("ofImg").value.trim() || null,
+    ctaLabel: document.getElementById("ofCtaLabel").value.trim() || null,
+    ctaLabelAr: document.getElementById("ofCtaLabelAr").value.trim() || null,
+    ctaAction: document.getElementById("ofCtaAction").value || null,
+    serviceType: document.getElementById("ofSvcType").value || null,
+    validFrom: document.getElementById("ofFrom").value || null,
+    validTo: document.getElementById("ofTo").value || null,
+    priority: parseInt(document.getElementById("ofPriority").value || "0"),
+    isActive: document.getElementById("ofActive").checked,
+  };
+  if (!payload.title) { toast(t("toast.validationError"), "error"); return; }
+  const method = id ? "PATCH" : "POST";
+  const url = id ? `/offers/${id}` : "/offers";
+  const res = await apiFetch(url, { method, body: JSON.stringify(payload) });
+  if (res?.success) { closeModal(); toast(t("toast.saved"), "success"); renderOffers(); }
+}
+
+async function toggleOffer(id, isActive) {
+  await apiFetch(`/offers/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) });
+  renderOffers();
+}
+
+async function deleteOffer(id) {
+  if (!confirm("Delete this offer?")) return;
+  const res = await apiFetch(`/offers/${id}`, { method: "DELETE" });
+  if (res?.success) { toast(t("toast.deleted"), "success"); renderOffers(); }
+}
+
+// ─── Shared admin list renderer ───────────────────────────────────────────────
+// Stores the column defs for the active admin list so filter/search handlers can reload
+window._adminListState = {};
+
+async function renderAdminList(page, endpoint, columns, options = {}) {
+  state.page = page;
+  const capturedToken = state.renderToken;
+  const filters = options.filters || [];
+  window._adminListState[page] = { endpoint, columns };
+
+  content(pageHeader() + `
+    <div class="workbench">
+      <aside class="filter-rail">
+        <div class="filter-head"><span>${t("filter.title")}</span>${icon("sliders-horizontal")}</div>
+        <div class="filter-body">
+          <div class="field"><label>${t("filter.search")}</label>
+            <input id="${page}Search" placeholder="${t("placeholder.searchAny")}" oninput="adminListDebounce('${page}')"></div>
+          ${filters.map(([key, labelKey, values]) => `<div class="field"><label>${t(labelKey)}</label>
+            <select id="${page}-${key}" onchange="adminReloadList('${page}')">
+              ${values.map(v => `<option value="${v}">${v ? t("status."+v,v) : t("form.allTypes")}</option>`).join("")}
+            </select></div>`).join("")}
+          <button class="btn btn-outline" onclick="adminClearFilters('${page}')">${icon("rotate-ccw")}${t("btn.reset")}</button>
+        </div>
+      </aside>
+      <section class="workbench-main table-card">
+        <div class="table-toolbar">
+          <div><strong>${t((pageMeta[page]||[])[0]||"nav."+page)}</strong>
+            <div class="secondary-text" id="${page}Meta">Loading…</div></div>
+          <div class="toolbar-actions">
+            <button class="btn btn-outline" onclick="adminReloadList('${page}')">${icon("refresh-cw")}${t("btn.refresh")}</button>
+          </div>
+        </div>
+        <div class="table-scroll"><table class="data-table">
+          <thead><tr>${columns.map(([k]) => `<th>${labelText(k)}</th>`).join("")}</tr></thead>
+          <tbody id="${page}Tbody">${skeletonRows(columns.length, 8)}</tbody>
+        </table></div>
+        <div id="${page}Foot"></div>
+      </section>
+    </div>`);
+
+  await adminReloadList(page);
+}
+
+function adminListDebounce(page) {
+  clearTimeout(window._adminListTimer);
+  window._adminListTimer = setTimeout(() => adminReloadList(page), 280);
+}
+
+async function adminReloadList(page) {
+  const cfg = window._adminListState[page];
+  if (!cfg) return;
+  const { endpoint, columns } = cfg;
+  const params = new URLSearchParams({ page: 1, limit: 50 });
+  const search = document.getElementById(`${page}Search`)?.value;
+  if (search) params.set("search", search);
+  document.querySelectorAll(`[id^="${page}-"]`).forEach(el => {
+    if (el.value) params.set(el.id.replace(`${page}-`, ""), el.value);
+  });
+  const res = await apiFetch(`${endpoint}?${params}`);
+  const rows = res?.data || [];
+  const meta = res?.meta || { total: rows.length };
+  const tbody = document.getElementById(`${page}Tbody`);
+  if (tbody) {
+    tbody.innerHTML = rows.length
+      ? rows.map(row => `<tr>${columns.map(([, fn]) => `<td>${fn(row)}</td>`).join("")}</tr>`).join("")
+      : `<tr><td colspan="${columns.length}">${emptyBlock("empty.noData")}</td></tr>`;
+    refreshIcons(tbody);
+  }
+  const metaEl = document.getElementById(`${page}Meta`);
+  if (metaEl) metaEl.textContent = `${formatNumber(meta.total)} records`;
+}
+
+function adminClearFilters(page) {
+  document.querySelectorAll(`[id^="${page}-"], #${page}Search`).forEach(el => { el.value = ""; });
+  adminReloadList(page);
+}
+
 const pageLoaders = {
   dashboard: renderDashboard,
   companies: renderCompanies,
@@ -2259,8 +2657,10 @@ const pageLoaders = {
   cruises: renderCruises,
   transport: renderTransport,
   activities: renderActivities,
-  visa: renderVisa,
-  reception: renderReception,
+  "security-approval": renderSecurityApproval,
+  "airport-assist": renderAirportAssist,
+  "sim-card": renderSimCardAdmin,
+  offers: renderOffers,
   calculators: renderCalculators,
 };
 
