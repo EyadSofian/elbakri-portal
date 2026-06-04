@@ -808,7 +808,8 @@ const masterConfigs = {
       { name: "nameAr", label: "form.nameAr" },
       { name: "city", label: "th.city", fallback: "City (free text)", help: "e.g. Cairo, Sharm El Sheikh, Dahab, Hurghada" },
       { name: "category", label: "th.type", type: "select", default: "SIGHTSEEING", options: ["SIGHTSEEING", "DIVING", "SNORKELING", "DESERT_SAFARI", "WATER_SPORTS", "CULTURAL", "FOOD_TOUR", "ADVENTURE", "RELAXATION"] },
-      { name: "duration", label: "form.duration", fallback: "Duration" },
+      { name: "duration", label: "form.duration", fallback: "Duration (e.g. 4 hours, Full day)" },
+      { name: "timeSlots", label: "activity.timeSlot", fallback: "Time Slots", type: "list", cls: "full", help: "Comma-separated, e.g. 09:00 AM, 02:00 PM, 06:00 PM" },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
       { name: "includes", label: "form.includes", fallback: "Includes", type: "list", cls: "full" },
       { name: "excludes", label: "form.excludes", fallback: "Excludes", type: "list", cls: "full" },
@@ -831,7 +832,10 @@ const masterConfigs = {
       { name: "city", label: "th.city" },
       { name: "fromLocation", label: "form.from", fallback: "From" },
       { name: "toLocation", label: "form.to", fallback: "To" },
-      { name: "rate", label: "th.amount", type: "number", required: true, default: 1 },
+      { name: "rate", label: "transport.livePrice", fallback: "One-Way Rate", type: "number", required: true, default: 1 },
+      { name: "roundTripRate", label: "transport.returnDetails", fallback: "Round-Trip Rate (blank = 2×one-way)", type: "number" },
+      { name: "minCapacity", label: "form.minPax", fallback: "Min Pax", type: "number", default: 1 },
+      { name: "maxCapacity", label: "form.maxPax", fallback: "Max Pax (blank = no limit)", type: "number" },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
       { name: "notes", label: "placeholder.notes", type: "textarea", cls: "full" },
     ],
@@ -2083,26 +2087,189 @@ async function renderCruises() {
 }
 
 async function renderActivities() {
-  renderSimpleList("activities", masterConfigs.activities.listEndpoint, [
-    ["th.name", a => `<span class="primary-text">${escapeHtml(a.name)}</span>`],
-    ["th.city", a => escapeHtml(a.city)],
-    ["th.type", a => escapeHtml(a.category)],
-    ["th.amount", a => formatMoney(a.priceAdult, a.currency)],
-    ["th.status", a => statusBadge(a.isActive ? "ACTIVE" : "INACTIVE")],
-    ["th.actions", a => masterRowActions("activities", a)],
-  ], masterActions("activities"));
+  state.page = "activities";
+  const capturedToken = state.renderToken;
+
+  content(pageHeader(masterActions("activities")) + `
+    <div style="display:flex;gap:10px;margin-bottom:16px">
+      <button class="btn btn-primary" id="actTabCatalog" onclick="actShowTab('catalog')">${icon("list")}&nbsp;Activity Catalog</button>
+      <button class="btn btn-outline" id="actTabBookings" onclick="actShowTab('bookings')">${icon("calendar-check")}&nbsp;Bookings</button>
+    </div>
+    <div id="actCatalogSection">
+      <section class="table-card">
+        <div class="table-toolbar"><div><strong>Activity Catalog</strong><div class="secondary-text" id="actCatalogMeta">Loading…</div></div><div class="toolbar-actions"><button class="btn btn-outline" onclick="renderActivities()">${icon("refresh-cw")}${t("btn.refresh")}</button></div></div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>Name</th><th>City</th><th>Duration / Slots</th><th>Adult Price</th><th>Status</th><th>Actions</th>
+        </tr></thead><tbody id="actCatalogTbody">${skeletonRows(6, 8)}</tbody></table></div>
+      </section>
+    </div>
+    <div id="actBookingsSection" style="display:none">
+      <section class="table-card">
+        <div class="table-toolbar"><div><strong>Activity Bookings</strong><div class="secondary-text" id="actBookingsMeta">Loading…</div></div><div class="toolbar-actions"><button class="btn btn-outline" onclick="loadAdminActivityBookings()">${icon("refresh-cw")}${t("btn.refresh")}</button></div></div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>Ref</th><th>Activity</th><th>Client</th><th>Date / Time</th><th>Pax</th><th>Type</th><th>Hotel</th><th>Total</th><th>Status</th><th>Actions</th>
+        </tr></thead><tbody id="actBookingsTbody">${skeletonRows(10, 8)}</tbody></table></div>
+      </section>
+    </div>`);
+
+  const catalogRes = await apiFetch("/activities?limit=200");
+  if (state.renderToken !== capturedToken) return;
+  const activities = catalogRes?.data || [];
+  const cTbody = document.getElementById("actCatalogTbody");
+  const cMeta  = document.getElementById("actCatalogMeta");
+  if (cMeta) cMeta.textContent = `${formatNumber(activities.length)} activities`;
+  if (cTbody) {
+    cTbody.innerHTML = activities.length ? activities.map(a => `<tr>
+      <td class="primary-text">${escapeHtml(a.name)}${a.nameAr ? `<div class="secondary-text">${escapeHtml(a.nameAr)}</div>` : ""}</td>
+      <td>${escapeHtml(a.city||"—")}</td>
+      <td>
+        ${a.duration ? `<div style="font-size:12px;color:var(--info)">${icon("clock")}&nbsp;${escapeHtml(a.duration)}</div>` : ""}
+        ${(a.timeSlots||[]).length ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">${a.timeSlots.slice(0,3).map(s=>`<span class="badge badge-outline" style="font-size:10px">${escapeHtml(s)}</span>`).join("")}${a.timeSlots.length>3?`<span class="badge badge-outline" style="font-size:10px">+${a.timeSlots.length-3}</span>`:""}</div>` : ""}
+        ${(!a.duration && !a.timeSlots?.length) ? `<span style="color:var(--text-muted);font-size:11px">No time set</span>` : ""}
+      </td>
+      <td class="numeric">${formatMoney(a.priceAdult, a.currency)}</td>
+      <td>${statusBadge(a.isActive ? "ACTIVE" : "INACTIVE")}</td>
+      <td>${masterRowActions("activities", a)}</td>
+    </tr>`).join("") : `<tr><td colspan="6">${emptyBlock("empty.noData")}</td></tr>`;
+    refreshIcons(cTbody);
+  }
+}
+
+function actShowTab(tab) {
+  const isCatalog = tab === "catalog";
+  document.getElementById("actCatalogSection").style.display  = isCatalog ? "" : "none";
+  document.getElementById("actBookingsSection").style.display = isCatalog ? "none" : "";
+  document.getElementById("actTabCatalog").className  = isCatalog ? "btn btn-primary" : "btn btn-outline";
+  document.getElementById("actTabBookings").className = isCatalog ? "btn btn-outline" : "btn btn-primary";
+  if (!isCatalog) loadAdminActivityBookings();
+}
+
+async function loadAdminActivityBookings() {
+  const res = await apiFetch("/activity-bookings?limit=100");
+  const bookings = res?.data || [];
+  const tbody = document.getElementById("actBookingsTbody");
+  const meta  = document.getElementById("actBookingsMeta");
+  if (meta) meta.textContent = `${formatNumber(bookings.length)} bookings`;
+  if (!tbody) return;
+  tbody.innerHTML = bookings.length ? bookings.map(b => `<tr>
+    <td class="primary-text">${escapeHtml(b.refNumber)}</td>
+    <td>${escapeHtml(b.activity?.name||"—")}<div class="secondary-text">${escapeHtml(b.company?.name||"")}</div></td>
+    <td>${b.clientName ? `<strong>${escapeHtml(b.clientName)}</strong><br>` : ""}${escapeHtml(b.clientPhone||"—")}</td>
+    <td>${formatDate(b.activityDate)}${b.selectedTime ? `<div style="font-size:11px;color:var(--info);font-weight:600">${icon("clock")}&nbsp;${escapeHtml(b.selectedTime)}</div>` : ""}</td>
+    <td>${b.adultsCount} + ${b.childrenCount}c${b.childAges?.length ? `<div style="font-size:10px;color:var(--text-muted)">ages: ${(b.childAges||[]).join(", ")}</div>` : ""}</td>
+    <td><span class="badge badge-outline">${escapeHtml(b.activityType||"GROUP")}</span></td>
+    <td>${escapeHtml(b.hotelName||"—")}</td>
+    <td class="numeric">${formatMoney(b.totalAmount, b.currency)}</td>
+    <td>${statusBadge(b.status)}</td>
+    <td style="display:flex;gap:4px">
+      ${b.status === "PENDING" ? `<button class="btn btn-success btn-sm" onclick="adminConfirmActivity('${b.id}')">${icon("check")}</button>` : ""}
+      ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-danger btn-sm" onclick="adminCancelActivity('${b.id}')">${icon("x")}</button>` : ""}
+    </td>
+  </tr>`).join("") : `<tr><td colspan="10">${emptyBlock("empty.noData")}</td></tr>`;
+  refreshIcons(tbody);
+}
+
+async function adminConfirmActivity(id) {
+  if (!confirm("Confirm activity booking? This will debit the company wallet.")) return;
+  const res = await apiFetch(`/activity-bookings/${id}/confirm`, { method: "PATCH" });
+  if (res?.success) { toast("Confirmed", "success"); loadAdminActivityBookings(); }
+}
+async function adminCancelActivity(id) {
+  if (!confirm("Cancel this activity booking?")) return;
+  const res = await apiFetch(`/activity-bookings/${id}/cancel`, { method: "PATCH" });
+  if (res?.success) { toast("Cancelled", "success"); loadAdminActivityBookings(); }
 }
 
 async function renderTransport() {
-  return renderSimpleList("transport", masterConfigs.transport.listEndpoint, [
-    ["th.type", r => escapeHtml(r.type)],
-    ["form.vehicleType", r => escapeHtml(r.vehicleType)],
-    ["th.city", r => escapeHtml(r.city || "—")],
-    ["th.route", r => `${escapeHtml(r.fromLocation || "—")} → ${escapeHtml(r.toLocation || "—")}`],
-    ["th.amount", r => formatMoney(r.rate, r.currency)],
-    ["th.status", r => statusBadge(r.isActive ? "ACTIVE" : "INACTIVE")],
-    ["th.actions", r => masterRowActions("transport", r)],
-  ], masterActions("transport"));
+  state.page = "transport";
+  const capturedToken = state.renderToken;
+
+  content(pageHeader(masterActions("transport")) + `
+    <div style="display:flex;gap:10px;margin-bottom:16px">
+      <button class="btn btn-primary" id="trTabRates" onclick="trShowTab('rates')">${icon("sliders-horizontal")}&nbsp;Transport Rates</button>
+      <button class="btn btn-outline" id="trTabBookings" onclick="trShowTab('bookings')">${icon("list")}&nbsp;Bookings</button>
+    </div>
+    <div id="trRatesSection">
+      <section class="table-card">
+        <div class="table-toolbar"><div><strong>Transport Rates</strong><div class="secondary-text" id="trRatesMeta">Loading…</div></div><div class="toolbar-actions"><button class="btn btn-outline" onclick="renderTransport()">${icon("refresh-cw")}${t("btn.refresh")}</button></div></div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>Type</th><th>Vehicle</th><th>Route</th><th>One-Way</th><th>Round-Trip</th><th>Pax</th><th>Status</th><th>Actions</th>
+        </tr></thead><tbody id="trRatesTbody">${skeletonRows(8, 8)}</tbody></table></div>
+      </section>
+    </div>
+    <div id="trBookingsSection" style="display:none">
+      <section class="table-card">
+        <div class="table-toolbar"><div><strong>Transport Bookings</strong><div class="secondary-text" id="trBookingsMeta">Loading…</div></div><div class="toolbar-actions"><button class="btn btn-outline" onclick="loadAdminTransportBookings()">${icon("refresh-cw")}${t("btn.refresh")}</button></div></div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>Ref</th><th>Route</th><th>Pax / Lead</th><th>Vehicle</th><th>Pickup</th><th>Flight</th><th>Amount</th><th>Status</th><th>Actions</th>
+        </tr></thead><tbody id="trBookingsTbody">${skeletonRows(9, 8)}</tbody></table></div>
+      </section>
+    </div>`);
+
+  // Load rates
+  const ratesRes = await apiFetch("/transport-rates?limit=200");
+  if (state.renderToken !== capturedToken) return;
+  const rates = ratesRes?.data || [];
+  const rTbody = document.getElementById("trRatesTbody");
+  const rMeta = document.getElementById("trRatesMeta");
+  if (rMeta) rMeta.textContent = `${formatNumber(rates.length)} rates`;
+  if (rTbody) {
+    rTbody.innerHTML = rates.length ? rates.map(r => `<tr>
+      <td>${escapeHtml(r.type?.replace(/_/g," ")||"—")}</td>
+      <td><strong>${escapeHtml(r.vehicleType?.replace(/_/g," ")||"—")}</strong></td>
+      <td>${escapeHtml(r.fromLocation||"—")} → ${escapeHtml(r.toLocation||"—")}${r.city ? `<div class="secondary-text">${escapeHtml(r.city)}</div>` : ""}</td>
+      <td class="numeric">${formatMoney(r.rate, r.currency)}</td>
+      <td class="numeric">${r.roundTripRate ? formatMoney(r.roundTripRate, r.currency) : "<span style='color:var(--text-muted)'>2×</span>"}</td>
+      <td>${r.minCapacity||1}${r.maxCapacity ? "–"+r.maxCapacity : "+"}</td>
+      <td>${statusBadge(r.isActive ? "ACTIVE" : "INACTIVE")}</td>
+      <td>${masterRowActions("transport", r)}</td>
+    </tr>`).join("") : `<tr><td colspan="8">${emptyBlock("empty.noData")}</td></tr>`;
+    refreshIcons(rTbody);
+  }
+}
+
+function trShowTab(tab) {
+  const isRates = tab === "rates";
+  document.getElementById("trRatesSection").style.display    = isRates ? "" : "none";
+  document.getElementById("trBookingsSection").style.display = isRates ? "none" : "";
+  document.getElementById("trTabRates").className    = isRates ? "btn btn-primary" : "btn btn-outline";
+  document.getElementById("trTabBookings").className = isRates ? "btn btn-outline" : "btn btn-primary";
+  if (!isRates) loadAdminTransportBookings();
+}
+
+async function loadAdminTransportBookings() {
+  const res = await apiFetch("/transport-bookings?limit=100");
+  const bookings = res?.data || [];
+  const tbody = document.getElementById("trBookingsTbody");
+  const meta  = document.getElementById("trBookingsMeta");
+  if (meta) meta.textContent = `${formatNumber(bookings.length)} bookings`;
+  if (!tbody) return;
+  tbody.innerHTML = bookings.length ? bookings.map(b => `<tr>
+    <td class="primary-text">${escapeHtml(b.refNumber)}</td>
+    <td>${escapeHtml(b.fromLocation||"—")} → ${escapeHtml(b.toLocation||"—")}<div class="secondary-text">${b.isRoundTrip ? "↔ Round Trip" : "→ One Way"}</div></td>
+    <td>${b.passengerName ? `<strong>${escapeHtml(b.passengerName)}</strong><br>` : ""}${escapeHtml(b.contactNumber||"—")}<div class="secondary-text">${b.passengerCount} pax</div></td>
+    <td>${escapeHtml(b.vehicleType?.replace(/_/g," ")||"—")}</td>
+    <td>${formatDate(b.pickupDateTime)}</td>
+    <td>${b.airlineName ? `${escapeHtml(b.airlineName)} ` : ""}${b.flightNumber ? escapeHtml(b.flightNumber) : "—"}</td>
+    <td class="numeric">${formatMoney(b.totalAmount, b.currency)}</td>
+    <td>${statusBadge(b.status)}</td>
+    <td style="display:flex;gap:6px">
+      ${b.status === "PENDING" ? `<button class="btn btn-success btn-sm" onclick="adminConfirmTransport('${b.id}')">${icon("check")}</button>` : ""}
+      ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-danger btn-sm" onclick="adminCancelTransport('${b.id}')">${icon("x")}</button>` : ""}
+    </td>
+  </tr>`).join("") : `<tr><td colspan="9">${emptyBlock("empty.noData")}</td></tr>`;
+  refreshIcons(tbody);
+}
+
+async function adminConfirmTransport(id) {
+  if (!confirm("Confirm this transport booking? This will debit the company wallet.")) return;
+  const res = await apiFetch(`/transport-bookings/${id}/confirm`, { method: "PATCH" });
+  if (res?.success) { toast("Confirmed", "success"); loadAdminTransportBookings(); }
+}
+async function adminCancelTransport(id) {
+  if (!confirm("Cancel this booking?")) return;
+  const res = await apiFetch(`/transport-bookings/${id}/cancel`, { method: "PATCH" });
+  if (res?.success) { toast("Cancelled", "success"); loadAdminTransportBookings(); }
 }
 
 async function renderVisa() {
@@ -2316,13 +2483,13 @@ async function renderSecurityApproval() {
 
 async function adminApproveVisa(id) {
   if (!confirm("Approve this security approval?")) return;
-  const res = await apiFetch(`/visa-applications/${id}/approve`, { method: "POST" });
+  const res = await apiFetch(`/visa-applications/${id}/approve`, { method: "PATCH" });
   if (res?.success) { toast("Approved", "success"); renderSecurityApproval(); }
 }
 async function adminRejectVisa(id) {
   const reason = prompt("Rejection reason:");
   if (reason === null) return;
-  const res = await apiFetch(`/visa-applications/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) });
+  const res = await apiFetch(`/visa-applications/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) });
   if (res?.success) { toast("Rejected", "success"); renderSecurityApproval(); }
 }
 
@@ -2347,11 +2514,11 @@ async function renderAirportAssist() {
 }
 
 async function adminConfirmReception(id) {
-  const res = await apiFetch(`/airport-receptions/${id}/confirm`, { method: "POST" });
+  const res = await apiFetch(`/airport-receptions/${id}/confirm`, { method: "PATCH" });
   if (res?.success) { toast("Confirmed", "success"); renderAirportAssist(); }
 }
 async function adminCancelReception(id) {
-  const res = await apiFetch(`/airport-receptions/${id}/cancel`, { method: "POST" });
+  const res = await apiFetch(`/airport-receptions/${id}/cancel`, { method: "PATCH" });
   if (res?.success) { toast("Cancelled", "success"); renderAirportAssist(); }
 }
 

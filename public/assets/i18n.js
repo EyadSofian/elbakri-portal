@@ -887,12 +887,18 @@
   ar.hotel.terms = "الشروط والملاحظات";
 
   // ── Wallet ─────────────────────────────────────────────────────────────────
-  en.wallet.availableToSpend = "Available to Spend";
-  ar.wallet.availableToSpend = "المتاح للإنفاق";
-  en.wallet.walletBalance = "Wallet Balance";
-  ar.wallet.walletBalance = "رصيد المحفظة";
-  en.wallet.creditLimit = "Credit Limit";
-  ar.wallet.creditLimit = "حد الائتمان";
+  en.wallet.availableToSpend  = "Available to Spend";
+  ar.wallet.availableToSpend  = "المتاح للإنفاق";
+  en.wallet.walletBalance     = "Wallet Balance";
+  ar.wallet.walletBalance     = "رصيد المحفظة";
+  en.wallet.creditLimit       = "Credit Limit";
+  ar.wallet.creditLimit       = "حد الائتمان";
+  en.wallet.totalDeposited    = "Total Deposited";
+  ar.wallet.totalDeposited    = "إجمالي المودع";
+  en.wallet.totalUsed         = "Total Used / Deducted";
+  ar.wallet.totalUsed         = "إجمالي المستخدم";
+  en.wallet.remainingBalance  = "Remaining Balance";
+  ar.wallet.remainingBalance  = "الرصيد المتبقي";
 
   // ── Meal plans ─────────────────────────────────────────────────────────────
   en.mealPlan = {
@@ -929,12 +935,52 @@
   // ── Activities additions ───────────────────────────────────────────────────
   en.activity = {
     requestTitle: "Activity Request", vipType: "Type", group: "Group", private: "Private", vip: "VIP",
-    timeSlot: "Date & Time",
+    timeSlot: "Date & Time", duration: "Duration / Time", actType: "Booking Type",
+    contactForTime: "Contact us for available times",
   };
   ar.activity = {
     requestTitle: "طلب نشاط", vipType: "النوع", group: "جماعي", private: "خاص", vip: "VIP",
-    timeSlot: "التاريخ والوقت",
+    timeSlot: "التاريخ والوقت", duration: "المدة / الوقت", actType: "نوع الحجز",
+    contactForTime: "تواصل معنا للاستفسار عن الأوقات المتاحة",
   };
+
+  // ── Transport extra keys ───────────────────────────────────────────────────
+  Object.assign(en.transport, {
+    tripType: "Trip Type", oneWay: "One Way", flightDetails: "Flight / Arrival Details",
+    route: "Route", passengers: "Passengers & Vehicle", priceSummary: "Price Summary",
+    airport: "Airport", destination: "Destination",
+    airlineName: "Airline Name", flightNumber: "Flight Number",
+    returnDate: "Return Date", returnTime: "Return Time",
+    returnAirline: "Return Airline", returnFlight: "Return Flight No.",
+    returnDetails: "Return Trip Details",
+    leadName: "Lead Passenger Name", contactPhone: "Contact Phone",
+    namePlaceholder: "Full name",
+    selectLocation: "Select location...", selectVehicle: "Select vehicle...",
+    noRateNote: "No fixed rate. Send a quote request and we'll get back to you.",
+    requiredFields: "Please fill: route, date, lead name, contact and vehicle",
+    bookConfirmed: "Confirm Booking", newBooking: "New Booking",
+    bookingConfirmed: "Booking Submitted",
+  });
+  Object.assign(ar.transport, {
+    tripType: "نوع الرحلة", oneWay: "ذهاب فقط", flightDetails: "بيانات الرحلة / الوصول",
+    route: "المسار", passengers: "المسافرون والمركبة", priceSummary: "ملخص السعر",
+    airport: "المطار", destination: "الوجهة",
+    airlineName: "اسم الناقل الجوي", flightNumber: "رقم الرحلة",
+    returnDate: "تاريخ العودة", returnTime: "وقت العودة",
+    returnAirline: "ناقل رحلة العودة", returnFlight: "رقم رحلة العودة",
+    returnDetails: "تفاصيل رحلة العودة",
+    leadName: "اسم المسافر الرئيسي", contactPhone: "هاتف التواصل",
+    namePlaceholder: "الاسم الكامل",
+    selectLocation: "اختر الموقع...", selectVehicle: "اختر المركبة...",
+    noRateNote: "لا يوجد سعر ثابت لهذا المسار. أرسل طلب سعر وسنرد عليك.",
+    requiredFields: "يرجى ملء: المسار، التاريخ، اسم المسافر، رقم الاتصال والمركبة",
+    bookConfirmed: "تأكيد الحجز", newBooking: "حجز جديد",
+    bookingConfirmed: "تم إرسال الحجز",
+  });
+
+  // ── misc btn additions ─────────────────────────────────────────────────────
+  en.btn.saving = "Saving...";
+  ar.btn.saving = "جاري الحفظ...";
 
   const dict = { en, ar };
 

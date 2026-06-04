@@ -369,12 +369,14 @@ async function upsertActivities(rows: SheetRow[], errors: string[]): Promise<{ c
       const slug = city.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       const destination = await prisma.destination.findUnique({ where: { slug } });
 
+      const timeSlotsRaw = pick(row, 'timeSlots', 'times', 'slots');
       const data = {
         name,
         nameAr: pick(row, 'nameAr') || null,
         city,
         category: enumCell(pick(row, 'category'), categories, 'SIGHTSEEING'),
         duration: pick(row, 'duration') || null,
+        timeSlots: timeSlotsRaw ? splitList(timeSlotsRaw) : [],
         description: pick(row, 'description') || null,
         descriptionAr: pick(row, 'descriptionAr') || null,
         includes: splitList(pick(row, 'includes')),
@@ -421,15 +423,19 @@ async function upsertTransportRates(rows: SheetRow[], errors: string[]): Promise
         continue;
       }
 
+      const roundTripRaw = pick(row, 'roundTripRate', 'roundTrip', 'rtRate');
       const data = {
         sheetsRowId,
         type: enumCell(pick(row, 'type'), types, 'PRIVATE_TRANSFER'),
-        vehicleType: enumCell(pick(row, 'vehicleType', 'vehicle'), vehicles, 'SEDAN'),
+        vehicleType: enumCell(pick(row, 'vehicleType', 'vehicle', 'vehicleCategory'), vehicles, 'SEDAN'),
         city: pick(row, 'city') || null,
-        fromLocation: pick(row, 'fromLocation', 'from') || null,
-        toLocation: pick(row, 'toLocation', 'to') || null,
-        rate: parseAmount(pick(row, 'rate', 'amount')),
+        fromLocation: pick(row, 'fromLocation', 'from', 'origin') || null,
+        toLocation: pick(row, 'toLocation', 'to', 'destination') || null,
+        rate: parseAmount(pick(row, 'rate', 'oneWayRate', 'amount', 'price')),
+        roundTripRate: roundTripRaw ? parseAmount(roundTripRaw) : null,
         currency: pick(row, 'currency') || 'USD',
+        minCapacity: parseIntCell(pick(row, 'minPax', 'minCapacity'), 1),
+        maxCapacity: parseIntCell(pick(row, 'maxPax', 'maxCapacity', 'passengerCapacity'), 0) || null,
         notes: pick(row, 'notes') || null,
         isActive: parseBool(pick(row, 'isActive', 'active'), true),
       };

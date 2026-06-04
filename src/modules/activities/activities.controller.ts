@@ -87,7 +87,13 @@ export async function createActivityBooking(req: Request, res: Response): Promis
   const body = req.body as {
     activityId: string; companyId?: string;
     activityDate: string;
+    selectedTime?: string;
+    activityType?: string;   // GROUP | PRIVATE | VIP
     adultsCount?: number; childrenCount?: number;
+    childAges?: number[];
+    clientName?: string;
+    clientPhone?: string;
+    hotelName?: string;
     passengerNames?: string[];
     // totalAmount is intentionally ignored — computed server-side from activity prices
     notes?: string;
@@ -136,8 +142,14 @@ export async function createActivityBooking(req: Request, res: Response): Promis
         companyId,
         createdById: caller.id,
         activityDate: new Date(body.activityDate),
+        selectedTime: body.selectedTime ?? null,
+        activityType: body.activityType ?? 'GROUP',
         adultsCount,
         childrenCount,
+        childAges: body.childAges ?? undefined,
+        clientName: body.clientName ?? null,
+        clientPhone: body.clientPhone ?? null,
+        hotelName: body.hotelName ?? null,
         passengerNames: body.passengerNames ?? [],
         totalAmount,   // server-calculated
         currency,      // from Activity record
@@ -147,12 +159,24 @@ export async function createActivityBooking(req: Request, res: Response): Promis
       include: activityInclude,
     });
 
-    // Notify internal team
+    // Rich email notification
     if (company.email && process.env.INTERNAL_TEAM_EMAIL) {
       sendEmail(
         [company.email, process.env.INTERNAL_TEAM_EMAIL],
-        `Activity Booking Request — ${booking.refNumber}`,
-        `<p>Activity booking request <strong>${booking.refNumber}</strong> submitted and is pending admin review.</p>`,
+        `🎯 Activity Booking — ${booking.refNumber}`,
+        `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Activity</td><td style="padding:6px 12px">${booking.activity?.name ?? body.activityId}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Date</td><td style="padding:6px 12px">${body.activityDate}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Time</td><td style="padding:6px 12px">${body.selectedTime ?? '—'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Type</td><td style="padding:6px 12px">${body.activityType ?? 'GROUP'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Client</td><td style="padding:6px 12px">${body.clientName ?? '—'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Phone</td><td style="padding:6px 12px">${body.clientPhone ?? '—'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Hotel</td><td style="padding:6px 12px">${body.hotelName ?? '—'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Adults</td><td style="padding:6px 12px">${adultsCount}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Children</td><td style="padding:6px 12px">${childrenCount}${body.childAges?.length ? ' (ages: ' + body.childAges.join(', ') + ')' : ''}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${totalAmount} ${currency}</td></tr>
+          ${body.notes ? `<tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Notes</td><td style="padding:6px 12px">${body.notes}</td></tr>` : ''}
+        </table>`,
       ).catch(console.error);
     }
 

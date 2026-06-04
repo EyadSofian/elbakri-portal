@@ -2360,3 +2360,592 @@ html[lang="ar"] .data-table thead th {
     animation: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   PREMIUM B2B REFINEMENTS — layered on top of base styles
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── CSS token additions ──────────────────────────────────── */
+:root {
+  --glass-white:    rgba(255, 255, 255, 0.82);
+  --glass-surface:  rgba(248, 250, 252, 0.72);
+  --gold-glow:      rgba(196, 146, 10, 0.22);
+  --navy-glow:      rgba(15, 27, 71, 0.12);
+  --border-glass:   rgba(255, 255, 255, 0.48);
+  --stat-icon-bg:   linear-gradient(135deg, var(--info-soft), rgba(23, 92, 211, 0.06));
+  --shadow-float:   0 4px 20px rgba(16, 24, 40, 0.10), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-glow:    0 0 0 3px rgba(15, 27, 71, 0.08);
+  --r-20:           20px;
+}
+
+/* ─── Topbar refinement ────────────────────────────────────── */
+.topbar {
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0.94) 0%,
+    rgba(248,250,252,0.88) 100%);
+  -webkit-backdrop-filter: saturate(160%) blur(16px);
+  backdrop-filter:          saturate(160%) blur(16px);
+  border-bottom: 1px solid rgba(216, 222, 234, 0.7);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.9), var(--shadow-subtle);
+}
+
+/* ─── Sidebar accent line ──────────────────────────────────── */
+.sidebar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(180deg, rgba(196,146,10,0.3) 0%, transparent 40%);
+  pointer-events: none;
+}
+
+/* ─── Stat cards ───────────────────────────────────────────── */
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  padding: 16px 18px;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-subtle);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 140ms ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0) 60%, rgba(196,146,10,0.04) 100%);
+  pointer-events: none;
+}
+
+.stat-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-float);
+  transform: translateY(-2px);
+}
+
+.stat-ico {
+  background: var(--stat-icon-bg);
+  border-radius: var(--r-8);
+  border: 1px solid rgba(23, 92, 211, 0.08);
+  width: 32px;
+  height: 32px;
+}
+
+/* ─── Destination cards ─────────────────────────────────────── */
+.dest-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.dest-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22px 14px 18px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-12);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 180ms, box-shadow 180ms, transform 140ms;
+  min-height: 130px;
+  overflow: hidden;
+}
+
+.dest-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--brand-navy-2), var(--brand-gold));
+  opacity: 0;
+  transition: opacity 200ms;
+}
+
+.dest-card:hover {
+  border-color: var(--brand-navy-3);
+  box-shadow: var(--shadow-float);
+  transform: translateY(-3px);
+}
+
+.dest-card:hover::before {
+  opacity: 1;
+}
+
+.dest-card:active {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
+}
+
+.dest-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--info-soft), rgba(23,92,211,0.10));
+  border: 1px solid rgba(23, 92, 211, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--info);
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+.dest-card-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.dest-card-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.3;
+  margin-bottom: 4px;
+}
+
+.dest-card-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.dest-card-count {
+  font-size: 11px;
+  color: var(--brand-navy-3);
+  font-weight: 700;
+  background: var(--info-soft);
+  border-radius: var(--r-20);
+  padding: 2px 9px;
+  margin-top: 4px;
+}
+
+/* ─── Info grid items ───────────────────────────────────────── */
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--surface-muted);
+}
+
+.info-item:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+html[lang="ar"] .info-label {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.info-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* ─── Offer popup enhanced ──────────────────────────────────── */
+.modal-overlay.open .modal:has(.offer-popup-body) {
+  border-top: 3px solid var(--brand-gold);
+}
+
+/* ─── Wallet remaining balance accent ────────────────────────── */
+.wallet-remaining {
+  background: linear-gradient(135deg, var(--success-soft), rgba(4,120,87,0.06));
+  border: 1px solid rgba(4,120,87,0.18);
+  border-radius: var(--r-12);
+  padding: 14px 16px;
+}
+
+/* ─── Table refinements ─────────────────────────────────────── */
+.data-table tbody tr:hover {
+  background: rgba(23, 92, 211, 0.03);
+}
+
+.data-table .primary-text {
+  color: var(--brand-navy-2);
+  font-weight: 700;
+}
+
+/* ─── Badge refinements ─────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--r-20);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.badge-confirmed, .badge-active, .badge-paid, .badge-approved, .badge-completed {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.badge-pending, .badge-in_review, .badge-quoted, .badge-new {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.badge-cancelled, .badge-rejected, .badge-inactive, .badge-overdue {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.badge-credit { background: var(--success-soft); color: var(--success); }
+.badge-debit  { background: var(--danger-soft);  color: var(--danger); }
+.badge-refund { background: var(--purple-soft);  color: var(--purple); }
+.badge-outline {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+
+/* ─── Empty state refinement ────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.empty-state svg {
+  width: 36px;
+  height: 36px;
+  opacity: 0.3;
+  margin-bottom: 8px;
+}
+
+.empty-state strong {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.empty-state span {
+  font-size: 12px;
+}
+
+/* ─── Page header kicker ─────────────────────────────────────── */
+.page-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--brand-gold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+html[lang="ar"] .page-kicker {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ─── Skeleton loading refined ──────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--surface-muted) 25%,
+    rgba(238, 242, 247, 0.6) 50%,
+    var(--surface-muted) 75%);
+  background-size: 300% 100%;
+  animation: shimmer 1.6s infinite;
+  border-radius: var(--r-4);
+}
+
+@keyframes shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TRANSPORT BOOKING FORM
+   ═══════════════════════════════════════════════════════════ */
+
+.tr-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  padding: 18px 20px;
+  box-shadow: var(--shadow-subtle);
+  animation: fadeInUp 280ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.tr-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--brand-navy-2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 14px;
+}
+
+html[lang="ar"] .tr-section-title {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.tr-section-title svg {
+  width: 15px;
+  height: 15px;
+  color: var(--brand-gold);
+}
+
+.tr-toggle-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tr-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-20);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.tr-toggle.active {
+  background: var(--brand-navy-2);
+  border-color: var(--brand-navy-2);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(15,27,71,0.22);
+}
+
+.tr-toggle:hover:not(.active) {
+  border-color: var(--brand-navy-3);
+  color: var(--brand-navy-2);
+}
+
+.tr-radio-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-20);
+  transition: border-color 140ms, color 140ms;
+}
+
+.tr-radio-label:has(input:checked) {
+  border-color: var(--info);
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+.tr-radio-label svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Price summary card */
+.tr-price-card {
+  background: linear-gradient(135deg, var(--brand-navy-2) 0%, var(--brand-navy-3) 100%);
+  color: #fff;
+  border-radius: var(--r-12);
+  padding: 18px 20px;
+  box-shadow: 0 8px 24px rgba(15,27,71,0.28);
+}
+
+.tr-price-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.72;
+  margin-bottom: 4px;
+}
+
+.tr-price-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 0;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.tr-price-route {
+  font-weight: 700;
+  max-width: 200px;
+  text-align: right;
+}
+
+.tr-price-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tr-price-amount {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--brand-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Transport action buttons inside dark card */
+.tr-price-card .btn-success {
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.3);
+  color: #fff;
+  font-weight: 700;
+}
+
+.tr-price-card .btn-success:hover {
+  background: rgba(255,255,255,0.26);
+  box-shadow: 0 4px 14px rgba(255,255,255,0.2);
+}
+
+.tr-price-card .btn-outline {
+  border-color: rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.72);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ACTIVITY DETAILS POPUP
+   ═══════════════════════════════════════════════════════════ */
+
+/* Duration / Time card */
+.act-time-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, rgba(23,92,211,0.06), rgba(23,92,211,0.03));
+  border: 1px solid rgba(23,92,211,0.14);
+  border-radius: var(--r-12);
+  margin: 12px 0;
+}
+
+.act-time-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--info-soft);
+  border: 1px solid rgba(23,92,211,0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--info);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.act-time-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.act-time-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--info);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+html[lang="ar"] .act-time-label {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.act-time-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* Time slot selector buttons */
+.act-slot-btn {
+  padding: 6px 14px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--r-20);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.act-slot-btn.active {
+  background: var(--info);
+  border-color: var(--info);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(23,92,211,0.28);
+}
+
+.act-slot-btn:hover:not(.active) {
+  border-color: var(--info);
+  color: var(--info);
+}
+
+/* Activity detail card */
+.act-detail-card {
+  margin-bottom: 4px;
+}
+
+/* ─── Mobile destination grid ────────────────────────────────── */
+@media (max-width: 640px) {
+  .dest-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .dest-card {
+    min-height: 108px;
+    padding: 16px 10px;
+  }
+
+  .dest-card-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .stat-card {
+    min-height: 96px;
+    padding: 12px;
+  }
+}

@@ -35,6 +35,70 @@ export async function listTransportBookings(req: Request, res: Response): Promis
   res.json({ success: true, data: bookings, meta: paginateMeta(total, page, limit) });
 }
 
+/** GET /api/transport-rates/quote — client-side price preview (server-authoritative) */
+export async function getTransportQuote(req: Request, res: Response): Promise<void> {
+  const from        = String(req.query.from       ?? '').trim();
+  const to          = String(req.query.to         ?? '').trim();
+  const vehicleType = String(req.query.vehicleType ?? '').trim();
+  const pax         = Math.max(1, parseInt(String(req.query.pax ?? '1'), 10));
+  const roundTrip   = req.query.roundTrip === 'true';
+
+  const where: Record<string, unknown> = {
+    isActive: true,
+    minCapacity: { lte: pax },
+    OR: [{ maxCapacity: null }, { maxCapacity: { gte: pax } }],
+  };
+  if (from)        (where as any).fromLocation = { equals: from, mode: 'insensitive' };
+  if (to)          (where as any).toLocation   = { equals: to,   mode: 'insensitive' };
+  if (vehicleType) (where as any).vehicleType  = vehicleType;
+
+  const rate = await prisma.transportRate.findFirst({
+    where: where as any,
+    orderBy: { rate: 'asc' },
+  });
+
+  if (!rate) {
+    res.json({ success: true, data: { found: false, message: 'PRICE_ON_REQUEST' } });
+    return;
+  }
+
+  let totalAmount: number;
+  if (roundTrip) {
+    totalAmount = rate.roundTripRate ? Number(rate.roundTripRate) : Number(rate.rate) * 2;
+  } else {
+    totalAmount = Number(rate.rate);
+  }
+
+  res.json({
+    success: true,
+    data: {
+      found: true,
+      rateId: rate.id,
+      oneWayRate: Number(rate.rate),
+      roundTripRate: rate.roundTripRate ? Number(rate.roundTripRate) : Number(rate.rate) * 2,
+      totalAmount,
+      currency: rate.currency,
+      vehicleType: rate.vehicleType,
+      notes: rate.notes,
+    },
+  });
+}
+
+/** GET /api/transport-rates/locations — unique from/to values for dropdowns */
+export async function getTransportLocations(req: Request, res: Response): Promise<void> {
+  const rates = await prisma.transportRate.findMany({
+    where: { isActive: true },
+    select: { fromLocation: true, toLocation: true, vehicleType: true, type: true },
+    orderBy: { fromLocation: 'asc' },
+  });
+
+  const froms = [...new Set(rates.map(r => r.fromLocation).filter(Boolean) as string[])].sort();
+  const tos   = [...new Set(rates.map(r => r.toLocation).filter(Boolean)   as string[])].sort();
+  const vehicles = [...new Set(rates.map(r => r.vehicleType))].sort();
+
+  res.json({ success: true, data: { fromLocations: froms, toLocations: tos, vehicleTypes: vehicles } });
+}
+
 export async function createTransportBooking(req: Request, res: Response): Promise<void> {
   const caller = req.user!;
   const body = req.body as {
@@ -42,9 +106,16 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     type: 'AIRPORT_TRANSFER' | 'PRIVATE_TRANSFER' | 'DAY_TOUR_TRANSPORT' | 'INTERCITY';
     vehicleType?: 'SEDAN' | 'SUV' | 'VAN_6' | 'VAN_12' | 'MINIBUS_20' | 'BUS_45' | 'LUXURY_LIMO';
     fromLocation: string; toLocation: string;
+    fromType?: string; toType?: string;
     pickupDateTime: string; returnDateTime?: string;
     isRoundTrip?: boolean; passengerCount?: number;
-    passengerNames?: string[]; flightNumber?: string;
+    passengerNames?: string[];
+    passengerName?: string;    // lead passenger
+    flightNumber?: string;
+    airlineName?: string;
+    returnFlightNumber?: string;
+    returnAirlineName?: string;
+    contactNumber?: string;
     destinationId?: string;
     // totalAmount / currency intentionally not accepted — resolved server-side from TransportRate
     notes?: string;
@@ -107,12 +178,19 @@ export async function createTransportBooking(req: Request, res: Response): Promi
         vehicleType: body.vehicleType ?? 'SEDAN',
         fromLocation: body.fromLocation,
         toLocation: body.toLocation,
+        fromType: body.fromType ?? null,
+        toType: body.toType ?? null,
         pickupDateTime: new Date(body.pickupDateTime),
         returnDateTime: body.returnDateTime ? new Date(body.returnDateTime) : null,
         isRoundTrip: body.isRoundTrip ?? false,
         passengerCount,
         passengerNames: body.passengerNames ?? [],
-        flightNumber: body.flightNumber,
+        passengerName: body.passengerName ?? null,
+        flightNumber: body.flightNumber ?? null,
+        airlineName: body.airlineName ?? null,
+        returnFlightNumber: body.returnFlightNumber ?? null,
+        returnAirlineName: body.returnAirlineName ?? null,
+        contactNumber: body.contactNumber ?? null,
         totalAmount,  // server-calculated from TransportRate
         currency,     // from TransportRate record
         notes: body.notes,
@@ -121,11 +199,24 @@ export async function createTransportBooking(req: Request, res: Response): Promi
       include: transportInclude,
     });
 
+    // Send richer email notification
     if (company.email && process.env.INTERNAL_TEAM_EMAIL) {
       sendEmail(
         [company.email, process.env.INTERNAL_TEAM_EMAIL],
-        `Transport Booking Request — ${booking.refNumber}`,
-        `<p>Transport booking <strong>${booking.refNumber}</strong> submitted and is pending admin review.</p>`,
+        `🚐 Transport Booking — ${booking.refNumber}`,
+        `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Ref</td><td style="padding:6px 12px">${booking.refNumber}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Route</td><td style="padding:6px 12px">${body.fromLocation} → ${body.toLocation}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Vehicle</td><td style="padding:6px 12px">${body.vehicleType ?? 'SEDAN'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pickup</td><td style="padding:6px 12px">${body.pickupDateTime}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pax</td><td style="padding:6px 12px">${passengerCount}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Lead Pax</td><td style="padding:6px 12px">${body.passengerName ?? '—'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Contact</td><td style="padding:6px 12px">${body.contactNumber ?? '—'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Flight</td><td style="padding:6px 12px">${body.airlineName ?? ''} ${body.flightNumber ?? '—'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Round Trip</td><td style="padding:6px 12px">${body.isRoundTrip ? 'Yes' : 'No'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${totalAmount} ${currency}</td></tr>
+          ${body.notes ? `<tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Notes</td><td style="padding:6px 12px">${body.notes}</td></tr>` : ''}
+        </table>`,
       ).catch(console.error);
     }
 

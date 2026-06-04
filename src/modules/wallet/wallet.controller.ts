@@ -23,17 +23,44 @@ export async function getBalance(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const company = await prisma.company.findUnique({
-    where: { id: caller.companyId },
-    select: { balance: true, currency: true, name: true },
-  });
+  const [company, debitAgg, creditAgg] = await Promise.all([
+    prisma.company.findUnique({
+      where: { id: caller.companyId },
+      select: { balance: true, currency: true, name: true, creditLimit: true },
+    }),
+    // Total amount deducted (debits & refunds reversed)
+    prisma.walletTransaction.aggregate({
+      where: { companyId: caller.companyId, type: 'DEBIT' },
+      _sum: { amount: true },
+    }),
+    // Total amount credited (top-ups)
+    prisma.walletTransaction.aggregate({
+      where: { companyId: caller.companyId, type: 'CREDIT' },
+      _sum: { amount: true },
+    }),
+  ]);
 
   if (!company) {
     res.status(404).json({ success: false, error: 'NOT_FOUND' });
     return;
   }
 
-  res.json({ success: true, data: { balance: company.balance, currency: company.currency, companyName: company.name } });
+  const totalDeposited = creditAgg._sum.amount ?? new Decimal(0);
+  const totalUsed      = debitAgg._sum.amount  ?? new Decimal(0);
+  // The company.balance field IS the current remaining balance (maintained by each transaction)
+  const remainingBalance = company.balance;
+
+  res.json({
+    success: true,
+    data: {
+      balance: company.balance,          // alias kept for backwards compat
+      remainingBalance,
+      totalDeposited,
+      totalUsed,
+      currency: company.currency,
+      companyName: company.name,
+    },
+  });
 }
 
 export async function getTransactions(req: Request, res: Response): Promise<void> {

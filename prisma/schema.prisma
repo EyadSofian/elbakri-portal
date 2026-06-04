@@ -689,52 +689,60 @@ model CruiseBooking {
 // ─────────────────────────────────────────────
 
 model TransportBooking {
-  id             String        @id @default(cuid())
-  refNumber      String        @unique
-  companyId      String
-  company        Company       @relation(fields: [companyId], references: [id])
-  createdById    String
-  createdBy      User          @relation("TransportBookingCreatedBy", fields: [createdById], references: [id])
-  type           TransportType
-  vehicleType    VehicleType   @default(SEDAN)
-  fromLocation   String
-  toLocation     String
-  pickupDateTime DateTime
-  returnDateTime DateTime?
-  isRoundTrip    Boolean       @default(false)
-  passengerCount Int           @default(1)
-  passengerNames String[]      @default([])
-  flightNumber   String?
-  totalAmount    Decimal       @db.Decimal(12, 2)
-  currency       String        @default("USD")
-  status         BookingStatus @default(PENDING)
-  notes          String?
-  invoice        Invoice?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id              String        @id @default(cuid())
+  refNumber       String        @unique
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id])
+  createdById     String
+  createdBy       User          @relation("TransportBookingCreatedBy", fields: [createdById], references: [id])
+  type            TransportType
+  vehicleType     VehicleType   @default(SEDAN)
+  fromLocation    String
+  toLocation      String
+  fromType        String?       // AIRPORT | DESTINATION
+  toType          String?       // AIRPORT | DESTINATION
+  pickupDateTime  DateTime
+  returnDateTime  DateTime?
+  isRoundTrip     Boolean       @default(false)
+  passengerCount  Int           @default(1)
+  passengerNames  String[]      @default([])
+  passengerName   String?       // lead passenger name
+  flightNumber    String?
+  airlineName     String?
+  returnFlightNumber String?
+  returnAirlineName  String?
+  contactNumber   String?
+  totalAmount     Decimal       @db.Decimal(12, 2)
+  currency        String        @default("USD")
+  status          BookingStatus @default(PENDING)
+  notes           String?
+  invoice         Invoice?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([companyId])
   @@index([status])
 }
 
 model TransportRate {
-  id            String        @id @default(cuid())
-  sheetsRowId   String?
-  type          TransportType @default(PRIVATE_TRANSFER)
-  vehicleType   VehicleType   @default(SEDAN)
-  city          String?
-  fromLocation  String?
-  toLocation    String?
-  rate          Decimal       @db.Decimal(10, 2)
-  currency      String        @default("USD")
-  minCapacity   Int           @default(1)
-  maxCapacity   Int?
-  notes         String?
-  isActive      Boolean       @default(true)
-  destinationId String?
-  destination   Destination?  @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  sheetsRowId    String?
+  type           TransportType @default(PRIVATE_TRANSFER)
+  vehicleType    VehicleType   @default(SEDAN)
+  city           String?
+  fromLocation   String?
+  toLocation     String?
+  rate           Decimal       @db.Decimal(10, 2)   // one-way rate
+  roundTripRate  Decimal?      @db.Decimal(10, 2)   // explicit round-trip rate (optional)
+  currency       String        @default("USD")
+  minCapacity    Int           @default(1)
+  maxCapacity    Int?
+  notes          String?
+  isActive       Boolean       @default(true)
+  destinationId  String?
+  destination    Destination?  @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   @@index([sheetsRowId])
   @@index([type])
@@ -754,6 +762,7 @@ model Activity {
   city               String
   category           ActivityCategory  @default(SIGHTSEEING)
   duration           String?
+  timeSlots          String[]          @default([])   // e.g. ["09:00 AM","02:00 PM"]
   description        String?
   descriptionAr      String?
   includes           String[]          @default([])
@@ -789,8 +798,14 @@ model ActivityBooking {
   createdById    String
   createdBy      User          @relation("ActivityBookingCreatedBy", fields: [createdById], references: [id])
   activityDate   DateTime
+  selectedTime   String?       // time slot chosen by user e.g. "09:00 AM"
+  activityType   String?       // GROUP | PRIVATE | VIP
   adultsCount    Int           @default(1)
   childrenCount  Int           @default(0)
+  childAges      Json?         // array of child ages
+  clientName     String?       // lead client name
+  clientPhone    String?
+  hotelName      String?
   passengerNames String[]      @default([])
   totalAmount    Decimal       @db.Decimal(12, 2)
   currency       String        @default("USD")

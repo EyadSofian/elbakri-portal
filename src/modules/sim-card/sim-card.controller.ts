@@ -88,6 +88,13 @@ function genRef(year: number, seq: number) {
   return `SIM-${year}-${String(seq).padStart(4, '0')}`;
 }
 
+async function generateSimRef(): Promise<string> {
+  const year = new Date().getFullYear();
+  const count = await prisma.simRequest.count();
+  // Use count + timestamp suffix to guarantee uniqueness even under rapid creation
+  return `SIM-${year}-${String(count + 1).padStart(4, '0')}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+}
+
 export async function listRequests(req: Request, res: Response) {
   try {
     const user = req.user!;
@@ -145,20 +152,7 @@ export async function createRequest(req: Request, res: Response) {
     const totalAmount = unitPrice * qty;
     const currency = pkg?.currency || 'USD';
 
-    const year = new Date().getFullYear();
-    const counter = await prisma.$transaction(async (tx) => {
-      const updated = await tx.$executeRaw`
-        INSERT INTO "SimRequestCounter" (year, "lastSeq")
-        VALUES (${year}, 1)
-        ON CONFLICT (year) DO UPDATE SET "lastSeq" = "SimRequestCounter"."lastSeq" + 1
-        RETURNING "lastSeq"
-      `;
-      return updated;
-    }).catch(() => null);
-
-    // Fallback ref generation using count
-    const total = await prisma.simRequest.count();
-    const refNumber = genRef(year, total + 1);
+    const refNumber = await generateSimRef();
 
     const simReq = await prisma.simRequest.create({
       data: {

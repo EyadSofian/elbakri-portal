@@ -6,6 +6,8 @@ import {
   confirmTransportBooking,
   cancelTransportBooking,
   listTransportRates,
+  getTransportQuote,
+  getTransportLocations,
 } from './transport.controller';
 
 const router = Router();
@@ -20,3 +22,5 @@ export default router;
 // Separate router for transport rates (mounted separately in app.ts)
 export const transportRatesRouter = Router();
 transportRatesRouter.get('/', listTransportRates);
+transportRatesRouter.get('/quote', getTransportQuote);
+transportRatesRouter.get('/locations', getTransportLocations);
