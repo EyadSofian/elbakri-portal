@@ -1065,6 +1065,10 @@
   ar.quoteDetail = Object.assign({}, ar.quoteDetail, { customFields: "حقول إضافية" });
   en.validation.fieldRequired = "Please complete";
   ar.validation.fieldRequired = "يرجى إكمال";
+  en.page.enrichTitle = "Hotel Enrichment";
+  ar.page.enrichTitle = "إثراء بيانات الفنادق";
+  en.page.enrichSub   = "Fetch gallery, ratings and descriptions from Booking.com via Apify";
+  ar.page.enrichSub   = "جلب الصور والتقييمات والأوصاف من Booking.com عبر Apify";
   en.form.select = "Select";
   ar.form.select = "اختر";
   en.form.orPasteUrl = "or paste URL";

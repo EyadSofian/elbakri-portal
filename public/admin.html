@@ -57,6 +57,7 @@
           <div class="nav-label" data-i18n="nav.tools">Tools</div>
           <button class="nav-item" data-page="ui-builder"><i data-lucide="layout-template"></i><span data-i18n="nav.uiBuilder">UI Builder</span></button>
           <button class="nav-item" data-page="request-forms"><i data-lucide="text-cursor-input"></i><span data-i18n="nav.requestForms">Request Forms</span></button>
+          <button class="nav-item" data-page="hotel-enrichment"><i data-lucide="image-play"></i><span>Hotel Enrichment</span></button>
           <button class="nav-item" data-page="sheets-config"><i data-lucide="sheet"></i><span data-i18n="nav.sheetsConfig">Sheets Config</span></button>
           <button class="nav-item" data-page="calculators"><i data-lucide="calculator"></i><span data-i18n="nav.calculators">Calculators</span></button>
         </div>
@@ -150,6 +151,7 @@ const pageMeta = {
   offers: ["page.offersTitle", "page.offersSub"],
   "ui-builder": ["page.uiBuilderTitle", "page.uiBuilderSub"],
   "request-forms": ["page.requestFormsTitle", "page.requestFormsSub"],
+  "hotel-enrichment": ["page.enrichTitle", "page.enrichSub"],
   calculators: ["page.calculatorsTitle", "page.calculatorsSub"],
   destinations: ["nav.destinations", "page.destinationsSub"],
   "quote-requests": ["nav.quoteRequests", "page.quoteRequestsSub"],
@@ -3513,6 +3515,370 @@ async function rfbDelete() {
   if (res?.success) { toast(t("toast.deleted", "Deleted"), "success"); rfbTemplateId = null; rfbLoadTarget(rfbTarget); }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// HOTEL ENRICHMENT DASHBOARD
+// Uses SSE-over-POST (fetch ReadableStream) so no tabs/cmd needed.
+// ════════════════════════════════════════════════════════════════════════════
+
+let enrichState = { running: false, reader: null };
+let enrichCities = [], enrichActors = [];
+
+async function renderHotelEnrichment() {
+  state.page = "hotel-enrichment";
+  content(pageHeader() + `<div id="enrichArea"><div class="skeleton" style="height:200px"></div></div>`);
+
+  // Load cities + actors from backend
+  const meta = await apiFetch("/admin/enrich/actors");
+  if (meta?.data) { enrichCities = meta.data.cities; enrichActors = meta.data.actors; }
+  if (!enrichCities.length) { enrichCities = [{value:"hurghada",label:"Hurghada"},{value:"sharm",label:"Sharm El Sheikh"},{value:"marsa-alam",label:"Marsa Alam"},{value:"dahab",label:"Dahab"},{value:"ain-sokhna",label:"Ain Sokhna"},{value:"sahl-hasheesh",label:"Sahl Hasheesh"},{value:"safaga",label:"Safaga"},{value:"north-coast",label:"North Coast"},{value:"el-gouna",label:"El Gouna"},{value:"cairo",label:"Cairo"},{value:"nuweiba",label:"Nuweiba"}]; }
+  if (!enrichActors.length)  { enrichActors = [{id:"brilliant_gum~booking-pro-full-data-scraper",label:"brilliant_gum~booking-pro-full-data-scraper ✓"}]; }
+
+  const el = document.getElementById("enrichArea");
+  if (!el) return;
+  el.innerHTML = `
+  <div class="enrich-layout">
+
+    <!-- ── LEFT: Config + Progress ── -->
+    <div class="enrich-left">
+
+      <!-- Config Card -->
+      <section class="panel glass-card" style="margin-bottom:16px">
+        <div class="panel-header"><div class="panel-title">${icon("settings-2")} Configuration</div></div>
+        <div class="panel-body">
+          <div class="form-grid" style="gap:12px">
+
+            <div class="form-field full">
+              <label>Apify Token <span class="required">*</span></label>
+              <div style="position:relative">
+                <input id="enrichToken" type="password" placeholder="apify_api_…" autocomplete="off" style="padding-right:42px">
+                <button type="button" class="icon-button" style="position:absolute;right:4px;top:50%;transform:translateY(-50%)" onclick="(()=>{const i=document.getElementById('enrichToken');i.type=i.type==='password'?'text':'password';})()">${icon("eye")}</button>
+              </div>
+              <div class="rf-help">Your token stays in memory only — never stored or committed.</div>
+            </div>
+
+            <div class="form-field">
+              <label>City</label>
+              <select id="enrichCity">
+                ${enrichCities.map(c=>`<option value="${escapeHtml(c.value)}">${escapeHtml(c.label)}</option>`).join("")}
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label>Actor</label>
+              <select id="enrichActorSel" onchange="enrichActorChanged()">
+                ${enrichActors.map(a=>`<option value="${escapeHtml(a.id)}">${escapeHtml(a.label)}</option>`).join("")}
+                <option value="custom">Custom…</option>
+              </select>
+            </div>
+
+            <div class="form-field full" id="enrichCustomActorWrap" style="display:none">
+              <label>Custom Actor ID</label>
+              <input id="enrichCustomActor" placeholder="owner~actor-name">
+            </div>
+
+            <div class="form-field">
+              <label>Start offset</label>
+              <input id="enrichStart" type="number" min="0" value="0" placeholder="0">
+              <div class="rf-help">Skip first N hotels (for resuming).</div>
+            </div>
+
+            <div class="form-field">
+              <label>Limit</label>
+              <input id="enrichLimit" type="number" min="1" max="999" value="999" placeholder="999">
+            </div>
+
+            <div class="form-field">
+              <label>Min name-match score</label>
+              <input id="enrichMinScore" type="number" min="0.1" max="1" step="0.05" value="0.30">
+              <div class="rf-help">0.30 = accept if 30% tokens match.</div>
+            </div>
+
+            <div class="form-field" style="display:flex;align-items:center;gap:10px;margin-top:8px">
+              <label class="check-row" style="margin:0;cursor:pointer">
+                <input type="checkbox" id="enrichApply"> Write to DB (Apply)
+              </label>
+              <span class="rf-help" style="flex:1">Unchecked = dry run, no changes.</span>
+            </div>
+
+          </div>
+        </div>
+        <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:10px">
+          <button class="btn btn-primary" id="enrichStartBtn" onclick="enrichStart()">${icon("play")}&nbsp;Start Enrichment</button>
+          <button class="btn btn-danger" id="enrichStopBtn" style="display:none" onclick="enrichStop()">${icon("square")}&nbsp;Stop</button>
+        </div>
+      </section>
+
+      <!-- Progress Feed -->
+      <section class="panel" id="enrichProgressPanel" style="display:none">
+        <div class="panel-header">
+          <div class="panel-title">${icon("activity")} Live Progress</div>
+          <div id="enrichProgressBar" class="enrich-progress-bar"><div id="enrichProgressFill"></div></div>
+          <span id="enrichProgressLabel" class="secondary-text" style="font-size:12px;min-width:70px;text-align:right"></span>
+        </div>
+        <div id="enrichFeed" class="enrich-feed"></div>
+      </section>
+
+    </div>
+
+    <!-- ── RIGHT: Stats + Results ── -->
+    <div class="enrich-right">
+
+      <!-- Stats chips -->
+      <div id="enrichStats" class="enrich-stats-row" style="display:none">
+        <div class="enrich-stat enrich-stat--ok"><span id="eStat_applied">0</span><small>Applied</small></div>
+        <div class="enrich-stat enrich-stat--cross"><span id="eStat_cross">0</span><small>Cross-match</small></div>
+        <div class="enrich-stat enrich-stat--manual"><span id="eStat_manual">0</span><small>Manual Review</small></div>
+        <div class="enrich-stat enrich-stat--error"><span id="eStat_errors">0</span><small>Errors</small></div>
+        <div class="enrich-stat enrich-stat--total"><span id="eStat_total">0</span><small>Total</small></div>
+      </div>
+
+      <!-- Mode badge -->
+      <div id="enrichModeBadge" style="display:none;margin-bottom:12px"></div>
+
+      <!-- Results Table -->
+      <section class="table-card" id="enrichResultsCard" style="display:none">
+        <div class="table-toolbar">
+          <div><strong>Results</strong></div>
+          <div class="toolbar-actions">
+            <button class="btn btn-outline btn-sm" onclick="enrichFilterResults('all')" id="rfAll" style="font-weight:700">All</button>
+            <button class="btn btn-outline btn-sm" onclick="enrichFilterResults('manual')">Manual Review</button>
+            <button class="btn btn-outline btn-sm" onclick="enrichFilterResults('error')">Errors</button>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr>
+              <th>#</th><th>Hotel (DB)</th><th>Matched (Booking)</th>
+              <th>Score</th><th>Photos</th><th>Status</th>
+            </tr></thead>
+            <tbody id="enrichResultsBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </div>`;
+
+  refreshIcons(el);
+}
+
+function enrichActorChanged() {
+  const sel = document.getElementById("enrichActorSel");
+  const wrap = document.getElementById("enrichCustomActorWrap");
+  if (wrap) wrap.style.display = sel?.value === "custom" ? "" : "none";
+}
+
+let enrichResults = [];
+let enrichRunStats = { applied: 0, cross: 0, manual: 0, errors: 0, total: 0 };
+
+async function enrichStart() {
+  const token     = document.getElementById("enrichToken")?.value?.trim();
+  const city      = document.getElementById("enrichCity")?.value;
+  const actorSel  = document.getElementById("enrichActorSel")?.value;
+  const actorId   = actorSel === "custom" ? (document.getElementById("enrichCustomActor")?.value?.trim() || "") : actorSel;
+  const apply     = document.getElementById("enrichApply")?.checked || false;
+  const start     = parseInt(document.getElementById("enrichStart")?.value || "0");
+  const limit     = parseInt(document.getElementById("enrichLimit")?.value || "999");
+  const minScore  = parseFloat(document.getElementById("enrichMinScore")?.value || "0.30");
+
+  if (!token)   { toast("Enter your Apify token first", "error"); return; }
+  if (!actorId) { toast("Enter Actor ID", "error"); return; }
+
+  // Reset UI
+  enrichResults = [];
+  enrichRunStats = { applied: 0, cross: 0, manual: 0, errors: 0, total: 0 };
+  document.getElementById("enrichFeed").innerHTML = "";
+  document.getElementById("enrichResultsBody").innerHTML = "";
+  document.getElementById("enrichProgressPanel").style.display = "";
+  document.getElementById("enrichResultsCard").style.display = "";
+  document.getElementById("enrichStats").style.display = "";
+  document.getElementById("enrichModeBadge").style.display = "";
+  document.getElementById("enrichModeBadge").innerHTML = apply
+    ? `<span class="badge badge-confirmed">${icon("database")}&nbsp;APPLY MODE — writing to DB</span>`
+    : `<span class="badge badge-outline">${icon("eye")}&nbsp;DRY RUN — no changes</span>`;
+  enrichProgressSet(0);
+
+  document.getElementById("enrichStartBtn").style.display = "none";
+  document.getElementById("enrichStopBtn").style.display = "";
+  enrichState.running = true;
+
+  try {
+    const controller = new AbortController();
+    enrichState.reader = controller;
+    const res = await fetch("/api/admin/enrich/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("accessToken")}` },
+      body: JSON.stringify({ city, apifyToken: token, actorId, apply, start, limit, minScore }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) { toast("Server error " + res.status, "error"); enrichDone(); return; }
+
+    const reader = res.body.getReader();
+    const dec    = new TextDecoder();
+    let buf      = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop() || "";
+      for (const chunk of parts) {
+        let evtType = "message", evtData = "";
+        chunk.split("\n").forEach(line => {
+          if (line.startsWith("event: ")) evtType = line.slice(7).trim();
+          if (line.startsWith("data: "))  evtData = line.slice(6).trim();
+        });
+        if (evtData) {
+          try { enrichHandleEvent(evtType, JSON.parse(evtData)); } catch {}
+        }
+      }
+    }
+  } catch (err) {
+    if (!err.message?.includes("abort")) toast("Connection error: " + err.message, "error");
+  }
+
+  enrichDone();
+}
+
+function enrichStop() {
+  if (enrichState.reader) enrichState.reader.abort();
+  enrichState.running = false;
+  enrichFeedPush("abort", { message: "Stopped by admin." });
+  enrichDone();
+}
+
+function enrichDone() {
+  document.getElementById("enrichStartBtn").style.display = "";
+  document.getElementById("enrichStopBtn").style.display = "none";
+  enrichState.running = false;
+  refreshIcons(document.getElementById("enrichResultsBody"));
+}
+
+function enrichProgressSet(pct) {
+  const fill  = document.getElementById("enrichProgressFill");
+  const label = document.getElementById("enrichProgressLabel");
+  if (fill) fill.style.width = Math.min(100, Math.round(pct)) + "%";
+  if (label) label.textContent = Math.round(pct) + "%";
+}
+
+function enrichStatUpdate() {
+  ["applied","cross","manual","errors","total"].forEach(k => {
+    const el = document.getElementById("eStat_" + k);
+    if (el) el.textContent = String(enrichRunStats[k] || 0);
+  });
+}
+
+const ENRICH_STATUS_META = {
+  ok:         { icon: "check-circle", cls: "enrich-row--ok",     badge: "badge-confirmed",  label: "Updated" },
+  cross:      { icon: "link",         cls: "enrich-row--cross",   badge: "badge-info",       label: "Cross-match" },
+  manual:     { icon: "alert-circle", cls: "enrich-row--manual",  badge: "badge-pending",    label: "Manual Review" },
+  error:      { icon: "x-circle",     cls: "enrich-row--error",   badge: "badge-cancelled",  label: "Error" },
+  fetching:   { icon: "loader",       cls: "enrich-row--fetch",   badge: "badge-outline",    label: "Fetching…" },
+  no_result:  { icon: "minus-circle", cls: "enrich-row--skip",    badge: "badge-outline",    label: "No result" },
+  quota:      { icon: "ban",          cls: "enrich-row--error",   badge: "badge-cancelled",  label: "Quota hit" },
+  abort:      { icon: "octagon-x",    cls: "enrich-row--error",   badge: "badge-cancelled",  label: "Stopped" },
+};
+
+function enrichHandleEvent(type, data) {
+  const feed = document.getElementById("enrichFeed");
+  if (!feed) return;
+
+  if (type === "init") {
+    enrichRunStats.total = data.total || 0;
+    enrichStatUpdate();
+    enrichFeedPush("info", { message: `${data.city} — ${data.total} hotels to process (${data.alreadyEnriched} already enriched)` });
+    return;
+  }
+
+  if (type === "done") {
+    enrichRunStats.applied = data.applied || 0;
+    enrichRunStats.cross   = data.crossMatched || 0;
+    enrichRunStats.manual  = data.manual || 0;
+    enrichRunStats.errors  = data.errors || 0;
+    enrichRunStats.total   = data.total || 0;
+    enrichStatUpdate();
+    enrichProgressSet(100);
+    enrichFeedPush("done", { message: `Done — Applied: ${data.applied}, Manual: ${data.manual}, Errors: ${data.errors}` });
+    toast(`Enrichment complete — ${data.applied} hotels updated`, "success");
+    return;
+  }
+
+  if (type === "quota") {
+    enrichFeedPush("quota", { message: data.message || "Quota exceeded." });
+    toast("Apify monthly quota hit — add a new token.", "error");
+    return;
+  }
+
+  if (type === "abort" || type === "error") {
+    enrichFeedPush(type, data);
+    return;
+  }
+
+  if (type === "hotel") {
+    // Update progress bar
+    const pct = data.total > 0 ? (data.i / data.total) * 100 : 0;
+    enrichProgressSet(pct);
+
+    // Skip "fetching" rows in the table; only show final status
+    if (data.status === "fetching") {
+      enrichFeedPush("fetching", { message: `[${data.i}/${data.total}] ${data.name}…` });
+      return;
+    }
+
+    // Update or replace the last feed row for this hotel
+    enrichFeedPush(data.status, { message: `${data.name}${data.matched ? " → " + data.matched : ""}${data.imgs != null ? " · " + data.imgs + " 📷" : ""}${data.reason ? " — " + data.reason : ""}` });
+
+    // Update stats
+    if (data.status === "ok")     { enrichRunStats.applied = (enrichRunStats.applied||0)+1; }
+    if (data.status === "cross")  { enrichRunStats.cross   = (enrichRunStats.cross||0)+1; enrichRunStats.applied=(enrichRunStats.applied||0)+1; }
+    if (data.status === "manual") { enrichRunStats.manual  = (enrichRunStats.manual||0)+1; }
+    if (data.status === "error")  { enrichRunStats.errors  = (enrichRunStats.errors||0)+1; }
+    enrichStatUpdate();
+
+    // Add to results table
+    const meta    = ENRICH_STATUS_META[data.status] || ENRICH_STATUS_META.no_result;
+    const modeTag = data.apply ? "" : `<span style="font-size:10px;color:var(--text-muted)">(dry)</span>`;
+    const row     = document.createElement("tr");
+    row.className = meta.cls;
+    row.setAttribute("data-status", data.status);
+    row.innerHTML = `
+      <td class="numeric" style="color:var(--text-muted)">${data.i}</td>
+      <td><span class="primary-text">${escapeHtml(data.name)}</span></td>
+      <td><span style="color:var(--text-secondary)">${escapeHtml(data.matched||"—")}</span></td>
+      <td class="numeric">${data.score != null ? data.score : "—"}</td>
+      <td class="numeric">${data.imgs != null ? data.imgs : "—"}</td>
+      <td><span class="badge ${meta.badge}">${meta.label}</span>${modeTag}</td>`;
+    const tbody = document.getElementById("enrichResultsBody");
+    if (tbody) { tbody.appendChild(row); }
+
+    enrichResults.push({ ...data, _meta: meta });
+  }
+}
+
+function enrichFeedPush(type, data) {
+  const feed = document.getElementById("enrichFeed");
+  if (!feed) return;
+  const meta = ENRICH_STATUS_META[type] || { icon: "info", cls: "enrich-row--info", label: type };
+  const div  = document.createElement("div");
+  div.className = "enrich-feed-row " + (meta.cls || "");
+  div.innerHTML  = `<span class="enrich-feed-icon">${icon(meta.icon || "info")}</span><span class="enrich-feed-msg">${escapeHtml(String(data.message||""))}</span>`;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+  if (window.lucide) lucide.createIcons({ el: div });
+}
+
+function enrichFilterResults(filter) {
+  document.querySelectorAll("#enrichResultsBody tr").forEach(row => {
+    const status = row.getAttribute("data-status") || "";
+    row.style.display = (filter === "all" || status === filter) ? "" : "none";
+  });
+  ["rfAll","rfManual","rfError"].forEach(id => document.getElementById(id)?.style?.setProperty("font-weight","400"));
+  const map = { all: "rfAll", manual: "rfManual", error: "rfError" };
+  if (map[filter]) document.getElementById(map[filter])?.style?.setProperty("font-weight","800");
+}
+
 const pageLoaders = {
   dashboard: renderDashboard,
   companies: renderCompanies,
@@ -3534,6 +3900,7 @@ const pageLoaders = {
   offers: renderOffers,
   "ui-builder": renderUiBuilder,
   "request-forms": renderRequestFormBuilder,
+  "hotel-enrichment": renderHotelEnrichment,
   calculators: renderCalculators,
 };
 

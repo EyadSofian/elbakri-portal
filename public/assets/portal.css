@@ -3715,6 +3715,132 @@ html[lang="ar"] .wallet-metric__label {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   HOTEL ENRICHMENT DASHBOARD
+   ══════════════════════════════════════════════════════════════════ */
+.enrich-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+/* Stats row ──────────────────────────────────────────────────────── */
+.enrich-stats-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.enrich-stat {
+  flex: 1 1 60px;
+  min-width: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px 8px;
+  border-radius: var(--r-10, var(--r-8));
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+.enrich-stat span {
+  font-size: 22px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.enrich-stat small {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.enrich-stat--ok     { border-color: var(--success); background: var(--success-soft); }
+.enrich-stat--ok span     { color: var(--success); }
+.enrich-stat--cross  { border-color: var(--brand-cyan); background: var(--brand-accent-soft); }
+.enrich-stat--cross span  { color: var(--brand-cyan-2); }
+.enrich-stat--manual { border-color: var(--warning); background: var(--warning-soft); }
+.enrich-stat--manual span { color: var(--warning); }
+.enrich-stat--error  { border-color: var(--danger); background: var(--danger-soft); }
+.enrich-stat--error span  { color: var(--danger); }
+.enrich-stat--total  { border-color: var(--border-strong); }
+.enrich-stat--total span  { color: var(--text-primary); }
+
+/* Progress bar ────────────────────────────────────────────────────── */
+.enrich-progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+  margin: 0 12px;
+}
+.enrich-progress-bar #enrichProgressFill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--brand-cyan), var(--brand-teal));
+  transition: width 300ms ease;
+  border-radius: 999px;
+}
+
+/* Live feed ──────────────────────────────────────────────────────── */
+.enrich-feed {
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  scrollbar-width: thin;
+  font-size: 12px;
+  font-family: var(--font);
+}
+
+.enrich-feed-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--r-8);
+  line-height: 1.4;
+}
+
+.enrich-feed-icon { flex-shrink: 0; margin-top: 1px; }
+.enrich-feed-icon svg { width: 14px; height: 14px; }
+.enrich-feed-msg { word-break: break-word; color: var(--text-secondary); }
+
+.enrich-row--ok     { background: rgba(14,159,110,0.07); }
+.enrich-row--ok     .enrich-feed-icon { color: var(--success); }
+.enrich-row--cross  { background: rgba(24,168,200,0.08); }
+.enrich-row--cross  .enrich-feed-icon { color: var(--brand-cyan); }
+.enrich-row--manual { background: rgba(217,119,6,0.08); }
+.enrich-row--manual .enrich-feed-icon { color: var(--warning); }
+.enrich-row--error  { background: rgba(224,36,36,0.07); }
+.enrich-row--error  .enrich-feed-icon { color: var(--danger); }
+.enrich-row--fetch  { opacity: 0.65; }
+.enrich-row--fetch  .enrich-feed-icon { color: var(--brand-cyan); }
+.enrich-row--info   .enrich-feed-icon { color: var(--info); }
+.enrich-row--done   { background: var(--success-soft); font-weight: 700; }
+.enrich-row--done   .enrich-feed-icon { color: var(--success); }
+
+/* Results table row colouring */
+tr.enrich-row--ok     td { background: rgba(14,159,110,0.04); }
+tr.enrich-row--manual td { background: rgba(217,119,6,0.05); }
+tr.enrich-row--error  td { background: rgba(224,36,36,0.05); }
+
+/* Spinning loader icon for "fetching" rows */
+@media (prefers-reduced-motion: no-preference) {
+  .enrich-row--fetch .enrich-feed-icon svg { animation: spin 1s linear infinite; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 980px) {
+  .enrich-layout { grid-template-columns: 1fr; }
+}
+
 /* ─── RTL logo alignment ────────────────────────────────────────── */
 [dir="rtl"] .brand-logo {
   object-position: right center;
