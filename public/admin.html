@@ -1328,17 +1328,74 @@ function hotelThumb(h) {
   return `<div style="width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--accent-2,#5b8def),var(--accent,#7c5cff));color:#fff;font-weight:700;font-size:14px">${escapeHtml(initials)}</div>`;
 }
 
+// Upscale Booking/bstatic thumbnails (square60, max300, square600…) to large res.
+function hiRes(u) {
+  return String(u || "").replace(/\/(?:square|max)\d+(?:x\d+)?\//i, "/max1024x768/");
+}
+
 function hotelMediaShowcase(h) {
-  const urls = [...new Set([h.imageUrl, ...(h.galleryUrls || [])].filter(Boolean))];
+  const urls = [...new Set([h.imageUrl, ...(h.galleryUrls || [])].filter(Boolean))].map(hiRes);
   if (!urls.length) {
     return `<div class="hotel-media-empty">${escapeHtml((h.name||"?").charAt(0).toUpperCase())}</div>`;
   }
-  return `<div class="hotel-media-showcase">
-    <div class="hotel-media-main-scroll">
-      ${urls.map((u, i) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener" class="hotel-media-slide"><img src="${escapeHtml(u)}" alt="${escapeHtml(h.name)} ${i + 1}" loading="${i ? "lazy" : "eager"}"></a>`).join("")}
+  const id = "hms" + Math.random().toString(36).slice(2, 7);
+  const name = escapeHtml(h.name || "");
+  return `<div class="hotel-media-showcase" id="${id}" data-imgs='${escapeHtml(JSON.stringify(urls))}'>
+    <div class="hotel-media-stage">
+      <div class="hotel-media-main-scroll" onscroll="hmsSync('${id}')">
+        ${urls.map((u, i) => `<button type="button" class="hotel-media-slide" onclick="hotelLightbox('${id}',${i})"><img src="${u}" alt="${name} ${i + 1}" loading="${i ? "lazy" : "eager"}"></button>`).join("")}
+      </div>
+      ${urls.length > 1 ? `
+        <button type="button" class="hms-nav hms-prev" onclick="hmsScroll('${id}',-1)" aria-label="Previous photo">${icon("chevron-left")}</button>
+        <button type="button" class="hms-nav hms-next" onclick="hmsScroll('${id}',1)" aria-label="Next photo">${icon("chevron-right")}</button>
+        <div class="hms-count"><span id="${id}_i">1</span> / ${urls.length}</div>` : ""}
     </div>
-    ${urls.length > 1 ? `<div class="hotel-media-thumbs">${urls.slice(0, 18).map((u, i) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener"><img src="${escapeHtml(u)}" alt="${escapeHtml(h.name)} thumbnail ${i + 1}" loading="lazy"></a>`).join("")}</div>` : ""}
+    ${urls.length > 1 ? `<div class="hotel-media-thumbs" id="${id}_t">${urls.slice(0, 24).map((u, i) => `<button type="button" class="hms-thumb${i === 0 ? " active" : ""}" onclick="hmsGo('${id}',${i})"><img src="${u}" alt="" loading="lazy"></button>`).join("")}</div>` : ""}
   </div>`;
+}
+
+function hmsEl(id) { return document.querySelector("#" + id + " .hotel-media-main-scroll"); }
+function hmsScroll(id, dir) { const el = hmsEl(id); if (el) el.scrollBy({ left: dir * el.clientWidth, behavior: "smooth" }); }
+function hmsGo(id, i) {
+  const el = hmsEl(id); if (!el) return;
+  const slide = el.children[i];
+  if (slide) el.scrollTo({ left: slide.offsetLeft - el.offsetLeft, behavior: "smooth" });
+}
+function hmsSync(id) {
+  const el = hmsEl(id); if (!el) return;
+  const i = Math.round(el.scrollLeft / Math.max(1, el.clientWidth));
+  const idx = document.getElementById(id + "_i"); if (idx) idx.textContent = i + 1;
+  document.querySelectorAll("#" + id + "_t .hms-thumb").forEach((t, k) => t.classList.toggle("active", k === i));
+}
+
+// In-portal full-screen lightbox — keeps users on our site (never opens Booking).
+function hotelLightbox(id, start) {
+  let imgs = [];
+  try { imgs = JSON.parse(document.getElementById(id).getAttribute("data-imgs")); } catch (e) {}
+  if (!imgs.length) return;
+  let i = start || 0;
+  const host = document.createElement("div");
+  host.className = "lightbox-overlay";
+  host.innerHTML = `
+    <button class="lightbox-close" aria-label="Close">${icon("x")}</button>
+    <button class="lightbox-nav lb-prev" aria-label="Previous">${icon("chevron-left")}</button>
+    <img class="lightbox-img" src="${imgs[i]}" alt="">
+    <button class="lightbox-nav lb-next" aria-label="Next">${icon("chevron-right")}</button>
+    <div class="lightbox-count"></div>`;
+  const imgEl = host.querySelector(".lightbox-img");
+  const cnt = host.querySelector(".lightbox-count");
+  const render = () => { imgEl.src = imgs[i]; cnt.textContent = (i + 1) + " / " + imgs.length; };
+  const close = () => { host.remove(); document.removeEventListener("keydown", onKey); };
+  const prev = () => { i = (i - 1 + imgs.length) % imgs.length; render(); };
+  const next = () => { i = (i + 1) % imgs.length; render(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); else if (e.key === "ArrowRight") next(); else if (e.key === "ArrowLeft") prev(); };
+  host.addEventListener("click", (e) => { if (e.target === host || e.target.closest(".lightbox-close")) close(); });
+  host.querySelector(".lb-prev").addEventListener("click", (e) => { e.stopPropagation(); prev(); });
+  host.querySelector(".lb-next").addEventListener("click", (e) => { e.stopPropagation(); next(); });
+  document.body.appendChild(host);
+  document.addEventListener("keydown", onKey);
+  render();
+  if (window.lucide) lucide.createIcons();
 }
 
 function amenityChip(name) {
@@ -1567,7 +1624,6 @@ async function showHotelDetails(id) {
     </div>
     ${h.description ? `<p style="white-space:pre-wrap;color:var(--text-secondary);line-height:1.5">${escapeHtml(h.description)}</p>` : ""}
     ${h.amenities?.length ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>` : ""}
-    ${(h.galleryUrls && h.galleryUrls.length) ? `<div style="margin-top:16px"><div class="form-section-title">${t("hotel.gallery","Gallery")}</div><div class="hotel-gallery">${h.galleryUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener"><img src="${escapeHtml(u)}" alt="" loading="lazy"></a>`).join("")}</div></div>` : ""}
     <div class="info-grid" style="margin-top:16px">
       <div class="info-item"><div class="info-label">${t("th.amount","Price/Night")}</div><div class="info-value">${Number(h.pricePerNight||0) > 0 ? formatMoney(h.pricePerNight, h.currency) : t("hotel.priceOnRequest","On request")}</div></div>
       <div class="info-item"><div class="info-label">${t("form.commissionPercent","Commission %")}</div><div class="info-value">${Number(h.commissionPercent||0).toFixed(2)}%</div></div>
