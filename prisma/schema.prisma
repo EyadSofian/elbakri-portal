@@ -535,6 +535,7 @@ model QuoteRequest {
   customerNotes    String?
   internalNotes    String?
   contactPreference String?
+  customFields     Json?              // dynamic fields captured by the Request Form Builder template
   assignedToId     String?
   assignedTo       User?              @relation("QuoteRequestAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
   respondedAt      DateTime?
@@ -731,6 +732,7 @@ model TransportBooking {
   currency        String        @default("USD")
   status          BookingStatus @default(PENDING)
   notes           String?
+  customFields    Json?         // dynamic fields captured by the Request Form Builder template
   invoice         Invoice?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -862,6 +864,7 @@ model VisaApplication {
   paxCount           Int            @default(1)
   passportUrl        String?
   flightTicketUrl    String?
+  customFields       Json?          // dynamic fields captured by the Request Form Builder template
   submittedAt        DateTime?
   approvedAt         DateTime?
   rejectedAt         DateTime?
@@ -919,6 +922,7 @@ model AirportReception {
   currency        String        @default("USD")
   status          BookingStatus @default(PENDING)
   notes           String?
+  customFields    Json?         // dynamic fields captured by the Request Form Builder template
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -1004,6 +1008,7 @@ model SimRequest {
   quantity    Int           @default(1)
   arrivalDate DateTime?
   notes       String?
+  customFields Json?        // dynamic fields captured by the Request Form Builder template
   status      BookingStatus @default(PENDING)
   totalAmount Decimal       @db.Decimal(12, 2)
   currency    String        @default("USD")

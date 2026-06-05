@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
+import { sanitizeCustomFields } from '../../shared/helpers';
 
 // ─── Packages (admin managed) ────────────────────────────────────────────────
 
@@ -141,7 +142,7 @@ export async function createRequest(req: Request, res: Response) {
     const user = req.user!;
     if (!user.companyId) return res.status(400).json({ success: false, message: 'No company associated' });
 
-    const { packageId, clientName, phone, quantity, arrivalDate, notes } = req.body;
+    const { packageId, clientName, phone, quantity, arrivalDate, notes, customFields } = req.body;
     if (!clientName || !phone) {
       return res.status(400).json({ success: false, message: 'clientName and phone are required' });
     }
@@ -165,6 +166,7 @@ export async function createRequest(req: Request, res: Response) {
         quantity: qty,
         arrivalDate: arrivalDate ? new Date(arrivalDate) : null,
         notes: notes || null,
+        customFields: sanitizeCustomFields(customFields) ?? undefined,
         totalAmount,
         currency,
         status: 'PENDING',

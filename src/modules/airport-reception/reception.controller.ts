@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { BookingStatus, ReceptionType } from '@prisma/client';
 import { prisma } from '../../config/db';
-import { generateRef, paginate, paginateMeta } from '../../shared/helpers';
+import { generateRef, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
 
 const receptionInclude = {
@@ -45,6 +45,7 @@ export async function createReception(req: Request, res: Response): Promise<void
     hotelName?: string; specialRequests?: string;
     totalAmount: number; currency?: string; notes?: string;
     phone?: string; ticketUrl?: string; travelDetails?: string;
+    customFields?: unknown;
   };
 
   const companyId = caller.role === 'SUPERADMIN' ? (body.companyId ?? caller.companyId!) : caller.companyId!;
@@ -92,6 +93,7 @@ export async function createReception(req: Request, res: Response): Promise<void
           phone: body.phone,
           ticketUrl: body.ticketUrl,
           travelDetails: body.travelDetails,
+          customFields: sanitizeCustomFields(body.customFields) ?? undefined,
         },
         include: receptionInclude,
       });

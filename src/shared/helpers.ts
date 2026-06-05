@@ -51,3 +51,50 @@ export function paginateMeta(total: number, page: number, limit: number) {
     pages: Math.ceil(total / limit),
   };
 }
+
+type CustomFieldValue = string | number | boolean | string[];
+
+/**
+ * Sanitize the `customFields` map submitted alongside a dynamic Request Form
+ * Builder template. Only a flat object of primitive values (or arrays of
+ * primitives) survives — nested objects, functions and oversized payloads are
+ * rejected. Returns `undefined` when there is nothing safe to store so the
+ * caller can simply omit the column.
+ */
+export function sanitizeCustomFields(input: unknown): Record<string, CustomFieldValue> | undefined {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return undefined;
+
+  const MAX_KEYS = 40;
+  const MAX_STR = 2000;
+  const MAX_ARR = 30;
+  const out: Record<string, CustomFieldValue> = {};
+
+  const coercePrimitive = (v: unknown): string | number | boolean | undefined => {
+    if (typeof v === 'string') return v.slice(0, MAX_STR);
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (typeof v === 'boolean') return v;
+    return undefined;
+  };
+
+  let count = 0;
+  for (const [rawKey, rawVal] of Object.entries(input as Record<string, unknown>)) {
+    if (count >= MAX_KEYS) break;
+    const key = String(rawKey).slice(0, 64);
+    if (!/^[a-zA-Z0-9_]+$/.test(key)) continue;
+    if (rawVal == null || rawVal === '') continue;
+
+    if (Array.isArray(rawVal)) {
+      const arr = rawVal
+        .slice(0, MAX_ARR)
+        .map(item => coercePrimitive(item))
+        .filter((item): item is string | number | boolean => item !== undefined)
+        .map(String);
+      if (arr.length) { out[key] = arr; count++; }
+      continue;
+    }
+    const val = coercePrimitive(rawVal);
+    if (val !== undefined) { out[key] = val; count++; }
+  }
+
+  return count ? out : undefined;
+}

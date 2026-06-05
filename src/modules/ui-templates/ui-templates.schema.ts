@@ -5,11 +5,13 @@ import { z } from 'zod';
 export const ALLOWED_TARGETS = [
   'company_dashboard',
   'hotel_request',
+  'cruise_request',
   'activity_request',
   'transport_booking',
   'security_approval',
   'airport_assist',
-  'sim_card',
+  'sim_card',          // legacy alias — kept for back-compat
+  'sim_card_request',
   'offer_popup',
 ] as const;
 
@@ -48,7 +50,9 @@ export const ALLOWED_FIELD_TYPES = [
   'text', 'textarea', 'number', 'date', 'time', 'datetime',
   'select', 'searchable-select', 'checkbox', 'toggle',
   'file-upload', 'image-upload', 'repeater', 'hidden',
-  'readonly-price', 'nationality-select', 'pax-counter', 'room-counter', 'meal-plan-select',
+  'readonly-price', 'readonly-service', 'nationality-select',
+  'pax-counter', 'room-counter', 'meal-plan-select',
+  'child-count', 'child-age-repeater',
 ] as const;
 
 // ─── Field schema ─────────────────────────────────────────────────────────────
@@ -60,7 +64,12 @@ const baseField = z.object({
   labelAr: z.string().max(120).optional(),
   icon: z.enum(ALLOWED_ICONS).optional(),
   required: z.boolean().optional(),
+  visible: z.boolean().optional(),
+  width: z.enum(['half', 'full']).optional(),
   placeholder: z.string().max(160).optional(),
+  placeholderAr: z.string().max(160).optional(),
+  helpText: z.string().max(240).optional(),
+  helpTextAr: z.string().max(240).optional(),
   min: z.number().optional(),
   max: z.number().optional(),
   step: z.number().optional(),
@@ -117,7 +126,15 @@ export const templateConfigSchema = z.object({
   }).optional(),
   // offer_popup specific
   display: z.enum(['modal', 'banner', 'card']).optional(),
-  blocks: z.array(blockSchema).max(40),
+  // Request-form templates carry a top-level title + flat fields[];
+  // dashboard/offer templates carry blocks[]. Both are optional so a config
+  // validates as either shape.
+  title: z.string().max(160).optional(),
+  titleAr: z.string().max(160).optional(),
+  fields: z.array(baseField).max(80).optional(),
+  blocks: z.array(blockSchema).max(40).optional(),
+}).refine(c => (c.fields && c.fields.length >= 0) || (c.blocks && c.blocks.length >= 0), {
+  message: 'config must contain either fields[] (form) or blocks[] (dashboard)',
 });
 
 export const createTemplateSchema = z.object({

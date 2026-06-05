@@ -1022,6 +1022,54 @@
     livePreview: "معاينة حية", saveActivate: "حفظ وتفعيل", noTemplates: "لا توجد قوالب بعد",
   };
 
+  // ── Request Form Builder ────────────────────────────────────────────────────
+  en.nav.requestForms = "Request Forms";
+  ar.nav.requestForms = "نماذج الطلبات";
+  en.page.requestFormsTitle = "Request Form Builder";
+  ar.page.requestFormsTitle = "منشئ نماذج الطلبات";
+  en.page.requestFormsSub = "Control the fields of every customer request form — no code";
+  ar.page.requestFormsSub = "تحكّم في حقول كل نموذج طلب للعميل — بدون كود";
+  en.rfBuilder = {
+    targetForm: "Target Form", loadDefault: "Load Default Fields", fields: "Fields",
+    addField: "Add Field", titleEn: "Form Title (EN)", titleAr: "Form Title (AR)",
+    customerPreview: "Customer Preview", saveDraft: "Save Draft", activate: "Activate",
+    deleteTemplate: "Delete Template", unsaved: "Unsaved defaults", noFields: "No fields yet — click Add Field",
+    key: "Key", type: "Type", labelEn: "Label (EN)", labelAr: "Label (AR)",
+    phEn: "Placeholder (EN)", phAr: "Placeholder (AR)", icon: "Icon", width: "Width",
+    min: "Min", max: "Max", options: "Options — value | label | labelAr per line",
+    required: "Required", visible: "Visible", show: "Show", hide: "Hide", up: "Up", down: "Down", delete: "Delete",
+    confirmDefault: "Replace the fields below with the built-in defaults?",
+    confirmDelete: "Delete this form template? The form reverts to its built-in default.",
+    activated: "Form activated", errKey: "Every field needs a key",
+    errKeyChars: "Keys allow letters, numbers and underscore only", errDup: "Field keys must be unique",
+    noVisible: "No visible fields", childAgesNote: "Child age inputs appear based on children count",
+    selectedService: "Selected service",
+  };
+  ar.rfBuilder = {
+    targetForm: "النموذج المستهدف", loadDefault: "تحميل الحقول الافتراضية", fields: "الحقول",
+    addField: "إضافة حقل", titleEn: "عنوان النموذج (EN)", titleAr: "عنوان النموذج (AR)",
+    customerPreview: "معاينة العميل", saveDraft: "حفظ مسودة", activate: "تفعيل",
+    deleteTemplate: "حذف القالب", unsaved: "إعدادات افتراضية غير محفوظة", noFields: "لا حقول بعد — اضغط إضافة حقل",
+    key: "المفتاح", type: "النوع", labelEn: "التسمية (EN)", labelAr: "التسمية (AR)",
+    phEn: "النص التوضيحي (EN)", phAr: "النص التوضيحي (AR)", icon: "الأيقونة", width: "العرض",
+    min: "الأدنى", max: "الأقصى", options: "الخيارات — value | label | labelAr لكل سطر",
+    required: "إلزامي", visible: "ظاهر", show: "إظهار", hide: "إخفاء", up: "أعلى", down: "أسفل", delete: "حذف",
+    confirmDefault: "استبدال الحقول أدناه بالحقول الافتراضية؟",
+    confirmDelete: "حذف قالب النموذج؟ سيعود النموذج إلى الافتراضي.",
+    activated: "تم تفعيل النموذج", errKey: "كل حقل يحتاج مفتاحاً",
+    errKeyChars: "المفاتيح تسمح بالأحرف والأرقام والشرطة السفلية فقط", errDup: "يجب أن تكون مفاتيح الحقول فريدة",
+    noVisible: "لا حقول ظاهرة", childAgesNote: "تظهر حقول أعمار الأطفال حسب عدد الأطفال",
+    selectedService: "الخدمة المختارة",
+  };
+  en.quoteDetail = Object.assign({}, en.quoteDetail, { customFields: "Additional Fields" });
+  ar.quoteDetail = Object.assign({}, ar.quoteDetail, { customFields: "حقول إضافية" });
+  en.validation.fieldRequired = "Please complete";
+  ar.validation.fieldRequired = "يرجى إكمال";
+  en.form.select = "Select";
+  ar.form.select = "اختر";
+  en.form.orPasteUrl = "or paste URL";
+  ar.form.orPasteUrl = "أو الصق الرابط";
+
   // ── Dashboard offers card ───────────────────────────────────────────────────
   en.offers.dashboardCard = "Active Offers";
   ar.offers.dashboardCard = "العروض النشطة";

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { BookingStatus, TransportType } from '@prisma/client';
 import { prisma } from '../../config/db';
-import { generateRef, generateInvoiceNumber, paginate, paginateMeta } from '../../shared/helpers';
+import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 
@@ -119,6 +119,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     destinationId?: string;
     // totalAmount / currency intentionally not accepted — resolved server-side from TransportRate
     notes?: string;
+    customFields?: unknown;
   };
 
   const companyId = caller.role === 'SUPERADMIN' ? (body.companyId ?? caller.companyId!) : caller.companyId!;
@@ -194,6 +195,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
         totalAmount,  // server-calculated from TransportRate
         currency,     // from TransportRate record
         notes: body.notes,
+        customFields: sanitizeCustomFields(body.customFields) ?? undefined,
         status: 'PENDING',
       },
       include: transportInclude,

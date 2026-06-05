@@ -741,6 +741,27 @@ html[lang="ar"] .stat-label {
   color: var(--danger);
 }
 
+/* Request Form Builder — dynamic field helpers */
+.rf-help {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.rf-price {
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--brand-navy-2);
+  padding: 8px 0;
+}
+
+.rf-ages > label {
+  display: block;
+  margin-bottom: 6px;
+}
+
 .input,
 .select,
 .textarea,
@@ -3153,6 +3174,102 @@ html[lang="ar"] .act-time-label {
 
 @media (max-width: 860px) {
   .ui-builder-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── Request Form Builder ───────────────────────────────────────── */
+.rfb-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.rfb-col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 800;
+  font-size: 13px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rfb-field {
+  border: 1px solid var(--border);
+  border-radius: var(--r-10, var(--r-8));
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--surface-raised);
+  transition: box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.rfb-field:hover { box-shadow: var(--shadow-card); }
+
+.rfb-field--hidden {
+  opacity: 0.6;
+  border-style: dashed;
+}
+
+.rfb-field-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rfb-field-head strong { font-size: 13px; }
+
+.rfb-grip {
+  display: inline-flex;
+  color: var(--text-muted);
+  cursor: grab;
+}
+.rfb-grip svg { width: 14px; height: 14px; }
+
+.rfb-field-actions {
+  margin-inline-start: auto;
+  display: flex;
+  gap: 2px;
+}
+
+.rfb-preview {
+  position: sticky;
+  top: 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-12);
+  padding: 16px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.65), rgba(248,250,252,0.45)),
+    repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.012) 10px, rgba(0,0,0,0.012) 20px);
+}
+
+.rfb-preview-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  box-shadow: var(--shadow-card);
+  padding: 16px;
+}
+
+.rfb-preview-title {
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 14px;
+  color: var(--text-primary);
+}
+
+.rfb-preview-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 980px) {
+  .rfb-grid { grid-template-columns: 1fr; }
+  .rfb-preview { position: static; }
 }
 
 /* ─── Mobile destination grid ────────────────────────────────── */

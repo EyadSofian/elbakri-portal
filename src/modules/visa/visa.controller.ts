@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { VisaStatus, VisaType } from '@prisma/client';
 import { prisma } from '../../config/db';
-import { generateRef, paginate, paginateMeta } from '../../shared/helpers';
+import { generateRef, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
 
 const visaInclude = {
@@ -53,6 +53,7 @@ export async function createVisaApplication(req: Request, res: Response): Promis
     totalAmount: number; currency?: string; notes?: string;
     phone?: string; hotelName?: string; paxCount?: number;
     passportUrl?: string; flightTicketUrl?: string;
+    customFields?: unknown;
   };
 
   const companyId = caller.role === 'SUPERADMIN' ? (body.companyId ?? caller.companyId!) : caller.companyId!;
@@ -101,6 +102,7 @@ export async function createVisaApplication(req: Request, res: Response): Promis
           paxCount: body.paxCount ?? 1,
           passportUrl: body.passportUrl,
           flightTicketUrl: body.flightTicketUrl,
+          customFields: sanitizeCustomFields(body.customFields) ?? undefined,
         },
         include: visaInclude,
       });

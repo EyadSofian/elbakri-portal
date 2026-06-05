@@ -56,6 +56,7 @@
         <div class="nav-group">
           <div class="nav-label" data-i18n="nav.tools">Tools</div>
           <button class="nav-item" data-page="ui-builder"><i data-lucide="layout-template"></i><span data-i18n="nav.uiBuilder">UI Builder</span></button>
+          <button class="nav-item" data-page="request-forms"><i data-lucide="text-cursor-input"></i><span data-i18n="nav.requestForms">Request Forms</span></button>
           <button class="nav-item" data-page="sheets-config"><i data-lucide="sheet"></i><span data-i18n="nav.sheetsConfig">Sheets Config</span></button>
           <button class="nav-item" data-page="calculators"><i data-lucide="calculator"></i><span data-i18n="nav.calculators">Calculators</span></button>
         </div>
@@ -148,6 +149,7 @@ const pageMeta = {
   "sim-card": ["page.simCardTitle", "page.simCardSub"],
   offers: ["page.offersTitle", "page.offersSub"],
   "ui-builder": ["page.uiBuilderTitle", "page.uiBuilderSub"],
+  "request-forms": ["page.requestFormsTitle", "page.requestFormsSub"],
   calculators: ["page.calculatorsTitle", "page.calculatorsSub"],
   destinations: ["nav.destinations", "page.destinationsSub"],
   "quote-requests": ["nav.quoteRequests", "page.quoteRequestsSub"],
@@ -159,6 +161,21 @@ function escapeHtml(value) {
 
 function inlineJsonArg(value) {
   return escapeHtml(JSON.stringify(String(value ?? "")));
+}
+
+/** Render a request's dynamic customFields (from a Request Form Builder template). */
+function customFieldsBlock(cf) {
+  if (!cf || typeof cf !== "object" || Array.isArray(cf) || !Object.keys(cf).length) return "";
+  const rows = Object.entries(cf).map(([k, v]) => {
+    const val = Array.isArray(v) ? v.join(", ") : String(v);
+    return `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed var(--border)">
+      <span style="min-width:150px;color:var(--text-muted);font-weight:600">${escapeHtml(k)}</span>
+      <span style="flex:1">${escapeHtml(val)}</span></div>`;
+  }).join("");
+  return `<div class="full" style="grid-column:1/-1;margin-top:8px">
+    <strong>${t("quoteDetail.customFields", "Additional Fields")}:</strong>
+    <div style="margin-top:6px">${rows}</div>
+  </div>`;
 }
 
 // ─── WhatsApp helpers (admin uses fixed business number) ─────────────────────
@@ -1820,6 +1837,7 @@ async function openQuoteRequestModal(id) {
       <div><strong>${t("form.travelFrom","Travelling From")}:</strong> ${escapeHtml(q.travelFrom||"—")}</div>
       <div><strong>${t("form.budget","Budget")}:</strong> ${q.budget ? formatMoney(q.budget, q.currency) : "—"}</div>
       <div class="full" style="grid-column:1/-1"><strong>${t("form.customerNotes","Customer Notes")}:</strong><p style="margin:4px 0;white-space:pre-wrap">${escapeHtml(q.customerNotes||"—")}</p></div>
+      ${customFieldsBlock(q.customFields)}
     </div>
     <hr style="margin:16px 0">
     <div class="form-grid">
@@ -3019,6 +3037,372 @@ async function uiDelete(id) {
   if (res?.success) { toast(t("toast.deleted","Deleted"), "success"); renderUiBuilder(); }
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// REQUEST FORM BUILDER (admin) — field-level editor for customer request forms.
+// Edits UiTemplate rows whose config carries a flat fields[] array; the customer
+// portal renders these via its safe renderer. Reuses the ui-templates endpoints.
+// ════════════════════════════════════════════════════════════════════════════
+
+const RF_TARGETS = [
+  { value: "hotel_request",     label: "Hotel Request" },
+  { value: "cruise_request",    label: "Cruise Request" },
+  { value: "activity_request",  label: "Activity Request" },
+  { value: "transport_booking", label: "Transport Booking (extra fields)" },
+  { value: "security_approval", label: "Security Approval" },
+  { value: "airport_assist",    label: "Airport Assist" },
+  { value: "sim_card_request",  label: "SIM Card Request" },
+];
+
+const RF_FIELD_TYPES = ["text","textarea","number","date","time","datetime","select","searchable-select",
+  "checkbox","toggle","file-upload","image-upload","nationality-select","pax-counter","room-counter",
+  "meal-plan-select","child-count","child-age-repeater","readonly-service","readonly-price"];
+const RF_SELECT_TYPES = ["select","searchable-select"];
+const RF_NUM_TYPES = ["number","pax-counter","room-counter"];
+
+function rfbField(o) { return Object.assign({ required: false, visible: true, width: "half" }, o); }
+
+// Built-in default field sets, derived from the current hardcoded customer forms.
+const RF_DEFAULTS = {
+  hotel_request: () => ([
+    rfbField({ key:"serviceName", type:"readonly-service", label:"Service", labelAr:"الخدمة", width:"full", order:1 }),
+    rfbField({ key:"nationality", type:"nationality-select", label:"Nationality", labelAr:"الجنسية", placeholder:"e.g. Egyptian", required:true, order:2 }),
+    rfbField({ key:"checkIn", type:"date", label:"Check-in", labelAr:"تاريخ الوصول", required:true, order:3 }),
+    rfbField({ key:"checkOut", type:"date", label:"Check-out", labelAr:"تاريخ المغادرة", required:true, order:4 }),
+    rfbField({ key:"adults", type:"pax-counter", label:"Adults", labelAr:"البالغون", defaultValue:2, required:true, order:5 }),
+    rfbField({ key:"children", type:"child-count", label:"Children", labelAr:"الأطفال", order:6 }),
+    rfbField({ key:"childAges", type:"child-age-repeater", label:"Child Ages", labelAr:"أعمار الأطفال", repeatCountFrom:"children", width:"full", order:7 }),
+    rfbField({ key:"rooms", type:"room-counter", label:"Rooms", labelAr:"الغرف", defaultValue:1, order:8 }),
+    rfbField({ key:"mealPlan", type:"meal-plan-select", label:"Meal Plan", labelAr:"خطة الوجبات", order:9 }),
+    rfbField({ key:"notes", type:"textarea", label:"Notes", labelAr:"ملاحظات", placeholder:"Room preferences, dietary needs...", width:"full", order:10 }),
+  ]),
+  cruise_request: () => ([
+    rfbField({ key:"serviceName", type:"readonly-service", label:"Service", labelAr:"الخدمة", width:"full", order:1 }),
+    rfbField({ key:"nationality", type:"nationality-select", label:"Nationality", labelAr:"الجنسية", required:true, order:2 }),
+    rfbField({ key:"checkIn", type:"date", label:"Check-in", labelAr:"تاريخ الوصول", required:true, order:3 }),
+    rfbField({ key:"checkOut", type:"date", label:"Check-out", labelAr:"تاريخ المغادرة", required:true, order:4 }),
+    rfbField({ key:"adults", type:"pax-counter", label:"Adults", labelAr:"البالغون", defaultValue:2, required:true, order:5 }),
+    rfbField({ key:"children", type:"child-count", label:"Children", labelAr:"الأطفال", order:6 }),
+    rfbField({ key:"childAges", type:"child-age-repeater", label:"Child Ages", labelAr:"أعمار الأطفال", repeatCountFrom:"children", width:"full", order:7 }),
+    rfbField({ key:"mealPlan", type:"meal-plan-select", label:"Meal Plan", labelAr:"خطة الوجبات", order:8 }),
+    rfbField({ key:"notes", type:"textarea", label:"Notes", labelAr:"ملاحظات", width:"full", order:9 }),
+  ]),
+  activity_request: () => ([
+    rfbField({ key:"serviceName", type:"readonly-service", label:"Service", labelAr:"الخدمة", width:"full", order:1 }),
+    rfbField({ key:"nationality", type:"nationality-select", label:"Nationality", labelAr:"الجنسية", required:true, order:2 }),
+    rfbField({ key:"checkIn", type:"date", label:"Date", labelAr:"التاريخ", required:true, order:3 }),
+    rfbField({ key:"adults", type:"pax-counter", label:"Adults / Pax", labelAr:"عدد الأشخاص", defaultValue:2, required:true, order:4 }),
+    rfbField({ key:"children", type:"child-count", label:"Children", labelAr:"الأطفال", order:5 }),
+    rfbField({ key:"childAges", type:"child-age-repeater", label:"Child Ages", labelAr:"أعمار الأطفال", repeatCountFrom:"children", width:"full", order:6 }),
+    rfbField({ key:"notes", type:"textarea", label:"Notes", labelAr:"ملاحظات", width:"full", order:7 }),
+  ]),
+  transport_booking: () => ([]),  // base booking fields live on the transport page; add extras here
+  security_approval: () => ([
+    rfbField({ key:"approvalType", type:"select", label:"Approval Type", labelAr:"نوع الموافقة", required:true, width:"full", order:1,
+      options:[{value:"SSH",label:"Sharm El Sheikh"},{value:"CAI",label:"Cairo"},{value:"HBE",label:"Borg El Arab"}] }),
+    rfbField({ key:"applicantName", type:"text", label:"Client Name", labelAr:"اسم العميل", required:true, order:2 }),
+    rfbField({ key:"phone", type:"text", label:"Phone", labelAr:"الهاتف", required:true, order:3 }),
+    rfbField({ key:"nationality", type:"nationality-select", label:"Nationality", labelAr:"الجنسية", required:true, order:4 }),
+    rfbField({ key:"hotelName", type:"text", label:"Hotel Name", labelAr:"اسم الفندق", order:5 }),
+    rfbField({ key:"paxCount", type:"number", label:"Passengers", labelAr:"عدد الركاب", defaultValue:1, order:6 }),
+    rfbField({ key:"passportUrl", type:"file-upload", label:"Passport", labelAr:"جواز السفر", width:"full", order:7 }),
+    rfbField({ key:"flightTicketUrl", type:"file-upload", label:"Flight Ticket", labelAr:"تذكرة الطيران", width:"full", order:8 }),
+    rfbField({ key:"notes", type:"textarea", label:"Notes", labelAr:"ملاحظات", width:"full", order:9 }),
+  ]),
+  airport_assist: () => ([
+    rfbField({ key:"guestName", type:"text", label:"Guest Name", labelAr:"اسم الضيف", required:true, order:1 }),
+    rfbField({ key:"phone", type:"text", label:"Phone", labelAr:"الهاتف", required:true, order:2 }),
+    rfbField({ key:"serviceType", type:"select", label:"Service Type", labelAr:"نوع الخدمة", required:true, order:3,
+      options:[{value:"MEET_AND_GREET",label:"Meet & Greet"},{value:"AHLAN_SERVICE",label:"Ahlan Service"},{value:"VIP_LOUNGE",label:"VIP Lounge"},{value:"FULL_ASSISTANCE",label:"Full Assistance"}] }),
+    rfbField({ key:"airport", type:"select", label:"Airport", labelAr:"المطار", required:true, order:4,
+      options:["CAI","HRG","SSH","LXR","ASW","HBE","MHH"].map(a=>({value:a,label:a})) }),
+    rfbField({ key:"flightNumber", type:"text", label:"Flight Number", labelAr:"رقم الرحلة", required:true, order:5 }),
+    rfbField({ key:"flightDateTime", type:"datetime", label:"Flight Date & Time", labelAr:"موعد الرحلة", required:true, order:6 }),
+    rfbField({ key:"guestCount", type:"number", label:"Guests", labelAr:"عدد الضيوف", defaultValue:1, order:7 }),
+    rfbField({ key:"travelDetails", type:"textarea", label:"Arrival / Departure Details", labelAr:"تفاصيل الوصول/المغادرة", width:"full", order:8 }),
+    rfbField({ key:"ticketUrl", type:"file-upload", label:"Flight Ticket", labelAr:"تذكرة الطيران", width:"full", order:9 }),
+    rfbField({ key:"notes", type:"textarea", label:"Notes", labelAr:"ملاحظات", width:"full", order:10 }),
+  ]),
+  sim_card_request: () => ([
+    rfbField({ key:"packageId", type:"select", label:"SIM Package", labelAr:"باقة الشريحة", width:"full", order:1 }),
+    rfbField({ key:"simTotal", type:"readonly-price", label:"Estimated Total", labelAr:"الإجمالي التقديري", width:"full", order:2 }),
+    rfbField({ key:"clientName", type:"text", label:"Client Name", labelAr:"اسم العميل", required:true, order:3 }),
+    rfbField({ key:"phone", type:"text", label:"Client Phone", labelAr:"هاتف العميل", required:true, order:4 }),
+    rfbField({ key:"quantity", type:"number", label:"Quantity", labelAr:"الكمية", defaultValue:1, order:5 }),
+    rfbField({ key:"arrivalDate", type:"date", label:"Arrival Date", labelAr:"تاريخ الوصول", order:6 }),
+    rfbField({ key:"notes", type:"textarea", label:"Notes", labelAr:"ملاحظات", width:"full", order:7 }),
+  ]),
+};
+
+let rfbDraft = null;        // editable template
+let rfbTemplateId = null;   // id when editing an existing template
+let rfbTarget = "hotel_request";
+
+async function renderRequestFormBuilder() {
+  state.page = "request-forms";
+  const captured = state.renderToken;
+  content(pageHeader() + `
+    <section class="panel" style="margin-bottom:16px">
+      <div class="panel-body" style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-field" style="min-width:260px;margin:0">
+          <label>${t("rfBuilder.targetForm","Target Form")}</label>
+          <select id="rfbTarget" onchange="rfbLoadTarget(this.value)">
+            ${RF_TARGETS.map(x => `<option value="${x.value}" ${x.value===rfbTarget?"selected":""}>${x.label}</option>`).join("")}
+          </select>
+        </div>
+        <div id="rfbStatusChip"></div>
+        <div style="flex:1"></div>
+        <button class="btn btn-outline" onclick="rfbResetDefault()">${icon("rotate-ccw")}&nbsp;${t("rfBuilder.loadDefault","Load Default Fields")}</button>
+      </div>
+    </section>
+    <div id="rfbEditorArea"><div class="skeleton" style="height:300px"></div></div>`);
+  await rfbLoadTarget(rfbTarget, captured);
+}
+
+async function rfbLoadTarget(target, captured) {
+  rfbTarget = target;
+  const res = await apiFetch(`/admin/ui-templates?target=${encodeURIComponent(target)}`);
+  if (captured != null && state.renderToken !== captured) return;
+  const templates = (res && res.data) || [];
+  // Only consider form-shaped templates (config.fields[]); ignore legacy block templates.
+  const existing = templates.find(x => x.config && Array.isArray(x.config.fields) && x.isActive)
+                || templates.find(x => x.config && Array.isArray(x.config.fields))
+                || null;
+  if (existing) {
+    rfbTemplateId = existing.id;
+    rfbDraft = JSON.parse(JSON.stringify(existing));
+    rfbDraft.config = rfbDraft.config || {};
+    if (!Array.isArray(rfbDraft.config.fields)) rfbDraft.config.fields = [];
+  } else {
+    const meta = RF_TARGETS.find(x => x.value === target) || { label: target };
+    rfbTemplateId = null;
+    rfbDraft = {
+      id: null,
+      key: target.replace(/_/g, "-") + "-form",
+      name: meta.label + " Form",
+      target,
+      langMode: "both",
+      isActive: false,
+      config: { title: meta.label, titleAr: "", fields: RF_DEFAULTS[target] ? RF_DEFAULTS[target]() : [] },
+    };
+  }
+  rfbRenderEditor();
+}
+
+function rfbResetDefault() {
+  if (!confirm(t("rfBuilder.confirmDefault", "Replace the fields below with the built-in defaults?"))) return;
+  rfbDraft.config.fields = RF_DEFAULTS[rfbTarget] ? RF_DEFAULTS[rfbTarget]() : [];
+  rfbRenderEditor();
+}
+
+function rfbRenderEditor() {
+  const area = document.getElementById("rfbEditorArea");
+  if (!area) return;
+  const chip = document.getElementById("rfbStatusChip");
+  if (chip) chip.innerHTML = rfbTemplateId
+    ? statusBadge(rfbDraft.isActive ? "ACTIVE" : "INACTIVE")
+    : `<span class="badge badge-outline">${t("rfBuilder.unsaved", "Unsaved defaults")}</span>`;
+
+  area.innerHTML = `
+    <div class="rfb-grid">
+      <div class="rfb-col">
+        <div class="rfb-col-head">
+          <strong>${t("rfBuilder.fields", "Fields")}</strong>
+          <button class="btn btn-primary btn-sm" onclick="rfbAddField()">${icon("plus")}&nbsp;${t("rfBuilder.addField", "Add Field")}</button>
+        </div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+          <div class="form-field"><label>${t("rfBuilder.titleEn", "Form Title (EN)")}</label><input value="${escapeHtml(rfbDraft.config.title || "")}" oninput="rfbDraft.config.title=this.value;rfbRenderPreview()"></div>
+          <div class="form-field"><label>${t("rfBuilder.titleAr", "Form Title (AR)")}</label><input dir="rtl" value="${escapeHtml(rfbDraft.config.titleAr || "")}" oninput="rfbDraft.config.titleAr=this.value;rfbRenderPreview()"></div>
+        </div>
+        <div id="rfbFieldList"></div>
+      </div>
+      <div class="rfb-col">
+        <div class="rfb-col-head"><strong>${t("rfBuilder.customerPreview", "Customer Preview")}</strong></div>
+        <div id="rfbPreview" class="rfb-preview"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap">
+      ${rfbTemplateId ? `<button class="btn btn-danger" onclick="rfbDelete()">${icon("trash-2")}&nbsp;${t("rfBuilder.deleteTemplate", "Delete Template")}</button>` : ""}
+      <button class="btn btn-outline" onclick="rfbSave(false)">${icon("save")}&nbsp;${t("rfBuilder.saveDraft", "Save Draft")}</button>
+      <button class="btn btn-primary" onclick="rfbSave(true)">${icon("check")}&nbsp;${t("rfBuilder.activate", "Activate")}</button>
+    </div>`;
+  rfbRenderFieldList();
+  rfbRenderPreview();
+  refreshIcons(area);
+}
+
+function rfbRenderFieldList() {
+  const el = document.getElementById("rfbFieldList");
+  if (!el) return;
+  const fields = rfbDraft.config.fields;
+  el.innerHTML = fields.length
+    ? fields.map((f, i) => rfbFieldCard(f, i)).join("")
+    : `<div class="empty-state" style="padding:20px">${t("rfBuilder.noFields", "No fields yet — click Add Field")}</div>`;
+  refreshIcons(el);
+}
+
+function rfbFieldCard(f, i) {
+  const isSelect = RF_SELECT_TYPES.includes(f.type) || f.type === "meal-plan-select";
+  const isNum = RF_NUM_TYPES.includes(f.type);
+  const last = i === rfbDraft.config.fields.length - 1;
+  return `
+  <div class="rfb-field${f.visible === false ? " rfb-field--hidden" : ""}">
+    <div class="rfb-field-head">
+      <span class="rfb-grip">${icon("grip-vertical")}</span>
+      <strong>${escapeHtml(f.label || f.key)}</strong>
+      <span class="badge badge-outline">${escapeHtml(f.type)}</span>
+      <div class="rfb-field-actions">
+        <button class="icon-button btn-icon" onclick="rfbMove(${i},-1)" ${i === 0 ? "disabled" : ""}>${icon("chevron-up")}</button>
+        <button class="icon-button btn-icon" onclick="rfbMove(${i},1)" ${last ? "disabled" : ""}>${icon("chevron-down")}</button>
+        <button class="icon-button btn-icon" title="${f.visible === false ? t("rfBuilder.show", "Show") : t("rfBuilder.hide", "Hide")}" onclick="rfbSet(${i},'visible',${f.visible === false})">${icon(f.visible === false ? "eye-off" : "eye")}</button>
+        <button class="icon-button btn-icon" onclick="rfbRemove(${i})">${icon("trash-2")}</button>
+      </div>
+    </div>
+    <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+      <div class="form-field"><label>${t("rfBuilder.key", "Key")}</label><input value="${escapeHtml(f.key || "")}" oninput="rfbSet(${i},'key',this.value)"></div>
+      <div class="form-field"><label>${t("rfBuilder.type", "Type")}</label><select onchange="rfbSet(${i},'type',this.value)">${RF_FIELD_TYPES.map(tp => `<option value="${tp}" ${f.type === tp ? "selected" : ""}>${tp}</option>`).join("")}</select></div>
+      <div class="form-field"><label>${t("rfBuilder.labelEn", "Label (EN)")}</label><input value="${escapeHtml(f.label || "")}" oninput="rfbSet(${i},'label',this.value)"></div>
+      <div class="form-field"><label>${t("rfBuilder.labelAr", "Label (AR)")}</label><input dir="rtl" value="${escapeHtml(f.labelAr || "")}" oninput="rfbSet(${i},'labelAr',this.value)"></div>
+      <div class="form-field"><label>${t("rfBuilder.phEn", "Placeholder (EN)")}</label><input value="${escapeHtml(f.placeholder || "")}" oninput="rfbSet(${i},'placeholder',this.value)"></div>
+      <div class="form-field"><label>${t("rfBuilder.phAr", "Placeholder (AR)")}</label><input dir="rtl" value="${escapeHtml(f.placeholderAr || "")}" oninput="rfbSet(${i},'placeholderAr',this.value)"></div>
+      <div class="form-field"><label>${t("rfBuilder.icon", "Icon")}</label><select onchange="rfbSet(${i},'icon',this.value)"><option value="">—</option>${UI_ICONS.map(ic => `<option value="${ic}" ${f.icon === ic ? "selected" : ""}>${ic}</option>`).join("")}</select></div>
+      <div class="form-field"><label>${t("rfBuilder.width", "Width")}</label><select onchange="rfbSet(${i},'width',this.value)"><option value="half" ${f.width !== "full" ? "selected" : ""}>Half</option><option value="full" ${f.width === "full" ? "selected" : ""}>Full</option></select></div>
+      ${isNum ? `<div class="form-field"><label>${t("rfBuilder.min", "Min")}</label><input type="number" value="${f.min ?? ""}" oninput="rfbSetNum(${i},'min',this.value)"></div>
+      <div class="form-field"><label>${t("rfBuilder.max", "Max")}</label><input type="number" value="${f.max ?? ""}" oninput="rfbSetNum(${i},'max',this.value)"></div>` : ""}
+      ${isSelect ? `<div class="form-field full"><label>${t("rfBuilder.options", "Options — value | label | labelAr per line")}</label><textarea rows="3" oninput="rfbSetOptions(${i},this.value)" placeholder="value | Label | تسمية">${escapeHtml((f.options || []).map(o => [o.value, o.label, o.labelAr].filter(v => v != null && v !== "").join(" | ")).join("\n"))}</textarea></div>` : ""}
+      <div class="form-field"><label class="check-row" style="margin-top:18px"><input type="checkbox" ${f.required ? "checked" : ""} onchange="rfbSet(${i},'required',this.checked)"> ${t("rfBuilder.required", "Required")}</label></div>
+      <div class="form-field"><label class="check-row" style="margin-top:18px"><input type="checkbox" ${f.visible !== false ? "checked" : ""} onchange="rfbSet(${i},'visible',this.checked)"> ${t("rfBuilder.visible", "Visible")}</label></div>
+    </div>
+  </div>`;
+}
+
+function rfbSet(i, key, val) {
+  rfbDraft.config.fields[i][key] = val;
+  if (key === "type" || key === "label" || key === "visible") rfbRenderFieldList();
+  rfbRenderPreview();
+}
+function rfbSetNum(i, key, val) {
+  const n = parseFloat(val);
+  rfbDraft.config.fields[i][key] = (val === "" || isNaN(n)) ? undefined : n;
+  rfbRenderPreview();
+}
+function rfbSetOptions(i, text) {
+  rfbDraft.config.fields[i].options = text.split("\n").map(l => l.trim()).filter(Boolean).map(line => {
+    const [value, label, labelAr] = line.split("|").map(s => (s || "").trim());
+    const o = { value: value || "", label: label || value || "" };
+    if (labelAr) o.labelAr = labelAr;
+    return o;
+  });
+  rfbRenderPreview();
+}
+function rfbAddField() {
+  rfbDraft.config.fields.push(rfbField({ key: "field_" + Math.random().toString(36).slice(2, 6), type: "text", label: "New Field", order: rfbDraft.config.fields.length + 1 }));
+  rfbRenderFieldList();
+  rfbRenderPreview();
+}
+function rfbMove(i, dir) {
+  const a = rfbDraft.config.fields, j = i + dir;
+  if (j < 0 || j >= a.length) return;
+  [a[i], a[j]] = [a[j], a[i]];
+  a.forEach((f, idx) => f.order = idx + 1);
+  rfbRenderFieldList();
+  rfbRenderPreview();
+}
+function rfbRemove(i) {
+  rfbDraft.config.fields.splice(i, 1);
+  rfbDraft.config.fields.forEach((f, idx) => f.order = idx + 1);
+  rfbRenderFieldList();
+  rfbRenderPreview();
+}
+
+function rfbRenderPreview() {
+  const el = document.getElementById("rfbPreview");
+  if (!el) return;
+  const isAr = (localStorage.getItem("lang") || "en") === "ar";
+  const title = (isAr && rfbDraft.config.titleAr) ? rfbDraft.config.titleAr : (rfbDraft.config.title || rfbDraft.name || "Request Form");
+  const fields = (rfbDraft.config.fields || []).filter(f => f.visible !== false).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  el.innerHTML = `
+    <div class="rfb-preview-modal">
+      <div class="rfb-preview-title">${escapeHtml(title)}</div>
+      <div class="form-grid">
+        ${fields.map(f => rfbPreviewCell(f, isAr)).join("") || `<div class="secondary-text">${t("rfBuilder.noVisible", "No visible fields")}</div>`}
+      </div>
+      <div class="rfb-preview-actions">
+        <button class="btn btn-outline btn-sm" disabled>${t("btn.cancel", "Cancel")}</button>
+        <button class="btn btn-primary btn-sm" disabled>${icon("send")}&nbsp;${t("btn.sendRequest", "Send Request")}</button>
+      </div>
+    </div>`;
+  refreshIcons(el);
+}
+
+function rfbPreviewCell(f, isAr) {
+  const fullTypes = ["textarea", "child-age-repeater", "readonly-service", "readonly-price", "file-upload", "image-upload"];
+  const full = f.width === "full" || (!f.width && fullTypes.includes(f.type));
+  const labelTxt = (isAr && f.labelAr) ? f.labelAr : (f.label || f.key);
+  const lbl = escapeHtml(labelTxt) + (f.required ? ` <span class="required">*</span>` : "");
+  const ph = escapeHtml((isAr && f.placeholderAr) ? f.placeholderAr : (f.placeholder || ""));
+  let ctrl;
+  switch (f.type) {
+    case "textarea": ctrl = `<textarea rows="2" placeholder="${ph}" disabled></textarea>`; break;
+    case "readonly-service": ctrl = `<input value="${escapeHtml(t("rfBuilder.selectedService", "Selected service"))}" disabled style="opacity:.7">`; break;
+    case "readonly-price": ctrl = `<div class="rf-price">—</div>`; break;
+    case "select": case "searchable-select": case "meal-plan-select": {
+      const opts = f.type === "meal-plan-select" ? ["Room Only", "Breakfast", "Half Board", "Full Board"] : (f.options || []).map(o => (isAr && o.labelAr) ? o.labelAr : (o.label || o.value));
+      ctrl = `<select disabled><option>${ph || t("form.select", "Select")}</option>${opts.map(o => `<option>${escapeHtml(o)}</option>`).join("")}</select>`; break;
+    }
+    case "nationality-select": ctrl = `<input placeholder="${ph || "e.g. Egyptian"}" disabled>`; break;
+    case "child-count": case "number": case "pax-counter": case "room-counter": ctrl = `<input type="number" placeholder="${ph}" disabled>`; break;
+    case "child-age-repeater": ctrl = `<div class="secondary-text" style="font-size:11px">${t("rfBuilder.childAgesNote", "Child age inputs appear based on children count")}</div>`; break;
+    case "date": ctrl = `<input type="date" disabled>`; break;
+    case "time": ctrl = `<input type="time" disabled>`; break;
+    case "datetime": ctrl = `<input type="datetime-local" disabled>`; break;
+    case "checkbox": case "toggle": return `<div class="form-field${full ? " full" : ""}"><label class="check-row"><input type="checkbox" disabled> ${escapeHtml(labelTxt)}</label></div>`;
+    case "file-upload": case "image-upload": ctrl = `<input type="file" disabled>`; break;
+    default: ctrl = `<input type="text" placeholder="${ph}" disabled>`;
+  }
+  return `<div class="form-field${full ? " full" : ""}"><label>${lbl}</label>${ctrl}</div>`;
+}
+
+async function rfbSave(activate) {
+  const fields = rfbDraft.config.fields || [];
+  const keys = fields.map(f => (f.key || "").trim());
+  if (keys.some(k => !k)) { toast(t("rfBuilder.errKey", "Every field needs a key"), "error"); return; }
+  if (keys.some(k => !/^[a-zA-Z0-9_]+$/.test(k))) { toast(t("rfBuilder.errKeyChars", "Keys allow letters, numbers and underscore only"), "error"); return; }
+  if (new Set(keys).size !== keys.length) { toast(t("rfBuilder.errDup", "Field keys must be unique"), "error"); return; }
+  fields.forEach((f, idx) => f.order = idx + 1);
+
+  const payload = {
+    key: rfbDraft.key, name: rfbDraft.name, target: rfbDraft.target,
+    langMode: rfbDraft.langMode || "both", isActive: activate,
+    config: { title: rfbDraft.config.title || "", titleAr: rfbDraft.config.titleAr || "", fields },
+  };
+
+  let res;
+  if (rfbTemplateId) {
+    res = await apiFetch(`/admin/ui-templates/${rfbTemplateId}`, { method: "PATCH", body: JSON.stringify(payload) });
+  } else {
+    res = await apiFetch(`/admin/ui-templates`, { method: "POST", body: JSON.stringify(payload) });
+    if (!res?.success && /key already exists/i.test(res?.message || "")) {
+      payload.key = rfbDraft.key + "-" + Date.now().toString(36);
+      res = await apiFetch(`/admin/ui-templates`, { method: "POST", body: JSON.stringify(payload) });
+    }
+  }
+  if (res?.success) {
+    rfbTemplateId = res.data.id;
+    if (activate) await apiFetch(`/admin/ui-templates/${res.data.id}/activate`, { method: "POST" });
+    toast(activate ? t("rfBuilder.activated", "Form activated") : t("toast.saved", "Saved"), "success");
+    rfbLoadTarget(rfbTarget);
+  } else if (res?.message) {
+    toast(res.message, "error");
+  }
+}
+
+async function rfbDelete() {
+  if (!rfbTemplateId) return;
+  if (!confirm(t("rfBuilder.confirmDelete", "Delete this form template? The form reverts to its built-in default."))) return;
+  const res = await apiFetch(`/admin/ui-templates/${rfbTemplateId}`, { method: "DELETE" });
+  if (res?.success) { toast(t("toast.deleted", "Deleted"), "success"); rfbTemplateId = null; rfbLoadTarget(rfbTarget); }
+}
+
 const pageLoaders = {
   dashboard: renderDashboard,
   companies: renderCompanies,
@@ -3039,6 +3423,7 @@ const pageLoaders = {
   "sim-card": renderSimCardAdmin,
   offers: renderOffers,
   "ui-builder": renderUiBuilder,
+  "request-forms": renderRequestFormBuilder,
   calculators: renderCalculators,
 };
 

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { QuoteRequestStatus, QuoteServiceType } from '@prisma/client';
 import { prisma } from '../../config/db';
-import { paginate, paginateMeta } from '../../shared/helpers';
+import { paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
 
 const quoteInclude = {
@@ -108,6 +108,7 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     currency?: string;
     customerNotes?: string;
     contactPreference?: string;
+    customFields?: unknown;
   };
 
   const companyId =
@@ -157,6 +158,7 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       currency: body.currency ?? 'USD',
       customerNotes: body.customerNotes ?? null,
       contactPreference: body.contactPreference ?? null,
+      customFields: sanitizeCustomFields(body.customFields) ?? undefined,
     },
     include: quoteInclude,
   });

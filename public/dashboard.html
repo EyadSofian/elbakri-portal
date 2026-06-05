@@ -965,8 +965,390 @@ function childAgesValid(count, prefix) {
   return true;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// REQUEST FORM BUILDER — generic, template-driven form renderer
+// Renders a request form from an admin-configured UiTemplate (config.fields[]),
+// then collects + validates values and routes the submission through a
+// per-target adapter. Falls back to each form's hardcoded body when no active
+// template exists (zero regression). Field input ids are `rf_<key>`.
+// ════════════════════════════════════════════════════════════════════════════
+
+let rfState = { template: null, ctx: null, target: null };
+
+function rfIsAr()      { return (localStorage.getItem("lang") || document.documentElement.lang || "en") === "ar"; }
+function rfLabel(f)    { return (rfIsAr() && f.labelAr)       ? f.labelAr       : (f.label || f.key); }
+function rfPlace(f)    { return (rfIsAr() && f.placeholderAr) ? f.placeholderAr : (f.placeholder || ""); }
+function rfHelp(f)     { return (rfIsAr() && f.helpTextAr)    ? f.helpTextAr    : (f.helpText || ""); }
+function rfOptLabel(o) { return (rfIsAr() && o.labelAr)       ? o.labelAr       : (o.label || o.value); }
+function rfNum(v, d)   { const n = parseInt(v); return isNaN(n) ? d : n; }
+
+const RF_MEAL_PLANS = ["ROOM_ONLY","BREAKFAST","HALF_BOARD","FULL_BOARD","ALL_INCLUSIVE","ULTRA_ALL_INCLUSIVE"];
+
+/** Fetch the active template for a target; null → caller uses its hardcoded form. */
+async function rfLoadTemplate(target) {
+  try { const r = await apiFetch("/ui-templates/" + target); return (r && r.data) ? r.data : null; }
+  catch { return null; }
+}
+
+/** Visible fields of a template, sorted by order. */
+function rfFields(tpl) {
+  return (((tpl && tpl.config && tpl.config.fields) || [])
+    .filter(f => f && f.key && f.visible !== false))
+    .slice()
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+
+/** Build the inner control HTML for one field. */
+function rfControl(f, ctx) {
+  const id = "rf_" + f.key;
+  const ph = rfPlace(f);
+  const phAttr = ph ? ` placeholder="${escapeHtml(ph)}"` : "";
+  const dv = f.defaultValue;
+  switch (f.type) {
+    case "readonly-service":
+      return `<input id="${id}" value="${escapeHtml(ctx.serviceName || "")}" disabled style="opacity:.7">`;
+    case "readonly-price":
+      return `<div id="${id}" class="rf-price">${escapeHtml(ctx.priceText || "—")}</div>`;
+    case "nationality-select":
+      return `<input id="${id}" list="nationalityList"${phAttr} value="${escapeHtml(dv || "")}">`;
+    case "textarea":
+      return `<textarea id="${id}" rows="3"${phAttr}>${escapeHtml(dv || "")}</textarea>`;
+    case "select":
+    case "searchable-select":
+    case "meal-plan-select": {
+      let opts = (Array.isArray(f.options) && f.options.length) ? f.options.slice() : null;
+      if (!opts && f.key === "packageId" && Array.isArray(ctx.packages)) {
+        opts = ctx.packages.map(p => ({ value: p.id, label: `${p.name} — ${p.dataSize} · ${formatMoney(p.price, p.currency)}`, price: p.price, currency: p.currency }));
+      }
+      if (!opts && f.type === "meal-plan-select") {
+        opts = RF_MEAL_PLANS.map(mp => ({ value: mp, label: t("mealPlan." + mp, mp.replace(/_/g, " ")) }));
+      }
+      opts = opts || [];
+      const onch = (f.key === "packageId") ? ` onchange="rfUpdatePrice()"` : "";
+      return `<select id="${id}"${onch}>
+        <option value="">${escapeHtml(ph || t("form.select", "Select"))}</option>
+        ${opts.map(o => `<option value="${escapeHtml(o.value)}"${o.price != null ? ` data-price="${escapeHtml(o.price)}" data-cur="${escapeHtml(o.currency || "USD")}"` : ""}${String(dv) === String(o.value) ? " selected" : ""}>${escapeHtml(rfOptLabel(o))}</option>`).join("")}
+      </select>`;
+    }
+    case "child-count": {
+      const rep = rfFields(rfState.template).find(x => x.type === "child-age-repeater");
+      const boxId = rep ? ("rf_" + rep.key + "_box") : "rfChildAgesBox";
+      return `<input id="${id}" type="number" min="0" max="10" value="${dv != null ? escapeHtml(dv) : 0}" oninput="onChildrenCountChange('${id}','${boxId}','rf')">`;
+    }
+    case "child-age-repeater":
+      return `<div id="rf_${f.key}_box" class="rf-ages" style="display:none"></div>`;
+    case "checkbox":
+    case "toggle":
+      return `<label class="check-row"><input type="checkbox" id="${id}"${dv ? " checked" : ""}> ${escapeHtml(rfLabel(f))}</label>`;
+    case "file-upload":
+    case "image-upload":
+      return `<input type="file" accept="${f.type === "image-upload" ? "image/*" : "image/*,.pdf"}" onchange="uploadAndFill(this,'${id}')">
+              <input id="${id}" placeholder="${escapeHtml(ph || t("form.orPasteUrl", "or paste URL"))}" style="margin-top:6px">`;
+    case "number":
+    case "pax-counter":
+    case "room-counter": {
+      const min = f.min != null ? f.min : (f.type === "number" ? null : 1);
+      const minAttr = min != null ? ` min="${min}"` : "";
+      const maxAttr = f.max != null ? ` max="${f.max}"` : "";
+      const stepAttr = f.step != null ? ` step="${f.step}"` : "";
+      const val = dv != null ? dv : (f.type === "number" ? "" : 1);
+      return `<input id="${id}" type="number"${minAttr}${maxAttr}${stepAttr} value="${escapeHtml(val)}"${phAttr}>`;
+    }
+    case "date":     return `<input id="${id}" type="date" value="${escapeHtml(dv || "")}">`;
+    case "time":     return `<input id="${id}" type="time" value="${escapeHtml(dv || "")}">`;
+    case "datetime": return `<input id="${id}" type="datetime-local" value="${escapeHtml(dv || "")}">`;
+    case "hidden":   return `<input id="${id}" type="hidden" value="${escapeHtml(dv || "")}">`;
+    default:         return `<input id="${id}" type="text"${phAttr} value="${escapeHtml(dv || "")}">`;
+  }
+}
+
+/** Wrap a field control in a .form-field cell (honouring width + help text). */
+function rfFieldCell(f, ctx) {
+  const fullTypes = ["textarea", "child-age-repeater", "readonly-service", "readonly-price", "file-upload", "image-upload"];
+  const full = f.width === "full" || (!f.width && fullTypes.includes(f.type));
+  const help = rfHelp(f);
+  const helpHtml = help ? `<div class="rf-help">${escapeHtml(help)}</div>` : "";
+  if (f.type === "checkbox" || f.type === "toggle") {
+    return `<div class="form-field${full ? " full" : ""}">${rfControl(f, ctx)}${helpHtml}</div>`;
+  }
+  const ic = f.icon ? icon(f.icon) + " " : "";
+  const req = f.required ? ` <span class="required">*</span>` : "";
+  return `<div class="form-field${full ? " full" : ""}">
+    <label>${ic}${escapeHtml(rfLabel(f))}${req}</label>
+    ${rfControl(f, ctx)}${helpHtml}
+  </div>`;
+}
+
+/** Render the complete form body for a template + context. */
+function renderRequestForm(tpl, ctx) {
+  const fields = rfFields(tpl);
+  const needsNat = fields.some(f => f.type === "nationality-select");
+  return `${needsNat ? nationalityDatalist() : ""}
+    <div class="form-grid">
+      ${fields.map(f => rfFieldCell(f, ctx)).join("")}
+    </div>`;
+}
+
+/** Current children count from the template's child-count field (0 if none). */
+function rfChildCount() {
+  const cf = rfFields(rfState.template).find(x => x.type === "child-count");
+  if (!cf) return 0;
+  const el = document.getElementById("rf_" + cf.key);
+  return Math.max(0, parseInt((el && el.value) || "0") || 0);
+}
+
+/** Read one field's value (typed); undefined when empty / not collectable. */
+function rfReadValue(f) {
+  const el = document.getElementById("rf_" + f.key);
+  switch (f.type) {
+    case "readonly-service":
+    case "readonly-price":
+      return undefined;
+    case "child-age-repeater": {
+      const cnt = rfChildCount();
+      return cnt > 0 ? collectChildAges(cnt, "rf") : undefined;
+    }
+    case "checkbox":
+    case "toggle":
+      return el ? el.checked : undefined;
+    case "number":
+    case "pax-counter":
+    case "room-counter":
+    case "child-count": {
+      if (!el || el.value === "") return undefined;
+      const n = parseInt(el.value); return isNaN(n) ? undefined : n;
+    }
+    default: {
+      if (!el) return undefined;
+      const v = String(el.value || "").trim();
+      return v === "" ? undefined : v;
+    }
+  }
+}
+
+/** Evaluate a field's showWhen condition against live DOM values. */
+function rfShown(f) {
+  if (!f.showWhen || !f.showWhen.field) return true;
+  const ref = document.getElementById("rf_" + f.showWhen.field);
+  if (!ref) return true;
+  const cur = ref.type === "checkbox" ? ref.checked : ref.value;
+  return rfCmp(cur, f.showWhen.op, f.showWhen.value);
+}
+
+function rfCmp(cur, op, val) {
+  const a = parseFloat(cur), b = parseFloat(val);
+  switch (op) {
+    case "truthy": return !!cur && cur !== "0";
+    case "eq":  return String(cur) === String(val);
+    case "ne":  return String(cur) !== String(val);
+    case "gt":  return a > b;
+    case "gte": return a >= b;
+    case "lt":  return a < b;
+    case "lte": return a <= b;
+    default:    return true;
+  }
+}
+
+/** Collect all shown field values into { key: value }. */
+function collectRequestFormValues(tpl) {
+  const out = {};
+  rfFields(tpl).forEach(f => {
+    if (!rfShown(f)) return;
+    const v = rfReadValue(f);
+    if (v !== undefined && !(Array.isArray(v) && v.length === 0)) out[f.key] = v;
+  });
+  return out;
+}
+
+/** Validate required + conditional fields; returns first failing label or null. */
+function validateRequestForm(tpl) {
+  for (const f of rfFields(tpl)) {
+    if (!f.required || !rfShown(f)) continue;
+    if (f.type === "child-age-repeater") {
+      const cnt = rfChildCount();
+      if (cnt > 0 && !childAgesValid(cnt, "rf")) return rfLabel(f);
+      continue;
+    }
+    const v = rfReadValue(f);
+    if (v === undefined || (Array.isArray(v) && v.length === 0)) return rfLabel(f);
+  }
+  return null;
+}
+
+/** Recompute a readonly-price node from a priced package select (SIM). */
+function rfUpdatePrice() {
+  const priceField = rfFields(rfState.template).find(f => f.type === "readonly-price");
+  const pkgField = rfFields(rfState.template).find(f => f.key === "packageId");
+  if (!priceField || !pkgField) return;
+  const sel = document.getElementById("rf_" + pkgField.key);
+  const opt = sel && sel.options[sel.selectedIndex];
+  const price = parseFloat((opt && opt.dataset.price) || "0");
+  const cur = (opt && opt.dataset.cur) || "USD";
+  const qtyField = rfFields(rfState.template).find(f => /qty|quantity/i.test(f.key));
+  const qty = qtyField ? Math.max(1, parseInt(document.getElementById("rf_" + qtyField.key)?.value || "1")) : 1;
+  const el = document.getElementById("rf_" + priceField.key);
+  if (el) el.textContent = price > 0 ? formatMoney(price * qty, cur) : "—";
+}
+
+/** WhatsApp + toast success handler shared by the 3 quote-request targets. */
+function rfQuoteSuccess(res, ctx, values, waWindow) {
+  const ref = res.data.refNumber;
+  const waUrl = buildWhatsAppQuoteUrl({
+    ref, serviceType: ctx.serviceType, serviceName: ctx.serviceName,
+    nationality: values.nationality, checkIn: values.checkIn, checkOut: values.checkOut,
+    adults: values.adults, children: values.children || undefined, rooms: values.rooms || undefined,
+    notes: values.notes || undefined,
+  });
+  closeModal();
+  toast(`✅ ${t("toast.quoteSubmitted", "Quote request submitted")} — ${ref}`, "success");
+  if (typeof loadMyQuotesBadge === "function") loadMyQuotesBadge();
+  redirectToWhatsApp(waUrl, waWindow);
+}
+
+/** Simple toast + page-refresh success handler for operational request forms. */
+function rfSimpleSuccess(rerenderFn) {
+  return (res) => {
+    closeModal();
+    toast(`✅ ${t("toast.created", "Submitted")} — ${res.data.refNumber}`, "success");
+    if (typeof rerenderFn === "function") rerenderFn();
+  };
+}
+
+// Per-target adapters: endpoint, known-column keys, payload builder, success.
+const REQUEST_FORM_TARGETS = {
+  hotel_request: {
+    endpoint: "/quote-requests", whatsapp: true,
+    known: ["nationality", "checkIn", "checkOut", "adults", "children", "childAges", "rooms", "mealPlan", "notes"],
+    build: (v, ctx, custom) => ({
+      serviceType: "HOTEL", hotelId: ctx.serviceId,
+      nationality: v.nationality, checkIn: v.checkIn, checkOut: v.checkOut,
+      adultsCount: rfNum(v.adults, 2), childrenCount: rfNum(v.children, 0),
+      roomsCount: rfNum(v.rooms, 1), mealPlan: v.mealPlan || undefined,
+      childAges: Array.isArray(v.childAges) ? v.childAges.map(Number) : undefined,
+      customerNotes: v.notes, contactPreference: "whatsapp", currency: "USD", customFields: custom,
+    }),
+    success: rfQuoteSuccess,
+  },
+  cruise_request: {
+    endpoint: "/quote-requests", whatsapp: true,
+    known: ["nationality", "checkIn", "checkOut", "adults", "children", "childAges", "rooms", "mealPlan", "notes"],
+    build: (v, ctx, custom) => ({
+      serviceType: "CRUISE", cruiseId: ctx.serviceId, serviceName: ctx.serviceName,
+      nationality: v.nationality, checkIn: v.checkIn, checkOut: v.checkOut,
+      adultsCount: rfNum(v.adults, 2), childrenCount: rfNum(v.children, 0),
+      mealPlan: v.mealPlan || undefined,
+      childAges: Array.isArray(v.childAges) ? v.childAges.map(Number) : undefined,
+      customerNotes: v.notes, contactPreference: "whatsapp", currency: "USD", customFields: custom,
+    }),
+    success: rfQuoteSuccess,
+  },
+  activity_request: {
+    endpoint: "/quote-requests", whatsapp: true,
+    known: ["nationality", "checkIn", "checkOut", "adults", "children", "childAges", "notes"],
+    build: (v, ctx, custom) => ({
+      serviceType: "MULTI_SERVICE", serviceId: ctx.serviceId, serviceName: ctx.serviceName,
+      nationality: v.nationality, checkIn: v.checkIn, checkOut: v.checkOut,
+      adultsCount: rfNum(v.adults, 2), childrenCount: rfNum(v.children, 0),
+      childAges: Array.isArray(v.childAges) ? v.childAges.map(Number) : undefined,
+      customerNotes: v.notes, contactPreference: "whatsapp", currency: "USD", customFields: custom,
+    }),
+    success: rfQuoteSuccess,
+  },
+  security_approval: {
+    endpoint: "/visa-applications",
+    known: ["approvalType", "applicantName", "phone", "nationality", "hotelName", "paxCount", "passportUrl", "flightTicketUrl", "notes"],
+    build: (v, ctx, custom) => ({
+      applicantName: v.applicantName, nationality: v.nationality, phone: v.phone,
+      destinationCountry: v.approvalType || "CAI",
+      passportNumber: "PENDING", visaType: "TOURIST", processingType: "NORMAL",
+      passportExpiry: new Date(Date.now() + 365 * 864e5).toISOString(),
+      travelDate: new Date().toISOString(),
+      hotelName: v.hotelName, paxCount: rfNum(v.paxCount, 1),
+      passportUrl: v.passportUrl, flightTicketUrl: v.flightTicketUrl,
+      notes: v.notes, totalAmount: 0, currency: "USD", customFields: custom,
+    }),
+    success: rfSimpleSuccess(() => typeof renderSecurityApproval === "function" && renderSecurityApproval()),
+  },
+  airport_assist: {
+    endpoint: "/airport-receptions",
+    known: ["serviceType", "airport", "flightNumber", "flightDateTime", "guestName", "guestCount", "phone", "ticketUrl", "travelDetails", "notes"],
+    build: (v, ctx, custom) => ({
+      serviceType: v.serviceType || "MEET_AND_GREET", airport: v.airport || "CAI",
+      flightNumber: v.flightNumber, flightDateTime: v.flightDateTime,
+      guestName: v.guestName, guestCount: rfNum(v.guestCount, 1), phone: v.phone,
+      ticketUrl: v.ticketUrl, travelDetails: v.travelDetails,
+      notes: v.notes, totalAmount: 0, currency: "USD", customFields: custom,
+    }),
+    success: rfSimpleSuccess(() => typeof renderAirportAssist === "function" && renderAirportAssist()),
+  },
+  sim_card_request: {
+    endpoint: "/sim-card/requests", hasPrice: true,
+    known: ["packageId", "clientName", "phone", "quantity", "arrivalDate", "notes"],
+    build: (v, ctx, custom) => ({
+      packageId: v.packageId || undefined, clientName: v.clientName, phone: v.phone,
+      quantity: rfNum(v.quantity, 1), arrivalDate: v.arrivalDate || undefined,
+      notes: v.notes, customFields: custom,
+    }),
+    success: rfSimpleSuccess(() => typeof renderSimCard === "function" && renderSimCard()),
+  },
+};
+
+/** Open a template-driven request modal. */
+function rfOpenModal(target, tpl, ctx) {
+  rfState = { template: tpl, ctx: ctx || {}, target };
+  const adapter = REQUEST_FORM_TARGETS[target] || {};
+  const cfg = tpl.config || {};
+  const title = ((rfIsAr() && cfg.titleAr) ? cfg.titleAr : cfg.title) || tpl.name || t("btn.requestQuote", "Request");
+  const submitIcon = adapter.whatsapp ? "brand-whatsapp" : "send";
+  const submitLabel = adapter.whatsapp ? t("btn.sendRequest", "Send via WhatsApp") : t("btn.sendRequest", "Send Request");
+  openModal(title, renderRequestForm(tpl, rfState.ctx), `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel", "Cancel")}</button>
+    <button class="btn btn-primary" id="rfSubmitBtn" onclick="rfSubmit('rfSubmitBtn')">${icon(submitIcon)}&nbsp;${submitLabel}</button>
+  `);
+  refreshIcons(document.querySelector(".modal-overlay") || document);
+  const cf = rfFields(tpl).find(x => x.type === "child-count");
+  const rep = rfFields(tpl).find(x => x.type === "child-age-repeater");
+  if (cf && rep) onChildrenCountChange("rf_" + cf.key, "rf_" + rep.key + "_box", "rf");
+  if (adapter.hasPrice) rfUpdatePrice();
+}
+
+/** Validate → split known/custom → POST → success, for a template form. */
+async function rfSubmit(btnId) {
+  const { template: tpl, ctx, target } = rfState;
+  const adapter = REQUEST_FORM_TARGETS[target];
+  if (!tpl || !adapter) return;
+
+  const bad = validateRequestForm(tpl);
+  if (bad) { toast(`${t("validation.fieldRequired", "Please complete")}: ${bad}`, "error"); return; }
+
+  const values = collectRequestFormValues(tpl);
+  const custom = {};
+  Object.keys(values).forEach(k => { if (!adapter.known.includes(k)) custom[k] = values[k]; });
+  const payload = adapter.build(values, ctx, Object.keys(custom).length ? custom : undefined);
+
+  const btn = document.getElementById(btnId);
+  if (btn) btn.disabled = true;
+  const waWindow = adapter.whatsapp ? reserveWhatsAppWindow() : null;
+
+  const res = await apiFetch(adapter.endpoint, { method: "POST", body: JSON.stringify(payload) });
+  if (res && res.success) {
+    adapter.success(res, ctx, values, waWindow);
+  } else {
+    if (waWindow && !waWindow.closed) waWindow.close();
+    if (btn) btn.disabled = false;
+  }
+}
+
 // ─── Quote Request Modal ──────────────────────────────────────────────────────
 async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
+  // Template-driven path: use the active Request Form Builder template when one exists.
+  const rfTarget = serviceType === "HOTEL" ? "hotel_request"
+                 : serviceType === "CRUISE" ? "cruise_request"
+                 : "activity_request";
+  const rfTpl = await rfLoadTemplate(rfTarget);
+  if (rfTpl) return rfOpenModal(rfTarget, rfTpl, { serviceType, serviceId, serviceName });
+
+  // Fallback: original hardcoded quote form.
   const isHotel = serviceType === "HOTEL";
   const mealPlanOptions = ["ROOM_ONLY","BREAKFAST","HALF_BOARD","FULL_BOARD","ALL_INCLUSIVE","ULTRA_ALL_INCLUSIVE"];
 
@@ -1238,6 +1620,8 @@ function renderTransportForm() {
             <label>${t("form.notes","Notes / Special Requests")}</label>
             <textarea id="trNotes" rows="2" placeholder="${t("form.notesPlaceholder","Wheelchair access, child seat, VIP requirements...")}"></textarea>
           </div>
+          <!-- Admin-configured extra fields (Request Form Builder → transport_booking) -->
+          <div id="trCustomFields" class="form-field full" style="display:none"></div>
         </div>
       </div>
 
@@ -1252,6 +1636,65 @@ function renderTransportForm() {
 
   document.getElementById("transportFormArea").innerHTML = formHtml;
   refreshIcons(document.getElementById("transportFormArea"));
+  trLoadCustomFields();
+}
+
+// Transport keeps its live-pricing engine; the active transport_booking template
+// can only ADD extra fields (anything outside the base booking columns). They
+// render below Notes and are saved to the booking's customFields JSON.
+const TR_BASE_KEYS = ["passengerName","contactNumber","flightNumber","airlineName","notes",
+  "vehicleType","fromLocation","toLocation","pickupDateTime","passengerCount","isRoundTrip",
+  "returnFlightNumber","returnAirlineName","fromType","toType"];
+
+async function trLoadCustomFields() {
+  const box = document.getElementById("trCustomFields");
+  if (!box) return;
+  const tpl = await rfLoadTemplate("transport_booking");
+  const fields = tpl ? rfFields(tpl).filter(f => !TR_BASE_KEYS.includes(f.key)) : [];
+  window._trCustomFields = fields;
+  if (!fields.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+  box.style.display = "";
+  box.innerHTML = `<div class="form-grid" style="margin-top:4px">${fields.map(trCustomCell).join("")}</div>`;
+  refreshIcons(box);
+}
+
+function trCustomCell(f) {
+  const id = "tcf_" + f.key;
+  const ph = rfPlace(f); const phAttr = ph ? ` placeholder="${escapeHtml(ph)}"` : "";
+  const full = f.width === "full" || f.type === "textarea";
+  let ctrl;
+  switch (f.type) {
+    case "textarea": ctrl = `<textarea id="${id}" rows="2"${phAttr}></textarea>`; break;
+    case "select": case "searchable-select": case "meal-plan-select": {
+      const opts = (Array.isArray(f.options) && f.options.length) ? f.options
+        : (f.type === "meal-plan-select" ? RF_MEAL_PLANS.map(mp => ({ value: mp, label: t("mealPlan." + mp, mp.replace(/_/g, " ")) })) : []);
+      ctrl = `<select id="${id}"><option value="">${escapeHtml(ph || t("form.select", "Select"))}</option>${opts.map(o => `<option value="${escapeHtml(o.value)}">${escapeHtml(rfOptLabel(o))}</option>`).join("")}</select>`; break;
+    }
+    case "number": case "pax-counter": case "room-counter": ctrl = `<input id="${id}" type="number"${phAttr}>`; break;
+    case "date": ctrl = `<input id="${id}" type="date">`; break;
+    case "time": ctrl = `<input id="${id}" type="time">`; break;
+    case "datetime": ctrl = `<input id="${id}" type="datetime-local">`; break;
+    case "checkbox": case "toggle": ctrl = `<label class="check-row"><input type="checkbox" id="${id}"> ${escapeHtml(rfLabel(f))}</label>`; break;
+    default: ctrl = `<input id="${id}" type="text"${phAttr}>`;
+  }
+  if (f.type === "checkbox" || f.type === "toggle") return `<div class="form-field${full ? " full" : ""}">${ctrl}</div>`;
+  const req = f.required ? ` <span class="required">*</span>` : "";
+  return `<div class="form-field${full ? " full" : ""}"><label>${escapeHtml(rfLabel(f))}${req}</label>${ctrl}</div>`;
+}
+
+function trCollectCustom() {
+  const fields = window._trCustomFields || [];
+  const out = {};
+  fields.forEach(f => {
+    const el = document.getElementById("tcf_" + f.key);
+    if (!el) return;
+    let v;
+    if (f.type === "checkbox" || f.type === "toggle") v = el.checked || undefined;
+    else if (["number","pax-counter","room-counter"].includes(f.type)) v = el.value === "" ? undefined : parseInt(el.value);
+    else v = String(el.value || "").trim() || undefined;
+    if (v !== undefined) out[f.key] = v;
+  });
+  return Object.keys(out).length ? out : undefined;
 }
 
 function setTripType(type) {
@@ -1377,6 +1820,7 @@ async function trConfirmBooking() {
     returnAirlineName: retAirline || undefined,
     returnFlightNumber: retFlight || undefined,
     notes: notes || undefined,
+    customFields: trCollectCustom(),
   };
 
   const btn = document.querySelector("#trBookingActions .btn-success");
@@ -1760,7 +2204,10 @@ function renderSecurityApproval() {
   });
 }
 
-function openSecurityApprovalForm() {
+async function openSecurityApprovalForm() {
+  const rfTpl = await rfLoadTemplate("security_approval");
+  if (rfTpl) return rfOpenModal("security_approval", rfTpl, {});
+
   const types = [
     { label: t("securityApproval.sharm","Sharm El Sheikh"), dest: "SSH" },
     { label: t("securityApproval.cairo","Cairo"),           dest: "CAI" },
@@ -1849,7 +2296,10 @@ function renderAirportAssist() {
   });
 }
 
-function openAirportAssistForm() {
+async function openAirportAssistForm() {
+  const rfTpl = await rfLoadTemplate("airport_assist");
+  if (rfTpl) return rfOpenModal("airport_assist", rfTpl, {});
+
   const airports = ["CAI","HRG","SSH","LXR","ASW","HBE","MHH"];
   const serviceTypes = ["MEET_AND_GREET","AHLAN_SERVICE","VIP_LOUNGE","FULL_ASSISTANCE"];
   const body = `
@@ -1950,8 +2400,12 @@ async function renderSimCard() {
   ], { filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]] });
 }
 
-function openSimRequestForm(packages, preselect) {
+async function openSimRequestForm(packages, preselect) {
   if (typeof packages === "string") try { packages = JSON.parse(packages); } catch { packages = []; }
+
+  const rfTpl = await rfLoadTemplate("sim_card_request");
+  if (rfTpl) return rfOpenModal("sim_card_request", rfTpl, { packages: packages || [], preselect });
+
   const body = `
     <div class="form-grid">
       <div class="form-field full"><label>${t("simCard.package","SIM Package")}</label>
