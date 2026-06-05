@@ -17,11 +17,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand-block">
         <div class="brand-row">
-          <div class="brand-mark">B</div>
-          <div>
-            <div class="brand-name">ELBAKRI</div>
-            <div class="brand-sub">AGENCY PORTAL</div>
-          </div>
+          <img src="/assets/elbakri-logo-white.svg" class="brand-logo" alt="Elbakri Overseas" />
           <button class="icon-button sidebar-close" onclick="closeSidebar()" aria-label="Close menu"><i data-lucide="x"></i></button>
         </div>
         <div class="tier-chip" id="agentTier">STANDARD</div>
@@ -497,29 +493,38 @@ async function renderDashboard() {
     </div>
     <div class="grid-2">
       ${bookingPanel(bookings?.data || [])}
-      <section class="panel">
+      <section class="panel wallet-panel">
         <div class="panel-header">
-          <div><div class="panel-title">${t("nav.wallet")}</div><div class="panel-subtitle">${t("form.currentBalance")}</div></div>
+          <div>
+            <div class="panel-title" style="display:flex;align-items:center;gap:7px">
+              ${icon("wallet-cards")}&nbsp;${t("nav.wallet")}
+            </div>
+            <div class="panel-subtitle">${t("form.currentBalance","Account balance summary")}</div>
+          </div>
           ${tierBadge(state.user?.company?.tier)}
         </div>
         <div class="panel-body">
-          <div class="info-grid" style="grid-template-columns:1fr">
-            <div class="info-item">
-              <div class="info-label">${t("wallet.totalDeposited","Total Deposited")}</div>
-              <div class="info-value">${formatMoney(deposited, cur)}</div>
+          <div class="wallet-metrics-grid">
+            <div class="wallet-metric wallet-metric--deposit">
+              <div class="wallet-metric__icon">${icon("arrow-down-circle")}</div>
+              <div class="wallet-metric__label">${t("wallet.totalDeposited","Total Deposited")}</div>
+              <div class="wallet-metric__value">${formatMoney(deposited, cur)}</div>
             </div>
-            <div class="info-item">
-              <div class="info-label">${t("wallet.totalUsed","Total Used / Deducted")}</div>
-              <div class="info-value" style="color:var(--danger)">${formatMoney(used, cur)}</div>
+            <div class="wallet-metric wallet-metric--used">
+              <div class="wallet-metric__icon">${icon("receipt")}</div>
+              <div class="wallet-metric__label">${t("wallet.totalUsed","Total Used / Deducted")}</div>
+              <div class="wallet-metric__value">${formatMoney(used, cur)}</div>
             </div>
-            <div class="info-item" style="background:var(--success-soft);border-radius:var(--r-8);padding:14px;margin-top:4px">
-              <div class="info-label" style="color:var(--success);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">${t("wallet.remainingBalance","Remaining Balance")}</div>
-              <div class="info-value" style="color:var(--success);font-weight:900;font-size:24px;margin-top:4px">${formatMoney(remaining, cur)}</div>
+            <div class="wallet-metric wallet-metric--balance${remaining < 0 ? " wallet-metric--negative" : ""}" id="walletBalanceCard">
+              <div class="wallet-metric__icon">${icon("wallet")}</div>
+              <div class="wallet-metric__label">${t("wallet.remainingBalance","Remaining Balance")}</div>
+              <div class="wallet-metric__value" id="walletRemainingValue">${formatMoney(remaining, cur)}</div>
+              ${remaining < 0 ? `<div class="wallet-metric__warning">${icon("alert-triangle")}&nbsp;${t("wallet.insufficientBalance","Low balance")}</div>` : ""}
             </div>
           </div>
         </div>
         <div style="padding:12px 16px;border-top:1px solid var(--border)">
-          <button class="btn btn-outline btn-sm" style="width:100%" onclick="setPage('wallet')">${icon("arrow-right")}&nbsp;${t("nav.wallet","View Transactions")}</button>
+          <button class="btn btn-outline" style="width:100%" onclick="setPage('wallet')">${icon("arrow-right")}&nbsp;${t("nav.wallet","View Transactions")}</button>
         </div>
       </section>
     </div>`);
@@ -1313,8 +1318,13 @@ async function _doTransportQuote() {
       <div class="tr-price-row"><span>${t("form.roundTrip","Trip Type")}</span><span>${isRoundTrip ? t("form.roundTrip","Round Trip") : t("transport.oneWay","One Way")}</span></div>
       <div class="tr-price-total">
         <span>${t("th.total","Total")}</span>
-        <span class="tr-price-amount">${formatMoney(q.totalAmount, q.currency)}</span>
+        <span class="tr-price-amount" id="trLivePrice">${formatMoney(q.totalAmount, q.currency)}</span>
       </div>`;
+    // Trigger price highlight animation
+    requestAnimationFrame(() => {
+      const el = document.getElementById("trLivePrice");
+      if (el) { el.classList.remove("price-pulse"); void el.offsetWidth; el.classList.add("price-pulse"); }
+    });
     if (actionsEl) actionsEl.innerHTML = `
       <button class="btn btn-success" style="flex:1" onclick="trConfirmBooking()">${icon("calendar-check")}&nbsp;${t("transport.bookConfirmed","Confirm Booking")}</button>
       <button class="btn btn-outline" onclick="trSendQuoteRequest()">${icon("send")}&nbsp;${t("btn.requestQuote","Quote via WhatsApp")}</button>`;

@@ -1,9 +1,9 @@
 :root {
   --surface: #ffffff;
-  --surface-raised: #f8fafc;
-  --surface-muted: #eef2f7;
-  --border: #d8deea;
-  --border-strong: #b8c3d6;
+  --surface-raised: #F7F9FC;
+  --surface-muted: #EFF1F5;
+  --border: #E2E6EE;
+  --border-strong: #C4CBD9;
   --text-primary: #101828;
   --text-secondary: #344054;
   --text-muted: #667085;
@@ -49,7 +49,11 @@ html,
 body {
   min-height: 100%;
   margin: 0;
-  background: #eef2f7;
+  background-color: #F6F8FB;
+  background-image:
+    radial-gradient(ellipse 900px 500px at 95% 0%, rgba(196,146,10,0.025) 0%, transparent 60%),
+    radial-gradient(ellipse 600px 700px at 5% 100%, rgba(15,27,71,0.025) 0%, transparent 55%);
+  background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font);
   font-size: 13px;
@@ -181,6 +185,25 @@ a {
   color: var(--brand-navy);
   font-weight: 800;
   box-shadow: 0 8px 18px rgba(196, 146, 10, 0.28);
+}
+
+/* Real logo image in sidebar / login */
+.brand-logo {
+  height: 28px;
+  width: auto;
+  max-width: calc(var(--sidebar-w) - 60px);
+  flex: 1 1 auto;
+  min-width: 0;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.login-logo-img {
+  height: 36px;
+  width: auto;
+  max-width: 220px;
+  object-fit: contain;
+  object-position: left center;
 }
 
 .brand-name {
@@ -788,17 +811,46 @@ html[lang="ar"] .stat-label {
 }
 
 .btn-primary {
-  background: var(--brand-navy-2);
+  background: linear-gradient(135deg, var(--brand-navy-3) 0%, var(--brand-navy) 100%);
   color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 3px rgba(15,27,71,0.22), inset 0 1px 0 rgba(255,255,255,0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 50%;
+  background: rgba(255,255,255,0.07);
+  pointer-events: none;
+  border-radius: inherit;
 }
 
 .btn-primary:hover {
-  background: var(--brand-navy);
+  background: linear-gradient(135deg, var(--brand-navy-2) 0%, var(--brand-navy) 100%);
+  box-shadow: 0 4px 14px rgba(15,27,71,0.32), inset 0 1px 0 rgba(255,255,255,0.12);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 3px rgba(15,27,71,0.2);
 }
 
 .btn-gold {
-  background: var(--brand-gold);
+  background: linear-gradient(135deg, #d4a716 0%, var(--brand-gold) 100%);
   color: var(--brand-navy);
+  border-color: transparent;
+  box-shadow: 0 1px 3px rgba(196,146,10,0.3), inset 0 1px 0 rgba(255,255,255,0.22);
+}
+
+.btn-gold:hover {
+  background: linear-gradient(135deg, #e0b318 0%, #c49210 100%);
+  box-shadow: 0 4px 14px rgba(196,146,10,0.38), inset 0 1px 0 rgba(255,255,255,0.26);
+  transform: translateY(-1px);
 }
 
 .btn-outline {
@@ -1399,7 +1451,7 @@ html[lang="ar"] .data-table thead th {
   font-weight: 700;
 }
 
-.brand-mark {
+.login-brand .brand-mark {
   width: 44px;
   height: 44px;
   display: grid;
@@ -3125,3 +3177,346 @@ html[lang="ar"] .act-time-label {
     padding: 12px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   PREMIUM REDESIGN v3.0 — softer palette, real logo, glass UI
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── Stat card entry stagger ──────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .stats-grid .stat-card:nth-child(1) { animation-delay: 0ms; }
+  .stats-grid .stat-card:nth-child(2) { animation-delay: 55ms; }
+  .stats-grid .stat-card:nth-child(3) { animation-delay: 110ms; }
+  .stats-grid .stat-card:nth-child(4) { animation-delay: 165ms; }
+  .stats-grid .stat-card:nth-child(5) { animation-delay: 220ms; }
+  .stats-grid .stat-card:nth-child(6) { animation-delay: 275ms; }
+  .grid-2 > section:nth-child(1), .grid-2 > .panel:nth-child(1) { animation-delay: 100ms; }
+  .grid-2 > section:nth-child(2), .grid-2 > .panel:nth-child(2) { animation-delay: 170ms; }
+}
+
+/* ─── Price pulse animation (transport / activities live price) ── */
+@keyframes pricePulse {
+  0%   { background: transparent; border-radius: 4px; }
+  25%  { background: rgba(4, 120, 87, 0.14); }
+  70%  { background: rgba(4, 120, 87, 0.07); }
+  100% { background: transparent; }
+}
+
+@keyframes walletUpdate {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.035); }
+  100% { transform: scale(1); }
+}
+
+@keyframes highlightFade {
+  from { background: rgba(196,146,10,0.18); }
+  to   { background: transparent; }
+}
+
+.price-pulse {
+  animation: pricePulse 900ms cubic-bezier(0.2,0.7,0.2,1) both;
+}
+
+.wallet-update {
+  animation: walletUpdate 420ms cubic-bezier(0.2,0.7,0.2,1) both;
+}
+
+/* ─── Wallet metrics panel ─────────────────────────────────────── */
+.wallet-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.wallet-metric {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 1px;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-10, var(--r-8));
+  background: var(--surface-raised);
+  transition: box-shadow 160ms ease;
+}
+
+.wallet-metric:hover {
+  box-shadow: var(--shadow-card);
+}
+
+.wallet-metric__icon {
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-8);
+  flex-shrink: 0;
+}
+
+.wallet-metric__icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.wallet-metric__label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.2;
+}
+
+html[lang="ar"] .wallet-metric__label {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.wallet-metric__value {
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  transition: color 160ms ease;
+}
+
+/* Deposited variant */
+.wallet-metric--deposit .wallet-metric__icon {
+  background: rgba(15,27,71,0.06);
+  color: var(--brand-navy-2);
+}
+.wallet-metric--deposit .wallet-metric__value {
+  color: var(--brand-navy-2);
+}
+
+/* Used / Deducted variant */
+.wallet-metric--used .wallet-metric__icon {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.wallet-metric--used .wallet-metric__value {
+  color: var(--danger);
+}
+
+/* Balance variant */
+.wallet-metric--balance {
+  border-color: rgba(4, 120, 87, 0.22);
+  background: linear-gradient(135deg, #f0fdf8 0%, #e8f9f2 100%);
+}
+.wallet-metric--balance .wallet-metric__icon {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.wallet-metric--balance .wallet-metric__value {
+  color: var(--success);
+  font-size: 24px;
+  font-weight: 900;
+}
+
+/* Negative balance warning */
+.wallet-metric--negative {
+  border-color: rgba(180, 35, 24, 0.22);
+  background: var(--danger-soft);
+}
+.wallet-metric--negative .wallet-metric__icon {
+  background: rgba(180,35,24,0.1);
+  color: var(--danger);
+}
+.wallet-metric--negative .wallet-metric__value {
+  color: var(--danger);
+}
+
+.wallet-metric__warning {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: var(--r-4);
+  background: rgba(180,35,24,0.12);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 700;
+  width: fit-content;
+}
+
+/* ─── Glass wallet panel ────────────────────────────────────────── */
+.wallet-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.wallet-panel::before {
+  content: "";
+  position: absolute;
+  top: -24px;
+  right: -24px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(196,146,10,0.07) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* ─── Premium topbar refinement ─────────────────────────────────── */
+.topbar {
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0.97) 0%,
+    rgba(247,249,252,0.93) 100%);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  backdrop-filter: saturate(180%) blur(18px);
+  border-bottom: 1px solid rgba(226,230,238,0.8);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.95), 0 2px 8px rgba(15,27,71,0.04);
+}
+
+/* ─── Sidebar accent polish ─────────────────────────────────────── */
+.sidebar {
+  background:
+    radial-gradient(130% 70% at 0% 0%, rgba(196, 146, 10, 0.12) 0%, transparent 42%),
+    radial-gradient(60% 40% at 100% 100%, rgba(255,255,255,0.04) 0%, transparent 60%),
+    linear-gradient(180deg, var(--brand-navy-2), var(--brand-navy));
+}
+
+/* ─── Offer popup glass ─────────────────────────────────────────── */
+.modal-overlay.open .modal:has(.offer-popup-body) {
+  background: rgba(255,255,255,0.94);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.7);
+  box-shadow: 0 20px 60px rgba(16,24,40,0.18), 0 8px 24px rgba(196,146,10,0.08);
+}
+
+/* ─── Transport price card glass ────────────────────────────────── */
+.tr-price-card {
+  background: linear-gradient(135deg,
+    var(--brand-navy-2) 0%,
+    var(--brand-navy-3) 55%,
+    var(--brand-navy) 100%);
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 8px 32px rgba(15,27,71,0.32), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+/* ─── Active filter chip animation ──────────────────────────────── */
+@keyframes chipPop {
+  from { transform: scale(0.88); opacity: 0.6; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+.amenity-chip.active,
+.area-chip.active,
+.tr-toggle.active {
+  animation: chipPop 200ms cubic-bezier(0.34,1.4,0.64,1) both;
+}
+
+/* ─── Modal entrance polish ─────────────────────────────────────── */
+@keyframes modalPremium {
+  from { opacity: 0; transform: translateY(18px) scale(0.975); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .modal-overlay.open .modal {
+    animation: modalPremium 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+}
+
+/* ─── Offer popup entrance ─────────────────────────────────────── */
+@keyframes offerEntrance {
+  from { opacity: 0; transform: scale(0.94) translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ─── Button loading spinner ────────────────────────────────────── */
+.btn-loading {
+  position: relative;
+  pointer-events: none;
+  color: transparent !important;
+}
+
+.btn-loading::after {
+  content: "";
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btnspin 0.65s linear infinite;
+}
+
+.btn-loading.btn-outline::after,
+.btn-loading.btn-muted::after {
+  border-color: rgba(52,64,84,0.25);
+  border-top-color: var(--text-secondary);
+}
+
+/* ─── Table row hover improvement ───────────────────────────────── */
+.data-table tbody tr:hover td {
+  background: rgba(15,27,71,0.03);
+}
+
+/* ─── Stat icon accent by position ──────────────────────────────── */
+.stats-grid .stat-card:nth-child(1) .stat-ico { background: rgba(15,27,71,0.08); color: var(--brand-navy-2); }
+.stats-grid .stat-card:nth-child(2) .stat-ico { background: var(--danger-soft); color: var(--danger); }
+.stats-grid .stat-card:nth-child(3) .stat-ico { background: rgba(15,27,71,0.06); color: var(--brand-navy-3); }
+.stats-grid .stat-card:nth-child(4) .stat-ico { background: var(--warning-soft); color: var(--warning); }
+.stats-grid .stat-card:nth-child(5) .stat-ico { background: var(--brand-gold-soft); color: var(--brand-gold); }
+.stats-grid .stat-card:nth-child(6) .stat-ico { background: var(--success-soft); color: var(--success); }
+
+/* ─── Mobile logo shrink ─────────────────────────────────────────── */
+@media (max-width: 860px) {
+  .brand-logo {
+    max-width: calc(100vw - 100px);
+    height: 26px;
+  }
+}
+
+/* ─── Wallet panel grid on larger screens ───────────────────────── */
+@media (min-width: 1280px) {
+  .wallet-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── Typography refinements ─────────────────────────────────────── */
+.stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  margin-top: 10px;
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* ─── Softer borders throughout ─────────────────────────────────── */
+.panel, .table-card, .filter-rail, .stat-card {
+  border-color: var(--border);
+}
+
+/* ─── Login logo on mobile ─────────────────────────────────────── */
+@media (max-width: 640px) {
+  .login-logo-img {
+    height: 30px;
+  }
+}
+
+/* ─── RTL logo alignment ────────────────────────────────────────── */
+[dir="rtl"] .brand-logo {
+  object-position: right center;
+}
+
+[dir="rtl"] .login-logo-img {
+  object-position: right center;
+}
+
