@@ -1363,6 +1363,51 @@ function applyHotelFilters(rows) {
   });
 }
 
+function hotelRowsHtml(filtered) {
+  return filtered.length
+    ? filtered.map(h => {
+        const amenities = (h.amenities || []).slice(0, 4).map(amenityChip).join(" ");
+        const extra = (h.amenities || []).length > 4 ? `<span style="color:var(--text-secondary);font-size:10px"> +${(h.amenities||[]).length - 4}</span>` : "";
+        return `<tr>
+          <td>${hotelThumb(h)}</td>
+          <td>
+            <div class="primary-text">${escapeHtml(h.name)}</div>
+            <div class="secondary-text">${escapeHtml(h.city || "—")}${h.cityAr ? ' · ' + escapeHtml(h.cityAr) : ''}</div>
+            <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${amenities}${extra}</div>
+          </td>
+          <td style="white-space:nowrap">${"★".repeat(Math.min(h.stars || 0, 5))}</td>
+          <td class="numeric">${Number(h.pricePerNight || 0) > 0 ? formatMoney(h.pricePerNight, h.currency) : `<span style="color:var(--text-secondary)">${t("hotel.priceOnRequest","On request")}</span>`}</td>
+          <td>
+            <button class="badge ${h.showPriceToAgents ? "badge-confirmed" : "badge-pending"}" style="cursor:pointer;border:none" onclick="togglePriceVisibility('${h.id}', ${!h.showPriceToAgents})" title="${h.showPriceToAgents ? t("hotel.hidePrices","Hide Prices") : t("hotel.showPrices","Show Prices")}">${h.showPriceToAgents ? icon("eye") + " " + t("hotel.visible","Visible") : icon("eye-off") + " " + t("hotel.hidden","Hidden")}</button>
+          </td>
+          <td>${statusBadge(h.isActive ? "ACTIVE" : "INACTIVE")}</td>
+          <td><div class="row-actions">
+            <button class="icon-button btn-icon" title="${t("btn.view","View")}" onclick="showHotelDetails('${h.id}')">${icon("eye")}</button>
+            <button class="icon-button btn-icon" title="${t("btn.edit")}" onclick="showMasterModal('hotels', '${h.id}')">${icon("pencil")}</button>
+            <button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deleteMasterRecord('hotels', '${h.id}')">${icon("trash-2")}</button>
+          </div></td>
+        </tr>`;
+      }).join("")
+    : `<tr><td colspan="7" style="text-align:center;padding:32px">${emptyBlock("empty.noData")}</td></tr>`;
+}
+
+function refreshHotelsTableOnly() {
+  const rows = state.cache.hotelsRows || [];
+  const filtered = applyHotelFilters(rows);
+  const tbody = document.getElementById("hotelsTableBody");
+  if (tbody) {
+    tbody.innerHTML = hotelRowsHtml(filtered);
+    refreshIcons(tbody);
+  }
+  const count = document.getElementById("hotelsCountText");
+  if (count) count.textContent = `${formatNumber(filtered.length)} / ${formatNumber(rows.length)} ${t("nav.hotels","Hotels")}`;
+}
+
+function handleHotelsSearchInput(el) {
+  hotelFilters.search = el.value;
+  refreshHotelsTableOnly();
+}
+
 async function renderHotels() {
   const capturedToken = state.renderToken;
   state.page = "hotels";
@@ -1435,7 +1480,7 @@ function drawHotelsPage(rows) {
   content(pageHeader(masterActions("hotels")) + `
     <div class="table-card">
       <div class="filter-body" style="display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr auto;gap:8px;padding:12px;border-bottom:1px solid var(--border);align-items:end">
-        <div class="field"><label style="font-size:11px">${t("filter.search","Search")}</label><input id="hotelsSearch" value="${escapeHtml(f.search)}" placeholder="${t("placeholder.searchAny","Quick search")}" oninput="hotelFilters.search=this.value;drawHotelsPage(state.cache.hotelsRows||[])"></div>
+        <div class="field"><label style="font-size:11px">${t("filter.search","Search")}</label><input id="hotelsSearch" value="${escapeHtml(f.search)}" placeholder="${t("placeholder.searchAny","Quick search")}" oninput="handleHotelsSearchInput(this)"></div>
         <div class="field"><label style="font-size:11px">${t("th.city","City")}</label><select onchange="hotelFilters.city=this.value;drawHotelsPage(state.cache.hotelsRows||[])">${cityOpts}</select></div>
         <div class="field"><label style="font-size:11px">${t("th.stars","Stars")}</label><select onchange="hotelFilters.stars=this.value;drawHotelsPage(state.cache.hotelsRows||[])">${starsOpts}</select></div>
         <div class="field"><label style="font-size:11px">${t("th.priceVisibility","Price visibility")}</label><select onchange="hotelFilters.priceVisible=this.value;drawHotelsPage(state.cache.hotelsRows||[])">
@@ -1446,12 +1491,12 @@ function drawHotelsPage(rows) {
         <button class="btn btn-outline" onclick="resetHotelFilters()">${icon("rotate-ccw")}${t("btn.reset","Reset")}</button>
       </div>
       <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>
-      <div class="table-toolbar"><strong>${formatNumber(filtered.length)} / ${formatNumber(rows.length)} ${t("nav.hotels","Hotels")}</strong></div>
+      <div class="table-toolbar"><strong id="hotelsCountText">${formatNumber(filtered.length)} / ${formatNumber(rows.length)} ${t("nav.hotels","Hotels")}</strong></div>
       <div class="table-scroll"><table class="data-table"><thead><tr>
         <th></th><th>${t("th.name","Name")}</th><th>${t("th.stars","Stars")}</th>
         <th>${t("th.amount","Price/Night")}</th><th>${t("th.priceVisibility","Visibility")}</th>
         <th>${t("th.status","Status")}</th><th>${t("th.actions","Actions")}</th>
-      </tr></thead><tbody>${tableBody}</tbody></table></div>
+      </tr></thead><tbody id="hotelsTableBody">${tableBody}</tbody></table></div>
     </div>`);
 }
 
