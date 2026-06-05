@@ -105,12 +105,18 @@ function splitPipe(value: string): string[] {
     .filter(Boolean);
 }
 
+function hiRes(value: string): string {
+  return value
+    .replace(/\/xdata\/images\/hotel\/(?:square|max)\d+(?:x\d+)?\//i, '/xdata/images/hotel/max1280x900/')
+    .replace(/\/(?:square|max)\d+(?:x\d+)?\//i, '/max1280x900/');
+}
+
 function photosFor(row: CsvRow): string[] {
   const urls = [
     row.mainPhoto,
     ...splitPipe(row.photos),
   ].filter(Boolean);
-  return [...new Set(urls)].slice(0, 30);
+  return [...new Set(urls.map(hiRes))].slice(0, 30);
 }
 
 function amenitiesFor(row: CsvRow): string[] {

@@ -207,7 +207,9 @@ function slug(s: string): string {
 
 // ─── Image helpers ─────────────────────────────────────────────────────────────
 function hiRes(u: string): string {
-  return u.replace(/\/(?:square|max)\d+(?:x\d+)?\//i, '/max1024x768/');
+  return u
+    .replace(/\/xdata\/images\/hotel\/(?:square|max)\d+(?:x\d+)?\//i, '/xdata/images/hotel/max1280x900/')
+    .replace(/\/(?:square|max)\d+(?:x\d+)?\//i, '/max1280x900/');
 }
 
 function dedupPhotos(urls: string[]): string[] {

@@ -53,7 +53,9 @@ function similarity(a: string, b: string, extra: string[] = []): number {
 }
 
 function hiRes(u: string): string {
-  return u.replace(/\/(?:square|max)\d+(?:x\d+)?\//i, '/max1024x768/');
+  return u
+    .replace(/\/xdata\/images\/hotel\/(?:square|max)\d+(?:x\d+)?\//i, '/xdata/images/hotel/max1280x900/')
+    .replace(/\/(?:square|max)\d+(?:x\d+)?\//i, '/max1280x900/');
 }
 
 function collectPhotos(item: Record<string, unknown>): string[] {
@@ -118,7 +120,7 @@ function buildDbUpdate(item: Record<string, unknown>, cityEN: string, cityAR: st
 // ─── SSE helper ───────────────────────────────────────────────────────────────
 function sseWriter(res: Response) {
   return (event: string, data: object) => {
-    if (res.writableEnded) return;
+    if (res.destroyed || res.writableEnded) return;
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     if (typeof (res as unknown as { flush?: () => void }).flush === 'function')
       (res as unknown as { flush: () => void }).flush();
@@ -150,8 +152,15 @@ enrichRouter.post('/run', requireRole('SUPERADMIN'), async (req: Request, res: R
   res.flushHeaders();
 
   const emit = sseWriter(res);
-  let aborted = false;
-  req.on('close', () => { aborted = true; });
+  let clientClosed = false;
+  let completed = false;
+  req.on('aborted', () => { clientClosed = true; });
+  res.on('close', () => {
+    if (!completed && !res.writableEnded) clientClosed = true;
+  });
+  const heartbeat = setInterval(() => {
+    if (!clientClosed && !res.destroyed && !res.writableEnded) res.write(': ping\n\n');
+  }, 15000);
 
   try {
     // Load DB hotels
@@ -171,7 +180,7 @@ enrichRouter.post('/run', requireRole('SUPERADMIN'), async (req: Request, res: R
     let applied = 0, skipped = 0, manual = 0, errors = 0, crossMatched = 0;
 
     for (let i = 0; i < needsWork.length; i++) {
-      if (aborted) { emit('abort', { message: 'Client disconnected' }); break; }
+      if (clientClosed) break;
       const hotel = needsWork[i];
 
       // Step 1: Try cross-match (free)
@@ -246,8 +255,10 @@ enrichRouter.post('/run', requireRole('SUPERADMIN'), async (req: Request, res: R
 
     emit('done', { applied, crossMatched, skipped, manual, errors, total: needsWork.length, mode: apply ? 'APPLIED' : 'DRY_RUN', city: cfg.en });
   } catch (err) {
-    emit('error', { message: (err as Error).message });
+    if (!clientClosed) emit('error', { message: (err as Error).message });
   }
 
-  res.end();
+  clearInterval(heartbeat);
+  completed = true;
+  if (!res.destroyed && !res.writableEnded) res.end();
 });

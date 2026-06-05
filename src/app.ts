@@ -3,6 +3,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import path from 'path';
+import { Readable } from 'stream';
 
 import { authenticate } from './middleware/auth';
 
@@ -41,6 +42,52 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 app.use('/generated', express.static(path.join(__dirname, '..', 'generated')));
+
+app.get('/media/hotel-image', async (req, res) => {
+  try {
+    const rawUrl = String(req.query.url ?? '');
+    const url = new URL(rawUrl);
+    const allowedHosts = ['cf.bstatic.com', 'q-xx.bstatic.com'];
+    if (url.protocol !== 'https:' || !allowedHosts.includes(url.hostname)) {
+      res.status(400).send('Unsupported image source');
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    const upstream = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 ElbakriPortal/1.0',
+        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      },
+    });
+    clearTimeout(timer);
+
+    if (!upstream.ok) {
+      res.status(upstream.status).send('Image unavailable');
+      return;
+    }
+
+    const contentType = upstream.headers.get('content-type') ?? 'image/jpeg';
+    if (!contentType.startsWith('image/')) {
+      res.status(415).send('Unsupported media type');
+      return;
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    const length = upstream.headers.get('content-length');
+    if (length) res.setHeader('Content-Length', length);
+    if (!upstream.body) {
+      res.status(502).send('Image body unavailable');
+      return;
+    }
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch {
+    res.status(502).send('Image proxy failed');
+  }
+});
 
 // Auth (no JWT required)
 app.use('/api/auth', authRouter);

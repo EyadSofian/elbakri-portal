@@ -1325,18 +1325,31 @@ const AMENITY_PRESETS = [
 ];
 
 function hotelThumb(h) {
-  if (h.imageUrl) return `<img src="${escapeHtml(h.imageUrl)}" alt="" style="width:48px;height:48px;border-radius:8px;object-fit:cover">`;
+  if (h.imageUrl) return `<img src="${escapeHtml(hotelImageSrc(h.imageUrl))}" alt="" style="width:48px;height:48px;border-radius:8px;object-fit:cover">`;
   const initials = (h.name || "?").split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase();
   return `<div style="width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--accent-2,#5b8def),var(--accent,#7c5cff));color:#fff;font-weight:700;font-size:14px">${escapeHtml(initials)}</div>`;
 }
 
 // Upscale Booking/bstatic thumbnails (square60, max300, square600…) to large res.
 function hiRes(u) {
-  return String(u || "").replace(/\/(?:square|max)\d+(?:x\d+)?\//i, "/max1024x768/");
+  return String(u || "")
+    .replace(/\/xdata\/images\/hotel\/(?:square|max)\d+(?:x\d+)?\//i, "/xdata/images/hotel/max1280x900/")
+    .replace(/\/(?:square|max)\d+(?:x\d+)?\//i, "/max1280x900/");
+}
+
+function hotelImageSrc(u) {
+  const url = hiRes(u);
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.hostname === "cf.bstatic.com" || parsed.hostname === "q-xx.bstatic.com") {
+      return `/media/hotel-image?url=${encodeURIComponent(parsed.href)}`;
+    }
+  } catch (e) {}
+  return url;
 }
 
 function hotelMediaShowcase(h) {
-  const urls = [...new Set([h.imageUrl, ...(h.galleryUrls || [])].filter(Boolean))].map(hiRes);
+  const urls = [...new Set([h.imageUrl, ...(h.galleryUrls || [])].filter(Boolean))].map(hotelImageSrc);
   if (!urls.length) {
     return `<div class="hotel-media-empty">${escapeHtml((h.name||"?").charAt(0).toUpperCase())}</div>`;
   }
@@ -1612,6 +1625,7 @@ async function showHotelDetails(id) {
     </div>`;
 
   const body = `
+    <div class="hotel-detail-shell">
     ${hotelMediaShowcase(h)}
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap">
       <div>
@@ -1632,7 +1646,8 @@ async function showHotelDetails(id) {
       <div class="info-item"><div class="info-label">${t("form.availableRooms","Available rooms")}</div><div class="info-value">${formatNumber(h.availableRooms||0)}</div></div>
       <div class="info-item"><div class="info-label">${t("form.maxGuestsPerRoom","Guests per room")}</div><div class="info-value">${formatNumber(h.maxGuestsPerRoom||2)}</div></div>
     </div>
-    ${pricingEditor}`;
+    ${pricingEditor}
+    </div>`;
 
   openModal(`${t("nav.hotels","Hotel")} — ${escapeHtml(h.name)}`, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.close")}</button>

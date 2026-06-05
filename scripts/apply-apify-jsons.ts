@@ -42,7 +42,9 @@ function similarity(a: string, b: string): number {
   return overlap / Math.max(aParts.size, bParts.size);
 }
 function hiRes(u: string): string {
-  return u.replace(/\/(?:square|max)\d+(?:x\d+)?\//i, '/max1024x768/');
+  return u
+    .replace(/\/xdata\/images\/hotel\/(?:square|max)\d+(?:x\d+)?\//i, '/xdata/images/hotel/max1280x900/')
+    .replace(/\/(?:square|max)\d+(?:x\d+)?\//i, '/max1280x900/');
 }
 function collectPhotos(item: Record<string, unknown>): string[] {
   const vals: string[] = [];

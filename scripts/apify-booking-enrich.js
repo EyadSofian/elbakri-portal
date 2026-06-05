@@ -211,7 +211,10 @@ function collectPhotos(item) {
   if (Array.isArray(item.images)) values.push(...item.images);
   values.push(...collectIndexed(item, "photos"));
   values.push(...collectIndexed(item, "images"));
-  return [...new Set(values.map((v) => String(v).trim()).filter(Boolean))].slice(0, 30).join(" | ");
+  const hiRes = (url) => String(url || "")
+    .replace(/\/xdata\/images\/hotel\/(?:square|max)\d+(?:x\d+)?\//i, "/xdata/images/hotel/max1280x900/")
+    .replace(/\/(?:square|max)\d+(?:x\d+)?\//i, "/max1280x900/");
+  return [...new Set(values.map((v) => hiRes(String(v).trim())).filter(Boolean))].slice(0, 30).join(" | ");
 }
 
 function collectRooms(item) {
