@@ -2927,6 +2927,182 @@ html[lang="ar"] .act-time-label {
   margin-bottom: 4px;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   HOTEL FILTERS — amenity chips, area chips, attribute badges
+   ═══════════════════════════════════════════════════════════ */
+
+.amenity-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.amenity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-20);
+  background: var(--surface);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.amenity-chip svg {
+  width: 13px;
+  height: 13px;
+}
+
+.amenity-chip:hover {
+  border-color: var(--brand-navy-3);
+  color: var(--brand-navy-2);
+}
+
+.amenity-chip.active {
+  background: var(--brand-navy-2);
+  border-color: var(--brand-navy-2);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(15,27,71,0.2);
+}
+
+.area-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.area-chip {
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-20);
+  background: var(--surface);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.area-chip:hover { border-color: var(--info); color: var(--info); }
+
+.area-chip.active {
+  background: var(--info-soft);
+  border-color: var(--info);
+  color: var(--info);
+}
+
+/* Hotel structured attribute badges (in the table) */
+.hotel-attr-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--r-20);
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--success-soft);
+  color: var(--success);
+  border: 1px solid rgba(4,120,87,0.16);
+}
+
+.hotel-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.hotel-rating svg {
+  width: 11px;
+  height: 11px;
+  fill: var(--warning);
+}
+
+/* Context chip (e.g. selected destination in toolbar) */
+.ctx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--brand-navy-3);
+  background: var(--info-soft);
+  border-radius: var(--r-20);
+  padding: 2px 9px;
+}
+
+.ctx-chip svg { width: 12px; height: 12px; }
+
+/* ═══════════════════════════════════════════════════════════
+   UI BUILDER (admin)
+   ═══════════════════════════════════════════════════════════ */
+.ui-builder-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 16px;
+}
+
+.ui-col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 800;
+  font-size: 13px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ui-block-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 56vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.ui-block-item {
+  border: 1px solid var(--border);
+  border-radius: var(--r-8);
+  padding: 12px;
+  background: var(--surface-raised);
+}
+
+.ui-block-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ui-block-row strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.ui-block-row strong svg { width: 14px; height: 14px; }
+
+.ui-preview {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-12);
+  padding: 16px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.6), rgba(248,250,252,0.4)),
+    repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.012) 10px, rgba(0,0,0,0.012) 20px);
+  min-height: 200px;
+}
+
+@media (max-width: 860px) {
+  .ui-builder-grid { grid-template-columns: 1fr; }
+}
+
 /* ─── Mobile destination grid ────────────────────────────────── */
 @media (max-width: 640px) {
   .dest-grid {

@@ -6,6 +6,7 @@ import {
   deleteHotel,
   deleteHotelCompanyVisibility,
   getHotel,
+  listHotelAreas,
   listHotelCompanyVisibility,
   listHotels,
   syncSheets,
@@ -44,6 +45,7 @@ router.get('/pricing/all', requireRole('SUPERADMIN'), listAllHotelPricing);
 router.post('/pricing', requireRole('SUPERADMIN'), createHotelPricing);
 router.patch('/pricing/:id', requireRole('SUPERADMIN'), updateHotelPricing);
 router.delete('/pricing/:id', requireRole('SUPERADMIN'), deleteHotelPricing);
+router.get('/areas', listHotelAreas);
 router.get('/', listHotels);
 router.get('/:id', getHotel);
 router.post('/', requireRole('SUPERADMIN'), upload.single('image'), validate(createHotelSchema), createHotel);

@@ -37,13 +37,28 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
       }
     : undefined;
 
+  // Boolean attribute filters — only applied when the query param equals 'true'
+  const boolFilter = (key: string) => req.query[key] === 'true' ? { [key]: true } : {};
+
   const where: Prisma.HotelWhereInput = {
     ...(caller.role !== 'SUPERADMIN' && { isActive: true }),
     ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' } }),
+    ...(req.query.area && { area: { contains: String(req.query.area), mode: 'insensitive' } }),
     ...(req.query.stars && { stars: parseInt(String(req.query.stars)) }),
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
     ...(priceFilter && { pricePerNight: priceFilter }),
     ...(req.query.currency && { currency: String(req.query.currency) }),
+    // Structured amenity filters (sheet-driven)
+    ...boolFilter('seaFront'),
+    ...boolFilter('privateBeach'),
+    ...boolFilter('sandyBeach'),
+    ...boolFilter('kidsPool'),
+    ...boolFilter('kidsClub'),
+    ...boolFilter('aquaPark'),
+    ...boolFilter('snorkeling'),
+    ...boolFilter('diving'),
+    ...boolFilter('adultsOnly'),
+    ...boolFilter('allInclusive'),
     ...(search && {
       OR: [
         { name: { contains: search, mode: 'insensitive' } },
@@ -117,6 +132,25 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
   });
 
   res.json({ success: true, data, meta: paginateMeta(total, page, limit) });
+}
+
+/** GET /api/hotels/areas?destinationId=&city= — distinct sub-areas for filter chips */
+export async function listHotelAreas(req: Request, res: Response): Promise<void> {
+  const caller = req.user!;
+  const where: Prisma.HotelWhereInput = {
+    ...(caller.role !== 'SUPERADMIN' && { isActive: true }),
+    area: { not: null },
+    ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
+    ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' } }),
+  };
+  const rows = await prisma.hotel.findMany({
+    where,
+    select: { area: true },
+    distinct: ['area'],
+    orderBy: { area: 'asc' },
+  });
+  const areas = rows.map(r => r.area).filter(Boolean) as string[];
+  res.json({ success: true, data: areas });
 }
 
 export async function getHotel(req: Request, res: Response): Promise<void> {

@@ -982,6 +982,55 @@
   en.btn.saving = "Saving...";
   ar.btn.saving = "جاري الحفظ...";
 
+  // ── Hotel filters (sheet-driven amenities) ──────────────────────────────────
+  Object.assign(en.filter, {
+    area: "Area", amenities: "Amenities",
+    aquaPark: "Aqua Park", privateBeach: "Private Beach", seaFront: "Sea Front",
+    sandyBeach: "Sandy Beach", kidsPool: "Kids Pool", kidsClub: "Kids Club",
+    allInclusive: "All Inclusive", snorkeling: "Snorkeling", diving: "Diving",
+    adultsOnly: "Adults Only",
+  });
+  Object.assign(ar.filter, {
+    area: "المنطقة", amenities: "المرافق",
+    aquaPark: "أكوا بارك", privateBeach: "شاطئ خاص", seaFront: "على البحر",
+    sandyBeach: "شاطئ رملي", kidsPool: "مسبح أطفال", kidsClub: "نادي أطفال",
+    allInclusive: "شامل كلياً", snorkeling: "سنوركلينج", diving: "غوص",
+    adultsOnly: "للبالغين فقط",
+  });
+  en.hotel.searchName = "Hotel name...";
+  ar.hotel.searchName = "اسم الفندق...";
+
+  // ── UI Builder (admin) ──────────────────────────────────────────────────────
+  en.nav.uiBuilder = "UI Builder";
+  ar.nav.uiBuilder = "منشئ الواجهة";
+  en.page.uiBuilderTitle = "UI Builder / Portal Templates";
+  ar.page.uiBuilderTitle = "منشئ الواجهة / قوالب البوابة";
+  en.page.uiBuilderSub = "Control dashboard cards, request forms and offer popups — no code";
+  ar.page.uiBuilderSub = "تحكّم في بطاقات اللوحة ونماذج الطلبات ونوافذ العروض — بدون كود";
+  en.uiBuilder = {
+    newTemplate: "New Template", target: "Target", blocks: "Blocks", addBlock: "Add Block",
+    blockType: "Block Type", icon: "Icon", dataSource: "Data Source", title: "Title (EN)",
+    titleAr: "Title (AR)", activate: "Activate", active: "Active", preview: "Preview",
+    duplicate: "Duplicate", moveUp: "Move Up", moveDown: "Move Down", visible: "Visible",
+    livePreview: "Live Preview", saveActivate: "Save & Activate", noTemplates: "No templates yet",
+  };
+  ar.uiBuilder = {
+    newTemplate: "قالب جديد", target: "الهدف", blocks: "العناصر", addBlock: "إضافة عنصر",
+    blockType: "نوع العنصر", icon: "الأيقونة", dataSource: "مصدر البيانات", title: "العنوان (EN)",
+    titleAr: "العنوان (AR)", activate: "تفعيل", active: "نشط", preview: "معاينة",
+    duplicate: "نسخ", moveUp: "أعلى", moveDown: "أسفل", visible: "ظاهر",
+    livePreview: "معاينة حية", saveActivate: "حفظ وتفعيل", noTemplates: "لا توجد قوالب بعد",
+  };
+
+  // ── Dashboard offers card ───────────────────────────────────────────────────
+  en.offers.dashboardCard = "Active Offers";
+  ar.offers.dashboardCard = "العروض النشطة";
+  en.offers.viewAll = "View Offers";
+  ar.offers.viewAll = "عرض العروض";
+
+  en.validation.childAges = "Please enter all children ages";
+  ar.validation.childAges = "يرجى إدخال أعمار جميع الأطفال";
+
   const dict = { en, ar };
 
   function deepGet(obj, path) {

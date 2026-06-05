@@ -59,6 +59,7 @@
         </div>
         <div class="nav-group">
           <div class="nav-label" data-i18n="nav.tools">Tools</div>
+          <button class="nav-item" data-page="ui-builder"><i data-lucide="layout-template"></i><span data-i18n="nav.uiBuilder">UI Builder</span></button>
           <button class="nav-item" data-page="sheets-config"><i data-lucide="sheet"></i><span data-i18n="nav.sheetsConfig">Sheets Config</span></button>
           <button class="nav-item" data-page="calculators"><i data-lucide="calculator"></i><span data-i18n="nav.calculators">Calculators</span></button>
         </div>
@@ -150,6 +151,7 @@ const pageMeta = {
   "airport-assist": ["page.airportAssistTitle", "page.airportAssistSub"],
   "sim-card": ["page.simCardTitle", "page.simCardSub"],
   offers: ["page.offersTitle", "page.offersSub"],
+  "ui-builder": ["page.uiBuilderTitle", "page.uiBuilderSub"],
   calculators: ["page.calculatorsTitle", "page.calculatorsSub"],
   destinations: ["nav.destinations", "page.destinationsSub"],
   "quote-requests": ["nav.quoteRequests", "page.quoteRequestsSub"],
@@ -2809,6 +2811,218 @@ function adminClearFilters(page) {
   adminReloadList(page);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// UI BUILDER — admin-controlled, schema-driven templates (safe JSON config)
+// ═══════════════════════════════════════════════════════════════════════════
+const UI_TARGETS = [
+  { value: "company_dashboard", label: "Company Dashboard" },
+  { value: "offer_popup",       label: "Offer Popup" },
+  { value: "hotel_request",     label: "Hotel Request" },
+  { value: "activity_request",  label: "Activity Request" },
+  { value: "transport_booking", label: "Transport Booking" },
+  { value: "security_approval", label: "Security Approval" },
+  { value: "airport_assist",    label: "Airport Assist" },
+  { value: "sim_card",          label: "SIM Card" },
+];
+const UI_BLOCK_TYPES = ["stat_card","action_card","promo_card","info_panel","form_section","table_summary","price_summary","upload_field"];
+const UI_ICONS = ["wallet","hotel","map-pin","bus","plane","plane-landing","shield-check","credit-card","users","baby","calendar","calendar-check","clock","file","file-text","phone","brand-whatsapp","ticket","star","tag","briefcase-business","circle-x","receipt","arrow-right","info","percent"];
+const UI_DATA_SOURCES = ["", "wallet.balance","wallet.deducted","wallet.remainingBalance","wallet.totalDeposited","company.tier","company.name","bookings.pendingCount","bookings.totalCount","quotes.pendingCount","offers.activeCount"];
+
+// Working copy of the template being edited
+let uiDraft = null;
+
+async function renderUiBuilder() {
+  state.page = "ui-builder";
+  const capturedToken = state.renderToken;
+  content(pageHeader(`<button class="btn btn-primary" onclick="uiNewTemplate()">${icon("plus")}&nbsp;${t("uiBuilder.newTemplate","New Template")}</button>`) + `
+    <div id="uiBuilderArea"><div class="skeleton" style="height:200px"></div></div>`);
+  const res = await apiFetch("/admin/ui-templates");
+  if (state.renderToken !== capturedToken) return;
+  const templates = res?.data || [];
+
+  document.getElementById("uiBuilderArea").innerHTML = `
+    <section class="table-card">
+      <div class="table-toolbar"><div><strong>Templates</strong><div class="secondary-text">${templates.length} ${t("uiBuilder.blocks","templates")}</div></div></div>
+      <div class="table-scroll"><table class="data-table"><thead><tr>
+        <th>Name</th><th>${t("uiBuilder.target","Target")}</th><th>Blocks</th><th>${t("uiBuilder.active","Active")}</th><th>${t("th.actions")}</th>
+      </tr></thead><tbody>
+        ${templates.length ? templates.map(tpl => `<tr>
+          <td class="primary-text">${escapeHtml(tpl.name)}<div class="secondary-text">${escapeHtml(tpl.key)}</div></td>
+          <td>${escapeHtml((UI_TARGETS.find(x=>x.value===tpl.target)||{}).label || tpl.target)}</td>
+          <td>${(tpl.config?.blocks||[]).length}</td>
+          <td>${statusBadge(tpl.isActive ? "ACTIVE" : "INACTIVE")}</td>
+          <td style="display:flex;gap:6px">
+            <button class="btn btn-outline btn-sm" onclick="uiEditTemplate('${tpl.id}')">${icon("pencil")}</button>
+            ${tpl.isActive ? "" : `<button class="btn btn-success btn-sm" onclick="uiActivate('${tpl.id}')" title="${t("uiBuilder.activate","Activate")}">${icon("check")}</button>`}
+            <button class="btn btn-outline btn-sm" onclick="uiDuplicate('${tpl.id}')" title="${t("uiBuilder.duplicate","Duplicate")}">${icon("copy")}</button>
+            <button class="btn btn-danger btn-sm" onclick="uiDelete('${tpl.id}')">${icon("trash-2")}</button>
+          </td>
+        </tr>`).join("") : `<tr><td colspan="5">${emptyBlock("empty.noData")}</td></tr>`}
+      </tbody></table></div>
+    </section>`;
+  refreshIcons(document.getElementById("uiBuilderArea"));
+}
+
+function uiNewTemplate() {
+  uiDraft = {
+    id: null,
+    key: "dashboard-" + Date.now().toString(36),
+    name: "New Dashboard Template",
+    target: "company_dashboard",
+    langMode: "both",
+    isActive: false,
+    config: { layout: "compact_b2b", theme: { glass: true, accent: "navy_gold", density: "compact" }, blocks: [] },
+  };
+  uiOpenEditor();
+}
+
+async function uiEditTemplate(id) {
+  const res = await apiFetch(`/admin/ui-templates/${id}`);
+  if (!res?.data) return;
+  uiDraft = JSON.parse(JSON.stringify(res.data));
+  if (!uiDraft.config) uiDraft.config = { blocks: [] };
+  if (!uiDraft.config.blocks) uiDraft.config.blocks = [];
+  uiOpenEditor();
+}
+
+function uiOpenEditor() {
+  const body = `
+    <div class="ui-builder-grid">
+      <!-- Left: blocks list -->
+      <div class="ui-col">
+        <div class="ui-col-head">${t("uiBuilder.blocks","Blocks")}
+          <button class="btn btn-primary btn-sm" onclick="uiAddBlock()">${icon("plus")}&nbsp;${t("uiBuilder.addBlock","Add")}</button>
+        </div>
+        <div id="uiBlockList" class="ui-block-list"></div>
+      </div>
+      <!-- Middle: live preview -->
+      <div class="ui-col">
+        <div class="ui-col-head">${t("uiBuilder.livePreview","Live Preview")}</div>
+        <div id="uiPreview" class="ui-preview"></div>
+      </div>
+    </div>`;
+  openModal(`${escapeHtml(uiDraft.name)}`, `
+    <div class="form-grid" style="margin-bottom:14px">
+      <div class="form-field"><label>Name</label><input id="uiName" value="${escapeHtml(uiDraft.name)}" oninput="uiDraft.name=this.value"></div>
+      <div class="form-field"><label>${t("uiBuilder.target","Target")}</label>
+        <select id="uiTarget" onchange="uiDraft.target=this.value">
+          ${UI_TARGETS.map(x => `<option value="${x.value}" ${x.value===uiDraft.target?"selected":""}>${x.label}</option>`).join("")}
+        </select></div>
+    </div>
+    ${body}`, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-outline" onclick="uiSave(false)">${t("btn.save")}</button>
+    <button class="btn btn-primary" onclick="uiSave(true)">${icon("check")}&nbsp;${t("uiBuilder.saveActivate","Save & Activate")}</button>
+  `, "modal-wide");
+  uiRenderBlockList();
+  uiRenderPreview();
+}
+
+function uiAddBlock() {
+  uiDraft.config.blocks.push({
+    type: "stat_card",
+    key: "block_" + Date.now().toString(36),
+    title: "New Card", titleAr: "",
+    icon: "wallet",
+    dataSource: "wallet.remainingBalance",
+    visible: true,
+    order: uiDraft.config.blocks.length + 1,
+  });
+  uiRenderBlockList();
+  uiRenderPreview();
+}
+
+function uiRenderBlockList() {
+  const el = document.getElementById("uiBlockList");
+  if (!el) return;
+  el.innerHTML = uiDraft.config.blocks.map((b, i) => `
+    <div class="ui-block-item">
+      <div class="ui-block-row">
+        <strong>${icon(b.icon||"tag")} ${escapeHtml(b.title||b.key)}</strong>
+        <div style="display:flex;gap:3px">
+          <button class="icon-button btn-icon" onclick="uiMoveBlock(${i},-1)" ${i===0?"disabled":""}>${icon("chevron-up")}</button>
+          <button class="icon-button btn-icon" onclick="uiMoveBlock(${i},1)" ${i===uiDraft.config.blocks.length-1?"disabled":""}>${icon("chevron-down")}</button>
+          <button class="icon-button btn-icon" onclick="uiRemoveBlock(${i})">${icon("trash-2")}</button>
+        </div>
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <div class="form-field"><label>${t("uiBuilder.blockType","Type")}</label>
+          <select onchange="uiSetBlock(${i},'type',this.value)">${UI_BLOCK_TYPES.map(tp=>`<option value="${tp}" ${b.type===tp?"selected":""}>${tp.replace(/_/g," ")}</option>`).join("")}</select></div>
+        <div class="form-field"><label>${t("uiBuilder.icon","Icon")}</label>
+          <select onchange="uiSetBlock(${i},'icon',this.value)">${UI_ICONS.map(ic=>`<option value="${ic}" ${b.icon===ic?"selected":""}>${ic}</option>`).join("")}</select></div>
+        <div class="form-field"><label>${t("uiBuilder.title","Title (EN)")}</label><input value="${escapeHtml(b.title||"")}" oninput="uiSetBlock(${i},'title',this.value)"></div>
+        <div class="form-field"><label>${t("uiBuilder.titleAr","Title (AR)")}</label><input value="${escapeHtml(b.titleAr||"")}" oninput="uiSetBlock(${i},'titleAr',this.value)"></div>
+        <div class="form-field full"><label>${t("uiBuilder.dataSource","Data Source")}</label>
+          <select onchange="uiSetBlock(${i},'dataSource',this.value)">${UI_DATA_SOURCES.map(ds=>`<option value="${ds}" ${b.dataSource===ds?"selected":""}>${ds||"(none)"}</option>`).join("")}</select></div>
+        <div class="form-field"><label>CTA Target page</label><input value="${escapeHtml(b.ctaTarget||"")}" placeholder="e.g. hotels" oninput="uiSetBlock(${i},'ctaTarget',this.value)"></div>
+        <div class="form-field"><label class="check-row" style="margin-top:18px"><input type="checkbox" ${b.visible!==false?"checked":""} onchange="uiSetBlock(${i},'visible',this.checked)"> ${t("uiBuilder.visible","Visible")}</label></div>
+      </div>
+    </div>`).join("") || `<div class="empty-state" style="padding:20px">${t("uiBuilder.noTemplates","No blocks — click Add")}</div>`;
+  refreshIcons(el);
+}
+
+function uiSetBlock(i, key, val) { uiDraft.config.blocks[i][key] = val; uiRenderPreview(); if (key==="icon"||key==="title") uiRenderBlockList(); }
+function uiMoveBlock(i, dir) {
+  const arr = uiDraft.config.blocks; const j = i + dir;
+  if (j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  arr.forEach((b, idx) => b.order = idx + 1);
+  uiRenderBlockList(); uiRenderPreview();
+}
+function uiRemoveBlock(i) { uiDraft.config.blocks.splice(i, 1); uiRenderBlockList(); uiRenderPreview(); }
+
+function uiRenderPreview() {
+  const el = document.getElementById("uiPreview");
+  if (!el) return;
+  // Sample context for preview
+  const sample = { "wallet.balance":"$12,400", "wallet.remainingBalance":"$12,400", "wallet.deducted":"$3,600", "wallet.totalDeposited":"$16,000", "company.tier":"GOLD", "company.name":"Demo Travel", "bookings.pendingCount":"4", "bookings.totalCount":"38", "quotes.pendingCount":"2", "offers.activeCount":"1" };
+  const cards = uiDraft.config.blocks.filter(b => b.visible !== false).map(b => {
+    const val = b.dataSource ? (sample[b.dataSource] || "—") : "—";
+    if (b.type === "stat_card") {
+      return `<div class="stat-card"><div class="stat-row"><div class="stat-label">${escapeHtml(b.title||"")}</div><span class="stat-ico">${icon(b.icon||"tag")}</span></div><div class="stat-value">${escapeHtml(val)}</div></div>`;
+    }
+    return `<div class="stat-card"><div class="stat-row"><div class="stat-label">${escapeHtml(b.title||"")}</div><span class="stat-ico">${icon(b.icon||"tag")}</span></div>${b.ctaTarget?`<button class="btn btn-outline btn-sm" style="margin-top:10px">${icon("arrow-right")}&nbsp;Open</button>`:""}</div>`;
+  }).join("");
+  el.innerHTML = `<div class="stats-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))">${cards || `<div class="secondary-text">No visible blocks</div>`}</div>`;
+  refreshIcons(el);
+}
+
+async function uiSave(activate) {
+  uiDraft.name = document.getElementById("uiName")?.value || uiDraft.name;
+  uiDraft.target = document.getElementById("uiTarget")?.value || uiDraft.target;
+  const payload = {
+    key: uiDraft.key, name: uiDraft.name, target: uiDraft.target,
+    langMode: uiDraft.langMode || "both",
+    isActive: activate,
+    config: uiDraft.config,
+  };
+  const res = uiDraft.id
+    ? await apiFetch(`/admin/ui-templates/${uiDraft.id}`, { method: "PATCH", body: JSON.stringify(payload) })
+    : await apiFetch("/admin/ui-templates", { method: "POST", body: JSON.stringify(payload) });
+  if (res?.success) {
+    if (activate && res.data?.id && !uiDraft.id) {
+      await apiFetch(`/admin/ui-templates/${res.data.id}/activate`, { method: "POST" });
+    }
+    closeModal();
+    toast(t("toast.saved","Saved"), "success");
+    renderUiBuilder();
+  }
+}
+
+async function uiActivate(id) {
+  const res = await apiFetch(`/admin/ui-templates/${id}/activate`, { method: "POST" });
+  if (res?.success) { toast(t("uiBuilder.activate","Activated"), "success"); renderUiBuilder(); }
+}
+async function uiDuplicate(id) {
+  const res = await apiFetch(`/admin/ui-templates/${id}/duplicate`, { method: "POST" });
+  if (res?.success) { toast(t("toast.created","Duplicated"), "success"); renderUiBuilder(); }
+}
+async function uiDelete(id) {
+  if (!confirm("Delete this template?")) return;
+  const res = await apiFetch(`/admin/ui-templates/${id}`, { method: "DELETE" });
+  if (res?.success) { toast(t("toast.deleted","Deleted"), "success"); renderUiBuilder(); }
+}
+
 const pageLoaders = {
   dashboard: renderDashboard,
   companies: renderCompanies,
@@ -2828,6 +3042,7 @@ const pageLoaders = {
   "airport-assist": renderAirportAssist,
   "sim-card": renderSimCardAdmin,
   offers: renderOffers,
+  "ui-builder": renderUiBuilder,
   calculators: renderCalculators,
 };
 

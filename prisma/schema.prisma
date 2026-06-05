@@ -341,6 +341,21 @@ model Hotel {
   description       String?
   descriptionAr     String?
   amenities         String[]       @default([])
+  // Sub-area within the city (e.g. Naama Bay, Nabq, Sahl Hasheesh)
+  area              String?
+  // Structured attributes (synced from Verified_Hotels sheet) — drive agent filters
+  seaFront          Boolean        @default(false)
+  privateBeach      Boolean        @default(false)
+  sandyBeach        Boolean        @default(false)
+  kidsPool          Boolean        @default(false)
+  kidsClub          Boolean        @default(false)
+  aquaPark          Boolean        @default(false)
+  snorkeling        Boolean        @default(false)
+  diving            Boolean        @default(false)
+  adultsOnly        Boolean        @default(false)
+  allInclusive      Boolean        @default(false)
+  totalPools        Int?
+  googleRating      Decimal?       @db.Decimal(3, 2)
   imageUrl          String?
   galleryUrls       String[]       @default([])
   pricePerNight     Decimal        @db.Decimal(10, 2)
@@ -997,6 +1012,40 @@ model SimRequest {
 
   @@index([companyId])
   @@index([status])
+}
+
+// ─────────────────────────────────────────────
+// UI / FORM BUILDER (admin-controlled, schema-driven)
+// ─────────────────────────────────────────────
+
+model UiTemplate {
+  id          String              @id @default(cuid())
+  key         String              @unique
+  name        String
+  target      String              // company_dashboard | hotel_request | activity_request | transport_booking | security_approval | airport_assist | sim_card | offer_popup
+  serviceType String?
+  langMode    String              @default("both")  // en | ar | both
+  version     Int                 @default(1)
+  isActive    Boolean             @default(false)
+  config      Json
+  revisions   UiTemplateRevision[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([target])
+  @@index([isActive])
+}
+
+model UiTemplateRevision {
+  id          String     @id @default(cuid())
+  templateId  String
+  template    UiTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  version     Int
+  config      Json
+  createdById String?
+  createdAt   DateTime   @default(now())
+
+  @@index([templateId])
 }
 
 model SheetsConfig {

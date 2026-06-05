@@ -389,19 +389,76 @@ function logout() {
   });
 }
 
+// ─── Safe dashboard template renderer (admin-controlled, whitelisted) ─────────
+// Resolve a whitelisted dataSource key against the live dashboard context.
+function resolveDashboardDataSource(key, ctx) {
+  switch (key) {
+    case "wallet.balance":          return formatMoney(ctx.remaining, ctx.cur);
+    case "wallet.remainingBalance": return formatMoney(ctx.remaining, ctx.cur);
+    case "wallet.deducted":         return formatMoney(ctx.used, ctx.cur);
+    case "wallet.totalDeposited":   return formatMoney(ctx.deposited, ctx.cur);
+    case "company.tier":            return t("tier." + (ctx.tier || "STANDARD"), ctx.tier || "STANDARD");
+    case "company.name":            return ctx.companyName || "—";
+    case "bookings.pendingCount":   return ctx.pendingBookings;
+    case "bookings.totalCount":     return ctx.totalBookings;
+    case "quotes.pendingCount":     return ctx.pendingQuotes;
+    case "offers.activeCount":      return ctx.activeOffers;
+    default:                        return "—";
+  }
+}
+
+// Render a single whitelisted block to safe HTML (text only — no raw HTML from admin).
+function renderDashboardBlock(block, ctx) {
+  if (block.visible === false) return "";
+  const title = escapeHtml(locName(block.title, block.titleAr) || "");
+  const ic = block.icon || "activity";
+  switch (block.type) {
+    case "stat_card": {
+      const value = block.dataSource ? resolveDashboardDataSource(block.dataSource, ctx) : "—";
+      return `<div class="stat-card">
+        <div class="stat-row"><div class="stat-label">${title}</div><span class="stat-ico">${icon(ic)}</span></div>
+        <div class="stat-value">${escapeHtml(String(value))}</div>
+        ${block.subtitle ? `<div class="stat-sub">${escapeHtml(locName(block.subtitle, block.subtitleAr))}</div>` : ""}
+      </div>`;
+    }
+    case "action_card":
+    case "promo_card": {
+      const cta = escapeHtml(locName(block.ctaLabel, block.ctaLabelAr) || t("btn.view","Open"));
+      const target = block.ctaTarget && /^[a-z0-9_-]+$/i.test(block.ctaTarget) ? block.ctaTarget : "";
+      return `<div class="stat-card" style="cursor:${target?"pointer":"default"}" ${target?`onclick="setPage('${target}')"`:""}>
+        <div class="stat-row"><div class="stat-label">${title}</div><span class="stat-ico">${icon(ic)}</span></div>
+        ${block.subtitle ? `<div class="stat-sub" style="margin-top:8px">${escapeHtml(locName(block.subtitle, block.subtitleAr))}</div>` : ""}
+        ${target ? `<button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="event.stopPropagation();setPage('${target}')">${icon("arrow-right")}&nbsp;${cta}</button>` : ""}
+      </div>`;
+    }
+    default:
+      return "";
+  }
+}
+
+function renderDashboardCardsFromTemplate(tpl, ctx) {
+  const blocks = (tpl?.config?.blocks || [])
+    .filter(b => ["stat_card","action_card","promo_card"].includes(b.type) && b.visible !== false)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  return blocks.map(b => renderDashboardBlock(b, ctx)).join("");
+}
+
 async function renderDashboard() {
   const capturedToken = state.renderToken;
   content(pageHeader() + `
-    <div class="stats-grid">${Array.from({ length: 4 }, () => `<div class="stat-card"><div class="skeleton" style="height:12px;width:62%"></div><div class="skeleton" style="height:28px;width:44%;margin-top:14px"></div><div class="skeleton" style="height:12px;width:55%;margin-top:12px"></div></div>`).join("")}</div>
+    <div class="stats-grid">${Array.from({ length: 5 }, () => `<div class="stat-card"><div class="skeleton" style="height:12px;width:62%"></div><div class="skeleton" style="height:28px;width:44%;margin-top:14px"></div><div class="skeleton" style="height:12px;width:55%;margin-top:12px"></div></div>`).join("")}</div>
     <div class="grid-2">
       <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.bookings")}</div></div></div><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(5, 6)}</tbody></table></div></section>
       <section class="panel"><div class="panel-header"><div><div class="panel-title">${t("nav.wallet")}</div></div></div><div class="panel-body"><div class="skeleton" style="height:70px"></div></div></section>
     </div>`);
 
-  const [report, bookings, wallet] = await Promise.all([
+  const [report, bookings, wallet, tplRes, offersRes, quotesRes] = await Promise.all([
     state.user?.companyId ? apiFetch(`/reports/company/${state.user.companyId}`) : null,
     apiFetch("/bookings?limit=8"),
     apiFetch("/wallet/balance"),
+    apiFetch("/ui-templates/company_dashboard").catch(() => null),
+    apiFetch("/offers?activeOnly=true&limit=1").catch(() => null),
+    apiFetch("/quote-requests?status=NEW&limit=1").catch(() => null),
   ]);
   if (state.renderToken !== capturedToken) return;
   if (wallet?.data) updateWallet(wallet.data);
@@ -413,13 +470,30 @@ async function renderDashboard() {
   const deposited   = Number(wdata.totalDeposited ?? 0);
   const used        = Number(wdata.totalUsed ?? 0);
   const cur         = wdata.currency || "USD";
+  const activeOffers = offersRes?.meta?.total ?? 0;
+  const pendingQuotes = quotesRes?.meta?.total ?? 0;
+
+  const ctx = {
+    remaining, deposited, used, cur,
+    tier: state.user?.company?.tier,
+    companyName: state.user?.company?.name,
+    pendingBookings: d.pendingBookings || 0,
+    totalBookings: d.totalBookings || 0,
+    pendingQuotes, activeOffers,
+  };
+
+  // Template-driven cards if an active template exists, else the default set.
+  const templateCards = tplRes?.data ? renderDashboardCardsFromTemplate(tplRes.data, ctx) : "";
+  const defaultCards = `
+      ${statCard("wallet.remainingBalance", formatMoney(remaining, cur), "wallet.walletBalance", "wallet")}
+      ${statCard("wallet.totalUsed",        formatMoney(used, cur),      "stat.allTime",        "receipt")}
+      ${statCard("stat.totalBookings",      d.totalBookings || 0,        "stat.allTime",        "briefcase-business")}
+      ${statCard("stat.pending",            d.pendingBookings || 0,      "status.PENDING",      "clock")}
+      ${offerCardHtml(activeOffers)}`;
 
   content(pageHeader() + `
     <div class="stats-grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">
-      ${statCard("stat.totalBookings",   d.totalBookings || 0,                  "stat.allTime",    "briefcase-business")}
-      ${statCard("stat.pending",         d.pendingBookings || 0,                 "status.PENDING",  "clock")}
-      ${statCard("stat.cancellations",   d.bookingsByStatus?.CANCELLED || 0,     "stat.lastThirty", "circle-x")}
-      ${statCard("wallet.remainingBalance", formatMoney(remaining, cur), "wallet.walletBalance", "wallet")}
+      ${templateCards || defaultCards}
     </div>
     <div class="grid-2">
       ${bookingPanel(bookings?.data || [])}
@@ -452,6 +526,16 @@ async function renderDashboard() {
 
   // Show offer popup after first dashboard load
   maybeShowOfferPopup();
+}
+
+// Active-offers card — always lets the user reach offers even if the popup was dismissed.
+function offerCardHtml(count) {
+  const has = count > 0;
+  return `<div class="stat-card" style="cursor:pointer;${has ? 'border-color:var(--brand-gold);background:linear-gradient(135deg,var(--surface),var(--brand-gold-soft))' : ''}" onclick="setPage('offers')">
+    <div class="stat-row"><div class="stat-label">${t("offers.dashboardCard","Active Offers")}</div><span class="stat-ico" style="${has?'background:var(--brand-gold-soft);color:var(--brand-gold)':''}">${icon("tag")}</span></div>
+    <div class="stat-value">${formatNumber(count)}</div>
+    <div class="stat-sub">${has ? t("offers.viewAll","View Offers") : t("offers.noOffer","No active offers")}</div>
+  </div>`;
 }
 
 function statCard(labelKey, value, subKey, iconName) {
@@ -496,6 +580,45 @@ function renderBookings() {
   });
 }
 
+// ─── Locale-aware display helpers ────────────────────────────────────────────
+function isArabic() {
+  return (localStorage.getItem("lang") || document.documentElement.lang || "en") === "ar";
+}
+/** Pick the right language variant. In Arabic mode prefer the *Ar field, else English. */
+function locName(en, ar) {
+  if (isArabic() && ar) return ar;
+  return en || ar || "";
+}
+function hotelCity(h) {
+  return locName(h.city, h.cityAr);
+}
+function hotelName(h) {
+  return locName(h.name, h.nameAr);
+}
+
+// ─── Hotel structured amenities (sheet-driven) ───────────────────────────────
+// key → { i18n key, lucide icon }
+const HOTEL_AMENITY_DEFS = [
+  ["aquaPark",     "filter.aquaPark",     "waves"],
+  ["privateBeach", "filter.privateBeach", "umbrella"],
+  ["seaFront",     "filter.seaFront",     "sailboat"],
+  ["sandyBeach",   "filter.sandyBeach",   "sun"],
+  ["kidsPool",     "filter.kidsPool",     "baby"],
+  ["kidsClub",     "filter.kidsClub",     "blocks"],
+  ["allInclusive", "filter.allInclusive", "utensils"],
+  ["snorkeling",   "filter.snorkeling",   "fish"],
+  ["diving",       "filter.diving",       "anchor"],
+  ["adultsOnly",   "filter.adultsOnly",   "user"],
+];
+
+function hotelAttrBadges(h) {
+  // Show up to 4 active structured attributes as small chips
+  const active = HOTEL_AMENITY_DEFS.filter(([k]) => h[k] === true).slice(0, 4);
+  return active.map(([k, labelKey]) =>
+    `<span class="hotel-attr-chip">${t(labelKey, k)}</span>`
+  ).join("");
+}
+
 // ─── Price display helper ────────────────────────────────────────────────────
 function hotelPriceCell(h) {
   if (h.priceVisible === false || h.pricePerNight == null || Number(h.pricePerNight) <= 0) {
@@ -511,16 +634,15 @@ function hotelThumbAgent(h) {
 }
 
 function hotelNameCell(h) {
-  const amenities = (h.amenities || []).slice(0, 3)
-    .map(a => `<span class="badge badge-outline" style="font-size:10px;padding:1px 6px">${escapeHtml(a)}</span>`)
-    .join(" ");
-  const more = (h.amenities || []).length > 3 ? `<span style="color:var(--text-secondary);font-size:10px"> +${(h.amenities||[]).length - 3}</span>` : "";
+  const attrBadges = hotelAttrBadges(h);
+  const areaLine = h.area ? ` · ${escapeHtml(locName(h.area, h.area))}` : "";
+  const rating = h.googleRating ? `<span class="hotel-rating">${icon("star")}${Number(h.googleRating).toFixed(1)}</span>` : "";
   return `<div style="display:flex;gap:10px;align-items:center">
-    ${hotelThumbAgent(h)}
+    ${hotelThumbAgent({ ...h, name: hotelName(h) })}
     <div style="min-width:0">
-      <div class="primary-text">${escapeHtml(h.name)}</div>
-      <div class="secondary-text">${escapeHtml(h.city)}, ${escapeHtml(h.country)}</div>
-      <div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${amenities}${more}</div>
+      <div class="primary-text" style="display:flex;align-items:center;gap:6px">${escapeHtml(hotelName(h))}${rating}</div>
+      <div class="secondary-text">${"★".repeat(Math.min(h.stars||0,5))} · ${escapeHtml(hotelCity(h))}${areaLine}</div>
+      <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px">${attrBadges}</div>
     </div>
   </div>`;
 }
@@ -542,12 +664,19 @@ async function showAgentHotelDetails(id) {
     ? `<img src="${escapeHtml(h.imageUrl)}" alt="" style="width:100%;height:200px;object-fit:cover;border-radius:8px;margin-bottom:16px">`
     : `<div style="height:140px;border-radius:8px;background:linear-gradient(135deg,#5b8def,#7c5cff);display:flex;align-items:center;justify-content:center;color:#fff;font-size:36px;font-weight:800;margin-bottom:16px">${escapeHtml((h.name||"?").charAt(0).toUpperCase())}</div>`;
 
+  const attrBadges = HOTEL_AMENITY_DEFS.filter(([k]) => h[k] === true)
+    .map(([k, labelKey, ic]) => `<span class="badge badge-confirmed" style="font-size:11px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px">${icon(ic)}${t(labelKey, k)}</span>`)
+    .join(" ");
+  const descLoc = locName(h.description, h.descriptionAr);
+  const areaLine = h.area ? ` · ${escapeHtml(h.area)}` : "";
+
   const body = `
     ${headerImg}
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap">
       <div>
-        <div style="font-size:20px;font-weight:700">${escapeHtml(h.name)}</div>
-        <div style="color:var(--text-secondary);margin-top:4px">${"★".repeat(Math.min(h.stars||0,5))} · ${escapeHtml(h.city||"")}, ${escapeHtml(h.country||"EG")}</div>
+        <div style="font-size:20px;font-weight:700">${escapeHtml(hotelName(h))}</div>
+        <div style="color:var(--text-secondary);margin-top:4px">${"★".repeat(Math.min(h.stars||0,5))} · ${escapeHtml(hotelCity(h))}${areaLine}, ${escapeHtml(h.country||"EG")}</div>
+        ${h.googleRating ? `<div class="hotel-rating" style="margin-top:4px">${icon("star")}${Number(h.googleRating).toFixed(1)} Google</div>` : ""}
         ${h.address ? `<div style="color:var(--text-secondary);font-size:12px;margin-top:4px">${escapeHtml(h.address)}</div>` : ""}
       </div>
       <div style="text-align:right">
@@ -555,11 +684,12 @@ async function showAgentHotelDetails(id) {
         ${Number(h.pricePerNight||0) > 0 && h.priceVisible !== false ? `<div style="color:var(--text-secondary);font-size:11px">${t("form.nights","per night")}</div>` : ""}
       </div>
     </div>
-    ${h.description ? `<p style="white-space:pre-wrap;color:var(--text-secondary);line-height:1.5;margin:8px 0">${escapeHtml(h.description)}</p>` : ""}
-    ${h.amenities?.length ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>` : ""}
+    ${attrBadges ? `<div style="margin:10px 0;display:flex;flex-wrap:wrap;gap:6px">${attrBadges}</div>` : ""}
+    ${descLoc ? `<p style="white-space:pre-wrap;color:var(--text-secondary);line-height:1.5;margin:8px 0">${escapeHtml(descLoc)}</p>` : ""}
+    ${h.amenities?.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>` : ""}
     ${(h.galleryUrls && h.galleryUrls.length) ? `<div style="margin-top:16px"><div style="font-weight:800;margin-bottom:8px">${t("hotel.gallery","Gallery")}</div><div class="hotel-gallery">${h.galleryUrls.map(u => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener"><img src="${escapeHtml(u)}" alt="" loading="lazy"></a>`).join("")}</div></div>` : ""}`;
 
-  openModal(`${escapeHtml(h.name)}`, body, `
+  openModal(`${escapeHtml(hotelName(h))}`, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.close")}</button>
     ${(h.canRequestQuote === false || h.allowQuoteRequest === false) ? "" : `<button class="btn btn-primary" onclick="closeModal();openQuoteRequestModal('HOTEL','${h.id}',${inlineJsonArg(h.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`}
   `);
@@ -608,10 +738,10 @@ async function renderHotels() {
       <div class="dest-card-count">${formatNumber(totalHotels)} ${t("nav.hotels","Hotels")}</div>
     </button>`,
     ...dests.map(d => `
-      <button class="dest-card" onclick="renderHotelsByDest('${d.id}','${escapeHtml(d.name)}')">
+      <button class="dest-card" onclick="renderHotelsByDest('${d.id}','${escapeHtml(locName(d.name, d.nameAr))}')">
         <div class="dest-card-icon"><i data-lucide="map-pin"></i></div>
-        <div class="dest-card-name">${escapeHtml(d.name)}</div>
-        ${d.nameAr ? `<div class="dest-card-sub">${escapeHtml(d.nameAr)}</div>` : ""}
+        <div class="dest-card-name">${escapeHtml(locName(d.name, d.nameAr))}</div>
+        ${(!isArabic() && d.nameAr) ? `<div class="dest-card-sub">${escapeHtml(d.nameAr)}</div>` : ""}
         <div class="dest-card-count">${
           destCountMap[d.id] != null
             ? `${formatNumber(destCountMap[d.id])} ${t("nav.hotels","Hotels")}`
@@ -631,24 +761,131 @@ async function renderHotels() {
   refreshIcons(document.getElementById("content"));
 }
 
+// Filter state for the hotel list (after a destination is chosen)
+state.hotelFilters = { search: "", area: "", stars: "", amenities: new Set() };
+
 async function renderHotelsByDest(destId, destName) {
   state.selectedDest = { id: destId, name: destName };
   state.page = "hotels";
+  state.hotelFilters = { search: "", area: "", stars: "", amenities: new Set() };
+  const capturedToken = state.renderToken;
 
-  const endpoint = destId ? `/hotels?destinationId=${encodeURIComponent(destId)}` : "/hotels";
-  const backBtn  = `<button class="btn btn-outline" onclick="renderHotels()">${icon("arrow-left")}&nbsp;${t("btn.back","Back")}</button>`;
+  // Load areas for this destination (chips)
+  const areaRes = await apiFetch(`/hotels/areas${destId ? `?destinationId=${encodeURIComponent(destId)}` : ""}`);
+  if (state.renderToken !== capturedToken) return;
+  const areas = areaRes?.data || [];
 
-  await renderListPage("hotels", endpoint, [
-    ["th.name",    hotelNameCell],
-    ["th.stars",   h => "★".repeat(Math.min(h.stars || 0, 5))],
-    ["th.amount",  hotelPriceCell],
-    ["th.actions", hotelActionCell],
-  ], {
-    filters: [["stars", "th.stars", ["","3","4","5"]]],
-    extraActions: backBtn,
-    // Inject destination context into the page header kicker
-    headerNote: destName || t("hotel.allDestinations","All Destinations"),
-  });
+  const amenityChips = HOTEL_AMENITY_DEFS.map(([key, labelKey, ic]) =>
+    `<button type="button" class="amenity-chip" data-amenity="${key}" onclick="toggleHotelAmenity('${key}')">
+       ${icon(ic)}<span>${t(labelKey, key)}</span>
+     </button>`).join("");
+
+  const areaChips = areas.length
+    ? `<div class="field"><label>${t("filter.area","Area")}</label>
+        <div class="area-chip-row">
+          <button type="button" class="area-chip active" data-area="" onclick="setHotelArea('')">${t("filter.all","All")}</button>
+          ${areas.map(a => `<button type="button" class="area-chip" data-area="${escapeHtml(a)}" onclick="setHotelArea('${escapeHtml(a)}')">${escapeHtml(a)}</button>`).join("")}
+        </div>
+      </div>`
+    : "";
+
+  content(pageHeader(`
+    <button class="btn btn-outline" onclick="renderHotels()">${icon("arrow-left")}&nbsp;${t("btn.back","Destinations")}</button>
+    <button class="btn btn-outline" onclick="exportRows('hotels', state.cache['hotelsRows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>
+  `) + `
+    <div class="workbench">
+      <aside class="filter-rail">
+        <div class="filter-head"><span>${t("filter.title","Filters")}</span>${icon("sliders-horizontal")}</div>
+        <div class="filter-body">
+          <div class="field"><label>${t("filter.search","Search")}</label>
+            <input id="hotelSearchBox" placeholder="${t("hotel.searchName","Hotel name...")}" oninput="debouncedHotelFilter()"></div>
+          ${areaChips}
+          <div class="field"><label>${t("th.stars","Stars")}</label>
+            <select id="hotelStarsSel" onchange="setHotelStars(this.value)">
+              <option value="">${t("filter.all","All")}</option>
+              <option value="5">5 ★</option><option value="4">4 ★</option><option value="3">3 ★</option>
+            </select></div>
+          <div class="field"><label>${t("filter.amenities","Amenities")}</label>
+            <div class="amenity-chip-row">${amenityChips}</div>
+          </div>
+          <button class="btn btn-outline" onclick="resetHotelFilters()">${icon("rotate-ccw")}${t("btn.reset","Reset")}</button>
+        </div>
+      </aside>
+      <section class="workbench-main table-card">
+        <div class="table-toolbar">
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <strong>${t("nav.hotels","Hotels")}</strong>
+              <span class="ctx-chip">${icon("map-pin")}&nbsp;${escapeHtml(destName || t("hotel.allDestinations","All Destinations"))}</span>
+            </div>
+            <div class="secondary-text" id="hotelsMeta">${t("empty.loading","Loading")}</div>
+          </div>
+          <div class="toolbar-actions"><button class="btn btn-outline" onclick="loadHotelList()">${icon("refresh-cw")}${t("btn.refresh")}</button></div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table"><thead><tr>
+            <th>${t("th.name")}</th><th>${t("th.amount")}</th><th>${t("th.actions")}</th>
+          </tr></thead><tbody id="hotelsTbody">${skeletonRows(3, 8)}</tbody></table>
+        </div>
+      </section>
+    </div>`);
+
+  await loadHotelList();
+}
+
+let _hotelFilterTimer;
+function debouncedHotelFilter() {
+  clearTimeout(_hotelFilterTimer);
+  _hotelFilterTimer = setTimeout(loadHotelList, 300);
+}
+function setHotelArea(area) {
+  state.hotelFilters.area = area;
+  document.querySelectorAll(".area-chip").forEach(c => c.classList.toggle("active", c.dataset.area === area));
+  loadHotelList();
+}
+function setHotelStars(v) { state.hotelFilters.stars = v; loadHotelList(); }
+function toggleHotelAmenity(key) {
+  const set = state.hotelFilters.amenities;
+  if (set.has(key)) set.delete(key); else set.add(key);
+  const chip = document.querySelector(`.amenity-chip[data-amenity="${key}"]`);
+  if (chip) chip.classList.toggle("active", set.has(key));
+  loadHotelList();
+}
+function resetHotelFilters() {
+  state.hotelFilters = { search: "", area: "", stars: "", amenities: new Set() };
+  const sb = document.getElementById("hotelSearchBox"); if (sb) sb.value = "";
+  const st = document.getElementById("hotelStarsSel"); if (st) st.value = "";
+  document.querySelectorAll(".amenity-chip").forEach(c => c.classList.remove("active"));
+  document.querySelectorAll(".area-chip").forEach(c => c.classList.toggle("active", c.dataset.area === ""));
+  loadHotelList();
+}
+
+async function loadHotelList() {
+  const f = state.hotelFilters;
+  const params = new URLSearchParams({ limit: "100" });
+  if (state.selectedDest.id) params.set("destinationId", state.selectedDest.id);
+  const sb = document.getElementById("hotelSearchBox")?.value.trim();
+  if (sb) params.set("search", sb);
+  if (f.area)  params.set("area", f.area);
+  if (f.stars) params.set("stars", f.stars);
+  f.amenities.forEach(a => params.set(a, "true"));
+
+  const res = await apiFetch(`/hotels?${params}`);
+  if (!res) return;
+  const rows = res.data || [];
+  state.cache.hotelsRows = rows;
+  const tbody = document.getElementById("hotelsTbody");
+  if (!tbody) return;
+  tbody.innerHTML = rows.length
+    ? rows.map(h => `<tr>
+        <td>${hotelNameCell(h)}</td>
+        <td>${hotelPriceCell(h)}</td>
+        <td>${hotelActionCell(h)}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="3"><div class="empty-state">${icon("hotel")}<strong>${t("empty.noData","No hotels match")}</strong><span>${t("empty.adjustFilters","Try adjusting the filters")}</span><button class="btn btn-outline" style="margin-top:12px" onclick="resetHotelFilters()">${icon("rotate-ccw")}${t("btn.reset","Reset Filters")}</button></div></td></tr>`;
+  const meta = document.getElementById("hotelsMeta");
+  if (meta) meta.textContent = `${formatNumber(res.meta?.total ?? rows.length)} ${t("nav.hotels","Hotels")}`;
+  refreshIcons(tbody);
 }
 
 function renderCruises() {
@@ -681,18 +918,46 @@ function nationalityDatalist() {
   return `<datalist id="nationalityList">${NATIONALITIES.map(n => `<option value="${n}">`).join("")}</datalist>`;
 }
 
-function childAgesHtml(count) {
+// ─── Reusable dynamic child-age fields (GLOBAL — works in any form) ────────────
+// Builds N "Child i age" number inputs with ids `${prefix}ChildAge_${i}`.
+function buildChildAgeInputs(count, prefix) {
   if (!count || count < 1) return "";
-  return `<div class="form-field full" id="childAgesBox" style="display:${count > 0 ? 'block' : 'none'}">
-    <label>${t("form.children","Children Ages")}</label>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:6px">
+  return `
+    <label style="display:block;margin-bottom:6px">${t("form.children","Children Ages")} <span class="required">*</span></label>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">
       ${Array.from({length: count}, (_, i) => `
         <div>
-          <label style="font-size:11px;color:var(--text-secondary)">${t("hotel.childAge","Child {n} Age").replace("{n}", i+1)}</label>
-          <input type="number" min="0" max="17" value="7" id="childAge_${i}" placeholder="${i+1}" style="width:100%">
+          <label style="font-size:11px;color:var(--text-muted)">${t("hotel.childAge","Child {n} Age").replace("{n}", i+1)}</label>
+          <input type="number" min="0" max="17" value="7" id="${prefix}ChildAge_${i}" placeholder="${i+1}" style="width:100%">
         </div>`).join("")}
-    </div>
-  </div>`;
+    </div>`;
+}
+
+/** Global handler — call from a children-count input's oninput.
+ *  countId    = id of the number input holding the children count
+ *  containerId= id of the container div to fill with age inputs
+ *  prefix     = id prefix for the generated age inputs */
+function onChildrenCountChange(countId, containerId, prefix) {
+  const count = Math.max(0, parseInt(document.getElementById(countId)?.value || "0"));
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  box.style.display = count > 0 ? "" : "none";
+  box.innerHTML = count > 0 ? buildChildAgeInputs(count, prefix) : "";
+}
+
+/** Collect child ages from a prefixed group into an array. */
+function collectChildAges(count, prefix) {
+  return Array.from({length: Math.max(0, count)}, (_, i) =>
+    parseInt(document.getElementById(`${prefix}ChildAge_${i}`)?.value || "7"));
+}
+
+/** Validate that all child-age inputs are filled (required when children > 0). */
+function childAgesValid(count, prefix) {
+  for (let i = 0; i < count; i++) {
+    const v = document.getElementById(`${prefix}ChildAge_${i}`)?.value;
+    if (v === "" || v == null || isNaN(parseInt(v))) return false;
+  }
+  return true;
 }
 
 // ─── Quote Request Modal ──────────────────────────────────────────────────────
@@ -715,7 +980,7 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
       <div class="form-field"><label>${t("form.adults","Adults / Pax")} *</label>
         <input id="qrAdults" type="number" min="1" value="2"></div>
       <div class="form-field"><label>${t("form.children","Children")}</label>
-        <input id="qrChildren" type="number" min="0" value="0" oninput="updateChildAges()"></div>
+        <input id="qrChildren" type="number" min="0" max="10" value="0" oninput="onChildrenCountChange('qrChildren','childAgesContainer','qr')"></div>
       ${isHotel ? `<div class="form-field"><label>${t("hotel.rooms","Rooms")}</label>
         <input id="qrRooms" type="number" min="1" value="1"></div>
         <div class="form-field"><label>${t("hotel.mealPlan","Meal Plan")}</label>
@@ -733,15 +998,6 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
     <button class="btn btn-primary" id="submitQuoteBtn">${icon("brand-whatsapp")}&nbsp;${t("btn.sendRequest","Send via WhatsApp")}</button>
   `);
 
-  function updateChildAges() {
-    const count = parseInt(document.getElementById("qrChildren")?.value || "0");
-    const box = document.getElementById("childAgesContainer");
-    if (!box) return;
-    box.style.display = count > 0 ? "" : "none";
-    box.innerHTML = childAgesHtml(count);
-  }
-  document.getElementById("qrChildren").addEventListener("input", updateChildAges);
-
   document.getElementById("submitQuoteBtn").onclick = async () => {
     const checkIn = document.getElementById("qrCheckIn").value;
     const checkOut = document.getElementById("qrCheckOut").value;
@@ -752,11 +1008,14 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
     const nationality = document.getElementById("qrNationality").value.trim() || undefined;
     const notes = document.getElementById("qrNotes").value.trim() || undefined;
 
-    const childAges = Array.from({length: children}, (_, i) =>
-      parseInt(document.getElementById(`childAge_${i}`)?.value || "7"));
+    const childAges = collectChildAges(children, "qr");
 
     if (!checkIn || !checkOut) {
       toast(t("validation.dateRequired","Please select check-in and check-out dates"), "error");
+      return;
+    }
+    if (children > 0 && !childAgesValid(children, "qr")) {
+      toast(t("validation.childAges","Please enter all children ages"), "error");
       return;
     }
 
@@ -1776,7 +2035,19 @@ async function renderOffers() {
 }
 
 // ─── Offer popup on dashboard load ───────────────────────────────────────────
+// One-time cleanup of legacy generic offer-dismissal keys that could hide all
+// future offers forever. Runs once per session.
+function purgeLegacyOfferKeys() {
+  try {
+    Object.keys(localStorage).forEach(k => {
+      // old format was `offerDismissed_<userId>` (no offerId, no date)
+      if (/^offerDismissed_/.test(k)) localStorage.removeItem(k);
+    });
+  } catch {}
+}
+
 async function maybeShowOfferPopup() {
+  purgeLegacyOfferKeys();
   const res = await apiFetch("/offers/active");
   if (!res?.data) return;                          // no active offer → silent
   const o = res.data;

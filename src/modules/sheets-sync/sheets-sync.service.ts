@@ -59,6 +59,56 @@ function parseBool(value: string, fallback = true): boolean {
   return !['false', '0', 'no', 'inactive', 'disabled'].includes(value.trim().toLowerCase());
 }
 
+/** Parse an Arabic/English yes-no cell into a boolean.
+ *  Yes: نعم, yes, y, true, 1, ✓, available, ممتاز, متوسط, صغير (any positive descriptor)
+ *  No:  لا, no, n, false, 0, —, -, لا يوجد, none, empty */
+function parseFlag(value: string): boolean {
+  const v = String(value ?? '').trim().toLowerCase();
+  if (!v) return false;
+  const negatives = ['لا', 'no', 'n', 'false', '0', '—', '-', 'لا يوجد', 'none', 'غير متوفر', 'n/a', 'na'];
+  if (negatives.includes(v)) return false;
+  // Anything else non-empty and not explicitly negative is treated as present
+  return true;
+}
+
+/** Map Arabic (or English) city names to a canonical English name. */
+const CITY_AR_TO_EN: Record<string, string> = {
+  'الغردقة': 'Hurghada',
+  'شرم الشيخ': 'Sharm El Sheikh',
+  'القاهرة': 'Cairo',
+  'الجونة': 'El Gouna',
+  'دهب': 'Dahab',
+  'مرسى علم': 'Marsa Alam',
+  'الإسكندرية': 'Alexandria',
+  'الاسكندرية': 'Alexandria',
+  'الساحل الشمالي': 'North Coast',
+  'مكادي': 'Makadi Bay',
+  'سهل حشيش': 'Sahl Hasheesh',
+  'طابا': 'Taba',
+  'نويبع': 'Nuweiba',
+  'الأقصر': 'Luxor',
+  'اسوان': 'Aswan',
+  'أسوان': 'Aswan',
+};
+const CITY_EN_TO_AR: Record<string, string> = Object.fromEntries(
+  Object.entries(CITY_AR_TO_EN).map(([ar, en]) => [en, ar]),
+);
+
+/** Returns { cityEn, cityAr } from a raw city cell that may be Arabic or English. */
+function normalizeCity(raw: string): { cityEn: string; cityAr: string | null } {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed) return { cityEn: 'Cairo', cityAr: null };
+  // Arabic input → map to English, keep Arabic
+  if (CITY_AR_TO_EN[trimmed]) {
+    return { cityEn: CITY_AR_TO_EN[trimmed], cityAr: trimmed };
+  }
+  // English input → find Arabic equivalent if known
+  const enMatch = Object.keys(CITY_EN_TO_AR).find(en => en.toLowerCase() === trimmed.toLowerCase());
+  if (enMatch) return { cityEn: enMatch, cityAr: CITY_EN_TO_AR[enMatch] };
+  // Unknown → keep as-is in English field
+  return { cityEn: trimmed, cityAr: null };
+}
+
 function parseIntCell(value: string, fallback: number): number {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -143,18 +193,40 @@ async function upsertHotels(rows: SheetRow[], errors: string[]): Promise<{ creat
         continue;
       }
 
+      // Normalize the city: verified sheet stores Arabic city names (e.g. الغردقة)
+      const { cityEn, cityAr } = normalizeCity(pick(row, 'city'));
+      const explicitCityAr = pick(row, 'cityAr', 'arabicCity');
+
+      // Try to link to a Destination by English slug
+      const slug = cityEn.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const destination = await prisma.destination.findUnique({ where: { slug } }).catch(() => null);
+
       const data = {
         name,
         nameAr: pick(row, 'nameAr', 'arabicName') || null,
-        city: pick(row, 'city') || 'Cairo',
-        cityAr: pick(row, 'cityAr', 'arabicCity') || null,
+        city: cityEn,
+        cityAr: explicitCityAr || cityAr,
+        area: pick(row, 'area', 'subArea', 'zone') || null,
         country: pick(row, 'country') || 'EG',
         stars: parseIntCell(pick(row, 'stars', 'rating'), 3),
         address: pick(row, 'address') || name,
         description: pick(row, 'description') || null,
-        descriptionAr: pick(row, 'descriptionAr') || null,
+        descriptionAr: pick(row, 'descriptionAr', 'arabicDescription') || null,
         amenities: splitList(pick(row, 'amenities')),
-        imageUrl: pick(row, 'imageUrl', 'image') || null,
+        // Structured attributes from Verified_Hotels (Arabic yes/no cells)
+        seaFront:     parseFlag(pick(row, 'seaFront', 'sea_front')),
+        privateBeach: parseFlag(pick(row, 'privateBeach', 'private_beach')),
+        sandyBeach:   parseFlag(pick(row, 'sandyBeach', 'sandy_beach')),
+        kidsPool:     parseFlag(pick(row, 'kidsPool', 'kids_pool')),
+        kidsClub:     parseFlag(pick(row, 'kidsClub', 'kids_club')),
+        aquaPark:     parseFlag(pick(row, 'aquaPark', 'aqua_park')),
+        snorkeling:   parseFlag(pick(row, 'snorkeling')),
+        diving:       parseFlag(pick(row, 'diving')),
+        adultsOnly:   parseFlag(pick(row, 'adultsOnly', 'adults_only')),
+        allInclusive: parseFlag(pick(row, 'allInclusive', 'all_inclusive')),
+        totalPools:   parseIntCell(pick(row, 'totalPools', 'total_pools'), 0) || null,
+        googleRating: pick(row, 'googleRating', 'google_rating') ? parseAmount(pick(row, 'googleRating', 'google_rating')) : null,
+        imageUrl: pick(row, 'imageUrl', 'image', 'image_url') || null,
         pricePerNight: parseAmount(pick(row, 'pricePerNight', 'priceFrom', 'rate')),
         currency: pick(row, 'currency') || 'USD',
         commissionPercent: parseAmount(pick(row, 'commissionPercent', 'commission', 'markupPercent'), 0),
@@ -163,6 +235,7 @@ async function upsertHotels(rows: SheetRow[], errors: string[]): Promise<{ creat
         source: 'GOOGLE_SHEETS' as const,
         sheetsRowId,
         isActive: parseBool(pick(row, 'isActive', 'active'), true),
+        ...(destination && { destinationId: destination.id }),
       };
 
       const existing = await prisma.hotel.findFirst({ where: { sheetsRowId } });
