@@ -17,7 +17,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand-block">
         <div class="brand-row">
-          <img src="/assets/elbakri-logo-white.svg" class="brand-logo" alt="Elbakri Overseas" />
+          <img src="/assets/brand/elbakri-logo-white.svg" class="brand-logo" alt="Elbakri Overseas" />
           <button class="icon-button sidebar-close" onclick="closeSidebar()" aria-label="Close menu"><i data-lucide="x"></i></button>
         </div>
         <div class="tier-chip" id="agentTier">STANDARD</div>
@@ -536,8 +536,8 @@ async function renderDashboard() {
 // Active-offers card — always lets the user reach offers even if the popup was dismissed.
 function offerCardHtml(count) {
   const has = count > 0;
-  return `<div class="stat-card" style="cursor:pointer;${has ? 'border-color:var(--brand-gold);background:linear-gradient(135deg,var(--surface),var(--brand-gold-soft))' : ''}" onclick="setPage('offers')">
-    <div class="stat-row"><div class="stat-label">${t("offers.dashboardCard","Active Offers")}</div><span class="stat-ico" style="${has?'background:var(--brand-gold-soft);color:var(--brand-gold)':''}">${icon("tag")}</span></div>
+  return `<div class="stat-card" style="cursor:pointer;${has ? 'border-color:var(--brand-accent);background:linear-gradient(135deg,var(--surface),var(--brand-accent-soft))' : ''}" onclick="setPage('offers')">
+    <div class="stat-row"><div class="stat-label">${t("offers.dashboardCard","Active Offers")}</div><span class="stat-ico" style="${has?'background:var(--brand-accent-soft);color:var(--brand-accent)':''}">${icon("tag")}</span></div>
     <div class="stat-value">${formatNumber(count)}</div>
     <div class="stat-sub">${has ? t("offers.viewAll","View Offers") : t("offers.noOffer","No active offers")}</div>
   </div>`;
@@ -581,7 +581,7 @@ function renderBookings() {
       ["type",     "form.type",     ["", "HOTEL", "FLIGHT", "PACKAGE"]],
       ["currency", "form.currency", ["", "USD", "EGP", "EUR"]],
     ],
-    showCreateBooking: true,
+    showCreateBooking: false,
   });
 }
 
@@ -638,6 +638,19 @@ function hotelThumbAgent(h) {
   return `<div style="width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#5b8def,#7c5cff);color:#fff;font-weight:700;font-size:13px">${escapeHtml(initials)}</div>`;
 }
 
+function hotelMediaShowcase(h) {
+  const urls = [...new Set([h.imageUrl, ...(h.galleryUrls || [])].filter(Boolean))];
+  if (!urls.length) {
+    return `<div class="hotel-media-empty">${escapeHtml((hotelName(h)||"?").charAt(0).toUpperCase())}</div>`;
+  }
+  return `<div class="hotel-media-showcase">
+    <div class="hotel-media-main-scroll">
+      ${urls.map((u, i) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener" class="hotel-media-slide"><img src="${escapeHtml(u)}" alt="${escapeHtml(hotelName(h))} ${i + 1}" loading="${i ? "lazy" : "eager"}"></a>`).join("")}
+    </div>
+    ${urls.length > 1 ? `<div class="hotel-media-thumbs">${urls.slice(0, 18).map((u, i) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener"><img src="${escapeHtml(u)}" alt="${escapeHtml(hotelName(h))} thumbnail ${i + 1}" loading="lazy"></a>`).join("")}</div>` : ""}
+  </div>`;
+}
+
 function hotelNameCell(h) {
   const attrBadges = hotelAttrBadges(h);
   const areaLine = h.area ? ` · ${escapeHtml(locName(h.area, h.area))}` : "";
@@ -665,10 +678,6 @@ async function showAgentHotelDetails(id) {
   if (!res?.data) return;
   const h = res.data;
   const amenityChips = (h.amenities || []).map(a => `<span class="badge badge-outline" style="font-size:11px;padding:3px 8px">${escapeHtml(a)}</span>`).join(" ");
-  const headerImg = h.imageUrl
-    ? `<img src="${escapeHtml(h.imageUrl)}" alt="" style="width:100%;height:200px;object-fit:cover;border-radius:8px;margin-bottom:16px">`
-    : `<div style="height:140px;border-radius:8px;background:linear-gradient(135deg,#5b8def,#7c5cff);display:flex;align-items:center;justify-content:center;color:#fff;font-size:36px;font-weight:800;margin-bottom:16px">${escapeHtml((h.name||"?").charAt(0).toUpperCase())}</div>`;
-
   const attrBadges = HOTEL_AMENITY_DEFS.filter(([k]) => h[k] === true)
     .map(([k, labelKey, ic]) => `<span class="badge badge-confirmed" style="font-size:11px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px">${icon(ic)}${t(labelKey, k)}</span>`)
     .join(" ");
@@ -676,7 +685,7 @@ async function showAgentHotelDetails(id) {
   const areaLine = h.area ? ` · ${escapeHtml(h.area)}` : "";
 
   const body = `
-    ${headerImg}
+    ${hotelMediaShowcase(h)}
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap">
       <div>
         <div style="font-size:20px;font-weight:700">${escapeHtml(hotelName(h))}</div>

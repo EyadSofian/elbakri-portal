@@ -17,7 +17,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand-block">
         <div class="brand-row">
-          <img src="/assets/elbakri-logo-white.svg" class="brand-logo" alt="Elbakri Overseas" />
+          <img src="/assets/brand/elbakri-logo-white.svg" class="brand-logo" alt="Elbakri Overseas" />
           <button class="icon-button sidebar-close" onclick="closeSidebar()" aria-label="Close menu"><i data-lucide="x"></i></button>
         </div>
         <div class="role-chip" data-i18n="app.superAdmin">Super Admin</div>
@@ -1328,6 +1328,19 @@ function hotelThumb(h) {
   return `<div style="width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--accent-2,#5b8def),var(--accent,#7c5cff));color:#fff;font-weight:700;font-size:14px">${escapeHtml(initials)}</div>`;
 }
 
+function hotelMediaShowcase(h) {
+  const urls = [...new Set([h.imageUrl, ...(h.galleryUrls || [])].filter(Boolean))];
+  if (!urls.length) {
+    return `<div class="hotel-media-empty">${escapeHtml((h.name||"?").charAt(0).toUpperCase())}</div>`;
+  }
+  return `<div class="hotel-media-showcase">
+    <div class="hotel-media-main-scroll">
+      ${urls.map((u, i) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener" class="hotel-media-slide"><img src="${escapeHtml(u)}" alt="${escapeHtml(h.name)} ${i + 1}" loading="${i ? "lazy" : "eager"}"></a>`).join("")}
+    </div>
+    ${urls.length > 1 ? `<div class="hotel-media-thumbs">${urls.slice(0, 18).map((u, i) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener"><img src="${escapeHtml(u)}" alt="${escapeHtml(h.name)} thumbnail ${i + 1}" loading="lazy"></a>`).join("")}</div>` : ""}
+  </div>`;
+}
+
 function amenityChip(name) {
   return `<span class="badge badge-outline" style="font-size:10px;padding:2px 6px">${escapeHtml(name)}</span>`;
 }
@@ -1494,12 +1507,8 @@ async function showHotelDetails(id) {
       <div id="hotelCompanyVisibilityBox">${emptyBlock("empty.loading")}</div>
     </div>`;
 
-  const headerImg = h.imageUrl
-    ? `<img src="${escapeHtml(h.imageUrl)}" alt="" style="width:100%;height:200px;object-fit:cover;border-radius:8px;margin-bottom:16px">`
-    : `<div style="height:120px;border-radius:8px;background:linear-gradient(135deg,#5b8def,#7c5cff);display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px;font-weight:800;margin-bottom:16px">${escapeHtml((h.name||"?").charAt(0).toUpperCase())}</div>`;
-
   const body = `
-    ${headerImg}
+    ${hotelMediaShowcase(h)}
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap">
       <div>
         <div style="font-size:20px;font-weight:700">${escapeHtml(h.name)}${h.nameAr ? ` · <span dir="rtl" style="font-size:16px;color:var(--text-secondary)">${escapeHtml(h.nameAr)}</span>` : ""}</div>
@@ -1647,7 +1656,7 @@ async function renderDestinations() {
   if (!res || state.renderToken !== capturedToken) return;
   const dests = res.data || [];
   const typeBadge = (type) => {
-    const cls = type === "RESORT" ? "badge-gold" : type === "AREA" ? "badge-info" : type === "REGION" ? "badge-platinum" : "badge-standard";
+    const cls = type === "RESORT" ? "badge-teal" : type === "AREA" ? "badge-info" : type === "REGION" ? "badge-platinum" : "badge-standard";
     return `<span class="badge ${cls}">${escapeHtml(type || "CITY")}</span>`;
   };
   const rows = dests.map(d => `
@@ -2885,7 +2894,7 @@ function uiNewTemplate() {
     target: "company_dashboard",
     langMode: "both",
     isActive: false,
-    config: { layout: "compact_b2b", theme: { glass: true, accent: "navy_gold", density: "compact" }, blocks: [] },
+    config: { layout: "compact_b2b", theme: { glass: true, accent: "navy_blue", density: "compact" }, blocks: [] },
   };
   uiOpenEditor();
 }

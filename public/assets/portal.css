@@ -2,23 +2,31 @@
   --surface: #ffffff;
   --surface-raised: #F7F9FC;
   --surface-muted: #EFF1F5;
-  --border: #E2E6EE;
-  --border-strong: #C4CBD9;
-  --text-primary: #101828;
-  --text-secondary: #344054;
-  --text-muted: #667085;
-  --brand-navy: #0f1b47;
-  --brand-navy-2: #1b2b6b;
-  --brand-navy-3: #243884;
-  --brand-gold: #c4920a;
-  --brand-gold-soft: #fcf4dd;
-  --success: #047857;
-  --success-soft: #dff7ea;
-  --warning: #b7791f;
-  --warning-soft: #fff4d6;
-  --danger: #b42318;
-  --danger-soft: #fee4e2;
-  --info: #175cd3;
+  --border: #E6EAF2;
+  --border-strong: #CDD4E1;
+  --text-primary: #0F1A33;
+  --text-secondary: #38435C;
+  --text-muted: #6B7689;
+  /* ── Brand: deep navy + indigo, cyan/teal accents (NO gold) ── */
+  --brand-navy: #0B1F52;
+  --brand-navy-2: #102A68;
+  --brand-navy-3: #1B3A86;
+  --brand-indigo: #263B8F;
+  --brand-cyan: #18A8C8;
+  --brand-cyan-2: #1391B0;
+  --brand-teal: #00A88E;
+  /* Primary accent = cyan, secondary = teal. These replace the retired gold. */
+  --brand-accent: #18A8C8;
+  --brand-accent-2: #00A88E;
+  --brand-accent-soft: #E1F4FA;
+  --accent-glow: rgba(24, 168, 200, 0.22);
+  --success: #0E9F6E;
+  --success-soft: #def7ec;
+  --warning: #D97706;            /* soft orange — warnings ONLY, never branding */
+  --warning-soft: #fff1e0;
+  --danger: #E02424;
+  --danger-soft: #fde8e8;
+  --info: #1C64F2;
   --info-soft: #e6efff;
   --purple: #6941c6;
   --purple-soft: #f1edff;
@@ -51,7 +59,7 @@ body {
   margin: 0;
   background-color: #F6F8FB;
   background-image:
-    radial-gradient(ellipse 900px 500px at 95% 0%, rgba(196,146,10,0.025) 0%, transparent 60%),
+    radial-gradient(ellipse 900px 500px at 95% 0%, rgba(24,168,200,0.025) 0%, transparent 60%),
     radial-gradient(ellipse 600px 700px at 5% 100%, rgba(15,27,71,0.025) 0%, transparent 55%);
   background-attachment: fixed;
   color: var(--text-primary);
@@ -96,7 +104,7 @@ a.btn:focus-visible {
 }
 
 .sidebar .nav-item:focus-visible {
-  outline-color: var(--brand-gold);
+  outline-color: var(--brand-accent);
   outline-offset: -2px;
 }
 
@@ -117,7 +125,7 @@ a {
   height: 100vh;
   overflow-y: auto;
   background:
-    radial-gradient(130% 70% at 0% 0%, rgba(196, 146, 10, 0.16) 0%, transparent 48%),
+    radial-gradient(130% 70% at 0% 0%, rgba(24, 168, 200, 0.16) 0%, transparent 48%),
     linear-gradient(180deg, var(--brand-navy-2), var(--brand-navy));
   color: #fff;
   z-index: 40;
@@ -181,10 +189,10 @@ a {
   display: grid;
   place-items: center;
   flex: 0 0 36px;
-  background: var(--brand-gold);
+  background: var(--brand-accent);
   color: var(--brand-navy);
   font-weight: 800;
-  box-shadow: 0 8px 18px rgba(196, 146, 10, 0.28);
+  box-shadow: 0 8px 18px rgba(24, 168, 200, 0.28);
 }
 
 /* Real logo image in sidebar / login */
@@ -234,8 +242,8 @@ html[lang="ar"] .brand-sub {
   margin-top: 10px;
   padding: 3px 8px;
   border-radius: var(--r-4);
-  background: rgba(196, 146, 10, 0.16);
-  color: var(--brand-gold);
+  background: rgba(24, 168, 200, 0.16);
+  color: var(--brand-accent);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -296,7 +304,7 @@ html[lang="ar"] .nav-label {
   left: -8px;
   width: 3px;
   border-radius: 0 4px 4px 0;
-  background: var(--brand-gold);
+  background: var(--brand-accent);
 }
 
 [dir="rtl"] .nav-item.active::before {
@@ -322,7 +330,7 @@ html[lang="ar"] .nav-label {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: var(--brand-gold);
+  background: var(--brand-accent);
   color: var(--brand-navy);
   font-size: 10px;
   font-weight: 800;
@@ -350,7 +358,7 @@ html[lang="ar"] .nav-label {
   width: 34px;
   height: 34px;
   border-radius: var(--r-8);
-  background: var(--brand-gold);
+  background: var(--brand-accent);
   color: var(--brand-navy);
   font-size: 12px;
   font-weight: 800;
@@ -861,16 +869,16 @@ html[lang="ar"] .stat-label {
   box-shadow: 0 1px 3px rgba(15,27,71,0.2);
 }
 
-.btn-gold {
-  background: linear-gradient(135deg, #d4a716 0%, var(--brand-gold) 100%);
-  color: var(--brand-navy);
+.btn-teal {
+  background: linear-gradient(135deg, var(--brand-teal) 0%, var(--brand-cyan) 100%);
+  color: #fff;
   border-color: transparent;
-  box-shadow: 0 1px 3px rgba(196,146,10,0.3), inset 0 1px 0 rgba(255,255,255,0.22);
+  box-shadow: 0 1px 3px rgba(0,168,142,0.28), inset 0 1px 0 rgba(255,255,255,0.18);
 }
 
-.btn-gold:hover {
-  background: linear-gradient(135deg, #e0b318 0%, #c49210 100%);
-  box-shadow: 0 4px 14px rgba(196,146,10,0.38), inset 0 1px 0 rgba(255,255,255,0.26);
+.btn-teal:hover {
+  background: linear-gradient(135deg, #00b89b 0%, #19b3d3 100%);
+  box-shadow: 0 4px 14px rgba(0,168,142,0.36), inset 0 1px 0 rgba(255,255,255,0.22);
   transform: translateY(-1px);
 }
 
@@ -1079,9 +1087,9 @@ html[lang="ar"] .data-table thead th {
   color: #475467;
 }
 
-.badge-gold {
-  background: var(--brand-gold-soft);
-  color: #9c7308;
+.badge-teal {
+  background: var(--brand-accent-soft);
+  color: var(--brand-cyan-2);
 }
 
 .badge-platinum {
@@ -1478,7 +1486,7 @@ html[lang="ar"] .data-table thead th {
   display: grid;
   place-items: center;
   border-radius: var(--r-8);
-  background: var(--brand-gold);
+  background: var(--brand-accent);
   color: var(--brand-navy);
   font-size: 15px;
   font-weight: 900;
@@ -2355,6 +2363,85 @@ html[lang="ar"] .data-table thead th {
   box-shadow: var(--shadow-card);
 }
 
+.hotel-media-showcase {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.hotel-media-main-scroll {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(100%, 100%);
+  gap: 10px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: inline mandatory;
+  scrollbar-width: thin;
+  border-radius: var(--r-12);
+}
+
+.hotel-media-slide {
+  display: block;
+  height: 220px;
+  border-radius: var(--r-12);
+  overflow: hidden;
+  scroll-snap-align: start;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+.hotel-media-slide img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.hotel-media-thumbs {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 72px;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.hotel-media-thumbs a {
+  display: block;
+  width: 72px;
+  height: 54px;
+  border-radius: var(--r-8);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+}
+
+.hotel-media-thumbs img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 160ms ease;
+}
+
+.hotel-media-thumbs a:hover img {
+  transform: scale(1.06);
+}
+
+.hotel-media-empty {
+  height: 150px;
+  border-radius: var(--r-12);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 36px;
+  font-weight: 900;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, var(--brand-cyan), var(--brand-indigo));
+}
+
 /* — Micro-animations — */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
@@ -2415,7 +2502,7 @@ html[lang="ar"] .data-table thead th {
   }
 
   .btn-primary:hover,
-  .btn-gold:hover,
+  .btn-teal:hover,
   .btn-success:hover,
   .btn-danger:hover {
     box-shadow: 0 6px 16px rgba(16, 24, 40, 0.16);
@@ -2442,9 +2529,8 @@ html[lang="ar"] .data-table thead th {
 :root {
   --glass-white:    rgba(255, 255, 255, 0.82);
   --glass-surface:  rgba(248, 250, 252, 0.72);
-  --gold-glow:      rgba(196, 146, 10, 0.22);
-  --navy-glow:      rgba(15, 27, 71, 0.12);
-  --border-glass:   rgba(255, 255, 255, 0.48);
+  --navy-glow:      rgba(11, 31, 82, 0.12);
+  --border-glass:   rgba(255, 255, 255, 0.55);
   --stat-icon-bg:   linear-gradient(135deg, var(--info-soft), rgba(23, 92, 211, 0.06));
   --shadow-float:   0 4px 20px rgba(16, 24, 40, 0.10), 0 1px 3px rgba(16, 24, 40, 0.06);
   --shadow-glow:    0 0 0 3px rgba(15, 27, 71, 0.08);
@@ -2470,7 +2556,7 @@ html[lang="ar"] .data-table thead th {
   right: 0;
   width: 1px;
   height: 100%;
-  background: linear-gradient(180deg, rgba(196,146,10,0.3) 0%, transparent 40%);
+  background: linear-gradient(180deg, rgba(24,168,200,0.3) 0%, transparent 40%);
   pointer-events: none;
 }
 
@@ -2493,7 +2579,7 @@ html[lang="ar"] .data-table thead th {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(255,255,255,0) 60%, rgba(196,146,10,0.04) 100%);
+  background: linear-gradient(135deg, rgba(255,255,255,0) 60%, rgba(24,168,200,0.04) 100%);
   pointer-events: none;
 }
 
@@ -2541,7 +2627,7 @@ html[lang="ar"] .data-table thead th {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--brand-navy-2), var(--brand-gold));
+  background: linear-gradient(90deg, var(--brand-navy-2), var(--brand-accent));
   opacity: 0;
   transition: opacity 200ms;
 }
@@ -2638,7 +2724,7 @@ html[lang="ar"] .info-label {
 
 /* ─── Offer popup enhanced ──────────────────────────────────── */
 .modal-overlay.open .modal:has(.offer-popup-body) {
-  border-top: 3px solid var(--brand-gold);
+  border-top: 3px solid var(--brand-accent);
 }
 
 /* ─── Wallet remaining balance accent ────────────────────────── */
@@ -2724,7 +2810,7 @@ html[lang="ar"] .info-label {
 .page-kicker {
   font-size: 11px;
   font-weight: 700;
-  color: var(--brand-gold);
+  color: var(--brand-accent);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 2px;
@@ -2784,7 +2870,7 @@ html[lang="ar"] .tr-section-title {
 .tr-section-title svg {
   width: 15px;
   height: 15px;
-  color: var(--brand-gold);
+  color: var(--brand-accent);
 }
 
 .tr-toggle-group {
@@ -2893,7 +2979,7 @@ html[lang="ar"] .tr-section-title {
 .tr-price-amount {
   font-size: 26px;
   font-weight: 900;
-  color: var(--brand-gold);
+  color: var(--brand-accent);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3326,7 +3412,7 @@ html[lang="ar"] .act-time-label {
 }
 
 @keyframes highlightFade {
-  from { background: rgba(196,146,10,0.18); }
+  from { background: rgba(24,168,200,0.18); }
   to   { background: transparent; }
 }
 
@@ -3475,7 +3561,7 @@ html[lang="ar"] .wallet-metric__label {
   width: 120px;
   height: 120px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(196,146,10,0.07) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(24,168,200,0.07) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -3493,7 +3579,7 @@ html[lang="ar"] .wallet-metric__label {
 /* ─── Sidebar accent polish ─────────────────────────────────────── */
 .sidebar {
   background:
-    radial-gradient(130% 70% at 0% 0%, rgba(196, 146, 10, 0.12) 0%, transparent 42%),
+    radial-gradient(130% 70% at 0% 0%, rgba(24, 168, 200, 0.12) 0%, transparent 42%),
     radial-gradient(60% 40% at 100% 100%, rgba(255,255,255,0.04) 0%, transparent 60%),
     linear-gradient(180deg, var(--brand-navy-2), var(--brand-navy));
 }
@@ -3504,7 +3590,7 @@ html[lang="ar"] .wallet-metric__label {
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   backdrop-filter: blur(18px) saturate(160%);
   border: 1px solid rgba(255,255,255,0.7);
-  box-shadow: 0 20px 60px rgba(16,24,40,0.18), 0 8px 24px rgba(196,146,10,0.08);
+  box-shadow: 0 20px 60px rgba(16,24,40,0.18), 0 8px 24px rgba(24,168,200,0.08);
 }
 
 /* ─── Transport price card glass ────────────────────────────────── */
@@ -3581,7 +3667,7 @@ html[lang="ar"] .wallet-metric__label {
 .stats-grid .stat-card:nth-child(2) .stat-ico { background: var(--danger-soft); color: var(--danger); }
 .stats-grid .stat-card:nth-child(3) .stat-ico { background: rgba(15,27,71,0.06); color: var(--brand-navy-3); }
 .stats-grid .stat-card:nth-child(4) .stat-ico { background: var(--warning-soft); color: var(--warning); }
-.stats-grid .stat-card:nth-child(5) .stat-ico { background: var(--brand-gold-soft); color: var(--brand-gold); }
+.stats-grid .stat-card:nth-child(5) .stat-ico { background: var(--brand-accent-soft); color: var(--brand-accent); }
 .stats-grid .stat-card:nth-child(6) .stat-ico { background: var(--success-soft); color: var(--success); }
 
 /* ─── Mobile logo shrink ─────────────────────────────────────────── */
@@ -3637,3 +3723,144 @@ html[lang="ar"] .wallet-metric__label {
   object-position: right center;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   LIQUID GLASS SYSTEM v4 — navy/cyan, subtle blur, calm motion
+   Reusable utilities + component refinements + tasteful animation.
+   All blur effects degrade to solid surfaces via @supports.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --glass-blur: 16px;
+  --glass-bg: rgba(255, 255, 255, 0.70);
+  --glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.60);
+  --glass-shadow: 0 8px 30px rgba(11, 31, 82, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  --glass-dark-bg: rgba(255, 255, 255, 0.08);
+  --glass-dark-border: rgba(255, 255, 255, 0.14);
+}
+
+/* ─── Reusable glass utilities ──────────────────────────────────── */
+.glass-panel,
+.glass-card,
+.glass-modal,
+.glass-pill {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+.glass-card { border-radius: var(--r-12); }
+.glass-modal { border-radius: var(--r-16); background: var(--glass-bg-strong); }
+.glass-pill { border-radius: 999px; }
+
+/* Glass tuned for dark navy surfaces (sidebar / nav) */
+.glass-dark {
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+  background: var(--glass-dark-bg);
+  border: 1px solid var(--glass-dark-border);
+}
+
+/* ─── Wallet pill: navy/cyan glass (was a green blob) ────────────── */
+.wallet-pill {
+  border: 1px solid rgba(24, 168, 200, 0.30);
+  background: linear-gradient(135deg, rgba(16, 42, 104, 0.06), rgba(24, 168, 200, 0.10));
+  color: var(--brand-navy-2);
+}
+.wallet-pill i,
+.wallet-pill svg { color: var(--brand-cyan); }
+.wallet-pill strong {
+  color: var(--brand-navy);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* Tabular, evenly-spaced figures for all money readouts */
+.stat-value,
+.wallet-metric__value,
+.tr-price-amount,
+.info-value { font-variant-numeric: tabular-nums; }
+
+/* ─── @supports fallback — solid surfaces without backdrop-filter ── */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-panel,
+  .glass-card { background: var(--surface); }
+  .glass-modal,
+  .modal { background: var(--surface); }
+  .topbar { background: rgba(255, 255, 255, 0.98); }
+  .glass-pill,
+  .wallet-pill,
+  .refresh-pill,
+  .lang-toggle,
+  .quick-search { background: var(--surface-raised); }
+  .modal-overlay { background: rgba(16, 24, 40, 0.55); }
+  .glass-dark { background: rgba(255, 255, 255, 0.12); }
+}
+
+/* ═══ Tasteful, professional motion (no bounce) ═══════════════════ */
+@media (prefers-reduced-motion: no-preference) {
+  /* Sidebar nav — icon nudges, calm background fade, cyan active glow */
+  .nav-item {
+    transition: background 160ms ease, color 160ms ease, box-shadow 200ms ease;
+  }
+  .nav-item i,
+  .nav-item svg {
+    transition: transform 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .nav-item:hover i,
+  .nav-item:hover svg { transform: translateX(2px); }
+  [dir="rtl"] .nav-item:hover i,
+  [dir="rtl"] .nav-item:hover svg { transform: translateX(-2px); }
+  .nav-item.active {
+    box-shadow: inset 0 0 0 1px rgba(24, 168, 200, 0.12);
+  }
+  .nav-item.active::before {
+    box-shadow: 0 0 10px 1px var(--accent-glow);
+    transition: box-shadow 220ms ease;
+  }
+
+  /* Icon buttons / pills press feedback */
+  .icon-button,
+  .wallet-pill,
+  .refresh-pill,
+  .lang-toggle button { transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 90ms ease; }
+  .icon-button:active,
+  .refresh-pill:active { transform: translateY(1px); }
+
+  /* Dropdowns / popovers / menus */
+  .pop-in,
+  .menu-pop,
+  .dropdown-menu {
+    animation: glassPopIn 170ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    transform-origin: top center;
+  }
+
+  /* Table rows */
+  .data-table tbody tr { transition: background 130ms ease; }
+}
+
+@keyframes glassPopIn {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Cyan row hover (replaces navy tint for a calmer feel) */
+.data-table tbody tr:hover td {
+  background: rgba(24, 168, 200, 0.05);
+}
+
+/* Soft focus ring in brand cyan */
+.quick-search:focus-within {
+  border-color: var(--brand-cyan);
+  box-shadow: 0 0 0 3px rgba(24, 168, 200, 0.12);
+}
+
+/* Honor reduced-motion for every animated surface added here */
+@media (prefers-reduced-motion: reduce) {
+  .nav-item i,
+  .nav-item svg,
+  .pop-in,
+  .menu-pop,
+  .dropdown-menu { animation: none !important; transition: none !important; transform: none !important; }
+}
