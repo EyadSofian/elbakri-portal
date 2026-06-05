@@ -26,11 +26,20 @@ const CITY_MAP = {
   "الساحل الشمالي": "North Coast",
 };
 
+const CITY_ALIASES = {
+  sharm: ["شرم", "sharm"],
+  hurghada: ["الغردقة", "hurghada"],
+  "marsa-alam": ["مرسى علم", "marsa alam"],
+  dahab: ["دهب", "dahab"],
+  cairo: ["القاهرة", "القاهرة الكبرى", "cairo"],
+  all: ["all"],
+};
+
 function parseArgs(argv) {
   const args = {
     input: DEFAULT_INPUT,
     outDir: DEFAULT_OUT_DIR,
-    city: "sharm",
+    city: "hurghada",
     limit: Number(process.env.LIMIT || 999),
     dryRun: false,
     start: 0,
@@ -70,7 +79,6 @@ function parseCsv(text) {
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
     const next = text[i + 1];
-
     if (quoted && ch === '"' && next === '"') {
       value += '"';
       i += 1;
@@ -94,7 +102,7 @@ function parseCsv(text) {
     rows.push(row);
   }
 
-  const headers = rows.shift().map((header, index) => header.trim() || `H${index + 1}`);
+  const headers = rows.shift().map((header, index) => header.trim().replace(/^\uFEFF/, "") || `H${index + 1}`);
   return rows
     .filter((cells) => cells.some((cell) => String(cell || "").trim()))
     .map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] || ""])));
@@ -167,9 +175,12 @@ function matchesCity(row, cityArg) {
   const rawCity = String(row.city || "").toLowerCase();
   const enCity = cityToEnglish(row.city).toLowerCase();
   const wanted = String(cityArg || "").toLowerCase();
-  if (wanted === "sharm") return rawCity.includes("شرم") || enCity.includes("sharm");
   if (wanted === "all") return true;
-  return rawCity.includes(wanted) || enCity.includes(wanted);
+  const aliases = CITY_ALIASES[wanted] || [wanted];
+  return aliases.some((alias) => {
+    const a = alias.toLowerCase();
+    return rawCity.includes(a) || enCity.includes(a);
+  });
 }
 
 function slug(value) {
@@ -195,6 +206,7 @@ function collectAmenities(item) {
 
 function collectPhotos(item) {
   const values = [];
+  if (item.mainPhoto) values.push(item.mainPhoto);
   if (Array.isArray(item.photos)) values.push(...item.photos);
   if (Array.isArray(item.images)) values.push(...item.images);
   values.push(...collectIndexed(item, "photos"));
@@ -290,7 +302,7 @@ async function runActor(input, token) {
   }
   try {
     return JSON.parse(text);
-  } catch (error) {
+  } catch {
     throw new Error(`Could not parse Apify JSON response: ${text.slice(0, 500)}`);
   }
 }
@@ -298,6 +310,8 @@ async function runActor(input, token) {
 async function main() {
   const args = parseArgs(process.argv);
   const token = process.env.APIFY_TOKEN;
+  const citySlug = slug(args.city || "hotels");
+  const outputCsv = path.join(args.outDir, `${citySlug}_booking_enriched_hotels.csv`);
 
   if (!args.dryRun && !token) {
     throw new Error("APIFY_TOKEN is missing. Set it in PowerShell before running the script.");
@@ -319,6 +333,7 @@ async function main() {
 
   if (args.dryRun) {
     console.log("Dry run only. No Apify calls were made.");
+    console.log(`Output would be: ${outputCsv}`);
     return;
   }
 
@@ -352,7 +367,7 @@ async function main() {
     };
 
     console.log(`\n[${i + 1}/${hotels.length}] ${query}`);
-    const rawFile = path.join(args.outDir, `${String(args.start + i + 1).padStart(3, "0")}-${slug(hotel.hotel_name)}.json`);
+    const rawFile = path.join(args.outDir, `${citySlug}-${String(args.start + i + 1).padStart(3, "0")}-${slug(hotel.hotel_name)}.json`);
     try {
       const items = await runActor(input, token);
       fs.writeFileSync(rawFile, JSON.stringify({ input, items }, null, 2), "utf8");
@@ -365,10 +380,10 @@ async function main() {
       console.log(`ERROR: ${error.message}`);
     }
 
-    writeCsv(path.join(args.outDir, "booking_enriched_hotels.csv"), enriched);
+    writeCsv(outputCsv, enriched);
   }
 
-  console.log(`\nDone. Output: ${path.join(args.outDir, "booking_enriched_hotels.csv")}`);
+  console.log(`\nDone. Output: ${outputCsv}`);
 }
 
 main().catch((error) => {
