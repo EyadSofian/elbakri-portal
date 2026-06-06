@@ -47,8 +47,10 @@ app.get('/media/hotel-image', async (req, res) => {
   try {
     const rawUrl = String(req.query.url ?? '');
     const url = new URL(rawUrl);
-    const allowedHosts = ['cf.bstatic.com', 'q-xx.bstatic.com'];
-    if (url.protocol !== 'https:' || !allowedHosts.includes(url.hostname)) {
+    // Allow any Booking image CDN host (cf.bstatic.com, q-xx.bstatic.com,
+    // r-xx.bstatic.com, t-cf.bstatic.com, …) — all serve only Booking imagery.
+    const isBstatic = url.hostname === 'bstatic.com' || url.hostname.endsWith('.bstatic.com');
+    if (url.protocol !== 'https:' || !isBstatic) {
       res.status(400).send('Unsupported image source');
       return;
     }

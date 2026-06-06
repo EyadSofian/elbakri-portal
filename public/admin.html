@@ -1341,7 +1341,7 @@ function hotelImageSrc(u) {
   const url = hiRes(u);
   try {
     const parsed = new URL(url, window.location.origin);
-    if (parsed.hostname === "cf.bstatic.com" || parsed.hostname === "q-xx.bstatic.com") {
+    if (parsed.hostname === "bstatic.com" || parsed.hostname.endsWith(".bstatic.com")) {
       return `/media/hotel-image?url=${encodeURIComponent(parsed.href)}`;
     }
   } catch (e) {}
@@ -3538,17 +3538,557 @@ async function rfbDelete() {
 let enrichState = { running: false, reader: null };
 let enrichCities = [], enrichActors = [];
 
+// ════════════════════════════════════════════════════════════════════════════
+// BOOKING.COM MEDIA WORKFLOW (3-step) — Discover IDs → Review → Fetch Photos
+// ════════════════════════════════════════════════════════════════════════════
+let bkMeta = { cities: [], searchActors: [], photoActors: [], actors: [],
+  thresholds: { auto: 0.65, review: 0.40 }, defaults: { maxPhotosPerHotel: 10, maxResults: 95, maxHotelsPerRun: 50 }, hasEnvToken: false };
+let bkStep = "discover";
+let bkRun = { running: false, controller: null };
+let bkMatches = [];
+let bkSelected = new Set();
+let bkFetchResults = [];
+
+const BK_STATUS = {
+  auto:      { badge: "badge-confirmed", label: "Auto" },
+  ok:        { badge: "badge-confirmed", label: "Updated" },
+  manual:    { badge: "badge-pending",   label: "Manual Review" },
+  missing:   { badge: "badge-outline",   label: "Missing ID" },
+  reject:    { badge: "badge-cancelled", label: "No match" },
+  skip:      { badge: "badge-outline",   label: "Skipped" },
+  fetching:  { badge: "badge-outline",   label: "Fetching…" },
+  no_result: { badge: "badge-outline",   label: "No photos" },
+  error:     { badge: "badge-cancelled", label: "Error" },
+};
+
 async function renderHotelEnrichment() {
   state.page = "hotel-enrichment";
-  content(pageHeader() + `<div id="enrichArea"><div class="skeleton" style="height:200px"></div></div>`);
-
-  // Load cities + actors from backend
+  content(pageHeader() + `<div class="skeleton" style="height:160px"></div>`);
   const meta = await apiFetch("/admin/enrich/actors");
-  if (meta?.data) { enrichCities = meta.data.cities; enrichActors = meta.data.actors; }
-  if (!enrichCities.length) { enrichCities = [{value:"hurghada",label:"Hurghada"},{value:"sharm",label:"Sharm El Sheikh"},{value:"marsa-alam",label:"Marsa Alam"},{value:"dahab",label:"Dahab"},{value:"ain-sokhna",label:"Ain Sokhna"},{value:"sahl-hasheesh",label:"Sahl Hasheesh"},{value:"safaga",label:"Safaga"},{value:"north-coast",label:"North Coast"},{value:"el-gouna",label:"El Gouna"},{value:"cairo",label:"Cairo"},{value:"nuweiba",label:"Nuweiba"}]; }
-  if (!enrichActors.length)  { enrichActors = [{id:"brilliant_gum~booking-pro-full-data-scraper",label:"brilliant_gum~booking-pro-full-data-scraper ✓"}]; }
+  if (meta?.data) {
+    bkMeta = { ...bkMeta, ...meta.data };
+    enrichCities = meta.data.cities || [];
+    enrichActors = meta.data.actors || [];
+  }
+  if (!bkMeta.cities.length) bkMeta.cities = [{value:"sharm",label:"Sharm El Sheikh"},{value:"hurghada",label:"Hurghada"},{value:"marsa-alam",label:"Marsa Alam"},{value:"dahab",label:"Dahab"},{value:"el-gouna",label:"El Gouna"},{value:"cairo",label:"Cairo"}];
+  if (!bkMeta.searchActors.length) bkMeta.searchActors = [{id:"brilliant_gum~booking-pro-full-data-scraper",label:"Booking Pro Full Data (brilliant_gum)"}];
+  if (!bkMeta.photoActors.length)  bkMeta.photoActors  = [{id:"powerai~booking-hotel-photos-scraper",label:"Booking Hotel Photos (powerai)"}];
+  if (!enrichCities.length) enrichCities = bkMeta.cities;
+  if (!enrichActors.length) enrichActors = bkMeta.searchActors;
 
-  const el = document.getElementById("enrichArea");
+  content(pageHeader(`<button class="btn btn-outline btn-sm" onclick="renderHotelEnrichment()">${icon("refresh-cw")}&nbsp;Reload</button>`) + bkShell());
+  bkSetStep(bkStep);
+  refreshIcons(document.getElementById("content"));
+}
+
+function bkShell() {
+  const tokenNote = bkMeta.hasEnvToken
+    ? `<div class="rf-help" style="color:var(--success,#16a34a)">Server APIFY_TOKEN detected — you can leave this blank.</div>`
+    : `<div class="rf-help">Token stays in memory for this run only — never stored or committed.</div>`;
+  return `
+  <section class="panel glass-card" style="margin-bottom:14px">
+    <div class="panel-body">
+      <div class="form-grid" style="gap:12px">
+        <div class="form-field">
+          <label>Apify Token ${bkMeta.hasEnvToken ? "" : `<span class="required">*</span>`}</label>
+          <div style="position:relative">
+            <input id="bkToken" type="password" placeholder="apify_api_…" autocomplete="off" style="padding-right:42px">
+            <button type="button" class="icon-button" style="position:absolute;right:4px;top:50%;transform:translateY(-50%)" onclick="(()=>{const i=document.getElementById('bkToken');i.type=i.type==='password'?'text':'password';})()">${icon("eye")}</button>
+          </div>
+          ${tokenNote}
+        </div>
+        <div class="form-field">
+          <label>City / Destination</label>
+          <select id="bkCity" onchange="bkOnCityChange()">
+            ${bkMeta.cities.map(c=>`<option value="${escapeHtml(c.value)}">${escapeHtml(c.label)}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="bk-tabs">
+    <button class="bk-tab active" data-step="discover" onclick="bkSetStep('discover')"><span class="bk-tab-num">1</span> Discover IDs</button>
+    <button class="bk-tab" data-step="review" onclick="bkSetStep('review')"><span class="bk-tab-num">2</span> Review Matches</button>
+    <button class="bk-tab" data-step="fetch" onclick="bkSetStep('fetch')"><span class="bk-tab-num">3</span> Fetch Photos</button>
+    <button class="bk-tab" data-step="legacy" onclick="bkSetStep('legacy')"><span class="bk-tab-num">↻</span> Quick (legacy)</button>
+  </div>
+
+  <div id="bkBody"></div>`;
+}
+
+function bkToken() { return document.getElementById("bkToken")?.value?.trim() || ""; }
+function bkCity()  { return document.getElementById("bkCity")?.value || ""; }
+function bkRequireToken() {
+  if (bkMeta.hasEnvToken) return true;
+  if (!bkToken()) { toast("Enter your Apify token first", "error"); return false; }
+  return true;
+}
+function bkOnCityChange() { if (bkStep === "review") bkLoadMatches(); if (bkStep === "fetch") bkUpdateEstimate(); }
+
+function bkSetStep(step) {
+  if (bkRun.running) { toast("A run is in progress — stop it first", "error"); return; }
+  bkStep = step;
+  document.querySelectorAll(".bk-tab").forEach(t => t.classList.toggle("active", t.dataset.step === step));
+  if (step === "discover") bkRenderDiscover();
+  else if (step === "review") bkRenderReview();
+  else if (step === "fetch") bkRenderFetch();
+  else if (step === "legacy") bkLegacyView();
+  refreshIcons(document.getElementById("bkBody"));
+}
+
+// ─── Generic SSE-over-fetch reader ──────────────────────────────────────────
+async function bkStream(path, body, onEvent) {
+  const controller = new AbortController();
+  bkRun.controller = controller; bkRun.running = true;
+  try {
+    const res = await fetch("/api" + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("accessToken")}` },
+      body: JSON.stringify(body), signal: controller.signal,
+    });
+    if (!res.ok) { toast("Server error " + res.status, "error"); return; }
+    const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split("\n\n"); buf = parts.pop() || "";
+      for (const chunk of parts) {
+        let et = "message", ed = "";
+        chunk.split("\n").forEach(l => { if (l.startsWith("event: ")) et = l.slice(7).trim(); if (l.startsWith("data: ")) ed = l.slice(6).trim(); });
+        if (ed) { try { onEvent(et, JSON.parse(ed)); } catch (e) {} }
+      }
+    }
+  } catch (err) {
+    if (!String(err.message || "").includes("abort")) toast("Connection error: " + err.message, "error");
+  } finally {
+    bkRun.running = false; bkRun.controller = null;
+  }
+}
+function bkStop() { if (bkRun.controller) bkRun.controller.abort(); bkRun.running = false; }
+function bkProgress(id, pct) { const f = document.getElementById(id); if (f) f.style.width = Math.min(100, Math.round(pct)) + "%"; }
+function bkFeed(id, type, msg) {
+  const feed = document.getElementById(id); if (!feed) return;
+  const div = document.createElement("div");
+  div.className = "enrich-feed-row";
+  div.innerHTML = `<span class="enrich-feed-msg">${escapeHtml(String(msg || ""))}</span>`;
+  feed.appendChild(div); feed.scrollTop = feed.scrollHeight;
+}
+
+// ─── STEP 1 — Discover Booking IDs ──────────────────────────────────────────
+function bkRenderDiscover() {
+  const el = document.getElementById("bkBody"); if (!el) return;
+  const sa = [...bkMeta.searchActors, { id: "custom", label: "Custom…" }];
+  el.innerHTML = `
+  <div class="enrich-layout">
+    <div class="enrich-left">
+      <section class="panel glass-card" style="margin-bottom:16px">
+        <div class="panel-header"><div class="panel-title">${icon("search")} Discover — match Booking property IDs</div></div>
+        <div class="panel-body">
+          <div class="form-grid" style="gap:12px">
+            <div class="form-field full">
+              <label>Search Actor</label>
+              <select id="bkSearchActor" onchange="bkToggleCustomActor()">
+                ${sa.map(a=>`<option value="${escapeHtml(a.id)}">${escapeHtml(a.label)}</option>`).join("")}
+              </select>
+            </div>
+            <div class="form-field full" id="bkCustomActorWrap" style="display:none">
+              <label>Custom Actor ID</label>
+              <input id="bkCustomActor" placeholder="owner~actor-name">
+            </div>
+            <div class="form-field full">
+              <label>Location query <span class="rf-help" style="font-weight:400">(blank = city default)</span></label>
+              <input id="bkLocationQuery" placeholder="e.g. Sharm El Sheikh, Egypt">
+            </div>
+            <div class="form-field"><label>Check-in</label><input id="bkCheckIn" type="date" value="2026-09-01"></div>
+            <div class="form-field"><label>Check-out</label><input id="bkCheckOut" type="date" value="2026-09-04"></div>
+            <div class="form-field"><label>Adults</label><input id="bkAdults" type="number" min="1" value="2"></div>
+            <div class="form-field"><label>Rooms</label><input id="bkRooms" type="number" min="1" value="1"></div>
+            <div class="form-field"><label>Currency</label><input id="bkCurrency" value="USD"></div>
+            <div class="form-field"><label>Max results (candidates)</label><input id="bkMaxResults" type="number" min="1" max="200" value="${bkMeta.defaults.maxResults}"></div>
+            <div class="form-field"><label>Start offset</label><input id="bkStart" type="number" min="0" value="0"></div>
+            <div class="form-field"><label>Limit hotels</label><input id="bkLimit" type="number" min="1" max="200" value="999"></div>
+            <div class="form-field full" style="display:flex;flex-wrap:wrap;gap:16px;margin-top:4px">
+              <label class="check-row" style="margin:0;cursor:pointer"><input type="checkbox" id="bkOverwriteIds"> Overwrite existing IDs</label>
+              <label class="check-row" style="margin:0;cursor:pointer"><input type="checkbox" id="bkDiscoverApply"> Write to DB (Apply)</label>
+            </div>
+            <div class="rf-help full">Thresholds — auto ≥ ${bkMeta.thresholds.auto}, manual ${bkMeta.thresholds.review}–${(bkMeta.thresholds.auto-0.01).toFixed(2)}, below ${bkMeta.thresholds.review} = no match.</div>
+          </div>
+        </div>
+        <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="bkDiscoverBtn" onclick="bkDiscoverStart()">${icon("play")}&nbsp;Run Discovery</button>
+          <button class="btn btn-outline" id="bkSyncBtn" onclick="bkFullSyncStart()" title="Discover + fetch photos for auto matches in one pass">${icon("zap")}&nbsp;Full Auto-Sync</button>
+          <button class="btn btn-danger" id="bkDiscoverStop" style="display:none" onclick="bkStop()">${icon("square")}&nbsp;Stop</button>
+        </div>
+      </section>
+      <section class="panel" id="bkDiscoverProgress" style="display:none">
+        <div class="panel-header"><div class="panel-title">${icon("activity")} Live Progress</div>
+          <div class="enrich-progress-bar"><div id="bkDiscoverFill"></div></div></div>
+        <div id="bkDiscoverFeed" class="enrich-feed"></div>
+      </section>
+    </div>
+    <div class="enrich-right">
+      <div id="bkDiscoverStats" class="enrich-stats-row" style="display:none">
+        <div class="enrich-stat enrich-stat--ok"><span id="bkS_auto">0</span><small>Auto</small></div>
+        <div class="enrich-stat enrich-stat--manual"><span id="bkS_manual">0</span><small>Manual</small></div>
+        <div class="enrich-stat enrich-stat--cross"><span id="bkS_applied">0</span><small>Applied</small></div>
+        <div class="enrich-stat enrich-stat--error"><span id="bkS_errors">0</span><small>Errors</small></div>
+        <div class="enrich-stat enrich-stat--total"><span id="bkS_total">0</span><small>Total</small></div>
+      </div>
+      <section class="table-card" id="bkDiscoverCard" style="display:none">
+        <div class="table-toolbar"><div><strong>Discovery results</strong></div>
+          <div class="toolbar-actions"><button class="btn btn-primary btn-sm" onclick="bkSetStep('review')">${icon("arrow-right")}&nbsp;Review Matches</button></div></div>
+        <div class="table-scroll"><table class="data-table">
+          <thead><tr><th>#</th><th>Hotel (DB)</th><th>Matched (Booking)</th><th>Booking ID</th><th>Score</th><th>Status</th></tr></thead>
+          <tbody id="bkDiscoverBody"></tbody></table></div>
+      </section>
+    </div>
+  </div>`;
+}
+
+function bkToggleCustomActor() {
+  const sel = document.getElementById("bkSearchActor");
+  const wrap = document.getElementById("bkCustomActorWrap");
+  if (wrap) wrap.style.display = sel?.value === "custom" ? "" : "none";
+}
+
+function bkResolveSearchActor() {
+  const sel = document.getElementById("bkSearchActor")?.value;
+  return sel === "custom" ? (document.getElementById("bkCustomActor")?.value?.trim() || "") : sel;
+}
+
+function bkDiscoverBody() {
+  return {
+    city: bkCity(), apifyToken: bkToken(), actorId: bkResolveSearchActor(),
+    locationQuery: document.getElementById("bkLocationQuery")?.value?.trim() || "",
+    checkIn: document.getElementById("bkCheckIn")?.value, checkOut: document.getElementById("bkCheckOut")?.value,
+    adults: parseInt(document.getElementById("bkAdults")?.value || "2"),
+    rooms: parseInt(document.getElementById("bkRooms")?.value || "1"),
+    currency: document.getElementById("bkCurrency")?.value || "USD",
+    maxResults: parseInt(document.getElementById("bkMaxResults")?.value || "95"),
+    start: parseInt(document.getElementById("bkStart")?.value || "0"),
+    limit: parseInt(document.getElementById("bkLimit")?.value || "999"),
+    overwriteIds: document.getElementById("bkOverwriteIds")?.checked || false,
+    apply: document.getElementById("bkDiscoverApply")?.checked || false,
+  };
+}
+
+async function bkDiscoverStart() {
+  if (!bkRequireToken()) return;
+  const body = bkDiscoverBody();
+  if (!body.actorId) { toast("Choose or enter a search actor", "error"); return; }
+  let stats = { auto: 0, manual: 0, applied: 0, errors: 0, total: 0 };
+  document.getElementById("bkDiscoverProgress").style.display = "";
+  document.getElementById("bkDiscoverStats").style.display = "";
+  document.getElementById("bkDiscoverCard").style.display = "";
+  document.getElementById("bkDiscoverFeed").innerHTML = "";
+  document.getElementById("bkDiscoverBody").innerHTML = "";
+  document.getElementById("bkDiscoverBtn").style.display = "none";
+  document.getElementById("bkSyncBtn").style.display = "none";
+  document.getElementById("bkDiscoverStop").style.display = "";
+
+  await bkStream("/admin/enrich/discover-booking-ids", body, (type, d) => bkDiscoverEvent(type, d, stats));
+
+  document.getElementById("bkDiscoverBtn").style.display = "";
+  document.getElementById("bkSyncBtn").style.display = "";
+  document.getElementById("bkDiscoverStop").style.display = "none";
+  refreshIcons(document.getElementById("bkDiscoverBody"));
+}
+
+function bkSetStat(prefix, k, v) { const el = document.getElementById(prefix + k); if (el) el.textContent = String(v); }
+
+function bkDiscoverEvent(type, d, stats) {
+  if (type === "init") { stats.total = d.total || 0; bkSetStat("bkS_", "total", stats.total); bkFeed("bkDiscoverFeed", "info", `${d.city} — ${d.total} hotels · ${d.candidates} candidates · ${d.mode}`); return; }
+  if (type === "candidates") { bkFeed("bkDiscoverFeed", "info", `Fetched ${d.fetched} Booking properties (${d.withId} with usable IDs)`); return; }
+  if (type === "done") {
+    stats.auto = d.matched||0; stats.manual = d.manual||0; stats.applied = d.applied||0; stats.errors = d.errors||0;
+    ["auto","manual","applied","errors"].forEach(k=>bkSetStat("bkS_",k,stats[k]));
+    bkProgress("bkDiscoverFill", 100);
+    bkFeed("bkDiscoverFeed","done",`Done — auto ${d.matched}, manual ${d.manual}, applied ${d.applied}, skipped ${d.skipped}, errors ${d.errors}`);
+    toast(`Discovery complete — ${d.matched} auto, ${d.manual} manual`, "success");
+    return;
+  }
+  if (type === "quota") { bkFeed("bkDiscoverFeed","quota", d.message); toast("Apify quota/auth issue", "error"); return; }
+  if (type === "error") { bkFeed("bkDiscoverFeed","error", d.message || "Error"); toast(d.message || "Error", "error"); return; }
+  if (type === "hotel") {
+    const pct = d.total > 0 ? (d.i / d.total) * 100 : 0; bkProgress("bkDiscoverFill", pct);
+    if (d.status === "auto") { stats.auto++; bkSetStat("bkS_","auto",stats.auto); }
+    if (d.status === "manual") { stats.manual++; bkSetStat("bkS_","manual",stats.manual); }
+    if (d.apply && (d.status === "auto" || d.status === "manual")) { stats.applied++; bkSetStat("bkS_","applied",stats.applied); }
+    const meta = BK_STATUS[d.status] || BK_STATUS.missing;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="numeric" style="color:var(--text-muted)">${d.i}</td>
+      <td><span class="primary-text">${escapeHtml(d.name)}</span></td>
+      <td><span style="color:var(--text-secondary)">${escapeHtml(d.matched||"—")}</span></td>
+      <td class="numeric">${d.bookingHotelId ? escapeHtml(d.bookingHotelId) : "—"}</td>
+      <td class="numeric">${d.score ?? "—"}</td>
+      <td><span class="badge ${meta.badge}">${meta.label}</span></td>`;
+    document.getElementById("bkDiscoverBody")?.appendChild(tr);
+  }
+}
+
+async function bkFullSyncStart() {
+  if (!bkRequireToken()) return;
+  const d = bkDiscoverBody();
+  if (!d.actorId) { toast("Choose or enter a search actor", "error"); return; }
+  if (!d.apply && !confirm("Full Auto-Sync in DRY-RUN — no DB writes. Continue?")) return;
+  const body = {
+    city: d.city, searchActorId: d.actorId, apifyToken: d.apifyToken,
+    photoActorId: bkMeta.photoActors[0]?.id, locationQuery: d.locationQuery,
+    checkIn: d.checkIn, checkOut: d.checkOut, adults: d.adults, rooms: d.rooms,
+    currency: d.currency, maxResults: d.maxResults, limit: d.limit,
+    maxPhotosPerHotel: bkMeta.defaults.maxPhotosPerHotel, overwrite: false, apply: d.apply,
+  };
+  let stats = { auto: 0, manual: 0, applied: 0, errors: 0, total: 0 };
+  document.getElementById("bkDiscoverProgress").style.display = "";
+  document.getElementById("bkDiscoverStats").style.display = "";
+  document.getElementById("bkDiscoverCard").style.display = "";
+  document.getElementById("bkDiscoverFeed").innerHTML = "";
+  document.getElementById("bkDiscoverBody").innerHTML = "";
+  document.getElementById("bkDiscoverBtn").style.display = "none";
+  document.getElementById("bkSyncBtn").style.display = "none";
+  document.getElementById("bkDiscoverStop").style.display = "";
+  await bkStream("/admin/enrich/run-booking-photo-sync", body, (type, dd) => bkDiscoverEvent(type, dd, stats));
+  document.getElementById("bkDiscoverBtn").style.display = "";
+  document.getElementById("bkSyncBtn").style.display = "";
+  document.getElementById("bkDiscoverStop").style.display = "none";
+  refreshIcons(document.getElementById("bkDiscoverBody"));
+}
+
+// ─── STEP 2 — Review Matches ────────────────────────────────────────────────
+function bkRenderReview() {
+  const el = document.getElementById("bkBody"); if (!el) return;
+  el.innerHTML = `
+  <section class="table-card">
+    <div class="table-toolbar">
+      <div class="toolbar-actions">
+        <button class="btn btn-outline btn-sm bkf active" data-f="all" onclick="bkFilterMatches('all')">All</button>
+        <button class="btn btn-outline btn-sm bkf" data-f="auto" onclick="bkFilterMatches('auto')">Auto</button>
+        <button class="btn btn-outline btn-sm bkf" data-f="manual" onclick="bkFilterMatches('manual')">Manual Review</button>
+        <button class="btn btn-outline btn-sm bkf" data-f="missing" onclick="bkFilterMatches('missing')">Missing ID</button>
+      </div>
+      <div class="toolbar-actions">
+        <button class="btn btn-outline btn-sm" onclick="bkLoadMatches()">${icon("refresh-cw")}&nbsp;Reload</button>
+        <button class="btn btn-primary btn-sm" onclick="bkBulkApprove()">${icon("check-check")}&nbsp;Approve selected</button>
+        <button class="btn btn-primary btn-sm" onclick="bkSetStep('fetch')">${icon("arrow-right")}&nbsp;Fetch Photos</button>
+      </div>
+    </div>
+    <div class="table-scroll"><table class="data-table">
+      <thead><tr>
+        <th style="width:30px"><input type="checkbox" id="bkSelAll" onchange="bkToggleSelectAll(this)"></th>
+        <th>Hotel (DB)</th><th>Matched (Booking)</th><th>Booking ID</th><th>Score</th><th>Gallery</th><th>Status</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="bkReviewBody"><tr><td colspan="8"><div class="skeleton" style="height:120px"></div></td></tr></tbody>
+    </table></div>
+  </section>`;
+  bkLoadMatches();
+}
+
+async function bkLoadMatches() {
+  const city = bkCity(); if (!city) return;
+  bkSelected = new Set();
+  const res = await apiFetch(`/admin/enrich/booking-matches?city=${encodeURIComponent(city)}`);
+  bkMatches = res?.data || [];
+  bkRenderMatchRows("all");
+}
+
+function bkScoreBadge(s) {
+  if (s == null) return "—";
+  const cls = s >= bkMeta.thresholds.auto ? "badge-confirmed" : s >= bkMeta.thresholds.review ? "badge-pending" : "badge-cancelled";
+  return `<span class="badge ${cls}">${s.toFixed(2)}</span>`;
+}
+
+function bkRenderMatchRows(filter) {
+  const tbody = document.getElementById("bkReviewBody"); if (!tbody) return;
+  const rows = bkMatches.filter(m => filter === "all" || m.status === filter);
+  if (!rows.length) { tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:24px">No hotels in this filter.</td></tr>`; return; }
+  tbody.innerHTML = rows.map(m => {
+    const meta = BK_STATUS[m.status] || BK_STATUS.missing;
+    const checked = bkSelected.has(m.id) ? "checked" : "";
+    const approve = m.status === "manual" ? `<button class="icon-button btn-icon" title="Approve" onclick="bkMatchAction('${m.id}','approve')">${icon("check")}</button>` : "";
+    const reject = m.bookingHotelId ? `<button class="icon-button btn-icon" title="Reject (clear ID)" onclick="bkMatchAction('${m.id}','reject')">${icon("x")}</button>` : "";
+    return `<tr data-status="${m.status}">
+      <td><input type="checkbox" ${checked} onchange="bkToggleSelect('${m.id}',this)"></td>
+      <td><span class="primary-text">${escapeHtml(m.name)}</span><div class="secondary-text">${"★".repeat(Math.min(m.stars||0,5))}${m.area ? " · " + escapeHtml(m.area) : ""}</div></td>
+      <td><span style="color:var(--text-secondary)">${escapeHtml(m.bookingMatchedName||"—")}</span></td>
+      <td class="numeric">${m.bookingHotelId ? escapeHtml(m.bookingHotelId) : `<span style="color:var(--text-muted)">—</span>`}</td>
+      <td class="numeric">${bkScoreBadge(m.score)}</td>
+      <td class="numeric">${m.galleryCount || 0}${m.mediaSyncedAt ? " ✓" : ""}</td>
+      <td><span class="badge ${meta.badge}">${meta.label}</span></td>
+      <td><div style="display:flex;gap:4px">${approve}${reject}
+        <button class="icon-button btn-icon" title="Edit Booking ID" onclick="bkEditId('${m.id}')">${icon("pencil")}</button>
+        <button class="icon-button btn-icon" title="Open hotel" onclick="showHotelDetails('${m.id}')">${icon("eye")}</button>
+      </div></td>
+    </tr>`;
+  }).join("");
+  refreshIcons(tbody);
+}
+
+function bkFilterMatches(f) {
+  document.querySelectorAll(".bkf").forEach(b => b.classList.toggle("active", b.dataset.f === f));
+  bkRenderMatchRows(f);
+}
+function bkToggleSelect(id, cb) { if (cb.checked) bkSelected.add(id); else bkSelected.delete(id); }
+function bkToggleSelectAll(cb) {
+  document.querySelectorAll("#bkReviewBody input[type=checkbox]").forEach(x => { x.checked = cb.checked; });
+  const visible = bkMatches.filter(m => { const f = document.querySelector(".bkf.active")?.dataset.f || "all"; return f === "all" || m.status === f; });
+  if (cb.checked) visible.forEach(m => bkSelected.add(m.id)); else bkSelected.clear();
+}
+
+async function bkMatchAction(id, action, idValue) {
+  const res = await apiFetch(`/admin/enrich/booking-match/${id}`, { method: "POST", body: JSON.stringify({ action, bookingHotelId: idValue }) });
+  if (res?.success) { toast(`Match ${action}d`, "success"); bkLoadMatches(); }
+}
+function bkEditId(id) {
+  const cur = bkMatches.find(m => m.id === id)?.bookingHotelId || "";
+  const val = prompt("Enter Booking hotel ID (numeric):", cur);
+  if (val == null) return;
+  if (!/^\d{3,}$/.test(val.trim())) { toast("ID must be numeric", "error"); return; }
+  bkMatchAction(id, "edit", val.trim());
+}
+async function bkBulkApprove() {
+  const ids = [...bkSelected];
+  if (!ids.length) { toast("Select rows first", "error"); return; }
+  const res = await apiFetch("/admin/enrich/booking-matches/bulk-approve", { method: "POST", body: JSON.stringify({ hotelIds: ids }) });
+  if (res?.success) { toast(`Approved ${res.data.updated} matches`, "success"); bkLoadMatches(); }
+}
+
+// ─── STEP 3 — Fetch Photos ──────────────────────────────────────────────────
+function bkRenderFetch() {
+  const el = document.getElementById("bkBody"); if (!el) return;
+  const pa = bkMeta.photoActors;
+  el.innerHTML = `
+  <div class="enrich-layout">
+    <div class="enrich-left">
+      <section class="panel glass-card" style="margin-bottom:16px">
+        <div class="panel-header"><div class="panel-title">${icon("images")} Fetch photos by Booking ID</div></div>
+        <div class="panel-body">
+          <div class="form-grid" style="gap:12px">
+            <div class="form-field full"><label>Photo Actor</label>
+              <select id="bkPhotoActor">${pa.map(a=>`<option value="${escapeHtml(a.id)}">${escapeHtml(a.label)}</option>`).join("")}</select></div>
+            <div class="form-field"><label>Max photos / hotel</label><input id="bkMaxPhotos" type="number" min="1" max="40" value="${bkMeta.defaults.maxPhotosPerHotel}" onchange="bkUpdateEstimate()"></div>
+            <div class="form-field"><label>Limit hotels</label><input id="bkFetchLimit" type="number" min="1" max="200" value="${bkMeta.defaults.maxHotelsPerRun}" onchange="bkUpdateEstimate()"></div>
+            <div class="form-field full" style="display:flex;flex-wrap:wrap;gap:16px;margin-top:4px">
+              <label class="check-row" style="margin:0;cursor:pointer"><input type="checkbox" id="bkSelectedOnly" onchange="bkUpdateEstimate()"> Selected hotels only</label>
+              <label class="check-row" style="margin:0;cursor:pointer"><input type="checkbox" id="bkOverwrite"> Overwrite existing gallery</label>
+              <label class="check-row" style="margin:0;cursor:pointer"><input type="checkbox" id="bkFetchApply"> Write to DB (Apply)</label>
+            </div>
+            <div class="rf-help full" id="bkEstimate"></div>
+          </div>
+        </div>
+        <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="bkFetchBtn" onclick="bkFetchStart()">${icon("play")}&nbsp;Fetch Photos</button>
+          <button class="btn btn-danger" id="bkFetchStop" style="display:none" onclick="bkStop()">${icon("square")}&nbsp;Stop</button>
+          <button class="btn btn-outline" onclick="bkExportCsv()">${icon("download")}&nbsp;Export CSV</button>
+        </div>
+      </section>
+      <section class="panel" id="bkFetchProgress" style="display:none">
+        <div class="panel-header"><div class="panel-title">${icon("activity")} Live Progress</div>
+          <div class="enrich-progress-bar"><div id="bkFetchFill"></div></div></div>
+        <div id="bkFetchFeed" class="enrich-feed"></div>
+      </section>
+    </div>
+    <div class="enrich-right">
+      <div id="bkFetchStats" class="enrich-stats-row" style="display:none">
+        <div class="enrich-stat enrich-stat--ok"><span id="bkF_applied">0</span><small>Applied</small></div>
+        <div class="enrich-stat enrich-stat--manual"><span id="bkF_skipped">0</span><small>Skipped</small></div>
+        <div class="enrich-stat enrich-stat--error"><span id="bkF_errors">0</span><small>Errors</small></div>
+        <div class="enrich-stat enrich-stat--total"><span id="bkF_rows">0</span><small>Photo rows</small></div>
+      </div>
+      <div id="bkFetchGrid" class="bk-fetch-grid"></div>
+    </div>
+  </div>`;
+  bkUpdateEstimate();
+}
+
+function bkReadyCount() { return bkMatches.filter(m => m.status === "auto").length; }
+function bkUpdateEstimate() {
+  const elc = document.getElementById("bkEstimate"); if (!elc) return;
+  const selectedOnly = document.getElementById("bkSelectedOnly")?.checked;
+  const maxPhotos = parseInt(document.getElementById("bkMaxPhotos")?.value || "10");
+  const limit = parseInt(document.getElementById("bkFetchLimit")?.value || "50");
+  let hotels = selectedOnly ? bkSelected.size : bkReadyCount();
+  if (!bkMatches.length && !selectedOnly) { elc.textContent = "Reload the Review tab to estimate ready hotels."; return; }
+  hotels = Math.min(hotels, limit);
+  elc.innerHTML = `Estimated: <strong>${hotels}</strong> hotels × ${maxPhotos} = <strong>~${hotels*maxPhotos}</strong> photo rows. Each hotel = 1 actor start (~$0.09) + photos.`;
+}
+
+async function bkFetchStart() {
+  if (!bkRequireToken()) return;
+  const selectedOnly = document.getElementById("bkSelectedOnly")?.checked;
+  const body = {
+    city: bkCity(), apifyToken: bkToken(), actorId: document.getElementById("bkPhotoActor")?.value,
+    maxPhotosPerHotel: parseInt(document.getElementById("bkMaxPhotos")?.value || "10"),
+    limit: parseInt(document.getElementById("bkFetchLimit")?.value || "50"),
+    overwrite: document.getElementById("bkOverwrite")?.checked || false,
+    apply: document.getElementById("bkFetchApply")?.checked || false,
+    selectedOnly: selectedOnly || false,
+  };
+  if (selectedOnly) {
+    if (!bkSelected.size) { toast("No hotels selected in Review tab", "error"); return; }
+    body.hotelIds = [...bkSelected];
+  }
+  bkFetchResults = [];
+  let stats = { applied: 0, skipped: 0, errors: 0, rows: 0 };
+  document.getElementById("bkFetchProgress").style.display = "";
+  document.getElementById("bkFetchStats").style.display = "";
+  document.getElementById("bkFetchFeed").innerHTML = "";
+  document.getElementById("bkFetchGrid").innerHTML = "";
+  document.getElementById("bkFetchBtn").style.display = "none";
+  document.getElementById("bkFetchStop").style.display = "";
+
+  await bkStream("/admin/enrich/fetch-booking-photos", body, (type, d) => bkFetchEvent(type, d, stats));
+
+  document.getElementById("bkFetchBtn").style.display = "";
+  document.getElementById("bkFetchStop").style.display = "none";
+}
+
+function bkFetchEvent(type, d, stats) {
+  if (type === "estimate") { bkFeed("bkFetchFeed", "info", `${d.hotels} hotels × ${d.maxPhotosPerHotel} = ~${d.estimatedRows} rows · ${d.mode}`); return; }
+  if (type === "done") {
+    stats.applied = d.applied||0; stats.skipped = d.skipped||0; stats.errors = d.errors||0; stats.rows = d.photoRows||0;
+    ["applied","skipped","errors","rows"].forEach(k=>bkSetStat("bkF_",k,stats[k]));
+    bkProgress("bkFetchFill", 100);
+    bkFeed("bkFetchFeed","done",`Done — applied ${d.applied}, skipped ${d.skipped}, errors ${d.errors}, ${d.photoRows} rows`);
+    toast(`Photos done — ${d.applied} hotels updated`, "success");
+    return;
+  }
+  if (type === "quota") { bkFeed("bkFetchFeed","quota", d.message); toast("Apify quota/auth issue", "error"); return; }
+  if (type === "error") { bkFeed("bkFetchFeed","error", d.message || "Error"); return; }
+  if (type === "hotel") {
+    const pct = d.total > 0 ? (d.i / d.total) * 100 : 0; bkProgress("bkFetchFill", pct);
+    if (d.status === "fetching") { bkFeed("bkFetchFeed","fetching",`[${d.i}/${d.total}] ${d.name}…`); return; }
+    if (d.status === "ok") { stats.applied += d.apply ? 1 : 0; if (d.apply) bkSetStat("bkF_","applied",stats.applied); }
+    if (d.status === "no_result") { stats.skipped++; bkSetStat("bkF_","skipped",stats.skipped); }
+    if (d.status === "error") { stats.errors++; bkSetStat("bkF_","errors",stats.errors); }
+    bkFetchResults.push({ name: d.name, bookingHotelId: d.bookingHotelId, count: d.count || 0, status: d.status });
+    if (d.status === "ok") {
+      const thumbs = (d.thumbs || []).map(u => `<img src="${hotelImageSrc(u)}" loading="lazy" alt="">`).join("");
+      const card = document.createElement("div");
+      card.className = "bk-thumb-card";
+      card.innerHTML = `<div class="bk-thumb-head"><span class="primary-text">${escapeHtml(d.name)}</span><span class="badge badge-confirmed">${d.count} 📷${d.apply?"":" (dry)"}</span></div><div class="bk-thumb-row">${thumbs}</div>`;
+      document.getElementById("bkFetchGrid")?.prepend(card);
+    } else {
+      bkFeed("bkFetchFeed", d.status, `${d.name} — ${BK_STATUS[d.status]?.label || d.status}${d.reason ? ": " + d.reason : ""}`);
+    }
+  }
+}
+
+function bkExportCsv() {
+  if (!bkFetchResults.length) { toast("Nothing to export yet", "error"); return; }
+  const header = "Hotel,BookingHotelId,Photos,Status\n";
+  const rows = bkFetchResults.map(r => `"${(r.name||"").replace(/"/g,'""')}","${r.bookingHotelId||""}",${r.count},${r.status}`).join("\n");
+  const blob = new Blob([header + rows], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `booking-photos-${bkCity()}-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function bkLegacyView() {
+  const el = document.getElementById("bkBody");
   if (!el) return;
   el.innerHTML = `
   <div class="enrich-layout">

@@ -649,7 +649,7 @@ function hotelImageSrc(u) {
   const url = hiRes(u);
   try {
     const parsed = new URL(url, window.location.origin);
-    if (parsed.hostname === "cf.bstatic.com" || parsed.hostname === "q-xx.bstatic.com") {
+    if (parsed.hostname === "bstatic.com" || parsed.hostname.endsWith(".bstatic.com")) {
       return `/media/hotel-image?url=${encodeURIComponent(parsed.href)}`;
     }
   } catch (e) {}

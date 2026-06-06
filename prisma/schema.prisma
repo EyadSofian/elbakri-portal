@@ -358,6 +358,13 @@ model Hotel {
   googleRating      Decimal?       @db.Decimal(3, 2)
   imageUrl          String?
   galleryUrls       String[]       @default([])
+  // Booking.com media enrichment (Apify) — see HotelMediaSyncLog
+  bookingHotelId         String?
+  bookingUrl             String?
+  bookingMatchedName     String?
+  bookingMatchScore      Decimal?  @db.Decimal(4, 3)
+  mediaNeedsManualReview Boolean   @default(false)
+  mediaSyncedAt          DateTime?
   pricePerNight     Decimal        @db.Decimal(10, 2)
   currency          String         @default("USD")
   commissionPercent Decimal        @default(0) @db.Decimal(5, 2)
@@ -384,6 +391,7 @@ model Hotel {
   @@index([country])
   @@index([sheetsRowId])
   @@index([destinationId])
+  @@index([bookingHotelId])
 }
 
 model Room {
@@ -1082,6 +1090,36 @@ model SyncLog {
   createdAt     DateTime   @default(now())
 
   @@index([entity])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────
+// HOTEL MEDIA ENRICHMENT (Booking.com via Apify)
+// ─────────────────────────────────────────────
+
+model HotelMediaSyncLog {
+  id            String     @id @default(cuid())
+  stage         String     // discover | fetch | sync
+  city          String?
+  actorId       String?
+  dryRun        Boolean    @default(true)
+  status        SyncStatus @default(RUNNING)
+  total         Int        @default(0)
+  matched       Int        @default(0)
+  manualReview  Int        @default(0)
+  applied       Int        @default(0)
+  skipped       Int        @default(0)
+  errors        Int        @default(0)
+  photoRows     Int        @default(0)
+  triggeredById String?
+  notes         String?
+  startedAt     DateTime   @default(now())
+  finishedAt    DateTime?
+  durationMs    Int?
+  createdAt     DateTime   @default(now())
+
+  @@index([stage])
   @@index([status])
   @@index([createdAt])
 }

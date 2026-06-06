@@ -3778,12 +3778,82 @@ html[lang="ar"] .wallet-metric__label {
   overflow: hidden;
   margin: 0 12px;
 }
-.enrich-progress-bar #enrichProgressFill {
+.enrich-progress-bar > div {
   height: 100%;
   width: 0;
   background: linear-gradient(90deg, var(--brand-cyan), var(--brand-teal));
   transition: width 300ms ease;
   border-radius: 999px;
+}
+
+/* Booking media 3-step workflow ─────────────────────────────────── */
+.bk-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.bk-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 1px solid var(--border);
+  background: var(--surface, #fff);
+  border-radius: 999px;
+  font: 600 13px var(--font);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+.bk-tab:hover { border-color: var(--brand-cyan); color: var(--text-primary); }
+.bk-tab.active {
+  background: linear-gradient(90deg, var(--brand-cyan), var(--brand-teal));
+  border-color: transparent;
+  color: #fff;
+}
+.bk-tab-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.08);
+  font-size: 11px;
+  font-weight: 800;
+}
+.bk-tab.active .bk-tab-num { background: rgba(255,255,255,0.25); }
+.bkf.active { font-weight: 800; border-color: var(--brand-cyan); color: var(--brand-cyan-2, var(--brand-cyan)); }
+
+.bk-fetch-grid { display: flex; flex-direction: column; gap: 10px; }
+.bk-thumb-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-12, 12px);
+  padding: 10px;
+  background: var(--surface, #fff);
+}
+.bk-thumb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.bk-thumb-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 4px;
+}
+.bk-thumb-row img {
+  width: 84px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: var(--border);
 }
 
 /* Live feed ──────────────────────────────────────────────────────── */
