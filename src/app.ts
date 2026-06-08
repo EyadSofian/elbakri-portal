@@ -30,6 +30,7 @@ import simCardRouter from './modules/sim-card/sim-card.routes';
 import uploadRouter from './modules/upload/upload.routes';
 import { adminUiTemplatesRouter, userUiTemplatesRouter } from './modules/ui-templates/ui-templates.routes';
 import { enrichRouter } from './modules/enrichment/enrichment.routes';
+import fxRouter from './modules/fx/fx.routes';
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3000');
@@ -114,6 +115,8 @@ app.use('/api/quote-requests', authenticate, quoteRequestsRouter);
 app.use('/api/offers', authenticate, offersRouter);
 app.use('/api/sim-card', authenticate, simCardRouter);
 app.use('/api/upload', authenticate, uploadRouter);
+app.use('/api/fx', authenticate, fxRouter);
+app.use('/api/admin/fx', authenticate, fxRouter);
 app.use('/api/ui-templates', authenticate, userUiTemplatesRouter);
 app.use('/api/admin/ui-templates', authenticate, adminUiTemplatesRouter);
 app.use('/api/admin/enrich', authenticate, enrichRouter);

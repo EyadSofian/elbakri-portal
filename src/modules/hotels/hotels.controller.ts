@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { CompanyTier, Prisma } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
+import { resolveMarketPrices } from '../../shared/pricing';
 import { syncEntityFromSheets } from '../sheets-sync/sheets-sync.service';
 
 const TIER_ORDER: Record<CompanyTier, number> = {
@@ -106,26 +107,32 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
     prisma.hotel.count({ where }),
   ]);
 
-  // For non-admin users, determine price visibility based on company tier
+  // For non-admin users, determine price visibility based on company tier + market
   let companyTier: CompanyTier = 'STANDARD';
+  let companyMarket: import('@prisma/client').Market | null = null;
   if (caller.role !== 'SUPERADMIN' && caller.companyId) {
     const company = await prisma.company.findUnique({
       where: { id: caller.companyId },
-      select: { tier: true },
+      select: { tier: true, market: true },
     });
     companyTier = company?.tier ?? 'STANDARD';
+    companyMarket = company?.market ?? null;
   }
+
+  // Explicit per-market price overrides (USD) for this company's market
+  const marketOverrides = await resolveMarketPrices('HOTEL', hotels.map((h) => h.id), companyMarket);
 
   const data = hotels.map((hotel) => {
     if (caller.role === 'SUPERADMIN') {
-      return hotel; // Admin sees everything
+      return hotel; // Admin sees everything (base/Foreign price)
     }
     const visibilityOverride = 'companyVisibility' in hotel ? hotel.companyVisibility[0] : null;
     const showPrice = canSeePrices(hotel, companyTier, visibilityOverride);
     const { companyVisibility: _companyVisibility, ...hotelData } = hotel as typeof hotel & { companyVisibility?: unknown };
+    const marketPrice = marketOverrides.get(hotel.id) ?? hotel.pricePerNight;
     return {
       ...hotelData,
-      pricePerNight: showPrice ? hotel.pricePerNight : null,
+      pricePerNight: showPrice ? marketPrice : null,
       priceVisible: showPrice,
       canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,
     };
@@ -184,18 +191,20 @@ export async function getHotel(req: Request, res: Response): Promise<void> {
   }
 
   const company = caller.companyId
-    ? await prisma.company.findUnique({ where: { id: caller.companyId }, select: { tier: true } })
+    ? await prisma.company.findUnique({ where: { id: caller.companyId }, select: { tier: true, market: true } })
     : null;
   const companyTier: CompanyTier = company?.tier ?? 'STANDARD';
   const visibilityOverride = 'companyVisibility' in hotel ? hotel.companyVisibility[0] : null;
   const showPrice = canSeePrices(hotel, companyTier, visibilityOverride);
   const { companyVisibility: _companyVisibility, ...hotelData } = hotel as typeof hotel & { companyVisibility?: unknown };
+  const marketOverrides = await resolveMarketPrices('HOTEL', [hotel.id], company?.market ?? null);
+  const marketPrice = marketOverrides.get(hotel.id) ?? hotel.pricePerNight;
 
   res.json({
     success: true,
     data: {
       ...hotelData,
-      pricePerNight: showPrice ? hotel.pricePerNight : null,
+      pricePerNight: showPrice ? marketPrice : null,
       pricing: showPrice ? hotel.pricing : [],
       priceVisible: showPrice,
       canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,

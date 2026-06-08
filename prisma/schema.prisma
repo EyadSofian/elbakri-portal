@@ -24,6 +24,14 @@ enum CompanyTier {
   PLATINUM
 }
 
+// Client market / nationality bucket — drives which explicit price tier the
+// company sees and its default display currency.
+enum Market {
+  EGYPTIAN
+  GULF
+  FOREIGN
+}
+
 enum HotelSource {
   MANUAL
   GOOGLE_SHEETS
@@ -276,6 +284,8 @@ model Company {
   creditLimit          Decimal                     @default(0) @db.Decimal(12, 2)
   balance              Decimal                     @default(0) @db.Decimal(12, 2)
   currency             String                      @default("USD")
+  // Client market — picks the explicit per-market price tier (see MarketPrice)
+  market               Market                      @default(FOREIGN)
   tier                 CompanyTier                 @default(STANDARD)
   logoUrl              String?
   themeColor           String?
@@ -312,6 +322,7 @@ model Destination {
   country        String          @default("EG")
   region         String?
   type           DestinationType @default(CITY)
+  imageUrl       String?
   isActive       Boolean         @default(true)
   hotels         Hotel[]
   activities     Activity[]
@@ -1097,6 +1108,40 @@ model SyncLog {
 // ─────────────────────────────────────────────
 // HOTEL MEDIA ENRICHMENT (Booking.com via Apify)
 // ─────────────────────────────────────────────
+
+// ─────────────────────────────────────────────
+// MARKET PRICING (explicit per-market price overrides)
+// ─────────────────────────────────────────────
+// The existing base price column on each service (Hotel.pricePerNight,
+// Activity.priceAdult/priceChild, TransportRate.rate/roundTripRate,
+// NileCruise.priceFrom, SimPackage.price) is treated as the default / FOREIGN
+// price. A MarketPrice row holds a per-market override (in USD). Resolution =
+// override row when present, else the base column — so existing data keeps working.
+
+model MarketPrice {
+  id         String   @id @default(cuid())
+  entityType String   // HOTEL | ACTIVITY_ADULT | ACTIVITY_CHILD | TRANSPORT | TRANSPORT_RT | CRUISE | SIM
+  entityId   String
+  market     Market
+  priceUsd   Decimal  @db.Decimal(12, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([entityType, entityId, market])
+  @@index([entityType, entityId])
+}
+
+// ─────────────────────────────────────────────
+// FX RATE CACHE (live daily currency conversion, keyless provider)
+// ─────────────────────────────────────────────
+
+model FxRateCache {
+  id        String   @id @default("latest")
+  base      String   @default("USD")
+  rates     Json
+  fetchedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
 
 model HotelMediaSyncLog {
   id            String     @id @default(cuid())

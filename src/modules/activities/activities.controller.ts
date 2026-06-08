@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { ActivityCategory, BookingStatus } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta } from '../../shared/helpers';
+import { resolveCallerMarket, applyMarketPrice, getMarketPrice } from '../../shared/pricing';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 
@@ -29,6 +30,10 @@ export async function listActivities(req: Request, res: Response): Promise<void>
       destination: { select: { id: true, name: true, nameAr: true, slug: true } },
     },
   });
+  // Apply explicit per-market price overrides (adult + child) for the caller's market
+  const market = await resolveCallerMarket(req);
+  await applyMarketPrice(activities, { entityType: 'ACTIVITY_ADULT', market, priceField: 'priceAdult' });
+  await applyMarketPrice(activities, { entityType: 'ACTIVITY_CHILD', market, priceField: 'priceChild' });
   res.json({ success: true, data: activities });
 }
 
@@ -120,7 +125,7 @@ export async function createActivityBooking(req: Request, res: Response): Promis
   }
 
   // Verify company is active — no wallet debit at creation; booking is PENDING
-  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { isActive: true, email: true } });
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { isActive: true, email: true, market: true } });
   if (!company?.isActive) {
     res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
     return;
@@ -128,8 +133,10 @@ export async function createActivityBooking(req: Request, res: Response): Promis
 
   const adultsCount = Math.max(1, body.adultsCount ?? 1);
   const childrenCount = Math.max(0, body.childrenCount ?? 0);
-  // Server-side calculation — authoritative amount
-  const totalAmount = activity.priceAdult.mul(adultsCount).add(activity.priceChild.mul(childrenCount));
+  // Server-side calculation — authoritative amount, using the company's market price tier
+  const priceAdult = await getMarketPrice('ACTIVITY_ADULT', body.activityId, company.market, activity.priceAdult);
+  const priceChild = await getMarketPrice('ACTIVITY_CHILD', body.activityId, company.market, activity.priceChild);
+  const totalAmount = priceAdult.mul(adultsCount).add(priceChild.mul(childrenCount));
   const currency = activity.currency;
 
   try {

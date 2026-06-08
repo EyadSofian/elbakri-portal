@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
 import { sanitizeCustomFields } from '../../shared/helpers';
+import { resolveCallerMarket, applyMarketPrice, getMarketPrice } from '../../shared/pricing';
 
 // ─── Packages (admin managed) ────────────────────────────────────────────────
 
@@ -16,6 +17,10 @@ export async function listPackages(req: Request, res: Response) {
       prisma.simPackage.findMany({ where, orderBy: { createdAt: 'asc' }, skip, take: limitNum }),
       prisma.simPackage.count({ where }),
     ]);
+
+    // Apply explicit per-market price overrides for the caller's market
+    const market = await resolveCallerMarket(req);
+    await applyMarketPrice(packages, { entityType: 'SIM', market, priceField: 'price' });
 
     res.json({
       success: true,
@@ -149,7 +154,9 @@ export async function createRequest(req: Request, res: Response) {
 
     const pkg = packageId ? await prisma.simPackage.findUnique({ where: { id: packageId } }) : null;
     const qty = Math.max(1, parseInt(quantity) || 1);
-    const unitPrice = pkg ? Number(pkg.price) : 0;
+    // Server-authoritative unit price using the company's market tier
+    const company = await prisma.company.findUnique({ where: { id: user.companyId }, select: { market: true } });
+    const unitPrice = pkg ? Number(await getMarketPrice('SIM', pkg.id, company?.market ?? null, pkg.price)) : 0;
     const totalAmount = unitPrice * qty;
     const currency = pkg?.currency || 'USD';
 

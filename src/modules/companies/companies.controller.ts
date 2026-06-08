@@ -53,7 +53,7 @@ export async function listCompanies(req: Request, res: Response): Promise<void> 
       select: {
         id: true, name: true, nameAr: true, email: true, phone: true,
         country: true, tier: true, balance: true, creditLimit: true,
-        currency: true, logoUrl: true, website: true, themeColor: true,
+        currency: true, market: true, logoUrl: true, website: true, themeColor: true,
         isActive: true, lastActivityAt: true, createdAt: true, updatedAt: true,
         _count: { select: { users: true, bookings: true } },
       },
@@ -81,6 +81,7 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
     phone: string;
     address?: string; billingAddress?: string; country?: string; taxId?: string;
     website?: string; creditLimit?: number; tier?: string; currency?: string;
+    market?: string;
     logoUrl?: string; themeColor?: string;
   };
 
@@ -116,6 +117,7 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
       website: nullable(body.website),
       creditLimit: new Decimal(body.creditLimit ?? 0),
       currency: body.currency ?? 'USD',
+      market: (body.market as 'EGYPTIAN' | 'GULF' | 'FOREIGN') ?? 'FOREIGN',
       tier: (body.tier as 'STANDARD' | 'SILVER' | 'GOLD' | 'PLATINUM') ?? 'STANDARD',
       logoUrl: nullable(body.logoUrl),
       themeColor: nullable(body.themeColor),
@@ -197,7 +199,7 @@ export async function updateCompany(req: Request, res: Response): Promise<void> 
   const body = req.body as {
     name?: string; nameAr?: string; email?: string; contactEmail?: string; phone?: string; address?: string;
     billingAddress?: string; country?: string; taxId?: string; website?: string;
-    tier?: string; creditLimit?: number; currency?: string; logoUrl?: string;
+    tier?: string; creditLimit?: number; currency?: string; market?: string; logoUrl?: string;
     themeColor?: string; isActive?: boolean;
   };
 
@@ -215,6 +217,7 @@ export async function updateCompany(req: Request, res: Response): Promise<void> 
       ...(body.taxId !== undefined && { taxId: nullable(body.taxId) }),
       ...(body.website !== undefined && { website: nullable(body.website) }),
       ...(body.tier && { tier: body.tier as 'STANDARD' | 'SILVER' | 'GOLD' | 'PLATINUM' }),
+      ...(body.market && { market: body.market as 'EGYPTIAN' | 'GULF' | 'FOREIGN' }),
       ...(body.creditLimit !== undefined && { creditLimit: new Decimal(body.creditLimit) }),
       ...(body.currency && { currency: body.currency }),
       ...(body.logoUrl !== undefined && { logoUrl: nullable(body.logoUrl) }),

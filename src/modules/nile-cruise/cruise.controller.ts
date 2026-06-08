@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { BookingStatus, ShipType, CruiseRoute } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, paginate, paginateMeta } from '../../shared/helpers';
+import { resolveCallerMarket, resolveMarketPrices } from '../../shared/pricing';
 import { sendEmail } from '../../shared/email.templates';
 
 const cruiseInclude = {
@@ -28,10 +29,12 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // Company users: mask price when showPriceToAgents=false
+  // Company users: mask price when showPriceToAgents=false; apply market override
+  const market = await resolveCallerMarket(req);
+  const marketOverrides = await resolveMarketPrices('CRUISE', cruises.map(c => c.id), market);
   const data = cruises.map(cruise => ({
     ...cruise,
-    priceFrom: cruise.showPriceToAgents ? cruise.priceFrom : null,
+    priceFrom: cruise.showPriceToAgents ? (marketOverrides.get(cruise.id) ?? cruise.priceFrom) : null,
     priceVisible: cruise.showPriceToAgents,
     canRequestQuote: cruise.allowQuoteRequest,
   }));

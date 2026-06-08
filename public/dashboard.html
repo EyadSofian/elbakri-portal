@@ -115,7 +115,45 @@ const state = {
   filters: {},
   listConfigs: {},
   wizard: { step: 1, type: "HOTEL", payload: {} },
+  fxRates: null,          // { base, rates:{USD,EUR,EGP,...}, lastUpdated }
+  displayCurrency: "USD", // company's display currency (derived from market/company.currency)
 };
+
+// Default display currency by market when the company has no explicit currency set.
+const MARKET_DEFAULT_CURRENCY = { EGYPTIAN: "EGP", GULF: "USD", FOREIGN: "USD" };
+
+/** Convert a USD base amount to the company's display currency using live rates. */
+function convertFromUsd(amountUsd) {
+  const cur = state.displayCurrency || "USD";
+  const n = Number(amountUsd || 0);
+  if (cur === "USD") return { amount: n, currency: "USD", converted: true };
+  const rate = state.fxRates && state.fxRates.rates ? state.fxRates.rates[cur] : null;
+  if (!rate || !isFinite(rate)) return { amount: n, currency: "USD", converted: false }; // missing rate → show base USD
+  return { amount: n * rate, currency: cur, converted: true };
+}
+
+/** Format a USD base amount for display: pick the market price tier (server-side)
+ *  then convert to the company's display currency. Use this for all live service prices. */
+function formatPrice(amountUsd) {
+  if (amountUsd == null || amountUsd === "") return "—";
+  const { amount, currency } = convertFromUsd(amountUsd);
+  return formatMoney(amount, currency);
+}
+
+/** Human-readable "rates updated at ..." line. */
+function fxUpdatedLabel() {
+  if (!state.fxRates || !state.fxRates.lastUpdated) return "";
+  const d = new Date(state.fxRates.lastUpdated);
+  if (isNaN(d.getTime()) || d.getTime() === 0) return "";
+  return `${t("fx.updated", "Rates updated")}: ${formatDate(state.fxRates.lastUpdated)}`;
+}
+
+async function loadFxRates() {
+  try {
+    const res = await apiFetch("/fx/rates");
+    if (res?.data?.rates) state.fxRates = res.data;
+  } catch (_) { /* keep null → formatPrice falls back to USD */ }
+}
 
 const pageMeta = {
   dashboard: ["page.dashboardTitle", "page.dashboardSub"],
@@ -389,10 +427,10 @@ function logout() {
 // Resolve a whitelisted dataSource key against the live dashboard context.
 function resolveDashboardDataSource(key, ctx) {
   switch (key) {
-    case "wallet.balance":          return formatMoney(ctx.remaining, ctx.cur);
-    case "wallet.remainingBalance": return formatMoney(ctx.remaining, ctx.cur);
-    case "wallet.deducted":         return formatMoney(ctx.used, ctx.cur);
-    case "wallet.totalDeposited":   return formatMoney(ctx.deposited, ctx.cur);
+    case "wallet.balance":          return formatPrice(ctx.remaining);
+    case "wallet.remainingBalance": return formatPrice(ctx.remaining);
+    case "wallet.deducted":         return formatPrice(ctx.used);
+    case "wallet.totalDeposited":   return formatPrice(ctx.deposited);
     case "company.tier":            return t("tier." + (ctx.tier || "STANDARD"), ctx.tier || "STANDARD");
     case "company.name":            return ctx.companyName || "—";
     case "bookings.pendingCount":   return ctx.pendingBookings;
@@ -481,8 +519,8 @@ async function renderDashboard() {
   // Template-driven cards if an active template exists, else the default set.
   const templateCards = tplRes?.data ? renderDashboardCardsFromTemplate(tplRes.data, ctx) : "";
   const defaultCards = `
-      ${statCard("wallet.remainingBalance", formatMoney(remaining, cur), "wallet.walletBalance", "wallet")}
-      ${statCard("wallet.totalUsed",        formatMoney(used, cur),      "stat.allTime",        "receipt")}
+      ${statCard("wallet.remainingBalance", formatPrice(remaining), "wallet.walletBalance", "wallet")}
+      ${statCard("wallet.totalUsed",        formatPrice(used),      "stat.allTime",        "receipt")}
       ${statCard("stat.totalBookings",      d.totalBookings || 0,        "stat.allTime",        "briefcase-business")}
       ${statCard("stat.pending",            d.pendingBookings || 0,      "status.PENDING",      "clock")}
       ${offerCardHtml(activeOffers)}`;
@@ -508,17 +546,17 @@ async function renderDashboard() {
             <div class="wallet-metric wallet-metric--deposit">
               <div class="wallet-metric__icon">${icon("arrow-down-circle")}</div>
               <div class="wallet-metric__label">${t("wallet.totalDeposited","Total Deposited")}</div>
-              <div class="wallet-metric__value">${formatMoney(deposited, cur)}</div>
+              <div class="wallet-metric__value">${formatPrice(deposited)}</div>
             </div>
             <div class="wallet-metric wallet-metric--used">
               <div class="wallet-metric__icon">${icon("receipt")}</div>
               <div class="wallet-metric__label">${t("wallet.totalUsed","Total Used / Deducted")}</div>
-              <div class="wallet-metric__value">${formatMoney(used, cur)}</div>
+              <div class="wallet-metric__value">${formatPrice(used)}</div>
             </div>
             <div class="wallet-metric wallet-metric--balance${remaining < 0 ? " wallet-metric--negative" : ""}" id="walletBalanceCard">
               <div class="wallet-metric__icon">${icon("wallet")}</div>
               <div class="wallet-metric__label">${t("wallet.remainingBalance","Remaining Balance")}</div>
-              <div class="wallet-metric__value" id="walletRemainingValue">${formatMoney(remaining, cur)}</div>
+              <div class="wallet-metric__value" id="walletRemainingValue">${formatPrice(remaining)}</div>
               ${remaining < 0 ? `<div class="wallet-metric__warning">${icon("alert-triangle")}&nbsp;${t("wallet.insufficientBalance","Low balance")}</div>` : ""}
             </div>
           </div>
@@ -556,9 +594,10 @@ function bookingPanel(rows) {
     ["th.ref", b => `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`],
     ["th.type", b => escapeHtml(b.type)],
     ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
-    ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
+    ["th.amount", b => `<span class="numeric">${formatPrice(b.totalAmount)}</span>`],
     ["th.status", b => statusBadge(b.status)],
-    ["th.date", b => formatDate(b.createdAt)],
+    ["th.requested", b => formatDate(b.createdAt)],
+    ["th.confirmed", b => confirmedDate(b)],
   ];
   return `<section class="panel">
     <div class="panel-header"><div><div class="panel-title">${t("nav.bookings")}</div><div class="panel-subtitle">${t("topbar.justNow")}</div></div><button class="btn btn-outline" onclick="setPage('bookings')">${t("btn.view")}</button></div>
@@ -571,10 +610,11 @@ function renderBookings() {
     ["th.ref",     b => `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`],
     ["th.type",    b => escapeHtml(b.type)],
     ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
-    ["th.amount",  b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
+    ["th.amount",  b => `<span class="numeric">${formatPrice(b.totalAmount)}</span>`],
     ["th.status",  b => statusBadge(b.status)],
     ["th.invoice", b => b.invoice ? statusBadge(b.invoice.status) : "—"],
-    ["th.date",    b => formatDate(b.createdAt)],
+    ["th.requested", b => formatDate(b.createdAt)],
+    ["th.confirmed", b => confirmedDate(b)],
   ], {
     filters: [
       ["status",   "form.status",   ["", "PENDING", "CONFIRMED", "CANCELLED", "REJECTED", "COMPLETED"]],
@@ -583,6 +623,17 @@ function renderBookings() {
     ],
     showCreateBooking: false,
   });
+}
+
+// "Date Confirmed" — the timestamp a request became confirmed/approved, or "—".
+// Prefers an explicit confirmation field; falls back to updatedAt once the
+// record reaches a positive terminal status (models without a dedicated column).
+function confirmedDate(r) {
+  const explicit = r.confirmedAt || r.approvedAt || r.respondedAt || r.closedAt;
+  if (explicit) return formatDate(explicit);
+  const s = String(r.status || "").toUpperCase();
+  if ((s === "CONFIRMED" || s === "COMPLETED" || s === "APPROVED") && r.updatedAt) return formatDate(r.updatedAt);
+  return "—";
 }
 
 // ─── Locale-aware display helpers ────────────────────────────────────────────
@@ -629,7 +680,7 @@ function hotelPriceCell(h) {
   if (h.priceVisible === false || h.pricePerNight == null || Number(h.pricePerNight) <= 0) {
     return `<span class="badge badge-info" style="font-size:11px">${t("hotel.priceOnRequest","Price on request")}</span>`;
   }
-  return `<span class="numeric">${formatMoney(h.pricePerNight, h.currency)}</span>`;
+  return `<span class="numeric">${formatPrice(h.pricePerNight)}</span>`;
 }
 
 function hotelThumbAgent(h) {
@@ -824,7 +875,9 @@ async function renderHotels() {
     </button>`,
     ...dests.map(d => `
       <button class="dest-card" onclick="renderHotelsByDest('${d.id}','${escapeHtml(locName(d.name, d.nameAr))}')">
-        <div class="dest-card-icon"><i data-lucide="map-pin"></i></div>
+        ${d.imageUrl
+          ? `<div class="dest-card-img"><img src="${escapeHtml(d.imageUrl)}" alt="" loading="lazy" onerror="this.parentElement.outerHTML='<div class=\\'dest-card-icon\\'><i data-lucide=&quot;map-pin&quot;></i></div>'"></div>`
+          : `<div class="dest-card-icon"><i data-lucide="map-pin"></i></div>`}
         <div class="dest-card-name">${escapeHtml(locName(d.name, d.nameAr))}</div>
         ${(!isArabic() && d.nameAr) ? `<div class="dest-card-sub">${escapeHtml(d.nameAr)}</div>` : ""}
         <div class="dest-card-count">${
@@ -979,7 +1032,7 @@ function renderCruises() {
     ["th.type", c => escapeHtml(c.shipType)],
     ["th.route", c => escapeHtml(c.route)],
     ["th.amount", c => c.priceFrom != null && c.priceVisible !== false
-      ? `<span class="numeric">${formatMoney(c.priceFrom, c.currency)}</span>`
+      ? `<span class="numeric">${formatPrice(c.priceFrom)}</span>`
       : `<span class="badge badge-info" style="font-size:11px">${t("hotel.priceOnRequest","Price on request")}</span>`],
     ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", c => c.canRequestQuote !== false
@@ -1001,6 +1054,29 @@ const NATIONALITIES = [
 
 function nationalityDatalist() {
   return `<datalist id="nationalityList">${NATIONALITIES.map(n => `<option value="${n}">`).join("")}</datalist>`;
+}
+
+// Arabic labels for nationalities (bilingual select). Falls back to English name.
+const NATIONALITY_AR = {
+  Egyptian:"مصري", Saudi:"سعودي", Emirati:"إماراتي", Kuwaiti:"كويتي", Qatari:"قطري", Bahraini:"بحريني", Omani:"عماني",
+  Jordanian:"أردني", Lebanese:"لبناني", Syrian:"سوري", Iraqi:"عراقي", Libyan:"ليبي", Tunisian:"تونسي", Moroccan:"مغربي",
+  Algerian:"جزائري", Sudanese:"سوداني", Yemeni:"يمني", Palestinian:"فلسطيني", Ethiopian:"إثيوبي", British:"بريطاني",
+  American:"أمريكي", German:"ألماني", French:"فرنسي", Italian:"إيطالي", Turkish:"تركي", Russian:"روسي",
+};
+// The 5 markets the client explicitly asked to surface first, then the rest.
+const NATIONALITY_PRIORITY = ["Syrian","Lebanese","Iraqi","Palestinian","Ethiopian"];
+function orderedNationalities() {
+  return [...NATIONALITY_PRIORITY, ...NATIONALITIES.filter(n => !NATIONALITY_PRIORITY.includes(n))];
+}
+function nationalityLabel(n) {
+  return (isArabic() && NATIONALITY_AR[n]) ? NATIONALITY_AR[n] : n;
+}
+/** Bilingual nationality <select> (value = English name for stable storage). */
+function nationalitySelectHtml(id, dv, placeholder) {
+  return `<select id="${id}">
+    <option value="">${escapeHtml(placeholder || t("form.select","Select"))}</option>
+    ${orderedNationalities().map(n => `<option value="${escapeHtml(n)}"${String(dv || "") === n ? " selected" : ""}>${escapeHtml(nationalityLabel(n))}</option>`).join("")}
+  </select>`;
 }
 
 // ─── Reusable dynamic child-age fields (GLOBAL — works in any form) ────────────
@@ -1090,7 +1166,7 @@ function rfControl(f, ctx) {
     case "readonly-price":
       return `<div id="${id}" class="rf-price">${escapeHtml(ctx.priceText || "—")}</div>`;
     case "nationality-select":
-      return `<input id="${id}" list="nationalityList"${phAttr} value="${escapeHtml(dv || "")}">`;
+      return nationalitySelectHtml(id, dv, ph);
     case "textarea":
       return `<textarea id="${id}" rows="3"${phAttr}>${escapeHtml(dv || "")}</textarea>`;
     case "select":
@@ -1098,7 +1174,7 @@ function rfControl(f, ctx) {
     case "meal-plan-select": {
       let opts = (Array.isArray(f.options) && f.options.length) ? f.options.slice() : null;
       if (!opts && f.key === "packageId" && Array.isArray(ctx.packages)) {
-        opts = ctx.packages.map(p => ({ value: p.id, label: `${p.name} — ${p.dataSize} · ${formatMoney(p.price, p.currency)}`, price: p.price, currency: p.currency }));
+        opts = ctx.packages.map(p => ({ value: p.id, label: `${p.name} — ${p.dataSize} · ${formatPrice(p.price)}`, price: p.price, currency: p.currency }));
       }
       if (!opts && f.type === "meal-plan-select") {
         opts = RF_MEAL_PLANS.map(mp => ({ value: mp, label: t("mealPlan." + mp, mp.replace(/_/g, " ")) }));
@@ -1267,7 +1343,7 @@ function rfUpdatePrice() {
   const qtyField = rfFields(rfState.template).find(f => /qty|quantity/i.test(f.key));
   const qty = qtyField ? Math.max(1, parseInt(document.getElementById("rf_" + qtyField.key)?.value || "1")) : 1;
   const el = document.getElementById("rf_" + priceField.key);
-  if (el) el.textContent = price > 0 ? formatMoney(price * qty, cur) : "—";
+  if (el) el.textContent = price > 0 ? formatPrice(price * qty) : "—";
 }
 
 /** WhatsApp + toast success handler shared by the 3 quote-request targets. */
@@ -1335,7 +1411,7 @@ const REQUEST_FORM_TARGETS = {
     success: rfQuoteSuccess,
   },
   security_approval: {
-    endpoint: "/visa-applications",
+    endpoint: "/visa-applications", confirm: true,
     known: ["approvalType", "applicantName", "phone", "nationality", "hotelName", "paxCount", "passportUrl", "flightTicketUrl", "notes"],
     build: (v, ctx, custom) => ({
       applicantName: v.applicantName, nationality: v.nationality, phone: v.phone,
@@ -1350,7 +1426,7 @@ const REQUEST_FORM_TARGETS = {
     success: rfSimpleSuccess(() => typeof renderSecurityApproval === "function" && renderSecurityApproval()),
   },
   airport_assist: {
-    endpoint: "/airport-receptions",
+    endpoint: "/airport-receptions", confirm: true,
     known: ["serviceType", "airport", "flightNumber", "flightDateTime", "guestName", "guestCount", "phone", "ticketUrl", "travelDetails", "notes"],
     build: (v, ctx, custom) => ({
       serviceType: v.serviceType || "MEET_AND_GREET", airport: v.airport || "CAI",
@@ -1379,8 +1455,10 @@ function rfOpenModal(target, tpl, ctx) {
   const adapter = REQUEST_FORM_TARGETS[target] || {};
   const cfg = tpl.config || {};
   const title = ((rfIsAr() && cfg.titleAr) ? cfg.titleAr : cfg.title) || tpl.name || t("btn.requestQuote", "Request");
-  const submitIcon = adapter.whatsapp ? "brand-whatsapp" : "send";
-  const submitLabel = adapter.whatsapp ? t("btn.sendRequest", "Send via WhatsApp") : t("btn.sendRequest", "Send Request");
+  const submitIcon = adapter.whatsapp ? "brand-whatsapp" : adapter.confirm ? "circle-check" : "send";
+  const submitLabel = adapter.whatsapp ? t("btn.sendRequest", "Send via WhatsApp")
+    : adapter.confirm ? t("btn.confirm", "Confirm")
+    : t("btn.sendRequest", "Send Request");
   openModal(title, renderRequestForm(tpl, rfState.ctx), `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel", "Cancel")}</button>
     <button class="btn btn-primary" id="rfSubmitBtn" onclick="rfSubmit('rfSubmitBtn')">${icon(submitIcon)}&nbsp;${submitLabel}</button>
@@ -1629,11 +1707,11 @@ function renderTransportForm() {
               <label class="tr-radio-label"><input type="radio" name="fromType" value="AIRPORT" onchange="trUpdateQuote()" checked> ${icon("plane")} ${t("transport.airport","Airport")}</label>
               <label class="tr-radio-label"><input type="radio" name="fromType" value="DESTINATION" onchange="trUpdateQuote()"> ${icon("map-pin")} ${t("transport.destination","Destination")}</label>
             </div>
-            <select id="trFrom" required onchange="trUpdateQuote()" ${fromOpts ? "" : 'style="display:none"'}>
+            <select id="trFrom" required onchange="trRouteChanged()" ${fromOpts ? "" : 'style="display:none"'}>
               <option value="">${t("transport.selectLocation","Select location...")}</option>
               ${fromOpts}
             </select>
-            ${!fromOpts ? `<input id="trFromText" placeholder="${t("form.from","e.g. Cairo Airport, Sharm Hotel")}" oninput="trUpdateQuote()">` : ""}
+            ${!fromOpts ? `<input id="trFromText" placeholder="${t("form.from","e.g. Cairo Airport, Sharm Hotel")}" oninput="trRouteChanged()">` : ""}
           </div>
           <div class="form-field">
             <label>${t("form.to","To")} <span class="required">*</span></label>
@@ -1641,11 +1719,11 @@ function renderTransportForm() {
               <label class="tr-radio-label"><input type="radio" name="toType" value="AIRPORT" onchange="trUpdateQuote()"> ${icon("plane")} ${t("transport.airport","Airport")}</label>
               <label class="tr-radio-label"><input type="radio" name="toType" value="DESTINATION" onchange="trUpdateQuote()" checked> ${icon("map-pin")} ${t("transport.destination","Destination")}</label>
             </div>
-            <select id="trTo" required onchange="trUpdateQuote()" ${toOpts ? "" : 'style="display:none"'}>
+            <select id="trTo" required onchange="trRouteChanged()" ${toOpts ? "" : 'style="display:none"'}>
               <option value="">${t("transport.selectLocation","Select location...")}</option>
               ${toOpts}
             </select>
-            ${!toOpts ? `<input id="trToText" placeholder="${t("form.to","e.g. Sharm El Sheikh Hotel")}" oninput="trUpdateQuote()">` : ""}
+            ${!toOpts ? `<input id="trToText" placeholder="${t("form.to","e.g. Sharm El Sheikh Hotel")}" oninput="trRouteChanged()">` : ""}
           </div>
         </div>
       </div>
@@ -1799,6 +1877,43 @@ function trGetTo() {
   return (document.getElementById("trTo")?.value || document.getElementById("trToText")?.value || "").trim();
 }
 
+// Build the full vehicle catalogue options (fallback when no route-specific rates exist).
+function trAllVehicleOptions() {
+  return `<option value="">${t("transport.selectVehicle","Select vehicle...")}</option>` +
+    VEHICLE_OPTIONS.map(v => `<option value="${v.value}">${v.label} — ${v.hint}</option>`).join("");
+}
+
+// Data-driven tiers: rebuild the vehicle/tier dropdown from the TransportRate
+// rows actually defined for the selected route, so the customer only sees tiers
+// an admin has priced for that destination. Falls back to the full catalogue
+// when the route has no fixed rates (so a quote request is still possible).
+async function trLoadRouteOptions() {
+  const sel = document.getElementById("trVehicle");
+  if (!sel) return;
+  const from = trGetFrom(), to = trGetTo();
+  if (!from || !to) { sel.innerHTML = trAllVehicleOptions(); return; }
+
+  const prev = sel.value;
+  const res = await apiFetch(`/transport-rates?${new URLSearchParams({ from, to })}`);
+  const available = [...new Set((res?.data || []).map(r => r.vehicleType).filter(Boolean))];
+
+  if (!available.length) {
+    sel.innerHTML = trAllVehicleOptions();
+  } else {
+    const opts = VEHICLE_OPTIONS.filter(v => available.includes(v.value));
+    available.forEach(vt => { if (!opts.some(o => o.value === vt)) opts.push({ value: vt, label: vt.replace(/_/g, " "), hint: "" }); });
+    sel.innerHTML = `<option value="">${t("transport.selectVehicle","Select vehicle...")}</option>` +
+      opts.map(v => `<option value="${v.value}">${escapeHtml(v.label)}${v.hint ? " — " + v.hint : ""}</option>`).join("");
+  }
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+
+// Route changed → refresh available tiers, then re-quote.
+async function trRouteChanged() {
+  await trLoadRouteOptions();
+  trUpdateQuote();
+}
+
 async function _doTransportQuote() {
   const from       = trGetFrom();
   const to         = trGetTo();
@@ -1841,7 +1956,7 @@ async function _doTransportQuote() {
       <div class="tr-price-row"><span>${t("form.roundTrip","Trip Type")}</span><span>${isRoundTrip ? t("form.roundTrip","Round Trip") : t("transport.oneWay","One Way")}</span></div>
       <div class="tr-price-total">
         <span>${t("th.total","Total")}</span>
-        <span class="tr-price-amount" id="trLivePrice">${formatMoney(q.totalAmount, q.currency)}</span>
+        <span class="tr-price-amount" id="trLivePrice">${formatPrice(q.totalAmount)}</span>
       </div>`;
     // Trigger price highlight animation
     requestAnimationFrame(() => {
@@ -1910,7 +2025,8 @@ async function trConfirmBooking() {
 
   if (res?.success) {
     const ref = res.data.refNumber;
-    const amount = formatMoney(res.data.totalAmount, res.data.currency);
+    const amount = formatPrice(res.data.totalAmount);
+    const invoiceId = res.data.invoice?.id;
     openModal(`✅ ${t("toast.created","Booking Created")}`, `
       <div style="text-align:center;padding:10px 0">
         <div style="font-size:48px;margin-bottom:12px">🚐</div>
@@ -1923,6 +2039,7 @@ async function trConfirmBooking() {
         </div>
       </div>`, `
       <button class="btn btn-outline" onclick="closeModal()">${t("btn.close","Close")}</button>
+      ${invoiceId ? `<button class="btn btn-success" onclick="downloadInvoicePdf('${invoiceId}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Download Invoice")}</button>` : ""}
       <button class="btn btn-primary" onclick="closeModal();renderTransportHistory()">${icon("list")}&nbsp;${t("nav.bookings","My Bookings")}</button>`);
   } else {
     if (btn) { btn.disabled = false; btn.innerHTML = `${icon("calendar-check")}&nbsp;${t("transport.bookConfirmed","Confirm Booking")}`; }
@@ -1978,9 +2095,12 @@ async function renderTransportHistory() {
   renderListPage("transport", "/transport-bookings", [
     ["th.ref",    r => `<span class="primary-text">${escapeHtml(r.refNumber)}</span>`],
     ["th.route",  r => `<div>${escapeHtml(r.fromLocation)} → ${escapeHtml(r.toLocation)}</div><div class="secondary-text">${escapeHtml(r.vehicleType?.replace(/_/g," ")||"")}</div>`],
-    ["th.amount", r => `<span class="numeric">${formatMoney(r.totalAmount, r.currency)}</span>`],
+    ["th.amount", r => `<span class="numeric">${formatPrice(r.totalAmount)}</span>`],
     ["th.status", r => statusBadge(r.status)],
-    ["th.date",   r => `<div>${formatDate(r.pickupDateTime)}</div>${r.passengerName ? `<div class="secondary-text">${escapeHtml(r.passengerName)}</div>` : ""}`],
+    ["th.pickup", r => `<div>${formatDate(r.pickupDateTime)}</div>${r.passengerName ? `<div class="secondary-text">${escapeHtml(r.passengerName)}</div>` : ""}`],
+    ["th.requested", r => formatDate(r.createdAt)],
+    ["th.confirmed", r => confirmedDate(r)],
+    ["th.invoice", r => r.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${r.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : "—"],
   ], {
     filters: [["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]]],
     extraActions: `<button class="btn btn-primary" onclick="renderTransport()">${icon("plus")}&nbsp;${t("transport.newBooking","New Booking")}</button>`,
@@ -2010,7 +2130,7 @@ async function renderActivities() {
         </div>
       </div>`],
     ["th.city", a => escapeHtml(a.city)],
-    ["th.amount", a => `<span class="numeric">${formatMoney(a.priceAdult, a.currency)}</span><div class="secondary-text">${a.priceChild ? t("form.child","Child")+": "+formatMoney(a.priceChild, a.currency) : ""}</div>`],
+    ["th.amount", a => `<span class="numeric">${formatPrice(a.priceAdult)}</span><div class="secondary-text">${a.priceChild ? t("form.child","Child")+": "+formatPrice(a.priceChild) : ""}</div>`],
     ["th.actions", a => `<button class="btn btn-primary btn-sm" onclick="openActivityDetails('${a.id}')">${icon("info")}&nbsp;${t("btn.view","Details")}</button>`],
   ], {
     filters: [
@@ -2046,7 +2166,7 @@ async function openActivityDetails(id) {
           <div style="color:var(--text-muted);font-size:12px;margin-top:2px">${icon("map-pin")}&nbsp;${escapeHtml(a.city)}${a.category ? ` · ${escapeHtml(a.category.replace(/_/g," "))}` : ""}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-weight:800;font-size:16px;color:var(--brand-navy-2)">${formatMoney(priceAdult, currency)}</div>
+          <div style="font-weight:800;font-size:16px;color:var(--brand-navy-2)">${formatPrice(priceAdult)}</div>
           <div style="font-size:11px;color:var(--text-muted)">${t("form.priceAdult","per adult")}</div>
         </div>
       </div>
@@ -2091,9 +2211,9 @@ async function openActivityDetails(id) {
           <textarea id="actNotes" rows="2"></textarea></div>
       </div>
       <div class="tr-price-card" style="margin-top:12px">
-        <div class="tr-price-row"><span>${t("form.priceAdult","Adult")}</span><span>${formatMoney(priceAdult,currency)} × <span id="actAdultCount">2</span></span></div>
-        ${priceChild > 0 ? `<div class="tr-price-row"><span>${t("form.priceChild","Child")}</span><span>${formatMoney(priceChild,currency)} × <span id="actChildCount">0</span></span></div>` : ""}
-        <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="actTotalPreview">${formatMoney(2*priceAdult,currency)}</span></div>
+        <div class="tr-price-row"><span>${t("form.priceAdult","Adult")}</span><span>${formatPrice(priceAdult)} × <span id="actAdultCount">2</span></span></div>
+        ${priceChild > 0 ? `<div class="tr-price-row"><span>${t("form.priceChild","Child")}</span><span>${formatPrice(priceChild)} × <span id="actChildCount">0</span></span></div>` : ""}
+        <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="actTotalPreview">${formatPrice(2*priceAdult)}</span></div>
       </div>
       <p style="color:var(--text-muted);font-size:11px;margin-top:8px">${t("booking.pendingNote","Your request is pending admin confirmation. No payment is taken now.")}</p>
     </div>`;
@@ -2123,7 +2243,7 @@ function actCalcTotal(priceAdult, priceChild, currency) {
   const children = Math.max(0, parseInt(document.getElementById("actChildren")?.value || "0"));
   const total    = adults * priceAdult + children * priceChild;
   const el = document.getElementById("actTotalPreview");
-  if (el) el.textContent = formatMoney(total, currency);
+  if (el) el.textContent = formatPrice(total);
   const ac = document.getElementById("actAdultCount");
   if (ac) ac.textContent = adults;
   const cc = document.getElementById("actChildCount");
@@ -2185,7 +2305,7 @@ async function _submitActivityBooking(activityId, activityName, priceAdult, pric
 
   if (res?.success) {
     closeModal();
-    toast(`✅ ${t("toast.created","Submitted")} — ${res.data.refNumber} (${formatMoney(res.data.totalAmount, res.data.currency)})`, "success");
+    toast(`✅ ${t("toast.created","Submitted")} — ${res.data.refNumber} (${formatPrice(res.data.totalAmount)})`, "success");
   } else {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = `${icon("calendar-check")}&nbsp;${t("btn.submitRequest","Submit Request")}`; }
   }
@@ -2212,7 +2332,8 @@ function renderMyQuotes() {
       return ci ? `${ci}${co ? " → " + co : ""}` : "—";
     }],
     ["th.status",      q => statusBadge(q.status)],
-    ["th.date",        q => formatDate(q.createdAt)],
+    ["th.requested",   q => formatDate(q.createdAt)],
+    ["th.confirmed",   q => confirmedDate(q)],
     ["th.actions", q => {
       const waUrl = buildWhatsAppQuoteUrl({
         ref:         q.refNumber,
@@ -2274,9 +2395,11 @@ function renderSecurityApproval() {
       const loc = APPROVAL_TYPES.find(x => x.dest === v.destinationCountry);
       return escapeHtml(loc?.label || v.destinationCountry || v.visaType);
     }],
-    ["form.phone","v => escapeHtml(v.phone || '—')"],
-    ["th.amount", v => `<span class="numeric">${formatMoney(v.totalAmount, v.currency)}</span>`],
+    ["form.phone", v => escapeHtml(v.phone || "—")],
+    ["th.amount", v => `<span class="numeric">${formatPrice(v.totalAmount)}</span>`],
     ["th.status", v => statusBadge(v.status)],
+    ["th.requested", v => formatDate(v.createdAt)],
+    ["th.confirmed", v => confirmedDate(v)],
     ["th.actions",v => `<button class="btn btn-outline btn-sm" onclick="openSecurityApprovalForm()">${icon("plus")}&nbsp;${t("btn.add","New")}</button>`],
   ], {
     filters: [["status","form.status",["","PENDING","SUBMITTED","APPROVED","REJECTED"]]],
@@ -2306,7 +2429,7 @@ async function openSecurityApprovalForm() {
       <div class="form-field"><label>${t("form.phone","Phone")} *</label>
         <input id="saPhone" type="tel" placeholder="+20..."></div>
       <div class="form-field"><label>${t("form.nationality","Nationality")} *</label>
-        <input id="saNationality" list="nationalityList" placeholder="${t("form.nationalityPlaceholder","e.g. Saudi")}"></div>
+        ${nationalitySelectHtml("saNationality", "", t("form.nationalityPlaceholder","e.g. Saudi"))}</div>
       <div class="form-field"><label>${t("securityApproval.hotelName","Hotel Name")}</label>
         <input id="saHotel" placeholder="Hotel name"></div>
       <div class="form-field"><label>${t("securityApproval.paxCount","Number of Passengers")}</label>
@@ -2322,7 +2445,7 @@ async function openSecurityApprovalForm() {
     </div>`;
   openModal(t("page.securityApprovalTitle","Security Approval Request"), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
-    <button class="btn btn-primary" id="submitSaBtn">${icon("send")}&nbsp;${t("btn.sendRequest","Send Request")}</button>`);
+    <button class="btn btn-primary" id="submitSaBtn">${icon("circle-check")}&nbsp;${t("btn.confirm","Confirm")}</button>`);
 
   document.getElementById("submitSaBtn").onclick = async () => {
     const destCountry = document.getElementById("saType").value;
@@ -2368,8 +2491,10 @@ function renderAirportAssist() {
     ["th.name",   r => escapeHtml(r.guestName)],
     ["th.service",r => escapeHtml(r.serviceType)],
     ["th.route",  r => escapeHtml(r.airport)],
-    ["th.amount", r => `<span class="numeric">${formatMoney(r.totalAmount, r.currency)}</span>`],
+    ["th.amount", r => `<span class="numeric">${formatPrice(r.totalAmount)}</span>`],
     ["th.status", r => statusBadge(r.status)],
+    ["th.requested", r => formatDate(r.createdAt)],
+    ["th.confirmed", r => confirmedDate(r)],
   ], {
     filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
     extraActions: `<button class="btn btn-primary" onclick="openAirportAssistForm()">${icon("plus")}&nbsp;${t("btn.add","New Request")}</button>`,
@@ -2412,7 +2537,7 @@ async function openAirportAssistForm() {
     </div>`;
   openModal(t("page.airportAssistTitle","Airport Assist Request"), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
-    <button class="btn btn-primary" id="submitAaBtn">${icon("send")}&nbsp;${t("btn.sendRequest","Send Request")}</button>`);
+    <button class="btn btn-primary" id="submitAaBtn">${icon("circle-check")}&nbsp;${t("btn.confirm","Confirm")}</button>`);
 
   document.getElementById("submitAaBtn").onclick = async () => {
     const name = document.getElementById("aaName").value.trim();
@@ -2465,7 +2590,7 @@ async function renderSimCard() {
           </div>
           <div class="stat-value" style="font-size:18px;margin-top:12px">${escapeHtml(p.dataSize)}</div>
           <div class="stat-sub">${p.minutes ? escapeHtml(p.minutes) + " · " : ""}${escapeHtml(p.validity)}</div>
-          <div style="margin-top:8px;font-weight:700;color:var(--brand-navy-3)">${formatMoney(p.price, p.currency)} <span style="font-weight:400;font-size:11px">${t("simCard.perSim","per SIM")}</span></div>
+          <div style="margin-top:8px;font-weight:700;color:var(--brand-navy-3)">${formatPrice(p.price)} <span style="font-weight:400;font-size:11px">${t("simCard.perSim","per SIM")}</span></div>
         </div>`).join("") : `<div class="empty-state">${t("simCard.noPackages","No SIM packages available")}</div>`}
     </div>`);
 
@@ -2475,8 +2600,10 @@ async function renderSimCard() {
     ["form.phone",r => escapeHtml(r.phone)],
     ["simCard.package", r => escapeHtml(r.package?.name || "—")],
     ["form.date", r => r.arrivalDate ? formatDate(r.arrivalDate) : "—"],
-    ["th.amount", r => `<span class="numeric">${formatMoney(r.totalAmount, r.currency)}</span>`],
+    ["th.amount", r => `<span class="numeric">${formatPrice(r.totalAmount)}</span>`],
     ["th.status", r => statusBadge(r.status)],
+    ["th.requested", r => formatDate(r.createdAt)],
+    ["th.confirmed", r => confirmedDate(r)],
   ], { filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]] });
 }
 
@@ -2491,7 +2618,7 @@ async function openSimRequestForm(packages, preselect) {
       <div class="form-field full"><label>${t("simCard.package","SIM Package")}</label>
         <select id="simPkg">
           <option value="">${t("simCard.selectPackage","Select a package")}</option>
-          ${(packages||[]).map(p => `<option value="${p.id}" data-price="${p.price}" data-cur="${p.currency}" ${p.id===preselect?"selected":""}>${escapeHtml(p.name)} — ${escapeHtml(p.dataSize)} · ${formatMoney(p.price,p.currency)}</option>`).join("")}
+          ${(packages||[]).map(p => `<option value="${p.id}" data-price="${p.price}" data-cur="${p.currency}" ${p.id===preselect?"selected":""}>${escapeHtml(p.name)} — ${escapeHtml(p.dataSize)} · ${formatPrice(p.price)}</option>`).join("")}
         </select></div>
       <div class="form-field"><label>${t("simCard.clientName","Client Name")} *</label>
         <input id="simName" placeholder="Full name"></div>
@@ -2522,7 +2649,7 @@ async function openSimRequestForm(packages, preselect) {
     const cur = opt?.dataset?.cur || "USD";
     const qty = parseInt(document.getElementById("simQty")?.value || "1");
     const el = document.getElementById("simTotal");
-    if (el) el.textContent = price > 0 ? formatMoney(price * qty, cur) : "—";
+    if (el) el.textContent = price > 0 ? formatPrice(price * qty) : "—";
   }
 
   document.getElementById("submitSimBtn").onclick = async () => {
@@ -2663,7 +2790,7 @@ function renderInvoices() {
   renderListPage("invoices", "/invoices", [
     ["th.invoice", i => `<span class="primary-text">${escapeHtml(i.invoiceNumber)}</span>`],
     ["th.ref", i => escapeHtml(i.booking?.refNumber || "—")],
-    ["th.amount", i => `<span class="numeric">${formatMoney(i.total, i.currency)}</span>`],
+    ["th.amount", i => `<span class="numeric">${formatPrice(i.total)}</span>`],
     ["th.status", i => statusBadge(i.status)],
     ["th.dueDate", i => formatDate(i.dueDate)],
     ["th.actions", i => `<button class="btn btn-outline" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}${t("btn.downloadPdf")}</button>`],
@@ -2673,9 +2800,9 @@ function renderInvoices() {
 function renderWallet() {
   renderListPage("wallet", "/wallet/transactions", [
     ["th.type", r => statusBadge(r.type)],
-    ["th.amount", r => `<span class="numeric">${formatMoney(r.amount, "USD")}</span>`],
-    ["th.before", r => formatMoney(r.balanceBefore, "USD")],
-    ["th.after", r => formatMoney(r.balanceAfter, "USD")],
+    ["th.amount", r => `<span class="numeric">${formatPrice(r.amount)}</span>`],
+    ["th.before", r => formatPrice(r.balanceBefore)],
+    ["th.after", r => formatPrice(r.balanceAfter)],
     ["th.reference", r => escapeHtml(r.reference || "—")],
     ["th.description", r => escapeHtml(r.description)],
     ["th.date", r => formatDate(r.createdAt)],
@@ -2691,9 +2818,9 @@ async function renderReports() {
   content(pageHeader(`<button class="btn btn-outline" onclick="renderReports()">${icon("refresh-cw")}${t("btn.refresh")}</button>`) + `
     <div class="stats-grid">
       ${statCard("stat.totalBookings", d.totalBookings || 0, "stat.allTime")}
-      ${statCard("stat.totalRevenue", formatMoney(d.totalRevenue || 0, "USD"), "stat.monthToDate")}
+      ${statCard("stat.totalRevenue", formatPrice(d.totalRevenue || 0), "stat.monthToDate")}
       ${statCard("stat.pending", d.pendingBookings || 0, "status.PENDING")}
-      ${statCard("stat.commission", formatMoney((d.totalRevenue || 0) * 0.1, "USD"), "stat.vsMonth")}
+      ${statCard("stat.commission", formatPrice((d.totalRevenue || 0) * 0.1), "stat.vsMonth")}
     </div>
     <section class="panel"><div class="panel-header"><div class="panel-title">${t("page.reportsTitle")}</div></div><div class="panel-body">${emptyBlock("empty.noData")}</div></section>`);
 }
@@ -2925,9 +3052,9 @@ function hotelQuoteHtml(quote) {
     <div class="info-item"><div class="info-label">${t("form.nights", "Nights")}</div><div class="info-value">${formatNumber(quote.nights)}</div></div>
     <div class="info-item"><div class="info-label">${t("form.rooms", "Rooms")}</div><div class="info-value">${formatNumber(quote.roomsCount)}</div></div>
     <div class="info-item"><div class="info-label">${t("form.availableRooms", "Available rooms")}</div><div class="info-value">${capacityText}</div></div>
-    <div class="info-item"><div class="info-label">${t("th.amount")}</div><div class="info-value">${formatMoney(quote.baseAmount, quote.currency)}</div></div>
-    <div class="info-item"><div class="info-label">${t("th.commission")}</div><div class="info-value">${formatMoney(quote.commissionAmount, quote.currency)} (${quote.commissionPercent.toFixed(2)}%)</div></div>
-    <div class="info-item"><div class="info-label">${t("th.total", "Total")}</div><div class="info-value">${formatMoney(quote.totalAmount, quote.currency)}</div></div>
+    <div class="info-item"><div class="info-label">${t("th.amount")}</div><div class="info-value">${formatPrice(quote.baseAmount)}</div></div>
+    <div class="info-item"><div class="info-label">${t("th.commission")}</div><div class="info-value">${formatPrice(quote.commissionAmount)} (${quote.commissionPercent.toFixed(2)}%)</div></div>
+    <div class="info-item"><div class="info-label">${t("th.total", "Total")}</div><div class="info-value">${formatPrice(quote.totalAmount)}</div></div>
   </div>`;
 }
 
@@ -3087,7 +3214,7 @@ function updateWallet(data) {
   state.wallet = data;
   // Show remaining balance (= current balance after all debits) in the topbar pill
   const remaining = data.remainingBalance ?? data.balance ?? 0;
-  document.getElementById("walletPillValue").textContent = formatMoney(remaining, data.currency || "USD");
+  document.getElementById("walletPillValue").textContent = formatPrice(remaining);
 }
 
 async function bootstrapUser() {
@@ -3103,6 +3230,10 @@ async function bootstrapUser() {
     return false;
   }
   state.user = me.data;
+  // Display currency: explicit company currency, else market default.
+  state.displayCurrency = me.data.company?.currency
+    || MARKET_DEFAULT_CURRENCY[me.data.company?.market] || "USD";
+  await loadFxRates();
   localStorage.setItem("user", JSON.stringify(me.data));
   localStorage.setItem("userRole", me.data.role);
   document.getElementById("sidebarUser").textContent = me.data.name;

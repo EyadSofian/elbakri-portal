@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { BookingStatus, TransportType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
+import { resolveCallerMarket, resolveMarketPrices, getMarketPrice } from '../../shared/pricing';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 
@@ -62,20 +63,21 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
     return;
   }
 
-  let totalAmount: number;
-  if (roundTrip) {
-    totalAmount = rate.roundTripRate ? Number(rate.roundTripRate) : Number(rate.rate) * 2;
-  } else {
-    totalAmount = Number(rate.rate);
-  }
+  // Apply the caller's market price tier (USD)
+  const market = await resolveCallerMarket(req);
+  const oneWayRate = Number(await getMarketPrice('TRANSPORT', rate.id, market, rate.rate));
+  const roundTripRate = rate.roundTripRate
+    ? Number(await getMarketPrice('TRANSPORT_RT', rate.id, market, rate.roundTripRate))
+    : oneWayRate * 2;
+  const totalAmount = roundTrip ? roundTripRate : oneWayRate;
 
   res.json({
     success: true,
     data: {
       found: true,
       rateId: rate.id,
-      oneWayRate: Number(rate.rate),
-      roundTripRate: rate.roundTripRate ? Number(rate.roundTripRate) : Number(rate.rate) * 2,
+      oneWayRate,
+      roundTripRate,
       totalAmount,
       currency: rate.currency,
       vehicleType: rate.vehicleType,
@@ -128,7 +130,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     return;
   }
 
-  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { isActive: true, email: true } });
+  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { isActive: true, email: true, market: true } });
   if (!company?.isActive) {
     res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
     return;
@@ -163,48 +165,90 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     return;
   }
 
-  // Round-trip doubles the one-way rate (no dedicated round-trip rate field in TransportRate)
-  const totalAmount = body.isRoundTrip ? matchingRate.rate.mul(2) : matchingRate.rate;
+  // Server-authoritative price using the company's market tier (USD)
+  const oneWayRate = await getMarketPrice('TRANSPORT', matchingRate.id, company.market, matchingRate.rate);
+  const totalAmount = body.isRoundTrip
+    ? (matchingRate.roundTripRate
+        ? await getMarketPrice('TRANSPORT_RT', matchingRate.id, company.market, matchingRate.roundTripRate)
+        : oneWayRate.mul(2))
+    : oneWayRate;
   const currency = matchingRate.currency;
 
   try {
     const refNumber = await generateRef(prisma, 'TRN');
 
-    const booking = await prisma.transportBooking.create({
-      data: {
-        refNumber,
-        companyId,
-        createdById: caller.id,
-        type: body.type,
-        vehicleType: body.vehicleType ?? 'SEDAN',
-        fromLocation: body.fromLocation,
-        toLocation: body.toLocation,
-        fromType: body.fromType ?? null,
-        toType: body.toType ?? null,
-        pickupDateTime: new Date(body.pickupDateTime),
-        returnDateTime: body.returnDateTime ? new Date(body.returnDateTime) : null,
-        isRoundTrip: body.isRoundTrip ?? false,
-        passengerCount,
-        passengerNames: body.passengerNames ?? [],
-        passengerName: body.passengerName ?? null,
-        flightNumber: body.flightNumber ?? null,
-        airlineName: body.airlineName ?? null,
-        returnFlightNumber: body.returnFlightNumber ?? null,
-        returnAirlineName: body.returnAirlineName ?? null,
-        contactNumber: body.contactNumber ?? null,
-        totalAmount,  // server-calculated from TransportRate
-        currency,     // from TransportRate record
-        notes: body.notes,
-        customFields: sanitizeCustomFields(body.customFields) ?? undefined,
-        status: 'PENDING',
-      },
-      include: transportInclude,
+    // Create the booking + a proforma invoice together so the client can
+    // download the invoice immediately. Wallet is NOT debited here — that
+    // happens on admin confirm (see confirmTransportBooking).
+    let booking = await prisma.$transaction(async (tx) => {
+      const created = await tx.transportBooking.create({
+        data: {
+          refNumber,
+          companyId,
+          createdById: caller.id,
+          type: body.type,
+          vehicleType: body.vehicleType ?? 'SEDAN',
+          fromLocation: body.fromLocation,
+          toLocation: body.toLocation,
+          fromType: body.fromType ?? null,
+          toType: body.toType ?? null,
+          pickupDateTime: new Date(body.pickupDateTime),
+          returnDateTime: body.returnDateTime ? new Date(body.returnDateTime) : null,
+          isRoundTrip: body.isRoundTrip ?? false,
+          passengerCount,
+          passengerNames: body.passengerNames ?? [],
+          passengerName: body.passengerName ?? null,
+          flightNumber: body.flightNumber ?? null,
+          airlineName: body.airlineName ?? null,
+          returnFlightNumber: body.returnFlightNumber ?? null,
+          returnAirlineName: body.returnAirlineName ?? null,
+          contactNumber: body.contactNumber ?? null,
+          totalAmount,  // server-calculated from TransportRate
+          currency,     // from TransportRate record
+          notes: body.notes,
+          customFields: sanitizeCustomFields(body.customFields) ?? undefined,
+          status: 'PENDING',
+        },
+      });
+
+      const subtotal = totalAmount;
+      const taxAmount = subtotal.mul(new Decimal('0.14'));
+      const invoiceNumber = await generateInvoiceNumber(prisma);
+      await tx.invoice.create({
+        data: {
+          invoiceNumber,
+          transportBookingId: created.id,
+          companyId,
+          subtotal,
+          taxAmount,
+          total: subtotal.add(taxAmount),
+          currency,
+          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      return tx.transportBooking.findUniqueOrThrow({ where: { id: created.id }, include: transportInclude });
     });
 
-    // Send richer email notification
-    if (company.email && process.env.INTERNAL_TEAM_EMAIL) {
+    // Generate the invoice PDF in the background (best-effort).
+    if (booking.invoice) {
+      const fullInvoice = await prisma.invoice.findUnique({
+        where: { id: (booking.invoice as { id: string }).id },
+        include: { transportBooking: { include: { company: true } }, company: true },
+      });
+      if (fullInvoice && !fullInvoice.pdfPath) {
+        generateInvoicePdf(fullInvoice as Parameters<typeof generateInvoicePdf>[0])
+          .then(({ path: pdfPath }) => prisma.invoice.update({ where: { id: fullInvoice.id }, data: { pdfPath } }))
+          .catch(console.error);
+      }
+    }
+
+    // Notify the configured recipient(s). TRANSPORT_NOTIFY_EMAIL is the
+    // operations inbox (set on Railway; left unset by default — TODO).
+    const recipients = [company.email, process.env.TRANSPORT_NOTIFY_EMAIL].filter(Boolean) as string[];
+    if (recipients.length) {
       sendEmail(
-        [company.email, process.env.INTERNAL_TEAM_EMAIL],
+        recipients,
         `🚐 Transport Booking — ${booking.refNumber}`,
         `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Ref</td><td style="padding:6px 12px">${booking.refNumber}</td></tr>
@@ -243,12 +287,16 @@ export async function confirmTransportBooking(req: Request, res: Response): Prom
       if (booking.status !== 'PENDING') throw new Error('INVALID_STATUS');
       if (!booking.company.isActive) throw new Error('COMPANY_INACTIVE');
 
-      if (!booking.invoice) {
+      // Debit the wallet once. A proforma invoice is created at booking time,
+      // so we key idempotency on the DEBIT transaction, not on invoice absence.
+      const alreadyDebited = await tx.walletTransaction.findFirst({
+        where: { reference: booking.refNumber, type: 'DEBIT' },
+      });
+      if (!alreadyDebited) {
         if (booking.company.balance.lt(booking.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
 
         const balanceBefore = booking.company.balance;
         const balanceAfter = balanceBefore.sub(booking.totalAmount);
-        const invoiceNumber = await generateInvoiceNumber(prisma);
 
         await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
         await tx.walletTransaction.create({
@@ -263,10 +311,14 @@ export async function confirmTransportBooking(req: Request, res: Response): Prom
             createdById: req.user!.id,
           },
         });
+      }
 
+      // Create the invoice only if one wasn't already generated at booking time.
+      if (!booking.invoice) {
         const subtotal = booking.totalAmount;
         const taxAmount = subtotal.mul(new Decimal('0.14'));
         const total = subtotal.add(taxAmount);
+        const invoiceNumber = await generateInvoiceNumber(prisma);
 
         await tx.invoice.create({
           data: {
@@ -369,5 +421,18 @@ export async function listTransportRates(req: Request, res: Response): Promise<v
     orderBy: { rate: 'asc' },
     include: { destination: { select: { id: true, name: true, slug: true } } },
   });
+  // Apply explicit per-market price overrides for the caller's market
+  const market = await resolveCallerMarket(req);
+  const ids = rates.map(r => r.id);
+  const [oneWayOv, rtOv] = await Promise.all([
+    resolveMarketPrices('TRANSPORT', ids, market),
+    resolveMarketPrices('TRANSPORT_RT', ids, market),
+  ]);
+  for (const r of rates) {
+    const ow = oneWayOv.get(r.id);
+    if (ow != null) r.rate = ow;
+    const rt = rtOv.get(r.id);
+    if (rt != null) r.roundTripRate = rt;
+  }
   res.json({ success: true, data: rates });
 }

@@ -747,7 +747,8 @@ async function showCompanyModal(id) {
       <div class="form-grid">
         <div class="form-field"><label>${t("form.tier")} <span class="required">*</span></label><select id="mCoTier">${["STANDARD","SILVER","GOLD","PLATINUM"].map(v => `<option value="${v}" ${v === (c?.tier || "STANDARD") ? "selected" : ""}>${t("tier."+v)} - ${t("tier."+v.toLowerCase()+"Desc")}</option>`).join("")}</select></div>
         ${field("mCoCreditLimit", "form.creditLimit", c?.creditLimit || 0, false, "number")}
-        <div class="form-field"><label>${t("form.currency")}</label><select id="mCoCurrency">${["USD","EGP","EUR","SAR","AED"].map(v => `<option value="${v}" ${v === (c?.currency || "USD") ? "selected" : ""}>${t("currency."+v)}</option>`).join("")}</select></div>
+        <div class="form-field"><label>${t("form.market", "Client Market")} <span class="required">*</span></label><select id="mCoMarket" onchange="onMarketChange()">${["EGYPTIAN","GULF","FOREIGN"].map(v => `<option value="${v}" ${v === (c?.market || "FOREIGN") ? "selected" : ""}>${t("market."+v, v)}</option>`).join("")}</select><div class="secondary-text" style="margin-top:4px">${t("market.companyHelp", "Picks the price tier the company sees (Egyptian / Gulf / Foreign).")}</div></div>
+        <div class="form-field"><label>${t("form.currency")} (${t("form.displayCurrency", "Display")})</label><select id="mCoCurrency">${["USD","EGP","EUR","SAR","AED"].map(v => `<option value="${v}" ${v === (c?.currency || "USD") ? "selected" : ""}>${t("currency."+v)}</option>`).join("")}</select></div>
       </div>
     </div>
     <div class="form-section">
@@ -794,6 +795,7 @@ const masterConfigs = {
       { name: "allowQuoteRequest", label: "hotel.allowQuoteRequest", fallback: "Allow Quote Request", type: "checkbox" },
       { name: "minVisibleTier", label: "hotel.minVisibleTier", fallback: "Min Visible Tier", type: "select", nullable: true, options: ["STANDARD", "SILVER", "GOLD", "PLATINUM"] },
     ],
+    marketPrices: [{ entityType: "HOTEL", baseField: "pricePerNight", label: "Price / Night" }],
   },
   cruises: {
     titleKey: "nav.nileCruises",
@@ -814,6 +816,7 @@ const masterConfigs = {
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
       { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
     ],
+    marketPrices: [{ entityType: "CRUISE", baseField: "priceFrom", label: "Price From" }],
   },
   activities: {
     titleKey: "nav.activities",
@@ -837,6 +840,10 @@ const masterConfigs = {
       { name: "maxPax", label: "form.maxPax", fallback: "Max Pax", type: "number", default: 20 },
       { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
     ],
+    marketPrices: [
+      { entityType: "ACTIVITY_ADULT", baseField: "priceAdult", label: "Adult Price" },
+      { entityType: "ACTIVITY_CHILD", baseField: "priceChild", label: "Child Price" },
+    ],
   },
   transport: {
     titleKey: "nav.transport",
@@ -855,6 +862,10 @@ const masterConfigs = {
       { name: "maxCapacity", label: "form.maxPax", fallback: "Max Pax (blank = no limit)", type: "number" },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
       { name: "notes", label: "placeholder.notes", type: "textarea", cls: "full" },
+    ],
+    marketPrices: [
+      { entityType: "TRANSPORT", baseField: "rate", label: "One-Way Rate" },
+      { entityType: "TRANSPORT_RT", baseField: "roundTripRate", label: "Round-Trip Rate" },
     ],
   },
   visa: {
@@ -970,13 +981,43 @@ async function showMasterModal(entity, id = "") {
   const rows = state.cache[entity + "Rows"] || [];
   const row = id ? rows.find(item => item.id === id) : null;
   const title = `${id ? t("btn.edit") : t("btn.addNew")} ${t(cfg.titleKey)}`;
+
+  // Prefetch existing per-market price overrides when editing
+  const mpData = {};
+  if (cfg.marketPrices && id) {
+    for (const mp of cfg.marketPrices) {
+      const res = await apiFetch(`/admin/market-prices?entityType=${mp.entityType}&entityId=${encodeURIComponent(id)}`).catch(() => null);
+      mpData[mp.entityType] = res?.data || {};
+    }
+  }
+
   const body = `<div class="form-section"><div class="form-section-title">${t("form.basicInfo")}</div><div class="form-grid">
     ${cfg.fields.map(fieldDef => masterField(entity, fieldDef, row)).join("")}
-  </div></div>`;
+  </div></div>
+  ${cfg.marketPrices ? marketPriceSection(entity, cfg, mpData, id) : ""}`;
   openModal(title, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
     <button class="btn btn-primary" onclick="saveMasterRecord('${entity}', '${id}')">${t("btn.save")}</button>
   `);
+}
+
+/** Egyptian/Gulf explicit-price inputs (USD). Foreign = the base price field above. */
+function marketPriceSection(entity, cfg, mpData, id) {
+  const safe = entity.replace(/[^a-z0-9]/gi, "_");
+  const note = id
+    ? t("market.pricingHelp", "The price field above is the Foreign/default price. Set Egyptian and Gulf prices here (USD). Leave blank to use the default.")
+    : t("market.pricingHelpNew", "Save first, then re-open this record to set Egyptian and Gulf prices.");
+  const rows = (mpData ? cfg.marketPrices : []).map(mp => {
+    const eg = mpData[mp.entityType]?.EGYPTIAN ?? "";
+    const gl = mpData[mp.entityType]?.GULF ?? "";
+    return `<div class="form-grid">
+      <div class="form-field"><label>${escapeHtml(mp.label)} — ${t("market.EGYPTIAN", "Egyptian")} (USD)</label><input id="mp_${safe}_${mp.entityType}_EGYPTIAN" type="number" step="0.01" min="0" value="${escapeHtml(eg)}" ${id ? "" : "disabled"}></div>
+      <div class="form-field"><label>${escapeHtml(mp.label)} — ${t("market.GULF", "Gulf")} (USD)</label><input id="mp_${safe}_${mp.entityType}_GULF" type="number" step="0.01" min="0" value="${escapeHtml(gl)}" ${id ? "" : "disabled"}></div>
+    </div>`;
+  }).join("");
+  return `<div class="form-section"><div class="form-section-title">${t("market.pricingTitle", "Market Pricing (USD)")}</div>
+    <div class="secondary-text" style="margin-bottom:8px">${note}</div>
+    ${rows}</div>`;
 }
 
 function collectMasterPayload(entity) {
@@ -1011,6 +1052,24 @@ async function saveMasterRecord(entity, id = "") {
     body: JSON.stringify(payload),
   });
   if (res?.success) {
+    // Persist per-market price overrides (Egyptian/Gulf) when editing an existing record
+    const savedId = id || res.data?.id;
+    if (cfg.marketPrices && savedId) {
+      const safe = entity.replace(/[^a-z0-9]/gi, "_");
+      for (const mp of cfg.marketPrices) {
+        const egEl = document.getElementById(`mp_${safe}_${mp.entityType}_EGYPTIAN`);
+        const glEl = document.getElementById(`mp_${safe}_${mp.entityType}_GULF`);
+        if ((!egEl || egEl.disabled) && (!glEl || glEl.disabled)) continue;
+        const prices = {
+          EGYPTIAN: egEl && egEl.value !== "" ? Number(egEl.value) : null,
+          GULF: glEl && glEl.value !== "" ? Number(glEl.value) : null,
+        };
+        await apiFetch("/admin/market-prices", {
+          method: "PUT",
+          body: JSON.stringify({ entityType: mp.entityType, entityId: savedId, prices }),
+        }).catch(() => null);
+      }
+    }
     closeModal();
     toast(id ? t("toast.updated") : t("toast.created"), "success");
     setPage(entity);
@@ -1028,6 +1087,15 @@ async function deleteMasterRecord(entity, id) {
   });
 }
 
+function onMarketChange() {
+  const market = document.getElementById("mCoMarket")?.value;
+  const curSel = document.getElementById("mCoCurrency");
+  if (!market || !curSel) return;
+  // Suggest a sensible default display currency for the chosen market.
+  const suggested = market === "EGYPTIAN" ? "EGP" : market === "GULF" ? "SAR" : "USD";
+  if (curSel.dataset.userTouched !== "1") curSel.value = suggested;
+}
+
 async function saveCompany(id) {
   const payload = {
     name: document.getElementById("mCoName").value.trim(),
@@ -1041,6 +1109,7 @@ async function saveCompany(id) {
     billingAddress: document.getElementById("mCoBillingAddress").value.trim() || undefined,
     tier: document.getElementById("mCoTier").value,
     creditLimit: Number(document.getElementById("mCoCreditLimit").value || 0),
+    market: document.getElementById("mCoMarket").value,
     currency: document.getElementById("mCoCurrency").value,
     logoUrl: document.getElementById("mCoLogoUrl").value.trim() || undefined,
     themeColor: document.getElementById("mCoThemeColor").value || undefined,
@@ -1829,6 +1898,10 @@ function openAddDestinationModal(dest = null) {
       <div class="form-field"><label>${t("form.isActive","Active")}</label>
         <select id="destActive"><option value="true" ${!dest || dest.isActive?"selected":""}>Yes</option><option value="false" ${dest && !dest.isActive?"selected":""}>No</option></select>
       </div>
+      <div class="form-field full"><label>${t("form.imageUrl","Image URL")}</label>
+        <input id="destImageUrl" value="${escapeHtml(dest?.imageUrl||"")}" placeholder="https://… or /uploads/…" oninput="document.getElementById('destImgPreview').src=this.value">
+        <div style="margin-top:6px"><img id="destImgPreview" src="${escapeHtml(dest?.imageUrl||"")}" alt="" style="height:64px;border-radius:8px;object-fit:cover;${dest?.imageUrl?"":"display:none"}" onload="this.style.display=''" onerror="this.style.display='none'"></div>
+      </div>
     </div>`;
   openModal(title, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
@@ -1851,6 +1924,7 @@ async function saveDestination(id) {
     region: document.getElementById("destRegion").value.trim() || null,
     type: document.getElementById("destType").value,
     isActive: document.getElementById("destActive").value === "true",
+    imageUrl: document.getElementById("destImageUrl").value.trim() || null,
   };
   const res = await apiFetch(id ? `/destinations/${id}` : "/destinations", {
     method: id ? "PATCH" : "POST",
@@ -2129,7 +2203,66 @@ async function renderInvoices() {
     ["th.status", i => statusBadge(i.status)],
     ["th.dueDate", i => formatDate(i.dueDate)],
     ["th.actions", i => `<div class="row-actions"><button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}${t("btn.downloadPdf")}</button>${i.status==="UNPAID"?`<button class="btn btn-primary btn-sm" onclick="markInvoicePaid('${i.id}')">${icon("check")}${t("btn.markPaid","Mark Paid")}</button>`:""}</div>`],
-  ]);
+  ], `<button class="btn btn-primary" onclick="openConsolidatedInvoiceModal()">${icon("layers")}${t("btn.consolidatedInvoice","Consolidated Invoice")}</button>`);
+}
+
+// One PDF per company aggregating its invoices (same filters as the Excel export).
+async function openConsolidatedInvoiceModal() {
+  await ensureCompanyOptions();
+  const companyOptions = (state.cache.companyOptions || [])
+    .map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+  const body = `
+    <div class="form-grid">
+      <div class="form-field full"><label>${t("nav.companies","Company")} <span class="required">*</span></label>
+        <select id="ciCompany"><option value="">${t("form.select","Select")}</option>${companyOptions}</select></div>
+      <div class="form-field"><label>${t("form.status","Status")}</label>
+        <select id="ciStatus">${["","UNPAID","PAID","OVERDUE","CANCELLED"].map(s => `<option value="${s}">${s ? t("status."+s, s) : t("form.all","All")}</option>`).join("")}</select></div>
+      <div class="form-field"><label>${t("th.before","From")}</label><input id="ciFrom" type="date"></div>
+      <div class="form-field"><label>${t("th.after","To")}</label><input id="ciTo" type="date"></div>
+    </div>
+    <div class="secondary-text" style="margin-top:8px">${t("invoice.consolidatedHelp","Generates one PDF statement with all matching invoices and totals.")}</div>`;
+  openModal(t("btn.consolidatedInvoice","Consolidated Invoice"), body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" id="ciGenBtn" onclick="downloadConsolidatedInvoice()">${icon("file-down")}${t("btn.generate","Generate")}</button>`);
+}
+
+async function downloadConsolidatedInvoice() {
+  const companyId = document.getElementById("ciCompany").value;
+  if (!companyId) { toast(t("toast.validationError","Select a company"), "error"); return; }
+  const params = new URLSearchParams({ companyId });
+  const status = document.getElementById("ciStatus").value;
+  const from = document.getElementById("ciFrom").value;
+  const to = document.getElementById("ciTo").value;
+  if (status) params.set("status", status);
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+
+  const btn = document.getElementById("ciGenBtn");
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("btn.saving","Working...")}`; }
+  try {
+    const res = await fetch(`/api/invoices/consolidated?${params}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("accessToken")}` },
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast(err.message || t("toast.error","Failed to generate"), "error");
+      if (btn) { btn.disabled = false; btn.innerHTML = `${icon("file-down")}${t("btn.generate","Generate")}`; refreshIcons(btn.parentElement); }
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `consolidated-invoice.pdf`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    closeModal();
+    toast(t("toast.exported","Downloaded"), "success");
+  } catch (e) {
+    toast(t("toast.error","Failed to generate"), "error");
+    if (btn) { btn.disabled = false; btn.innerHTML = `${icon("file-down")}${t("btn.generate","Generate")}`; refreshIcons(btn.parentElement); }
+  }
 }
 
 async function markInvoicePaid(id) {
@@ -2567,12 +2700,79 @@ async function loadSyncHistory() {
   refreshIcons(el);
 }
 
-function renderCalculators() {
+async function renderCalculators() {
   content(pageHeader() + `
+    <div id="fxConverterCard" class="table-card" style="margin-bottom:20px;padding:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <strong style="font-size:15px">${icon("arrow-left-right")}&nbsp;${t("fx.converterTitle","Currency Converter")}</strong>
+        <span class="secondary-text" id="fxUpdatedLabel">${t("fx.loading","Loading rates…")}</span>
+      </div>
+      <div class="form-grid" style="margin-top:14px;align-items:end">
+        <div class="form-field"><label>${t("fx.amount","Amount")}</label><input id="fxAmount" type="number" value="1" min="0" step="0.01" oninput="fxConvert()"></div>
+        <div class="form-field"><label>${t("fx.from","From")}</label><select id="fxFrom" onchange="fxConvert()"></select></div>
+        <div class="form-field" style="display:flex;align-items:center;justify-content:center;padding-bottom:6px">
+          <button class="btn btn-outline btn-sm" onclick="fxSwap()" title="${t("fx.swap","Swap")}">${icon("repeat")}</button>
+        </div>
+        <div class="form-field"><label>${t("fx.to","To")}</label><select id="fxTo" onchange="fxConvert()"></select></div>
+      </div>
+      <div class="stat-value" id="fxResult" style="margin-top:14px;font-size:24px">—</div>
+      <div class="secondary-text" id="fxRateLine"></div>
+      <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="loadFxRates(true)">${icon("refresh-cw")}&nbsp;${t("btn.refresh","Refresh")}</button>
+    </div>
     <div class="stats-grid">
       ${calcCard("stat.commission", "calcCommSale", "calcCommRate", "calcCommResult", "calcCommissionAdmin()")}
       ${calcCard("stat.markup", "calcCost", "calcMarkup", "calcMarkupResult", "calcMarkupAdmin()")}
     </div>`);
+  refreshIcons(document.getElementById("content"));
+  await loadFxRates();
+}
+
+// Live FX state for the converter.
+state.fx = state.fx || { rates: null, lastUpdated: null };
+const FX_UI_CURRENCIES = ["USD", "EUR", "EGP", "SAR", "AED", "GBP"];
+
+async function loadFxRates(force = false) {
+  const lbl = document.getElementById("fxUpdatedLabel");
+  if (lbl) lbl.textContent = t("fx.loading", "Loading rates…");
+  const res = await apiFetch("/admin/fx/rates").catch(() => null);
+  if (!res?.data?.rates) {
+    if (lbl) lbl.textContent = t("fx.unavailable", "Rates unavailable");
+    return;
+  }
+  state.fx.rates = res.data.rates;
+  state.fx.lastUpdated = res.data.lastUpdated;
+  const codes = FX_UI_CURRENCIES.filter(c => res.data.rates[c] != null);
+  const opts = (sel, def) => `${codes.map(c => `<option value="${c}" ${c === def ? "selected" : ""}>${c}</option>`).join("")}`;
+  const fromSel = document.getElementById("fxFrom");
+  const toSel = document.getElementById("fxTo");
+  if (fromSel && !fromSel.options.length) fromSel.innerHTML = opts(fromSel, "USD");
+  if (toSel && !toSel.options.length) toSel.innerHTML = opts(toSel, "EGP");
+  if (lbl) lbl.textContent = `${t("fx.updated","Rates updated")}: ${state.fx.lastUpdated ? new Date(state.fx.lastUpdated).toLocaleString() : "—"}`;
+  fxConvert();
+}
+
+// Convert via USD base: amount_in_to = amount * (rate[to] / rate[from]).
+function fxConvert() {
+  const rates = state.fx.rates;
+  const resEl = document.getElementById("fxResult");
+  const lineEl = document.getElementById("fxRateLine");
+  if (!rates || !resEl) return;
+  const amount = Number(document.getElementById("fxAmount")?.value || 0);
+  const from = document.getElementById("fxFrom")?.value || "USD";
+  const to = document.getElementById("fxTo")?.value || "USD";
+  const rf = rates[from], rt = rates[to];
+  if (rf == null || rt == null) { resEl.textContent = t("fx.unavailable","Rates unavailable"); if (lineEl) lineEl.textContent = ""; return; }
+  const converted = amount * (rt / rf);
+  resEl.textContent = `${converted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${to}`;
+  if (lineEl) lineEl.textContent = `1 ${from} = ${(rt / rf).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${to}`;
+}
+
+function fxSwap() {
+  const fromSel = document.getElementById("fxFrom");
+  const toSel = document.getElementById("fxTo");
+  if (!fromSel || !toSel) return;
+  const tmp = fromSel.value; fromSel.value = toSel.value; toSel.value = tmp;
+  fxConvert();
 }
 
 function calcCard(titleKey, input1, input2, resultId, handler) {
@@ -2606,12 +2806,14 @@ async function renderSecurityApproval() {
   return renderAdminList("security-approval", "/visa-applications", [
     ["th.ref",    v => `<span class="primary-text">${escapeHtml(v.refNumber)}</span>`],
     ["th.name",   v => escapeHtml(v.applicantName)],
+    ["form.nationality", v => escapeHtml(v.nationality || "—")],
     ["th.type",   v => {
       const loc = APPROVAL_TYPES.find(x => x.dest === v.destinationCountry);
       return escapeHtml(loc?.label || v.destinationCountry || v.visaType);
     }],
     ["th.company",v => escapeHtml(v.company?.name || "—")],
     ["form.phone",v => escapeHtml(v.phone || "—")],
+    ["form.notes", v => v.notes ? `<span title="${escapeHtml(v.notes)}">${escapeHtml(v.notes.slice(0,40))}${v.notes.length>40?"…":""}</span>` : "—"],
     ["th.amount", v => formatMoney(v.totalAmount, v.currency)],
     ["th.status", v => statusBadge(v.status)],
     ["th.actions",v => `
@@ -2645,6 +2847,7 @@ async function renderAirportAssist() {
     ["th.route",  r => escapeHtml(r.airport)],
     ["th.company",r => escapeHtml(r.company?.name || "—")],
     ["form.phone",r => escapeHtml(r.phone || "—")],
+    ["form.notes", r => r.notes ? `<span title="${escapeHtml(r.notes)}">${escapeHtml(r.notes.slice(0,40))}${r.notes.length>40?"…":""}</span>` : "—"],
     ["th.amount", r => formatMoney(r.totalAmount, r.currency)],
     ["th.status", r => statusBadge(r.status)],
     ["th.actions",r => `

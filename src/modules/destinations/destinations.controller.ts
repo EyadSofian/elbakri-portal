@@ -55,7 +55,7 @@ export async function getDestination(req: Request, res: Response): Promise<void>
 export async function createDestination(req: Request, res: Response): Promise<void> {
   const body = req.body as {
     name: string; nameAr?: string; slug: string;
-    country?: string; region?: string; type?: DestinationType;
+    country?: string; region?: string; type?: DestinationType; imageUrl?: string | null;
   };
 
   if (!body.name || !body.slug) {
@@ -77,6 +77,7 @@ export async function createDestination(req: Request, res: Response): Promise<vo
       country: body.country ?? 'EG',
       region: body.region ?? null,
       type: body.type ?? 'CITY',
+      imageUrl: body.imageUrl ?? null,
     },
   });
 
@@ -94,6 +95,7 @@ export async function updateDestination(req: Request, res: Response): Promise<vo
   if (body.region !== undefined) data.region = body.region ? String(body.region) : null;
   if (body.type !== undefined) data.type = body.type as DestinationType;
   if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
+  if (body.imageUrl !== undefined) data.imageUrl = body.imageUrl ? String(body.imageUrl) : null;
 
   const dest = await prisma.destination.update({
     where: { id: req.params.id },
