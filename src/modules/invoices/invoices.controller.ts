@@ -13,6 +13,7 @@ const invoiceInclude = {
       id: true, refNumber: true, type: true, totalAmount: true,
       currency: true, checkIn: true, checkOut: true, nights: true,
       origin: true, destination: true, adultsCount: true,
+      requestedAt: true, confirmedAt: true,
       company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
       hotel: { select: { id: true, name: true, city: true, country: true } },
     },
@@ -21,6 +22,7 @@ const invoiceInclude = {
     select: {
       id: true, refNumber: true, activityDate: true, adultsCount: true, childrenCount: true,
       totalAmount: true, currency: true,
+      requestedAt: true, confirmedAt: true,
       activity: { select: { id: true, name: true, city: true, category: true } },
       company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
     },
@@ -30,6 +32,7 @@ const invoiceInclude = {
       id: true, refNumber: true, type: true, vehicleType: true,
       fromLocation: true, toLocation: true, pickupDateTime: true, passengerCount: true,
       totalAmount: true, currency: true,
+      requestedAt: true, confirmedAt: true,
       company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
     },
   },

@@ -11,6 +11,7 @@ const activityInclude = {
   activity: { select: { id: true, name: true, city: true, category: true } },
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
+  confirmedBy: { select: { id: true, name: true } },
   invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
 };
 
@@ -249,7 +250,11 @@ export async function confirmActivityBooking(req: Request, res: Response): Promi
 
       await tx.activityBooking.update({
         where: { id: bookingId },
-        data: { status: 'CONFIRMED' },
+        data: {
+          status: 'CONFIRMED',
+          confirmedAt: booking.confirmedAt ?? new Date(),
+          confirmedById: booking.confirmedById ?? req.user!.id,
+        },
       });
     });
   } catch (err) {

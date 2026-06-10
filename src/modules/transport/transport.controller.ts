@@ -10,6 +10,7 @@ import { generateInvoicePdf } from '../invoices/pdf.generator';
 const transportInclude = {
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
+  confirmedBy: { select: { id: true, name: true } },
   invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
 };
 
@@ -334,7 +335,14 @@ export async function confirmTransportBooking(req: Request, res: Response): Prom
         });
       }
 
-      await tx.transportBooking.update({ where: { id: bookingId }, data: { status: 'CONFIRMED' } });
+      await tx.transportBooking.update({
+        where: { id: bookingId },
+        data: {
+          status: 'CONFIRMED',
+          confirmedAt: booking.confirmedAt ?? new Date(),
+          confirmedById: booking.confirmedById ?? req.user!.id,
+        },
+      });
     });
   } catch (err) {
     const msg = String((err as Error).message);

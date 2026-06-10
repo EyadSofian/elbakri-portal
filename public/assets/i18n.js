@@ -136,6 +136,8 @@
       date: "التاريخ",
       requested: "تاريخ الطلب",
       confirmed: "تاريخ التأكيد",
+      notConfirmed: "غير مؤكد",
+      confirmedBy: "تم التأكيد بواسطة",
       pickup: "موعد الانطلاق",
       dueDate: "تاريخ الاستحقاق",
       invoice: "الفاتورة",
@@ -214,6 +216,9 @@
       toggle: "تبديل الحالة",
       enable: "تفعيل",
       disable: "تعطيل",
+      upload: "رفع صورة",
+      uploading: "جاري الرفع",
+      remove: "إزالة",
       exportExcel: "تصدير Excel",
       exportSelected: "تصدير المحدد",
       bulkTopup: "شحن جماعي",
@@ -577,7 +582,7 @@
       balance: "Balance", creditLimit: "Credit Limit", bookingsCount: "Bookings", usersCount: "Users", status: "Status",
       lastActivity: "Last Activity", actions: "Actions", ref: "Ref", type: "Type", details: "Details", service: "Service",
       route: "Route", city: "City", stars: "Stars", amount: "Amount", commission: "Commission", markup: "Markup", total: "Total",
-      currency: "Currency", date: "Date", requested: "Date Requested", confirmed: "Date Confirmed", pickup: "Pickup", dueDate: "Due Date", invoice: "Invoice", before: "Before", after: "After",
+      currency: "Currency", date: "Date", requested: "Date Requested", confirmed: "Date Confirmed", notConfirmed: "Not confirmed", confirmedBy: "Confirmed By", pickup: "Pickup", dueDate: "Due Date", invoice: "Invoice", before: "Before", after: "After",
       reference: "Reference", description: "Description", errors: "Errors", created: "Created", updated: "Updated",
       skipped: "Skipped", synced: "Synced", sheet: "Sheet", lastSync: "Last Sync", schedule: "Schedule", entity: "Entity", result: "Result",
       destination: "Destination", hotel: "Hotel", travelDates: "Travel Dates", assignedTo: "Assigned To",
@@ -599,6 +604,7 @@
     btn: {
       addNew: "Add New", newCompany: "New Company", save: "Save", saving: "Saving", cancel: "Cancel", confirm: "Confirm",
       delete: "Delete", edit: "Edit", view: "View", topup: "Top-up", toggle: "Toggle Status", enable: "Enable", disable: "Disable",
+      upload: "Upload", uploading: "Uploading…", remove: "Remove",
       exportExcel: "Export to Excel", exportSelected: "Export Selected", bulkTopup: "Bulk Top-up", bulkDeactivate: "Bulk Deactivate",
       syncSheets: "Sync from Sheets", testConnection: "Test Connection", refresh: "Refresh", clear: "Clear", apply: "Apply",
       reset: "Reset", close: "Close", next: "Next", back: "Back", createBooking: "Create Booking", bookNow: "Book Now",
@@ -871,6 +877,28 @@
     ctaLabel: "نص زر CTA", validDates: "تواريخ الصلاحية",
     titleAr: "العنوان بالعربية", descAr: "الوصف بالعربية",
   };
+
+  // ── Destination image upload (Phase 2) ─────────────────────────────────────
+  en.upload = { badType: "Only JPG, PNG, GIF or WebP images are allowed", tooLarge: "Image must be under 10 MB", failed: "Upload failed" };
+  ar.upload = { badType: "يُسمح بصور JPG أو PNG أو GIF أو WebP فقط", tooLarge: "يجب أن تكون الصورة أقل من 10 ميجابايت", failed: "فشل رفع الصورة" };
+  Object.assign(en.form, { image: "Destination Image", imageAltEn: "Image Alt (EN)", imageAltAr: "Image Alt (AR)", or: "or", imagePreview: "Image preview" });
+  Object.assign(ar.form, { image: "صورة الوجهة", imageAltEn: "وصف الصورة (إنجليزي)", imageAltAr: "وصف الصورة (عربي)", or: "أو", imagePreview: "معاينة الصورة" });
+
+  // ── Currency converter (Phase 9) ───────────────────────────────────────────
+  en.fx = {
+    converterTitle: "Currency Converter", loading: "Loading rates…", amount: "Amount", from: "From", to: "To", swap: "Swap",
+    updated: "Rates updated", unavailable: "Rates unavailable", stale: "Live rates unavailable — using last cached values", noRate: "Rate unavailable",
+    providerStatus: "Rate provider", providerLive: "Live — provider reachable", providerStale: "Cached — rates may be stale", providerDown: "Provider unavailable — using last cached rates",
+  };
+  ar.fx = {
+    converterTitle: "محوّل العملات", loading: "جارٍ تحميل الأسعار…", amount: "المبلغ", from: "من", to: "إلى", swap: "تبديل",
+    updated: "تم تحديث الأسعار", unavailable: "الأسعار غير متوفرة", stale: "الأسعار المباشرة غير متوفرة — يتم استخدام آخر قيم محفوظة", noRate: "السعر غير متوفر",
+    providerStatus: "مزود الأسعار", providerLive: "مباشر — المزود متاح", providerStale: "مخزّن — قد تكون الأسعار قديمة", providerDown: "المزود غير متاح — يتم استخدام آخر أسعار محفوظة",
+  };
+  en.calc = { converterTitle: "Currency Converter", amount: "Amount", from: "From", to: "To", swap: "Swap", result: "Converted amount" };
+  ar.calc = { converterTitle: "محوّل العملات", amount: "المبلغ", from: "من", to: "إلى", swap: "تبديل", result: "المبلغ المحوّل" };
+  en.nav.calculators = "Currency Converter";
+  ar.nav.calculators = "محوّل العملات";
 
   // ── Hotels flow additions ──────────────────────────────────────────────────
   en.hotel.chooseDest = "Choose a destination to browse hotels";

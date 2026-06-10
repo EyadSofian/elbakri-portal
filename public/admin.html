@@ -937,6 +937,57 @@ async function importHotelsExcel(input) {
   }
 }
 
+// Upload an image to the shared /api/upload endpoint. Validates type + size on
+// the client (the server re-validates) and returns the stored URL, or null.
+async function uploadImageToServer(file) {
+  const okTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+  if (!okTypes.includes(file.type)) {
+    toast(t("upload.badType", "Only JPG, PNG, GIF or WebP images are allowed"), "error");
+    return null;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    toast(t("upload.tooLarge", "Image must be under 10 MB"), "error");
+    return null;
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  const token = localStorage.getItem("accessToken");
+  try {
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+      credentials: "include",
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) throw new Error(json?.message || json?.error || "Upload failed");
+    return json.data.url;
+  } catch (err) {
+    toast(err.message || t("upload.failed", "Upload failed"), "error");
+    return null;
+  }
+}
+
+async function onDestImagePicked(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  const btn = document.getElementById("destUploadBtn");
+  setBtnLoading(btn, true, "btn.uploading");
+  const url = await uploadImageToServer(file);
+  setBtnLoading(btn, false);
+  input.value = "";
+  if (!url) return;
+  document.getElementById("destImageUrl").value = url;
+  const prev = document.getElementById("destImgPreview");
+  if (prev) { prev.src = url; prev.style.display = ""; }
+}
+
+function removeDestImage() {
+  document.getElementById("destImageUrl").value = "";
+  const prev = document.getElementById("destImgPreview");
+  if (prev) { prev.src = ""; prev.style.display = "none"; }
+}
+
 function masterRowActions(entity, row) {
   return `<div class="row-actions">
     <button class="icon-button btn-icon" title="${t("btn.edit")}" onclick="showMasterModal('${entity}', '${row.id}')">${icon("pencil")}</button>
@@ -1846,9 +1897,14 @@ async function renderDestinations() {
     const cls = type === "RESORT" ? "badge-teal" : type === "AREA" ? "badge-info" : type === "REGION" ? "badge-platinum" : "badge-standard";
     return `<span class="badge ${cls}">${escapeHtml(type || "CITY")}</span>`;
   };
+  const thumb = (d) => `<span style="width:36px;height:36px;border-radius:6px;overflow:hidden;background:var(--info-soft);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--info)">${
+    d.imageUrl
+      ? `<img src="${escapeHtml(d.imageUrl)}" alt="${escapeHtml(d.imageAltEn || d.name)}" loading="lazy" style="width:100%;height:100%;object-fit:cover" onerror="this.remove()">`
+      : icon("map-pin")
+  }</span>`;
   const rows = dests.map(d => `
     <tr>
-      <td><div class="primary-text truncate">${escapeHtml(d.name)}</div>${d.nameAr ? `<div class="secondary-text truncate" dir="rtl">${escapeHtml(d.nameAr)}</div>` : ""}</td>
+      <td><div style="display:flex;align-items:center;gap:8px">${thumb(d)}<div style="min-width:0"><div class="primary-text truncate">${escapeHtml(d.name)}</div>${d.nameAr ? `<div class="secondary-text truncate" dir="rtl">${escapeHtml(d.nameAr)}</div>` : ""}</div></div></td>
       <td><code class="truncate" style="display:block">${escapeHtml(d.slug)}</code></td>
       <td>${escapeHtml(d.country)}</td>
       <td>${escapeHtml(d.region || "—")}</td>
@@ -1898,10 +1954,17 @@ function openAddDestinationModal(dest = null) {
       <div class="form-field"><label>${t("form.isActive","Active")}</label>
         <select id="destActive"><option value="true" ${!dest || dest.isActive?"selected":""}>Yes</option><option value="false" ${dest && !dest.isActive?"selected":""}>No</option></select>
       </div>
-      <div class="form-field full"><label>${t("form.imageUrl","Image URL")}</label>
-        <input id="destImageUrl" value="${escapeHtml(dest?.imageUrl||"")}" placeholder="https://… or /uploads/…" oninput="document.getElementById('destImgPreview').src=this.value">
-        <div style="margin-top:6px"><img id="destImgPreview" src="${escapeHtml(dest?.imageUrl||"")}" alt="" style="height:64px;border-radius:8px;object-fit:cover;${dest?.imageUrl?"":"display:none"}" onload="this.style.display=''" onerror="this.style.display='none'"></div>
+      <div class="form-field full"><label>${t("form.image","Destination Image")}</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="destImageUrl" style="flex:1;min-width:200px" value="${escapeHtml(dest?.imageUrl||"")}" placeholder="https://… ${t("form.or","or")} /uploads/…" oninput="const p=document.getElementById('destImgPreview');p.src=this.value;p.style.display=this.value?'':'none'">
+          <button type="button" class="btn btn-outline" id="destUploadBtn" onclick="document.getElementById('destImageFile').click()">${icon("upload")}${t("btn.upload","Upload")}</button>
+          <input type="file" id="destImageFile" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" onchange="onDestImagePicked(this)">
+          <button type="button" class="btn btn-danger-ghost" onclick="removeDestImage()">${icon("trash-2")}${t("btn.remove","Remove")}</button>
+        </div>
+        <div style="margin-top:8px"><img id="destImgPreview" src="${escapeHtml(dest?.imageUrl||"")}" alt="${t("form.imagePreview","Image preview")}" style="height:80px;border-radius:8px;object-fit:cover;${dest?.imageUrl?"":"display:none"}" onerror="this.style.display='none'"></div>
       </div>
+      <div class="form-field"><label>${t("form.imageAltEn","Image Alt (EN)")}</label><input id="destImageAltEn" value="${escapeHtml(dest?.imageAltEn||"")}" placeholder="e.g. Aerial view of Sharm beach"></div>
+      <div class="form-field"><label>${t("form.imageAltAr","Image Alt (AR)")}</label><input id="destImageAltAr" dir="rtl" value="${escapeHtml(dest?.imageAltAr||"")}" placeholder="وصف الصورة بالعربية"></div>
     </div>`;
   openModal(title, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
@@ -1925,6 +1988,8 @@ async function saveDestination(id) {
     type: document.getElementById("destType").value,
     isActive: document.getElementById("destActive").value === "true",
     imageUrl: document.getElementById("destImageUrl").value.trim() || null,
+    imageAltEn: document.getElementById("destImageAltEn").value.trim() || null,
+    imageAltAr: document.getElementById("destImageAltAr").value.trim() || null,
   };
   const res = await apiFetch(id ? `/destinations/${id}` : "/destinations", {
     method: id ? "PATCH" : "POST",
@@ -1985,7 +2050,8 @@ async function renderQuoteRequests() {
       <td><div class="secondary-text">${dates}</div><div class="secondary-text">${q.adultsCount}A ${q.childrenCount ? q.childrenCount+"C" : ""}</div></td>
       <td>${statusBadge(q.status)}</td>
       <td>${escapeHtml(q.assignedTo?.name || "—")}</td>
-      <td>${formatDate(q.createdAt)}</td>
+      <td>${requestedDate(q)}</td>
+      <td>${confirmedDate(q)}</td>
       <td><div class="row-actions">
         <button class="btn btn-outline btn-sm" onclick="openQuoteRequestModal('${q.id}')">${icon("eye")}${t("btn.review","Review")}</button>
         ${waIconButton([
@@ -2005,8 +2071,8 @@ async function renderQuoteRequests() {
   content(pageHeader() + filters + `<div class="table-card"><div class="table-scroll"><table><thead><tr>
     <th>${t("th.ref","Ref")}</th><th>${t("th.type","Type")}</th><th>${t("th.company","Company")}</th>
     <th>${t("th.destination","Destination")}</th><th>${t("th.hotel","Hotel")}</th><th>${t("th.travelDates","Travel Dates")}</th>
-    <th>${t("th.status","Status")}</th><th>${t("th.assignedTo","Assigned")}</th><th>${t("th.date","Date")}</th><th>${t("th.actions","Actions")}</th>
-  </tr></thead><tbody>${rows.length ? rows : `<tr><td colspan="10" style="text-align:center;padding:24px">${t("empty.noQuotes","No quote requests found")}</td></tr>`}</tbody></table></div>
+    <th>${t("th.status","Status")}</th><th>${t("th.assignedTo","Assigned")}</th><th>${t("th.requested","Date Requested")}</th><th>${t("th.confirmed","Date Confirmed")}</th><th>${t("th.actions","Actions")}</th>
+  </tr></thead><tbody>${rows.length ? rows : `<tr><td colspan="11" style="text-align:center;padding:24px">${t("empty.noQuotes","No quote requests found")}</td></tr>`}</tbody></table></div>
   ${tableFoot(meta, "", p => { qrFilters.page = p; renderQuoteRequests(); })}
   </div>`);
 
@@ -2037,6 +2103,9 @@ async function openQuoteRequestModal(id) {
       <div><strong>${t("form.nationality","Nationality")}:</strong> ${escapeHtml(q.nationality||"—")}</div>
       <div><strong>${t("form.travelFrom","Travelling From")}:</strong> ${escapeHtml(q.travelFrom||"—")}</div>
       <div><strong>${t("form.budget","Budget")}:</strong> ${q.budget ? formatMoney(q.budget, q.currency) : "—"}</div>
+      <div><strong>${t("th.requested","Date Requested")}:</strong> ${requestedDate(q)}</div>
+      <div><strong>${t("th.confirmed","Date Confirmed")}:</strong> ${confirmedDate(q)}</div>
+      ${q.confirmedBy ? `<div><strong>${t("th.confirmedBy","Confirmed By")}:</strong> ${confirmedByName(q)}</div>` : ""}
       <div class="full" style="grid-column:1/-1"><strong>${t("form.customerNotes","Customer Notes")}:</strong><p style="margin:4px 0;white-space:pre-wrap">${escapeHtml(q.customerNotes||"—")}</p></div>
       ${customFieldsBlock(q.customFields)}
     </div>
@@ -2098,10 +2167,26 @@ async function renderBookings() {
     ["th.amount", b => `<span class="numeric">${formatMoney(b.totalAmount, b.currency)}</span>`],
     ["th.status", b => statusBadge(b.status)],
     ["th.commission", b => formatMoney(b.commissionAmount || 0, b.currency || "USD")],
-    ["th.date", b => formatDate(b.createdAt)],
+    ["th.requested", b => requestedDate(b)],
+    ["th.confirmed", b => confirmedDate(b)],
     ["th.actions", b => bookingRowActions(b)],
   ]);
 }
+
+// ── Lifecycle date helpers (Phase 1) ─────────────────────────────────────────
+// "Date Requested" uses the explicit requestedAt column (fallback createdAt).
+function requestedDate(r) { return formatDate(r.requestedAt || r.createdAt); }
+// "Date Confirmed" prefers an explicit confirmation field; falls back to
+// updatedAt for legacy confirmed rows; otherwise a clear "Not confirmed" label.
+function confirmedDate(r) {
+  const explicit = r.confirmedAt || r.approvedAt;
+  if (explicit) return formatDate(explicit);
+  const s = String(r.status || "").toUpperCase();
+  if ((s === "CONFIRMED" || s === "COMPLETED" || s === "APPROVED") && r.updatedAt) return formatDate(r.updatedAt);
+  return t("th.notConfirmed", "Not confirmed");
+}
+// Name of the admin who confirmed (Phase 1 audit), or a dash.
+function confirmedByName(r) { return r.confirmedBy?.name ? escapeHtml(r.confirmedBy.name) : "—"; }
 
 function bookingRowActions(booking) {
   return `<div class="row-actions">
@@ -2138,7 +2223,9 @@ async function showBookingDetails(id) {
       ${info("th.amount", `<span class="numeric">${formatMoney(b.totalAmount, b.currency || "USD")}</span>`)}
       ${info("th.commission", formatMoney(b.commissionAmount || 0, b.currency || "USD"))}
       ${info("th.invoice", b.invoice ? `${escapeHtml(b.invoice.invoiceNumber)} · ${statusBadge(b.invoice.status)}` : "—")}
-      ${info("th.date", formatDate(b.createdAt))}
+      ${info("th.requested", requestedDate(b))}
+      ${info("th.confirmed", confirmedDate(b))}
+      ${b.confirmedBy ? info("th.confirmedBy", confirmedByName(b)) : ""}
     </div>
     ${b.notes ? `<div class="info-item full" style="grid-column:1/-1;margin-top:12px"><div class="info-label">${t("form.notes", "Notes")}</div><div class="info-value" style="white-space:pre-wrap">${escapeHtml(b.notes)}</div></div>` : ""}`;
 
@@ -2436,7 +2523,7 @@ async function loadAdminActivityBookings() {
     <td><span class="badge badge-outline">${escapeHtml(b.activityType||"GROUP")}</span></td>
     <td>${escapeHtml(b.hotelName||"—")}</td>
     <td class="numeric">${formatMoney(b.totalAmount, b.currency)}</td>
-    <td>${statusBadge(b.status)}</td>
+    <td>${statusBadge(b.status)}${b.confirmedAt ? `<div class="secondary-text" title="${t("th.confirmed","Date Confirmed")}">${icon("check")}&nbsp;${formatDate(b.confirmedAt)}</div>` : ""}</td>
     <td style="display:flex;gap:4px">
       ${b.status === "PENDING" ? `<button class="btn btn-success btn-sm" onclick="adminConfirmActivity('${b.id}')">${icon("check")}</button>` : ""}
       ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-danger btn-sm" onclick="adminCancelActivity('${b.id}')">${icon("x")}</button>` : ""}
@@ -2528,7 +2615,7 @@ async function loadAdminTransportBookings() {
     <td>${formatDate(b.pickupDateTime)}</td>
     <td>${b.airlineName ? `${escapeHtml(b.airlineName)} ` : ""}${b.flightNumber ? escapeHtml(b.flightNumber) : "—"}</td>
     <td class="numeric">${formatMoney(b.totalAmount, b.currency)}</td>
-    <td>${statusBadge(b.status)}</td>
+    <td>${statusBadge(b.status)}${b.confirmedAt ? `<div class="secondary-text" title="${t("th.confirmed","Date Confirmed")}">${icon("check")}&nbsp;${formatDate(b.confirmedAt)}</div>` : ""}</td>
     <td style="display:flex;gap:6px">
       ${b.status === "PENDING" ? `<button class="btn btn-success btn-sm" onclick="adminConfirmTransport('${b.id}')">${icon("check")}</button>` : ""}
       ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-danger btn-sm" onclick="adminCancelTransport('${b.id}')">${icon("x")}</button>` : ""}
@@ -2718,10 +2805,7 @@ async function renderCalculators() {
       <div class="stat-value" id="fxResult" style="margin-top:14px;font-size:24px">—</div>
       <div class="secondary-text" id="fxRateLine"></div>
       <button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="loadFxRates(true)">${icon("refresh-cw")}&nbsp;${t("btn.refresh","Refresh")}</button>
-    </div>
-    <div class="stats-grid">
-      ${calcCard("stat.commission", "calcCommSale", "calcCommRate", "calcCommResult", "calcCommissionAdmin()")}
-      ${calcCard("stat.markup", "calcCost", "calcMarkup", "calcMarkupResult", "calcMarkupAdmin()")}
+      <div id="fxHealth" style="margin-top:12px"></div>
     </div>`);
   refreshIcons(document.getElementById("content"));
   await loadFxRates();
@@ -2737,6 +2821,7 @@ async function loadFxRates(force = false) {
   const res = await apiFetch("/admin/fx/rates").catch(() => null);
   if (!res?.data?.rates) {
     if (lbl) lbl.textContent = t("fx.unavailable", "Rates unavailable");
+    setFxHealth("down", null);
     return;
   }
   state.fx.rates = res.data.rates;
@@ -2748,7 +2833,31 @@ async function loadFxRates(force = false) {
   if (fromSel && !fromSel.options.length) fromSel.innerHTML = opts(fromSel, "USD");
   if (toSel && !toSel.options.length) toSel.innerHTML = opts(toSel, "EGP");
   if (lbl) lbl.textContent = `${t("fx.updated","Rates updated")}: ${state.fx.lastUpdated ? new Date(state.fx.lastUpdated).toLocaleString() : "—"}`;
+  setFxHealth("ok", state.fx.lastUpdated);
   fxConvert();
+}
+
+// Admin rate-provider health/status badge (Phase 9). Green = reachable & fresh,
+// amber = serving cached/stale rates, red = provider unavailable.
+function setFxHealth(status, lastUpdated) {
+  const el = document.getElementById("fxHealth");
+  if (!el) return;
+  const ts = lastUpdated ? new Date(lastUpdated).getTime() : 0;
+  let dot, label;
+  if (status === "down" || !ts) {
+    dot = "var(--danger)";
+    label = t("fx.providerDown", "Provider unavailable — using last cached rates");
+  } else if (Date.now() - ts < 26 * 60 * 60 * 1000) {
+    dot = "var(--success)";
+    label = t("fx.providerLive", "Live — provider reachable");
+  } else {
+    dot = "var(--warning, #C4920A)";
+    label = t("fx.providerStale", "Cached — rates may be stale");
+  }
+  el.innerHTML = `<span class="secondary-text" style="display:inline-flex;align-items:center;gap:7px">
+    <span style="width:9px;height:9px;border-radius:50%;background:${dot};display:inline-block;flex-shrink:0"></span>
+    <span><strong>${t("fx.providerStatus","Rate provider")}:</strong> ${escapeHtml(label)}</span>
+  </span>`;
 }
 
 // Convert via USD base: amount_in_to = amount * (rate[to] / rate[from]).
@@ -2773,27 +2882,6 @@ function fxSwap() {
   if (!fromSel || !toSel) return;
   const tmp = fromSel.value; fromSel.value = toSel.value; toSel.value = tmp;
   fxConvert();
-}
-
-function calcCard(titleKey, input1, input2, resultId, handler) {
-  return `<div class="stat-card" style="min-height:190px">
-    <div class="stat-label">${t(titleKey)}</div>
-    <div class="field" style="margin-top:10px"><input id="${input1}" type="number" placeholder="0.00" oninput="${handler}"></div>
-    <div class="field" style="margin-top:8px"><input id="${input2}" type="number" placeholder="10" oninput="${handler}"></div>
-    <div class="stat-value" id="${resultId}">USD 0.00</div>
-  </div>`;
-}
-
-function calcCommissionAdmin() {
-  const sale = Number(document.getElementById("calcCommSale")?.value || 0);
-  const rate = Number(document.getElementById("calcCommRate")?.value || 0);
-  document.getElementById("calcCommResult").textContent = formatMoney(sale * rate / 100, "USD");
-}
-
-function calcMarkupAdmin() {
-  const cost = Number(document.getElementById("calcCost")?.value || 0);
-  const rate = Number(document.getElementById("calcMarkup")?.value || 0);
-  document.getElementById("calcMarkupResult").textContent = formatMoney(cost * (1 + rate / 100), "USD");
 }
 
 // ─── Security Approval (admin view of visa applications) ─────────────────────

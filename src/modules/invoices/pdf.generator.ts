@@ -35,6 +35,8 @@ interface InvoiceData {
   booking?: {
     refNumber: string;
     type: string;
+    requestedAt: Date;
+    confirmedAt?: Date | null;
     checkIn?: Date | null;
     checkOut?: Date | null;
     nights?: number | null;
@@ -49,6 +51,8 @@ interface InvoiceData {
   // Activity booking
   activityBooking?: {
     refNumber: string;
+    requestedAt: Date;
+    confirmedAt?: Date | null;
     activityDate: Date;
     adultsCount: number;
     childrenCount: number;
@@ -60,6 +64,8 @@ interface InvoiceData {
   // Transport booking
   transportBooking?: {
     refNumber: string;
+    requestedAt: Date;
+    confirmedAt?: Date | null;
     type: string;
     vehicleType: string;
     fromLocation: string;
@@ -72,10 +78,19 @@ interface InvoiceData {
   } | null;
 }
 
+function lifecycleDetails(requestedAt: Date, confirmedAt?: Date | null): string {
+  const requested = new Date(requestedAt).toLocaleDateString('en-GB');
+  const confirmed = confirmedAt
+    ? new Date(confirmedAt).toLocaleDateString('en-GB')
+    : 'Not confirmed';
+  return `\nRequested: ${requested} | Confirmed: ${confirmed}`;
+}
+
 function buildServiceLines(data: InvoiceData): ServiceLine[] {
   if (data.booking) {
     const b = data.booking;
     let desc = `${b.type} Booking — ${b.refNumber}`;
+    desc += lifecycleDetails(b.requestedAt, b.confirmedAt);
     if (b.hotel) desc += `\n${b.hotel.name}, ${b.hotel.city}`;
     if (b.checkIn && b.checkOut) {
       desc += `\nCheck-in: ${new Date(b.checkIn).toLocaleDateString('en-GB')}`;
@@ -96,7 +111,7 @@ function buildServiceLines(data: InvoiceData): ServiceLine[] {
     const a = data.activityBooking;
     const actName = a.activity ? a.activity.name : 'Activity';
     const cityLabel = a.activity ? ` — ${a.activity.city}` : '';
-    const desc = `${actName}${cityLabel}\nDate: ${new Date(a.activityDate).toLocaleDateString('en-GB')}\nAdults: ${a.adultsCount}${a.childrenCount ? ` | Children: ${a.childrenCount}` : ''}`;
+    const desc = `${actName}${cityLabel}${lifecycleDetails(a.requestedAt, a.confirmedAt)}\nDate: ${new Date(a.activityDate).toLocaleDateString('en-GB')}\nAdults: ${a.adultsCount}${a.childrenCount ? ` | Children: ${a.childrenCount}` : ''}`;
     return [{
       description: desc,
       quantity: a.adultsCount + a.childrenCount,
@@ -109,7 +124,7 @@ function buildServiceLines(data: InvoiceData): ServiceLine[] {
 
   if (data.transportBooking) {
     const t = data.transportBooking;
-    const desc = `Transport — ${t.refNumber}\n${t.vehicleType.replace(/_/g, ' ')} | ${t.fromLocation} → ${t.toLocation}\nPickup: ${new Date(t.pickupDateTime).toLocaleDateString('en-GB')} ${new Date(t.pickupDateTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}\nPassengers: ${t.passengerCount}`;
+    const desc = `Transport — ${t.refNumber}${lifecycleDetails(t.requestedAt, t.confirmedAt)}\n${t.vehicleType.replace(/_/g, ' ')} | ${t.fromLocation} → ${t.toLocation}\nPickup: ${new Date(t.pickupDateTime).toLocaleDateString('en-GB')} ${new Date(t.pickupDateTime).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}\nPassengers: ${t.passengerCount}`;
     return [{
       description: desc,
       quantity: 1,
@@ -388,9 +403,11 @@ export async function generateInvoicePdf(invoice: InvoiceData): Promise<{ path: 
     y += 22;
 
     for (const line of lines) {
-      const rowHeight = 60;
+      doc.fontSize(8).font('Helvetica');
+      const descriptionHeight = doc.heightOfString(line.description, { width: colWidths[0] - 10 });
+      const rowHeight = Math.max(60, descriptionHeight + 12);
       doc.rect(50, y, pageW - 100, rowHeight).stroke('#e0e0e0');
-      doc.fillColor('#000').fontSize(8).font('Helvetica')
+      doc.fillColor('#000')
         .text(line.description, colX[0], y + 6, { width: colWidths[0] - 10 })
         .text(`${line.quantity} ${line.unitLabel}`, colX[1], y + 6)
         .text(line.unitPrice, colX[2], y + 6)

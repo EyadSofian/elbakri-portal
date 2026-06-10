@@ -243,6 +243,15 @@ model User {
   quoteRequests        QuoteRequest[]       @relation("QuoteRequestCreatedBy")
   assignedQuotes       QuoteRequest[]       @relation("QuoteRequestAssignedTo")
   simRequests          SimRequest[]         @relation("SimRequestCreatedBy")
+  // Lifecycle audit — bookings/requests this user confirmed (Phase 1)
+  confirmedBookings    Booking[]            @relation("BookingConfirmedBy")
+  confirmedTransport   TransportBooking[]   @relation("TransportConfirmedBy")
+  confirmedActivities  ActivityBooking[]    @relation("ActivityConfirmedBy")
+  confirmedReceptions  AirportReception[]   @relation("ReceptionConfirmedBy")
+  confirmedCruises     CruiseBooking[]      @relation("CruiseConfirmedBy")
+  confirmedSims        SimRequest[]         @relation("SimConfirmedBy")
+  confirmedVisas       VisaApplication[]    @relation("VisaConfirmedBy")
+  confirmedQuotes      QuoteRequest[]       @relation("QuoteConfirmedBy")
   refreshTokens        RefreshToken[]
   isActive             Boolean              @default(true)
   lastLoginAt          DateTime?
@@ -323,6 +332,9 @@ model Destination {
   region         String?
   type           DestinationType @default(CITY)
   imageUrl       String?
+  imageAltEn     String?
+  imageAltAr     String?
+  galleryUrls    String[]        @default([])
   isActive       Boolean         @default(true)
   hotels         Hotel[]
   activities     Activity[]
@@ -497,7 +509,10 @@ model Booking {
   notes              String?
   internalNotes      String?
   invoice            Invoice?
+  requestedAt        DateTime      @default(now())
   confirmedAt        DateTime?
+  confirmedById      String?
+  confirmedBy        User?         @relation("BookingConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   cancelledAt        DateTime?
   cancellationReason String?
   createdAt          DateTime      @default(now())
@@ -508,6 +523,7 @@ model Booking {
   @@index([type])
   @@index([refNumber])
   @@index([createdAt])
+  @@index([confirmedById])
 }
 
 model BookingCounter {
@@ -559,6 +575,10 @@ model QuoteRequest {
   assignedTo       User?              @relation("QuoteRequestAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
   respondedAt      DateTime?
   closedAt         DateTime?
+  requestedAt      DateTime           @default(now())
+  confirmedAt      DateTime?
+  confirmedById    String?
+  confirmedBy      User?              @relation("QuoteConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
@@ -568,6 +588,7 @@ model QuoteRequest {
   @@index([refNumber])
   @@index([createdAt])
   @@index([assignedToId])
+  @@index([confirmedById])
 }
 
 model QuoteRequestCounter {
@@ -712,11 +733,16 @@ model CruiseBooking {
   currency       String        @default("USD")
   status         BookingStatus @default(PENDING)
   notes          String?
+  requestedAt    DateTime      @default(now())
+  confirmedAt    DateTime?
+  confirmedById  String?
+  confirmedBy    User?         @relation("CruiseConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   @@index([companyId])
   @@index([status])
+  @@index([confirmedById])
 }
 
 // ─────────────────────────────────────────────
@@ -753,11 +779,16 @@ model TransportBooking {
   notes           String?
   customFields    Json?         // dynamic fields captured by the Request Form Builder template
   invoice         Invoice?
+  requestedAt     DateTime      @default(now())
+  confirmedAt     DateTime?
+  confirmedById   String?
+  confirmedBy     User?         @relation("TransportConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
   @@index([companyId])
   @@index([status])
+  @@index([confirmedById])
 }
 
 model TransportRate {
@@ -848,11 +879,16 @@ model ActivityBooking {
   status         BookingStatus @default(PENDING)
   notes          String?
   invoice        Invoice?
+  requestedAt    DateTime      @default(now())
+  confirmedAt    DateTime?
+  confirmedById  String?
+  confirmedBy    User?         @relation("ActivityConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   @@index([companyId])
   @@index([activityId])
+  @@index([confirmedById])
 }
 
 // ─────────────────────────────────────────────
@@ -888,11 +924,16 @@ model VisaApplication {
   approvedAt         DateTime?
   rejectedAt         DateTime?
   rejectionReason    String?
+  requestedAt        DateTime       @default(now())
+  confirmedAt        DateTime?
+  confirmedById      String?
+  confirmedBy        User?          @relation("VisaConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
   @@index([companyId])
   @@index([status])
+  @@index([confirmedById])
 }
 
 model VisaFee {
@@ -942,11 +983,16 @@ model AirportReception {
   status          BookingStatus @default(PENDING)
   notes           String?
   customFields    Json?         // dynamic fields captured by the Request Form Builder template
+  requestedAt     DateTime      @default(now())
+  confirmedAt     DateTime?
+  confirmedById   String?
+  confirmedBy     User?         @relation("ReceptionConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
   @@index([companyId])
   @@index([status])
+  @@index([confirmedById])
 }
 
 model ReceptionServiceRate {
@@ -1031,11 +1077,16 @@ model SimRequest {
   status      BookingStatus @default(PENDING)
   totalAmount Decimal       @db.Decimal(12, 2)
   currency    String        @default("USD")
+  requestedAt DateTime      @default(now())
+  confirmedAt DateTime?
+  confirmedById String?
+  confirmedBy User?         @relation("SimConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   @@index([companyId])
   @@index([status])
+  @@index([confirmedById])
 }
 
 // ─────────────────────────────────────────────

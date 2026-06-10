@@ -124,7 +124,7 @@ export async function listRequests(req: Request, res: Response) {
     const [requests, total] = await Promise.all([
       prisma.simRequest.findMany({
         where,
-        include: { package: true, company: { select: { name: true } } },
+        include: { package: true, company: { select: { name: true } }, confirmedBy: { select: { id: true, name: true } } },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limitNum,
@@ -191,10 +191,17 @@ export async function updateRequestStatus(req: Request, res: Response) {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const updated = await prisma.simRequest.update({
-      where: { id },
-      data: { status },
-    });
+    const data: Record<string, unknown> = { status };
+    // Stamp the confirming admin + time when the request transitions to CONFIRMED,
+    // preserving any original audit values so re-confirm never overwrites them.
+    if (status === 'CONFIRMED') {
+      const existing = await prisma.simRequest.findUniqueOrThrow({
+        where: { id }, select: { confirmedAt: true, confirmedById: true },
+      });
+      data.confirmedAt = existing.confirmedAt ?? new Date();
+      data.confirmedById = existing.confirmedById ?? req.user!.id;
+    }
+    const updated = await prisma.simRequest.update({ where: { id }, data });
     res.json({ success: true, data: updated });
   } catch (err) {
     res.status(500).json({ success: false, message: (err as Error).message });

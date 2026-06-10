@@ -8,6 +8,7 @@ import { sendEmail } from '../../shared/email.templates';
 const receptionInclude = {
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
+  confirmedBy: { select: { id: true, name: true } },
 };
 
 export async function listReceptions(req: Request, res: Response): Promise<void> {
@@ -114,8 +115,17 @@ export async function createReception(req: Request, res: Response): Promise<void
 }
 
 export async function confirmReception(req: Request, res: Response): Promise<void> {
+  const existing = await prisma.airportReception.findUniqueOrThrow({
+    where: { id: req.params.id }, select: { confirmedAt: true, confirmedById: true },
+  });
   const reception = await prisma.airportReception.update({
-    where: { id: req.params.id }, data: { status: 'CONFIRMED' }, include: receptionInclude,
+    where: { id: req.params.id },
+    data: {
+      status: 'CONFIRMED',
+      confirmedAt: existing.confirmedAt ?? new Date(),
+      confirmedById: existing.confirmedById ?? req.user!.id,
+    },
+    include: receptionInclude,
   });
   res.json({ success: true, data: reception });
 }

@@ -596,7 +596,7 @@ function bookingPanel(rows) {
     ["th.details", b => escapeHtml(b.hotel?.name || (b.origin ? `${b.origin} → ${b.destination}` : "—"))],
     ["th.amount", b => `<span class="numeric">${formatPrice(b.totalAmount)}</span>`],
     ["th.status", b => statusBadge(b.status)],
-    ["th.requested", b => formatDate(b.createdAt)],
+    ["th.requested", b => requestedDate(b)],
     ["th.confirmed", b => confirmedDate(b)],
   ];
   return `<section class="panel">
@@ -613,7 +613,7 @@ function renderBookings() {
     ["th.amount",  b => `<span class="numeric">${formatPrice(b.totalAmount)}</span>`],
     ["th.status",  b => statusBadge(b.status)],
     ["th.invoice", b => b.invoice ? statusBadge(b.invoice.status) : "—"],
-    ["th.requested", b => formatDate(b.createdAt)],
+    ["th.requested", b => requestedDate(b)],
     ["th.confirmed", b => confirmedDate(b)],
   ], {
     filters: [
@@ -625,15 +625,22 @@ function renderBookings() {
   });
 }
 
-// "Date Confirmed" — the timestamp a request became confirmed/approved, or "—".
+// "Date Requested" — the audit timestamp the request was submitted.
+// Uses the explicit requestedAt column, falling back to createdAt for safety.
+function requestedDate(r) {
+  return formatDate(r.requestedAt || r.createdAt);
+}
+
+// "Date Confirmed" — the timestamp a request became confirmed/approved.
 // Prefers an explicit confirmation field; falls back to updatedAt once the
-// record reaches a positive terminal status (models without a dedicated column).
+// record reaches a positive terminal status (legacy rows). Shows a clear
+// "Not confirmed" label (not a bare dash) while still pending.
 function confirmedDate(r) {
-  const explicit = r.confirmedAt || r.approvedAt || r.respondedAt || r.closedAt;
+  const explicit = r.confirmedAt || r.approvedAt;
   if (explicit) return formatDate(explicit);
   const s = String(r.status || "").toUpperCase();
   if ((s === "CONFIRMED" || s === "COMPLETED" || s === "APPROVED") && r.updatedAt) return formatDate(r.updatedAt);
-  return "—";
+  return `<span class="secondary-text">${t("th.notConfirmed", "Not confirmed")}</span>`;
 }
 
 // ─── Locale-aware display helpers ────────────────────────────────────────────
@@ -876,7 +883,7 @@ async function renderHotels() {
     ...dests.map(d => `
       <button class="dest-card" onclick="renderHotelsByDest('${d.id}','${escapeHtml(locName(d.name, d.nameAr))}')">
         ${d.imageUrl
-          ? `<div class="dest-card-img"><img src="${escapeHtml(d.imageUrl)}" alt="" loading="lazy" onerror="this.parentElement.outerHTML='<div class=\\'dest-card-icon\\'><i data-lucide=&quot;map-pin&quot;></i></div>'"></div>`
+          ? `<div class="dest-card-img"><img src="${escapeHtml(d.imageUrl)}" alt="${escapeHtml(locName(d.imageAltEn, d.imageAltAr) || locName(d.name, d.nameAr))}" loading="lazy" onerror="this.parentElement.outerHTML='<div class=\\'dest-card-icon\\'><i data-lucide=&quot;map-pin&quot;></i></div>'"></div>`
           : `<div class="dest-card-icon"><i data-lucide="map-pin"></i></div>`}
         <div class="dest-card-name">${escapeHtml(locName(d.name, d.nameAr))}</div>
         ${(!isArabic() && d.nameAr) ? `<div class="dest-card-sub">${escapeHtml(d.nameAr)}</div>` : ""}
@@ -2098,7 +2105,7 @@ async function renderTransportHistory() {
     ["th.amount", r => `<span class="numeric">${formatPrice(r.totalAmount)}</span>`],
     ["th.status", r => statusBadge(r.status)],
     ["th.pickup", r => `<div>${formatDate(r.pickupDateTime)}</div>${r.passengerName ? `<div class="secondary-text">${escapeHtml(r.passengerName)}</div>` : ""}`],
-    ["th.requested", r => formatDate(r.createdAt)],
+    ["th.requested", r => requestedDate(r)],
     ["th.confirmed", r => confirmedDate(r)],
     ["th.invoice", r => r.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${r.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : "—"],
   ], {
@@ -2332,7 +2339,7 @@ function renderMyQuotes() {
       return ci ? `${ci}${co ? " → " + co : ""}` : "—";
     }],
     ["th.status",      q => statusBadge(q.status)],
-    ["th.requested",   q => formatDate(q.createdAt)],
+    ["th.requested",   q => requestedDate(q)],
     ["th.confirmed",   q => confirmedDate(q)],
     ["th.actions", q => {
       const waUrl = buildWhatsAppQuoteUrl({
@@ -2398,7 +2405,7 @@ function renderSecurityApproval() {
     ["form.phone", v => escapeHtml(v.phone || "—")],
     ["th.amount", v => `<span class="numeric">${formatPrice(v.totalAmount)}</span>`],
     ["th.status", v => statusBadge(v.status)],
-    ["th.requested", v => formatDate(v.createdAt)],
+    ["th.requested", v => requestedDate(v)],
     ["th.confirmed", v => confirmedDate(v)],
     ["th.actions",v => `<button class="btn btn-outline btn-sm" onclick="openSecurityApprovalForm()">${icon("plus")}&nbsp;${t("btn.add","New")}</button>`],
   ], {
@@ -2493,7 +2500,7 @@ function renderAirportAssist() {
     ["th.route",  r => escapeHtml(r.airport)],
     ["th.amount", r => `<span class="numeric">${formatPrice(r.totalAmount)}</span>`],
     ["th.status", r => statusBadge(r.status)],
-    ["th.requested", r => formatDate(r.createdAt)],
+    ["th.requested", r => requestedDate(r)],
     ["th.confirmed", r => confirmedDate(r)],
   ], {
     filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
@@ -2602,7 +2609,7 @@ async function renderSimCard() {
     ["form.date", r => r.arrivalDate ? formatDate(r.arrivalDate) : "—"],
     ["th.amount", r => `<span class="numeric">${formatPrice(r.totalAmount)}</span>`],
     ["th.status", r => statusBadge(r.status)],
-    ["th.requested", r => formatDate(r.createdAt)],
+    ["th.requested", r => requestedDate(r)],
     ["th.confirmed", r => confirmedDate(r)],
   ], { filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]] });
 }
@@ -2825,13 +2832,74 @@ async function renderReports() {
     <section class="panel"><div class="panel-header"><div class="panel-title">${t("page.reportsTitle")}</div></div><div class="panel-body">${emptyBlock("empty.noData")}</div></section>`);
 }
 
+// Single professional currency converter (replaces the old commission + markup
+// + manual-rate calculators). Uses live, server-cached FX rates (state.fxRates,
+// base USD) — never a hand-typed rate. Honest about cached/stale data.
 function renderCalculators() {
+  const rates = (state.fxRates && state.fxRates.rates) || { USD: 1 };
+  const currencies = Array.from(new Set(["USD", "EUR", "EGP", "SAR", "AED", "GBP", ...Object.keys(rates)]))
+    .filter(c => c === "USD" || isFinite(Number(rates[c])));
+  const opt = (sel) => currencies.map(c => `<option value="${c}" ${c === sel ? "selected" : ""}>${c}</option>`).join("");
+  const stale = !state.fxRates || !state.fxRates.lastUpdated || new Date(state.fxRates.lastUpdated).getTime() === 0;
   content(pageHeader() + `
-    <div class="stats-grid">
-      ${calcCard("stat.commission", "calcSale", "calcRate", "calcResult", "calcCommission()")}
-      ${calcCard("stat.markup", "calcCost", "calcMarkup", "markupResult", "calcMarkup()")}
-      ${calcCard("form.currency", "currAmount", "currRate", "currResult", "calcCurrency()")}
+    <div class="panel" style="max-width:560px">
+      <div class="panel-header"><div class="panel-title">${icon("arrow-right-left")}&nbsp;${t("calc.converterTitle", "Currency Converter")}</div>
+        <button class="btn btn-outline btn-sm" type="button" onclick="refreshFxRates()" title="${t("btn.refresh", "Refresh")}">${icon("refresh-cw")}</button>
+      </div>
+      <div class="panel-body">
+        <div class="field"><label>${t("calc.amount", "Amount")}</label>
+          <input id="cvAmount" type="number" min="0" step="any" inputmode="decimal" value="100" oninput="currencyConvert()"></div>
+        <div style="display:flex;gap:10px;align-items:flex-end;margin-top:12px">
+          <div class="field" style="flex:1"><label>${t("calc.from", "From")}</label><select id="cvFrom" onchange="currencyConvert()">${opt("USD")}</select></div>
+          <button class="btn btn-outline" type="button" title="${t("calc.swap", "Swap")}" onclick="swapCurrencies()" style="margin-bottom:2px">${icon("arrow-right-left")}</button>
+          <div class="field" style="flex:1"><label>${t("calc.to", "To")}</label><select id="cvTo" onchange="currencyConvert()">${opt("EGP")}</select></div>
+        </div>
+        <div class="stat-card" style="margin-top:16px;text-align:center">
+          <div class="stat-label">${t("calc.result", "Converted amount")}</div>
+          <div class="stat-value" id="cvResult" style="font-size:26px">—</div>
+          <div class="secondary-text" id="cvRateLine" style="margin-top:6px"></div>
+        </div>
+        <div class="secondary-text" style="margin-top:12px;display:flex;align-items:center;gap:6px">
+          ${icon(stale ? "alert-triangle" : "clock")}
+          <span>${stale ? t("fx.stale", "Live rates unavailable — using last cached values") : escapeHtml(fxUpdatedLabel())}</span>
+        </div>
+      </div>
     </div>`);
+  currencyConvert();
+}
+
+function currencyConvert() {
+  const rates = (state.fxRates && state.fxRates.rates) || { USD: 1 };
+  const amount = Number(document.getElementById("cvAmount")?.value);
+  const from = document.getElementById("cvFrom")?.value || "USD";
+  const to = document.getElementById("cvTo")?.value || "USD";
+  const resEl = document.getElementById("cvResult");
+  const rateEl = document.getElementById("cvRateLine");
+  if (!resEl) return;
+  if (!isFinite(amount) || amount < 0) { resEl.textContent = "—"; if (rateEl) rateEl.textContent = ""; return; }
+  const rFrom = from === "USD" ? 1 : Number(rates[from]);
+  const rTo = to === "USD" ? 1 : Number(rates[to]);
+  if (!isFinite(rFrom) || !isFinite(rTo) || rFrom <= 0) {
+    resEl.textContent = t("fx.noRate", "Rate unavailable");
+    if (rateEl) rateEl.textContent = "";
+    return;
+  }
+  const usd = amount / rFrom;     // rates are "units per 1 USD" → back to USD base
+  const out = usd * rTo;          // then to the target currency
+  resEl.textContent = formatMoney(out, to);
+  if (rateEl) rateEl.textContent = `1 ${from} = ${formatMoney((1 / rFrom) * rTo, to)}`;
+}
+
+function swapCurrencies() {
+  const f = document.getElementById("cvFrom"), tEl = document.getElementById("cvTo");
+  if (!f || !tEl) return;
+  const tmp = f.value; f.value = tEl.value; tEl.value = tmp;
+  currencyConvert();
+}
+
+async function refreshFxRates() {
+  await loadFxRates();
+  renderCalculators();
 }
 
 function renderSupport() {
@@ -2945,33 +3013,6 @@ async function loadListData(page, endpoint, columns, pageNumber = 1) {
   const footEl = document.getElementById(page + "Foot");
   if (footEl) footEl.innerHTML = tableFoot(meta, "loadCurrentList", page);
   refreshIcons(tbody);
-}
-
-function calcCard(titleKey, input1, input2, resultId, handler) {
-  return `<div class="stat-card" style="min-height:190px">
-    <div class="stat-label">${t(titleKey)}</div>
-    <div class="field" style="margin-top:10px"><input id="${input1}" type="number" placeholder="0.00" oninput="${handler}"></div>
-    <div class="field" style="margin-top:8px"><input id="${input2}" type="number" placeholder="10" oninput="${handler}"></div>
-    <div class="stat-value" id="${resultId}">USD 0.00</div>
-  </div>`;
-}
-
-function calcCommission() {
-  const sale = Number(document.getElementById("calcSale")?.value || 0);
-  const rate = Number(document.getElementById("calcRate")?.value || 0);
-  document.getElementById("calcResult").textContent = formatMoney(sale * rate / 100, "USD");
-}
-
-function calcMarkup() {
-  const cost = Number(document.getElementById("calcCost")?.value || 0);
-  const rate = Number(document.getElementById("calcMarkup")?.value || 0);
-  document.getElementById("markupResult").textContent = formatMoney(cost * (1 + rate / 100), "USD");
-}
-
-function calcCurrency() {
-  const amount = Number(document.getElementById("currAmount")?.value || 0);
-  const rate = Number(document.getElementById("currRate")?.value || 1);
-  document.getElementById("currResult").textContent = formatMoney(amount * rate, "EGP");
 }
 
 function openBookingWizard(type = "HOTEL", presetId = "") {

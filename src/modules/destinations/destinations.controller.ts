@@ -56,6 +56,7 @@ export async function createDestination(req: Request, res: Response): Promise<vo
   const body = req.body as {
     name: string; nameAr?: string; slug: string;
     country?: string; region?: string; type?: DestinationType; imageUrl?: string | null;
+    imageAltEn?: string | null; imageAltAr?: string | null; galleryUrls?: string[];
   };
 
   if (!body.name || !body.slug) {
@@ -78,6 +79,9 @@ export async function createDestination(req: Request, res: Response): Promise<vo
       region: body.region ?? null,
       type: body.type ?? 'CITY',
       imageUrl: body.imageUrl ?? null,
+      imageAltEn: body.imageAltEn ?? null,
+      imageAltAr: body.imageAltAr ?? null,
+      galleryUrls: Array.isArray(body.galleryUrls) ? body.galleryUrls.filter((u) => typeof u === 'string') : [],
     },
   });
 
@@ -96,6 +100,13 @@ export async function updateDestination(req: Request, res: Response): Promise<vo
   if (body.type !== undefined) data.type = body.type as DestinationType;
   if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
   if (body.imageUrl !== undefined) data.imageUrl = body.imageUrl ? String(body.imageUrl) : null;
+  if (body.imageAltEn !== undefined) data.imageAltEn = body.imageAltEn ? String(body.imageAltEn) : null;
+  if (body.imageAltAr !== undefined) data.imageAltAr = body.imageAltAr ? String(body.imageAltAr) : null;
+  if (body.galleryUrls !== undefined) {
+    data.galleryUrls = Array.isArray(body.galleryUrls)
+      ? (body.galleryUrls as unknown[]).filter((u): u is string => typeof u === 'string')
+      : [];
+  }
 
   const dest = await prisma.destination.update({
     where: { id: req.params.id },

@@ -11,6 +11,7 @@ const quoteInclude = {
   destination: { select: { id: true, name: true, nameAr: true, slug: true } },
   hotel: { select: { id: true, name: true, city: true, stars: true } },
   assignedTo: { select: { id: true, name: true, email: true } },
+  confirmedBy: { select: { id: true, name: true } },
 };
 
 /** Generate a unique QR-YYYY-NNNN reference */
@@ -204,6 +205,15 @@ export async function updateQuoteRequest(req: Request, res: Response): Promise<v
     update.status = body.status;
     if (body.status === 'QUOTED' || body.status === 'ACCEPTED') {
       update.respondedAt = new Date();
+    }
+    // ACCEPTED is the quote lifecycle's "confirmed" milestone — stamp the admin
+    // and time, preserving any original audit values on re-accept.
+    if (body.status === 'ACCEPTED') {
+      const existing = await prisma.quoteRequest.findUniqueOrThrow({
+        where: { id: req.params.id }, select: { confirmedAt: true, confirmedById: true },
+      });
+      update.confirmedAt = existing.confirmedAt ?? new Date();
+      update.confirmedById = existing.confirmedById ?? req.user!.id;
     }
     if (body.status === 'CLOSED' || body.status === 'CANCELLED') {
       update.closedAt = new Date();

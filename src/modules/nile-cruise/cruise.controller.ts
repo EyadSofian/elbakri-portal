@@ -10,6 +10,7 @@ const cruiseInclude = {
   cruise: { select: { id: true, name: true, route: true, shipType: true } },
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
+  confirmedBy: { select: { id: true, name: true } },
 };
 
 // ── Cruise catalog ────────────────────────────────────────────────────────────
@@ -172,9 +173,16 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
 }
 
 export async function confirmCruiseBooking(req: Request, res: Response): Promise<void> {
+  const existing = await prisma.cruiseBooking.findUniqueOrThrow({
+    where: { id: req.params.id }, select: { confirmedAt: true, confirmedById: true },
+  });
   const booking = await prisma.cruiseBooking.update({
     where: { id: req.params.id },
-    data: { status: 'CONFIRMED' },
+    data: {
+      status: 'CONFIRMED',
+      confirmedAt: existing.confirmedAt ?? new Date(),
+      confirmedById: existing.confirmedById ?? req.user!.id,
+    },
     include: cruiseInclude,
   });
   res.json({ success: true, data: booking });

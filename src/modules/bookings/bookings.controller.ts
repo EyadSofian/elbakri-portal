@@ -10,6 +10,7 @@ const bookingInclude = {
   hotel: { select: { id: true, name: true, city: true, country: true, commissionPercent: true } },
   room: { select: { id: true, type: true, pricePerNight: true } },
   createdBy: { select: { id: true, name: true } },
+  confirmedBy: { select: { id: true, name: true } },
   invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
 };
 
@@ -325,7 +326,11 @@ export async function confirmBooking(req: Request, res: Response): Promise<void>
 
       await tx.booking.update({
         where: { id: booking.id },
-        data: { status: 'CONFIRMED', confirmedAt: new Date() },
+        data: {
+          status: 'CONFIRMED',
+          confirmedAt: booking.confirmedAt ?? new Date(),
+          confirmedById: booking.confirmedById ?? req.user!.id,
+        },
       });
     });
   } catch (err) {

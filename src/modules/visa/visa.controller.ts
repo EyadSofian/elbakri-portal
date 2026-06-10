@@ -8,6 +8,7 @@ import { sendEmail } from '../../shared/email.templates';
 const visaInclude = {
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
+  confirmedBy: { select: { id: true, name: true } },
 };
 
 export async function listVisaApplications(req: Request, res: Response): Promise<void> {
@@ -139,9 +140,17 @@ export async function submitVisa(req: Request, res: Response): Promise<void> {
 }
 
 export async function approveVisa(req: Request, res: Response): Promise<void> {
+  const existing = await prisma.visaApplication.findUniqueOrThrow({
+    where: { id: req.params.id }, select: { confirmedAt: true, confirmedById: true },
+  });
   const application = await prisma.visaApplication.update({
     where: { id: req.params.id },
-    data: { status: 'APPROVED', approvedAt: new Date() },
+    data: {
+      status: 'APPROVED',
+      approvedAt: new Date(),
+      confirmedAt: existing.confirmedAt ?? new Date(),
+      confirmedById: existing.confirmedById ?? req.user!.id,
+    },
     include: visaInclude,
   });
   res.json({ success: true, data: application });
