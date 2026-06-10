@@ -76,6 +76,21 @@ interface InvoiceData {
     currency: string;
     company: CompanyInfo;
   } | null;
+  // Airport reception (Airport Assist)
+  airportReception?: {
+    refNumber: string;
+    requestedAt: Date;
+    confirmedAt?: Date | null;
+    serviceType: string;
+    airport: string;
+    flightNumber: string;
+    flightDateTime: Date;
+    guestName: string;
+    guestCount: number;
+    totalAmount: unknown;
+    currency: string;
+    company: CompanyInfo;
+  } | null;
 }
 
 function lifecycleDetails(requestedAt: Date, confirmedAt?: Date | null): string {
@@ -135,6 +150,20 @@ function buildServiceLines(data: InvoiceData): ServiceLine[] {
     }];
   }
 
+  if (data.airportReception) {
+    const r = data.airportReception;
+    const when = new Date(r.flightDateTime);
+    const desc = `Airport Assist — ${r.refNumber}${lifecycleDetails(r.requestedAt, r.confirmedAt)}\n${r.serviceType.replace(/_/g, ' ')} @ ${r.airport}\nGuest: ${r.guestName} | Flight: ${r.flightNumber}\nFlight: ${when.toLocaleDateString('en-GB')} ${when.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+    return [{
+      description: desc,
+      quantity: r.guestCount,
+      unitLabel: 'guest(s)',
+      unitPrice: `${String(r.totalAmount)} ${r.currency}`,
+      amount: `${String(r.totalAmount)} ${r.currency}`,
+      currency: r.currency,
+    }];
+  }
+
   return [{
     description: 'Service',
     quantity: 1,
@@ -150,6 +179,7 @@ function resolveCompany(data: InvoiceData): CompanyInfo {
     ?? data.booking?.company
     ?? data.activityBooking?.company
     ?? data.transportBooking?.company
+    ?? data.airportReception?.company
     ?? { name: 'N/A', email: '', phone: '' };
 }
 
@@ -157,6 +187,7 @@ function resolveRefNumber(data: InvoiceData): string {
   return data.booking?.refNumber
     ?? data.activityBooking?.refNumber
     ?? data.transportBooking?.refNumber
+    ?? data.airportReception?.refNumber
     ?? '';
 }
 

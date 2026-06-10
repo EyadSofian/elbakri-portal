@@ -2437,8 +2437,12 @@ async function openSecurityApprovalForm() {
         <input id="saPhone" type="tel" placeholder="+20..."></div>
       <div class="form-field"><label>${t("form.nationality","Nationality")} *</label>
         ${nationalitySelectHtml("saNationality", "", t("form.nationalityPlaceholder","e.g. Saudi"))}</div>
+      <div class="form-field"><label>${t("securityApproval.passportNumber","Passport Number")} *</label>
+        <input id="saPassportNo" placeholder="${t("securityApproval.passportNumber","Passport Number")}"></div>
       <div class="form-field"><label>${t("securityApproval.hotelName","Hotel Name")}</label>
         <input id="saHotel" placeholder="Hotel name"></div>
+      <div class="form-field"><label>${t("securityApproval.travelDate","Arrival / Travel Date")}</label>
+        <input id="saTravelDate" type="date"></div>
       <div class="form-field"><label>${t("securityApproval.paxCount","Number of Passengers")}</label>
         <input id="saPax" type="number" min="1" value="1"></div>
       <div class="form-field full"><label>${t("securityApproval.passportUpload","Passport")} <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
@@ -2449,6 +2453,10 @@ async function openSecurityApprovalForm() {
         <input id="saTicketUrl" placeholder="or paste URL" style="margin-top:6px"></div>
       <div class="form-field full"><label>${t("form.notes","Notes")}</label>
         <textarea id="saNotes" rows="2"></textarea></div>
+      <div class="form-field full"><label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-weight:400">
+        <input type="checkbox" id="saConsent" style="margin-top:3px;width:auto">
+        <span>${t("securityApproval.consent","I confirm the passenger details above are accurate and consent to sharing them with the relevant authorities for security clearance.")}</span>
+      </label></div>
     </div>`;
   openModal(t("page.securityApprovalTitle","Security Approval Request"), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
@@ -2459,18 +2467,24 @@ async function openSecurityApprovalForm() {
     const name = document.getElementById("saName").value.trim();
     const phone = document.getElementById("saPhone").value.trim();
     const nationality = document.getElementById("saNationality").value.trim();
-    if (!destCountry || !name || !phone || !nationality) {
+    const passportNo = document.getElementById("saPassportNo").value.trim();
+    const travelDate = document.getElementById("saTravelDate").value;
+    const consent = document.getElementById("saConsent").checked;
+    if (!destCountry || !name || !phone || !nationality || !passportNo) {
       toast(t("toast.validationError","Check required fields"), "error"); return;
+    }
+    if (!consent) {
+      toast(t("securityApproval.consentRequired","Please confirm consent to proceed"), "error"); return;
     }
     document.getElementById("submitSaBtn").disabled = true;
     const res = await apiFetch("/visa-applications", { method: "POST", body: JSON.stringify({
       applicantName: name,
       nationality,
-      passportNumber: "PENDING",
+      passportNumber: passportNo,
       passportExpiry: new Date(Date.now() + 365*24*60*60*1000).toISOString(),
       visaType: "TOURIST",
       destinationCountry: destCountry,
-      travelDate: new Date().toISOString(),
+      travelDate: travelDate ? new Date(travelDate).toISOString() : new Date().toISOString(),
       processingType: "NORMAL",
       phone,
       hotelName: document.getElementById("saHotel").value.trim() || undefined,
@@ -2521,11 +2535,11 @@ async function openAirportAssistForm() {
       <div class="form-field"><label>${t("form.phone","Phone")} *</label>
         <input id="aaPhone" type="tel" placeholder="+20..."></div>
       <div class="form-field"><label>${t("airportAssist.serviceType","Service Type")} *</label>
-        <select id="aaService">
+        <select id="aaService" onchange="aaUpdateQuote()">
           ${serviceTypes.map(s => `<option value="${s}">${s.replace(/_/g," ")}</option>`).join("")}
         </select></div>
       <div class="form-field"><label>${t("th.route","Airport")} *</label>
-        <select id="aaAirport">
+        <select id="aaAirport" onchange="aaUpdateQuote()">
           ${airports.map(a => `<option value="${a}">${a}</option>`).join("")}
         </select></div>
       <div class="form-field"><label>${t("th.name","Flight Number")} *</label>
@@ -2533,7 +2547,12 @@ async function openAirportAssistForm() {
       <div class="form-field"><label>${t("form.date","Flight Date & Time")} *</label>
         <input id="aaDateTime" type="datetime-local"></div>
       <div class="form-field"><label>${t("form.passengers","Number of Guests")}</label>
-        <input id="aaCount" type="number" min="1" value="1"></div>
+        <input id="aaCount" type="number" min="1" value="1" oninput="aaUpdateQuote()"></div>
+      <div class="form-field full">
+        <div id="aaPriceBox" class="stat-card" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px">
+          <span class="stat-label">${t("transport.priceBreakdown","Estimated price")}</span>
+          <strong id="aaPrice" class="numeric" style="font-size:18px">—</strong>
+        </div></div>
       <div class="form-field full"><label>${t("airportAssist.arrivalDeparture","Arrival / Departure Details")}</label>
         <textarea id="aaTravelDetails" rows="2" placeholder="e.g. Arriving from Dubai, connecting to Sharm"></textarea></div>
       <div class="form-field full"><label>${t("airportAssist.ticketUpload","Flight Ticket")} <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
@@ -2566,8 +2585,7 @@ async function openAirportAssistForm() {
       ticketUrl: document.getElementById("aaTicketUrl").value.trim() || undefined,
       travelDetails: document.getElementById("aaTravelDetails").value.trim() || undefined,
       notes: document.getElementById("aaNotes").value.trim() || undefined,
-      totalAmount: 0,
-      currency: "USD",
+      // totalAmount/currency intentionally omitted — resolved server-side from ReceptionServiceRate
     })});
     if (res?.success) {
       closeModal();
@@ -2577,6 +2595,22 @@ async function openAirportAssistForm() {
       document.getElementById("submitAaBtn").disabled = false;
     }
   };
+  aaUpdateQuote();
+}
+
+// Live, server-authoritative price preview for Airport Assist (never a client total).
+async function aaUpdateQuote() {
+  const el = document.getElementById("aaPrice");
+  if (!el) return;
+  const serviceType = document.getElementById("aaService")?.value;
+  const airport = document.getElementById("aaAirport")?.value;
+  const pax = Math.max(1, parseInt(document.getElementById("aaCount")?.value || "1"));
+  if (!serviceType || !airport) { el.textContent = "—"; return; }
+  const res = await apiFetch(`/airport-receptions/quote?serviceType=${encodeURIComponent(serviceType)}&airport=${encodeURIComponent(airport)}&pax=${pax}`);
+  if (!res?.data) { el.textContent = "—"; return; }
+  el.textContent = (res.data.found && res.data.totalAmount > 0)
+    ? formatMoney(res.data.totalAmount, res.data.currency)
+    : t("transport.priceOnRequest", "Price on request");
 }
 
 // ─── SIM Card ─────────────────────────────────────────────────────────────────

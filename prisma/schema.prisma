@@ -610,6 +610,8 @@ model Invoice {
   activityBooking    ActivityBooking? @relation(fields: [activityBookingId], references: [id], onDelete: Restrict)
   transportBookingId String?          @unique
   transportBooking   TransportBooking? @relation(fields: [transportBookingId], references: [id], onDelete: Restrict)
+  airportReceptionId String?          @unique
+  airportReception   AirportReception? @relation(fields: [airportReceptionId], references: [id], onDelete: Restrict)
   companyId          String
   company            Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
   subtotal           Decimal          @db.Decimal(12, 2)
@@ -983,6 +985,7 @@ model AirportReception {
   status          BookingStatus @default(PENDING)
   notes           String?
   customFields    Json?         // dynamic fields captured by the Request Form Builder template
+  invoice         Invoice?
   requestedAt     DateTime      @default(now())
   confirmedAt     DateTime?
   confirmedById   String?

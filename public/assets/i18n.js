@@ -826,6 +826,9 @@
     types: "Approval Type", selectType: "Select approval type",
     priceNote: "Price is set per person by admin",
     uploadNote: "Upload passport and flight ticket to proceed",
+    passportNumber: "Passport Number", travelDate: "Arrival / Travel Date",
+    consent: "I confirm the passenger details above are accurate and consent to sharing them with the relevant authorities for security clearance.",
+    consentRequired: "Please confirm consent to proceed",
   };
   ar.securityApproval = {
     sharm: "شرم الشيخ", cairo: "القاهرة", borgElArab: "برج العرب",
@@ -834,6 +837,9 @@
     types: "نوع الموافقة", selectType: "اختر نوع الموافقة",
     priceNote: "السعر محدد للشخص الواحد من الإدارة",
     uploadNote: "رفع جواز السفر وتذكرة الطيران للمتابعة",
+    passportNumber: "رقم جواز السفر", travelDate: "تاريخ الوصول / السفر",
+    consent: "أؤكد أن بيانات المسافر أعلاه صحيحة وأوافق على مشاركتها مع الجهات المختصة للحصول على الموافقة الأمنية.",
+    consentRequired: "يرجى تأكيد الموافقة للمتابعة",
   };
 
   // ── Airport Assist form ────────────────────────────────────────────────────

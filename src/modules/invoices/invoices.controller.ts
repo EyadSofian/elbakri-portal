@@ -36,6 +36,15 @@ const invoiceInclude = {
       company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
     },
   },
+  airportReception: {
+    select: {
+      id: true, refNumber: true, serviceType: true, airport: true,
+      flightNumber: true, flightDateTime: true, guestName: true, guestCount: true,
+      totalAmount: true, currency: true,
+      requestedAt: true, confirmedAt: true,
+      company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
+    },
+  },
 };
 
 export async function listInvoices(req: Request, res: Response): Promise<void> {
@@ -100,11 +109,12 @@ export async function consolidatedInvoice(req: Request, res: Response): Promise<
   }
 
   const lines: ConsolidatedLine[] = invoices.map((inv) => {
-    const ref = inv.booking?.refNumber ?? inv.activityBooking?.refNumber ?? inv.transportBooking?.refNumber ?? '';
+    const ref = inv.booking?.refNumber ?? inv.activityBooking?.refNumber ?? inv.transportBooking?.refNumber ?? inv.airportReception?.refNumber ?? '';
     let service = 'Service';
     if (inv.booking) service = `${inv.booking.hotel?.name ?? inv.booking.type ?? 'Hotel'}`;
     else if (inv.activityBooking) service = `Activity: ${inv.activityBooking.activity?.name ?? ''}`.trim();
     else if (inv.transportBooking) service = `Transport: ${inv.transportBooking.fromLocation} → ${inv.transportBooking.toLocation}`;
+    else if (inv.airportReception) service = `Airport Assist: ${inv.airportReception.serviceType.replace(/_/g, ' ')} (${inv.airportReception.airport})`;
     return {
       invoiceNumber: inv.invoiceNumber,
       refNumber: ref,
