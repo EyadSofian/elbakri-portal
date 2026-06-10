@@ -26,7 +26,10 @@ function cookieOptions() {
 export async function login(req: Request, res: Response): Promise<void> {
   const { email, password } = req.body as { email: string; password: string };
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    include: { company: { select: { isActive: true } } },
+  });
   if (!user || !user.isActive) {
     res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Invalid credentials' });
     return;
@@ -35,6 +38,13 @@ export async function login(req: Request, res: Response): Promise<void> {
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) {
     res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Invalid credentials' });
+    return;
+  }
+
+  // Block users whose company has been deactivated (covers both delete- and
+  // update-based deactivation; access is restored automatically on reactivation).
+  if (user.companyId && user.company && !user.company.isActive) {
+    res.status(403).json({ success: false, error: 'COMPANY_INACTIVE', message: 'Your company account is inactive. Please contact support.' });
     return;
   }
 
@@ -78,9 +88,16 @@ export async function refresh(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const stored = await prisma.refreshToken.findUnique({ where: { token }, include: { user: true } });
+  const stored = await prisma.refreshToken.findUnique({
+    where: { token },
+    include: { user: { include: { company: { select: { isActive: true } } } } },
+  });
   if (!stored || stored.expiresAt < new Date() || !stored.user.isActive) {
     res.status(401).json({ success: false, error: 'UNAUTHORIZED' });
+    return;
+  }
+  if (stored.user.companyId && stored.user.company && !stored.user.company.isActive) {
+    res.status(403).json({ success: false, error: 'COMPANY_INACTIVE' });
     return;
   }
 
