@@ -133,6 +133,7 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
     return {
       ...hotelData,
       pricePerNight: showPrice ? marketPrice : null,
+      currency: marketOverrides.has(hotel.id) ? 'USD' : hotel.currency,
       priceVisible: showPrice,
       canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,
     };
@@ -205,6 +206,7 @@ export async function getHotel(req: Request, res: Response): Promise<void> {
     data: {
       ...hotelData,
       pricePerNight: showPrice ? marketPrice : null,
+      currency: marketOverrides.has(hotel.id) ? 'USD' : hotel.currency,
       pricing: showPrice ? hotel.pricing : [],
       priceVisible: showPrice,
       canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,

@@ -4,6 +4,9 @@ import { prisma } from '../../config/db';
 import { generateBookingRef, generateInvoiceNumber, paginate, paginateMeta } from '../../shared/helpers';
 import { sendEmail, bookingConfirmationEmail, bookingRequestEmail, bookingStatusEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
+import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { resolveMarketMoney } from '../../shared/pricing';
+import { buildInvoiceTotals } from '../../shared/invoicing';
 
 const bookingInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -72,11 +75,11 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
 
   // Hotel and Package bookings are now handled via QuoteRequest — not direct booking creation.
   // Only FLIGHT bookings (or SUPERADMIN manual overrides) can still use this endpoint.
-  if ((body.type === 'HOTEL' || body.type === 'PACKAGE') && caller.role !== 'SUPERADMIN') {
+  if (caller.role !== 'SUPERADMIN') {
     res.status(400).json({
       success: false,
       error: 'USE_QUOTE_REQUEST',
-      message: 'Hotel and package bookings must be submitted as quote requests. Use POST /api/quote-requests instead.',
+      message: 'Company users must submit quote requests. Use POST /api/quote-requests instead.',
     });
     return;
   }
@@ -87,94 +90,102 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
     return;
   }
 
-  const discount = new Decimal(body.discount ?? 0);
-
   let result: { booking: { id: string; refNumber: string } };
 
   try {
-    result = await prisma.$transaction(async (tx) => {
-      const company = await tx.company.findUniqueOrThrow({
-        where: { id: companyId },
-        select: { balance: true, creditLimit: true, isActive: true },
+    const company = await prisma.company.findUniqueOrThrow({
+      where: { id: companyId },
+      select: { isActive: true, market: true, currency: true },
+    });
+    if (!company.isActive) throw new Error('COMPANY_INACTIVE');
+
+    const adultsCount = body.adultsCount ?? 1;
+    const childrenCount = body.childrenCount ?? 0;
+    const infantsCount = body.infantsCount ?? 0;
+    const hotelId = body.hotelId;
+    const roomId = body.roomId;
+    const checkIn = parseDateInput(body.checkIn);
+    const checkOut = parseDateInput(body.checkOut);
+    const departureDate = parseDateInput(body.departureDate);
+    const returnDate = parseDateInput(body.returnDate);
+    let nights = body.nights ?? null;
+    let roomsCount = body.roomsCount ?? 1;
+    let sourceBaseAmount = new Decimal(0);
+    let sourceCurrency = String(body.currency ?? 'USD').toUpperCase();
+    let commissionPercent = new Decimal(0);
+    let availableRooms = 0;
+
+    if (body.type === 'HOTEL') {
+      if (!hotelId) throw new Error('HOTEL_REQUIRED');
+      if (!checkIn || !checkOut || checkOut <= checkIn) throw new Error('INVALID_HOTEL_DATES');
+      const hotel = await prisma.hotel.findUnique({
+        where: { id: hotelId },
+        select: {
+          id: true,
+          pricePerNight: true,
+          currency: true,
+          commissionPercent: true,
+          availableRooms: true,
+          maxGuestsPerRoom: true,
+          isActive: true,
+        },
       });
+      if (!hotel?.isActive) throw new Error('HOTEL_NOT_AVAILABLE');
+      const datedPrice = await prisma.hotelPricing.findFirst({
+        where: {
+          hotelId,
+          isActive: true,
+          validFrom: { lte: checkIn },
+          validTo: { gte: checkOut },
+        },
+        orderBy: { pricePerNight: 'asc' },
+      });
+      nights = nightsBetween(checkIn, checkOut);
+      roomsCount = Math.max(
+        1,
+        Math.ceil(Math.max(1, adultsCount + childrenCount) / Math.max(1, hotel.maxGuestsPerRoom || 2)),
+      );
+      const marketMoney = await resolveMarketMoney(
+        'HOTEL',
+        hotel.id,
+        company.market,
+        datedPrice?.pricePerNight ?? hotel.pricePerNight,
+        datedPrice?.currency ?? hotel.currency ?? 'USD',
+      );
+      sourceBaseAmount = marketMoney.amount.mul(nights).mul(roomsCount);
+      sourceCurrency = marketMoney.currency;
+      commissionPercent = hotel.commissionPercent ?? new Decimal(0);
+      availableRooms = hotel.availableRooms ?? 0;
+    } else {
+      if (!body.baseAmount || body.baseAmount <= 0) throw new Error('BASE_AMOUNT_REQUIRED');
+      sourceBaseAmount = new Decimal(body.baseAmount);
+    }
 
-      if (!company.isActive) throw new Error('COMPANY_INACTIVE');
+    const sourceCommission = sourceBaseAmount.mul(commissionPercent).div(100);
+    const sourceDiscount = new Decimal(body.discount ?? 0);
+    const sourceTotal = sourceBaseAmount.add(sourceCommission).sub(sourceDiscount);
+    if (sourceTotal.lte(0)) throw new Error('INVALID_TOTAL');
+    const charge = await convertMoney(sourceTotal, sourceCurrency, company.currency);
+    const baseAmount = sourceBaseAmount.mul(charge.exchangeRate).toDecimalPlaces(2);
+    const commissionAmount = sourceCommission.mul(charge.exchangeRate).toDecimalPlaces(2);
+    const discount = sourceDiscount.mul(charge.exchangeRate).toDecimalPlaces(2);
+    const refNumber = await generateBookingRef(prisma);
 
-      const adultsCount = body.adultsCount ?? 1;
-      const childrenCount = body.childrenCount ?? 0;
-      const infantsCount = body.infantsCount ?? 0;
-      let hotelId = body.hotelId;
-      let roomId = body.roomId;
-      let checkIn = parseDateInput(body.checkIn);
-      let checkOut = parseDateInput(body.checkOut);
-      let departureDate = parseDateInput(body.departureDate);
-      let returnDate = parseDateInput(body.returnDate);
-      let nights = body.nights ?? null;
-      let roomsCount = body.roomsCount ?? 1;
-      let baseAmount = new Decimal(0);
-      let commissionPercent = new Decimal(0);
-      let commissionAmount = new Decimal(0);
-      let currency = body.currency ?? 'USD';
-
-      if (body.type === 'HOTEL') {
-        if (!hotelId) throw new Error('HOTEL_REQUIRED');
-        if (!checkIn || !checkOut || checkOut <= checkIn) throw new Error('INVALID_HOTEL_DATES');
-
-        const hotel = await tx.hotel.findUnique({
-          where: { id: hotelId },
-          select: {
-            id: true,
-            name: true,
-            pricePerNight: true,
-            currency: true,
-            commissionPercent: true,
-            availableRooms: true,
-            maxGuestsPerRoom: true,
-            isActive: true,
-          },
-        });
-
-        if (!hotel || !hotel.isActive) throw new Error('HOTEL_NOT_AVAILABLE');
-
-        const datedPrice = await tx.hotelPricing.findFirst({
+    result = await prisma.$transaction(async (tx) => {
+      if (body.type === 'HOTEL' && hotelId && checkIn && checkOut && availableRooms > 0) {
+        const occupied = await tx.booking.aggregate({
+          _sum: { roomsCount: true },
           where: {
             hotelId,
-            isActive: true,
-            validFrom: { lte: checkIn },
-            validTo: { gte: checkOut },
+            status: { in: ['PENDING', 'CONFIRMED', 'COMPLETED'] },
+            checkIn: { lt: checkOut },
+            checkOut: { gt: checkIn },
           },
-          orderBy: { pricePerNight: 'asc' },
         });
-
-        nights = nightsBetween(checkIn, checkOut);
-        roomsCount = Math.max(1, Math.ceil(Math.max(1, adultsCount + childrenCount) / Math.max(1, hotel.maxGuestsPerRoom || 2)));
-        const nightlyRate = datedPrice?.pricePerNight ?? hotel.pricePerNight;
-        currency = datedPrice?.currency ?? hotel.currency ?? 'USD';
-        baseAmount = nightlyRate.mul(nights).mul(roomsCount);
-        commissionPercent = hotel.commissionPercent ?? new Decimal(0);
-        commissionAmount = baseAmount.mul(commissionPercent).div(100);
-
-        if ((hotel.availableRooms ?? 0) > 0) {
-          const occupied = await tx.booking.aggregate({
-            _sum: { roomsCount: true },
-            where: {
-              hotelId,
-              status: { in: ['PENDING', 'CONFIRMED', 'COMPLETED'] },
-              checkIn: { lt: checkOut },
-              checkOut: { gt: checkIn },
-            },
-          });
-          const occupiedRooms = occupied._sum.roomsCount ?? 0;
-          if (occupiedRooms + roomsCount > hotel.availableRooms) throw new Error('HOTEL_NOT_AVAILABLE');
+        if ((occupied._sum.roomsCount ?? 0) + roomsCount > availableRooms) {
+          throw new Error('HOTEL_NOT_AVAILABLE');
         }
-      } else {
-        if (!body.baseAmount || body.baseAmount <= 0) throw new Error('BASE_AMOUNT_REQUIRED');
-        baseAmount = new Decimal(body.baseAmount);
       }
-
-      const totalAmount = baseAmount.add(commissionAmount).sub(discount);
-      if (totalAmount.lte(0)) throw new Error('INVALID_TOTAL');
-      const refNumber = await generateBookingRef(prisma);
 
       const booking = await tx.booking.create({
         data: {
@@ -203,20 +214,21 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
           commissionPercent,
           commissionAmount,
           discount,
-          totalAmount,
-          currency,
+          totalAmount: charge.totalAmount,
+          currency: charge.currency,
+          sourceAmount: charge.sourceAmount,
+          sourceCurrency: charge.sourceCurrency,
+          exchangeRate: charge.exchangeRate,
+          exchangeRateAt: charge.exchangeRateAt,
           notes: body.notes,
         },
       });
-
       return { booking };
     });
   } catch (err) {
     const message = String((err as Error).message);
     if (message === 'COMPANY_INACTIVE') {
       res.status(400).json({ success: false, error: 'COMPANY_INACTIVE', message: 'Company account is inactive' });
-    } else if (message === 'INSUFFICIENT_BALANCE') {
-      res.status(400).json({ success: false, error: 'INSUFFICIENT_BALANCE', message: 'Insufficient wallet balance' });
     } else if (['HOTEL_REQUIRED', 'INVALID_DATE', 'INVALID_HOTEL_DATES', 'BASE_AMOUNT_REQUIRED', 'INVALID_TOTAL'].includes(message)) {
       res.status(400).json({ success: false, error: message, message: 'Please complete the booking details' });
     } else if (message === 'HOTEL_NOT_AVAILABLE') {
@@ -246,6 +258,10 @@ export async function getBooking(req: Request, res: Response): Promise<void> {
 
   if (!booking) {
     res.status(404).json({ success: false, error: 'NOT_FOUND' });
+    return;
+  }
+  if (req.user!.role !== 'SUPERADMIN' && booking.companyId !== req.user!.companyId) {
+    res.status(403).json({ success: false, error: 'FORBIDDEN' });
     return;
   }
 
@@ -307,18 +323,22 @@ export async function confirmBooking(req: Request, res: Response): Promise<void>
           },
         });
 
-        const subtotal = booking.totalAmount;
-        const taxAmount = subtotal.mul(new Decimal('0.14'));
-        const total = subtotal.add(taxAmount);
+        const invoiceTotals = buildInvoiceTotals(booking.totalAmount);
         await tx.invoice.create({
           data: {
             invoiceNumber,
             bookingId: booking.id,
             companyId: booking.companyId,
-            subtotal,
-            taxAmount,
-            total,
+            ...invoiceTotals,
             currency: booking.currency,
+            ...invoiceMoneySnapshotData({
+              sourceAmount: booking.sourceAmount ?? booking.totalAmount,
+              sourceCurrency: booking.sourceCurrency ?? booking.currency,
+              totalAmount: booking.totalAmount,
+              currency: booking.currency,
+              exchangeRate: booking.exchangeRate ?? new Decimal(1),
+              exchangeRateAt: booking.exchangeRateAt ?? booking.createdAt,
+            }),
             dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
           },
         });
@@ -382,12 +402,31 @@ export async function cancelBooking(req: Request, res: Response): Promise<void> 
     include: { invoice: true },
   });
 
+  if (caller.role !== 'SUPERADMIN' && booking.companyId !== caller.companyId) {
+    res.status(403).json({ success: false, error: 'FORBIDDEN' });
+    return;
+  }
+
   if (caller.role !== 'SUPERADMIN' && booking.status !== 'PENDING') {
     res.status(400).json({ success: false, error: 'INVALID_STATUS', message: 'Can only cancel PENDING bookings' });
     return;
   }
+  if (!['PENDING', 'CONFIRMED'].includes(booking.status)) {
+    res.status(400).json({ success: false, error: 'INVALID_STATUS', message: 'Only pending or confirmed bookings can be cancelled' });
+    return;
+  }
 
-  if (['CONFIRMED', 'PENDING'].includes(booking.status) && booking.invoice && booking.invoice.status !== 'CANCELLED') {
+  const [debit, priorRefund] = await Promise.all([
+    prisma.walletTransaction.findFirst({
+      where: { reference: booking.refNumber, type: 'DEBIT' },
+      select: { id: true },
+    }),
+    prisma.walletTransaction.findFirst({
+      where: { reference: booking.refNumber, type: 'REFUND' },
+      select: { id: true },
+    }),
+  ]);
+  if (debit && !priorRefund) {
     await prisma.$transaction(async (tx) => {
       const company = await tx.company.findUniqueOrThrow({ where: { id: booking.companyId } });
       const balanceBefore = company.balance;
@@ -406,17 +445,19 @@ export async function cancelBooking(req: Request, res: Response): Promise<void> 
           createdById: caller.id,
         },
       });
-      await tx.invoice.updateMany({
-        where: { bookingId: booking.id },
-        data: { status: 'CANCELLED' },
-      });
     });
   }
 
-  const updated = await prisma.booking.update({
-    where: { id: req.params.id },
-    data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason },
-    include: bookingInclude,
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.invoice.updateMany({
+      where: { bookingId: booking.id },
+      data: { status: 'CANCELLED' },
+    });
+    return tx.booking.update({
+      where: { id: req.params.id },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason },
+      include: bookingInclude,
+    });
   });
 
   const { subject, html } = bookingStatusEmail(updated, 'CANCELLED');
@@ -441,7 +482,17 @@ export async function rejectBooking(req: Request, res: Response): Promise<void> 
     return;
   }
 
-  if (booking.invoice && booking.invoice.status !== 'CANCELLED') {
+  const [debit, priorRefund] = await Promise.all([
+    prisma.walletTransaction.findFirst({
+      where: { reference: booking.refNumber, type: 'DEBIT' },
+      select: { id: true },
+    }),
+    prisma.walletTransaction.findFirst({
+      where: { reference: booking.refNumber, type: 'REFUND' },
+      select: { id: true },
+    }),
+  ]);
+  if (debit && !priorRefund) {
     await prisma.$transaction(async (tx) => {
       const company = await tx.company.findUniqueOrThrow({ where: { id: booking.companyId } });
       const balanceBefore = company.balance;
@@ -460,17 +511,19 @@ export async function rejectBooking(req: Request, res: Response): Promise<void> 
           createdById: caller.id,
         },
       });
-      await tx.invoice.updateMany({
-        where: { bookingId: booking.id },
-        data: { status: 'CANCELLED' },
-      });
     });
   }
 
-  const updated = await prisma.booking.update({
-    where: { id: req.params.id },
-    data: { status: 'REJECTED', cancelledAt: new Date(), cancellationReason: reason || 'Rejected by admin' },
-    include: bookingInclude,
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.invoice.updateMany({
+      where: { bookingId: booking.id },
+      data: { status: 'CANCELLED' },
+    });
+    return tx.booking.update({
+      where: { id: req.params.id },
+      data: { status: 'REJECTED', cancelledAt: new Date(), cancellationReason: reason || 'Rejected by admin' },
+      include: bookingInclude,
+    });
   });
 
   const { subject, html } = bookingStatusEmail(updated, 'REJECTED');

@@ -81,7 +81,7 @@
       servicesTitle: "الخدمات",
       servicesSub: "إدارة وبيع خدمات السفر الأساسية",
       calculatorsTitle: "الحاسبات",
-      calculatorsSub: "أدوات التسعير والعمولات والعملات",
+      calculatorsSub: "تحويل العملات بأسعار صرف محدثة",
       destinationsTitle: "الوجهات",
       destinationsSub: "إدارة الوجهات والمناطق السياحية الديناميكية",
       quoteRequestsTitle: "طلبات الأسعار",
@@ -102,6 +102,7 @@
       markup: "هامش الربح",
       vsMonth: "مقارنة بالشهر الماضي",
       allTime: "كل الفترات",
+      confirmedOnly: "الطلبات المؤكدة فقط",
       monthToDate: "منذ بداية الشهر",
       today: "اليوم",
       lastThirty: "آخر 30 يوم",
@@ -567,14 +568,14 @@
       walletTitle: "Wallet", walletSub: "Balance movements and adjustments",
       reportsTitle: "Reports", reportsSub: "Revenue and performance by company and service",
       servicesTitle: "Services", servicesSub: "Manage and sell travel services",
-      calculatorsTitle: "Calculators", calculatorsSub: "Pricing, commission and currency tools",
+      calculatorsTitle: "Currency Converter", calculatorsSub: "Currency conversion with updated exchange rates",
       destinationsTitle: "Destinations", destinationsSub: "Manage dynamic travel destinations and areas",
       quoteRequestsTitle: "Quote Requests", quoteRequestsSub: "Price requests submitted by agents",
     },
     stat: {
       totalBookings: "Total Bookings", totalRevenue: "Total Revenue", pending: "Pending", activeCompanies: "Active Companies",
       activeUsers: "Active Users", walletExposure: "Wallet Exposure", hotels: "Hotels", services: "Services", invoicesDue: "Invoices Due",
-      cancellations: "Cancellations", commission: "Commission", markup: "Markup", vsMonth: "vs last month", allTime: "All time",
+      cancellations: "Cancellations", commission: "Commission", markup: "Markup", vsMonth: "vs last month", allTime: "All time", confirmedOnly: "Confirmed requests only",
       monthToDate: "Month to date", today: "Today", lastThirty: "Last 30 days",
     },
     th: {
@@ -1120,6 +1121,35 @@
 
   en.validation.childAges = "Please enter all children ages";
   ar.validation.childAges = "يرجى إدخال أعمار جميع الأطفال";
+
+  en.transport.serviceType = "Service Type";
+  ar.transport.serviceType = "نوع الخدمة";
+  en.pricing = Object.assign({}, en.pricing, { fixed: "fixed" });
+  ar.pricing = Object.assign({}, ar.pricing, { fixed: "ثابت" });
+  en.market = Object.assign({}, en.market, { INTERNATIONAL: "International" });
+  ar.market = Object.assign({}, ar.market, { INTERNATIONAL: "دولي" });
+  en.invoice = Object.assign({}, en.invoice, {
+    consolidated: "Consolidated Statements",
+    individualHelp: "Individual service invoices",
+    consolidatedCompanyHelp: "Download a combined PDF or Excel statement prepared by the admin.",
+    loadEligible: "Choose a company, then load eligible invoices.",
+    noneEligible: "No unconsolidated invoices match these filters.",
+    eligible: "eligible invoices",
+    items: "items",
+  });
+  ar.invoice = Object.assign({}, ar.invoice, {
+    consolidated: "الفواتير المجمعة",
+    individualHelp: "فواتير الخدمات الفردية",
+    consolidatedCompanyHelp: "نزّل كشفاً مجمعاً بصيغة PDF أو Excel أعدته الإدارة.",
+    loadEligible: "اختر شركة ثم حمّل الفواتير المتاحة للتجميع.",
+    noneEligible: "لا توجد فواتير غير مجمعة تطابق هذه الفلاتر.",
+    eligible: "فاتورة متاحة",
+    items: "بنود",
+  });
+  en.btn = Object.assign({}, en.btn, { load: "Load Invoices", selectAll: "Select All" });
+  ar.btn = Object.assign({}, ar.btn, { load: "تحميل الفواتير", selectAll: "تحديد الكل" });
+  en.th = Object.assign({}, en.th, { period: "Period" });
+  ar.th = Object.assign({}, ar.th, { period: "الفترة" });
 
   const dict = { en, ar };
 

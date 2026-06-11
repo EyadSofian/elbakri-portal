@@ -9,9 +9,9 @@ function header(): string {
   return `
     <div style="background:#1B2B6B;padding:24px 32px;display:flex;justify-content:space-between;align-items:center;">
       <div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:1px;">ELBAKRI OVERSEAS</div>
-      <div style="color:#C4920A;font-size:13px;font-weight:600;">EST. 1982</div>
+      <div style="color:#67E8F9;font-size:13px;font-weight:600;">EST. 1982</div>
     </div>
-    <div style="height:4px;background:#C4920A;"></div>`;
+    <div style="height:4px;background:#0891B2;"></div>`;
 }
 
 function footer(): string {
@@ -88,7 +88,7 @@ export function bookingRequestEmail(booking: {
   return {
     subject: `New Booking Request - ${booking.refNumber}`,
     html: wrap(`
-      <h2 style="color:#C4920A;">New booking request pending approval</h2>
+      <h2 style="color:#0E7490;">New booking request pending approval</h2>
       <p style="color:#666;">طلب حجز جديد يحتاج مراجعة الأدمن - ${booking.refNumber}</p>
       <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
       <table style="width:100%;border-collapse:collapse;">

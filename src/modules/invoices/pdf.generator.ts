@@ -91,6 +91,41 @@ interface InvoiceData {
     currency: string;
     company: CompanyInfo;
   } | null;
+  cruiseBooking?: {
+    refNumber: string;
+    requestedAt: Date;
+    confirmedAt?: Date | null;
+    checkIn: Date;
+    checkOut: Date;
+    adultsCount: number;
+    childrenCount: number;
+    totalAmount: unknown;
+    currency: string;
+    company: CompanyInfo;
+    cruise: { name: string; route: string } | null;
+  } | null;
+  visaApplication?: {
+    refNumber: string;
+    requestedAt: Date;
+    confirmedAt?: Date | null;
+    applicantName: string;
+    destinationCountry: string;
+    paxCount: number;
+    totalAmount: unknown;
+    currency: string;
+    company: CompanyInfo;
+  } | null;
+  simRequest?: {
+    refNumber: string;
+    requestedAt: Date;
+    confirmedAt?: Date | null;
+    clientName: string;
+    quantity: number;
+    totalAmount: unknown;
+    currency: string;
+    company: CompanyInfo;
+    package: { name: string } | null;
+  } | null;
 }
 
 function lifecycleDetails(requestedAt: Date, confirmedAt?: Date | null): string {
@@ -164,6 +199,49 @@ function buildServiceLines(data: InvoiceData): ServiceLine[] {
     }];
   }
 
+  if (data.cruiseBooking) {
+    const booking = data.cruiseBooking;
+    const description = `Nile Cruise - ${booking.refNumber}${lifecycleDetails(booking.requestedAt, booking.confirmedAt)}
+${booking.cruise?.name ?? 'Cruise'} | ${booking.cruise?.route?.replace(/_/g, ' ') ?? ''}
+${new Date(booking.checkIn).toLocaleDateString('en-GB')} - ${new Date(booking.checkOut).toLocaleDateString('en-GB')}`;
+    return [{
+      description,
+      quantity: booking.adultsCount + booking.childrenCount,
+      unitLabel: 'pax',
+      unitPrice: `${String(booking.totalAmount)} ${booking.currency}`,
+      amount: `${String(booking.totalAmount)} ${booking.currency}`,
+      currency: booking.currency,
+    }];
+  }
+
+  if (data.visaApplication) {
+    const application = data.visaApplication;
+    const description = `Security Approval - ${application.refNumber}${lifecycleDetails(application.requestedAt, application.confirmedAt)}
+${application.applicantName} | ${application.destinationCountry}`;
+    return [{
+      description,
+      quantity: application.paxCount,
+      unitLabel: 'passenger(s)',
+      unitPrice: `${String(application.totalAmount)} ${application.currency}`,
+      amount: `${String(application.totalAmount)} ${application.currency}`,
+      currency: application.currency,
+    }];
+  }
+
+  if (data.simRequest) {
+    const request = data.simRequest;
+    const description = `SIM Card - ${request.refNumber}${lifecycleDetails(request.requestedAt, request.confirmedAt)}
+${request.package?.name ?? 'SIM package'} | Client: ${request.clientName}`;
+    return [{
+      description,
+      quantity: request.quantity,
+      unitLabel: 'SIM(s)',
+      unitPrice: `${String(request.totalAmount)} ${request.currency}`,
+      amount: `${String(request.totalAmount)} ${request.currency}`,
+      currency: request.currency,
+    }];
+  }
+
   return [{
     description: 'Service',
     quantity: 1,
@@ -180,6 +258,9 @@ function resolveCompany(data: InvoiceData): CompanyInfo {
     ?? data.activityBooking?.company
     ?? data.transportBooking?.company
     ?? data.airportReception?.company
+    ?? data.cruiseBooking?.company
+    ?? data.visaApplication?.company
+    ?? data.simRequest?.company
     ?? { name: 'N/A', email: '', phone: '' };
 }
 
@@ -188,6 +269,9 @@ function resolveRefNumber(data: InvoiceData): string {
     ?? data.activityBooking?.refNumber
     ?? data.transportBooking?.refNumber
     ?? data.airportReception?.refNumber
+    ?? data.cruiseBooking?.refNumber
+    ?? data.visaApplication?.refNumber
+    ?? data.simRequest?.refNumber
     ?? '';
 }
 
@@ -238,7 +322,7 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
     });
 
     const NAVY = '#1B2B6B';
-    const GOLD = '#C4920A';
+    const ACCENT = '#0891B2';
     const GRAY = '#666666';
     const pageW = doc.page.width;
 
@@ -246,7 +330,7 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
       doc.rect(0, 0, pageW, 80).fill(NAVY);
       doc.fillColor('#ffffff').fontSize(22).font('Helvetica-Bold').text('ELBAKRI OVERSEAS', 50, 28);
       doc.fontSize(10).font('Helvetica').text('EST. 1982', pageW - 120, 35, { width: 70, align: 'right' });
-      doc.rect(0, 80, pageW, 4).fill(GOLD);
+      doc.rect(0, 80, pageW, 4).fill(ACCENT);
       doc.fillColor(GRAY).fontSize(9).font('Helvetica')
         .text('Cairo, Egypt  |  +20 2 XXXX XXXX  |  bookings@elbakri.com', 50, 94);
     };
@@ -265,7 +349,7 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
 
     drawHeader();
     doc.fillColor(NAVY).fontSize(18).font('Helvetica-Bold').text('CONSOLIDATED STATEMENT', 50, 130);
-    doc.fillColor(GOLD).fontSize(11).font('Helvetica').text('ELBAKRI OVERSEAS — INVOICE STATEMENT', 50, 153);
+    doc.fillColor(ACCENT).fontSize(11).font('Helvetica').text('ELBAKRI OVERSEAS — INVOICE STATEMENT', 50, 153);
 
     // Meta (right)
     const metaX = pageW - 250;
@@ -366,7 +450,7 @@ export async function generateInvoicePdf(invoice: InvoiceData): Promise<{ path: 
     });
 
     const NAVY = '#1B2B6B';
-    const GOLD = '#C4920A';
+    const ACCENT = '#0891B2';
     const GRAY = '#666666';
     const pageW = doc.page.width;
 
@@ -377,8 +461,8 @@ export async function generateInvoicePdf(invoice: InvoiceData): Promise<{ path: 
     doc.fontSize(10).font('Helvetica')
       .text('EST. 1982', pageW - 120, 35, { width: 70, align: 'right' });
 
-    // Gold divider
-    doc.rect(0, 80, pageW, 4).fill(GOLD);
+    // Brand accent divider
+    doc.rect(0, 80, pageW, 4).fill(ACCENT);
 
     // Sub-header
     doc.fillColor(GRAY).fontSize(9).font('Helvetica')
@@ -386,7 +470,7 @@ export async function generateInvoicePdf(invoice: InvoiceData): Promise<{ path: 
 
     // Invoice title
     doc.fillColor(NAVY).fontSize(18).font('Helvetica-Bold').text('TAX INVOICE', 50, 130);
-    doc.fillColor(GOLD).fontSize(11).font('Helvetica')
+    doc.fillColor(ACCENT).fontSize(11).font('Helvetica')
       .text('ELBAKRI OVERSEAS — INVOICE', 50, 153);
 
     // Invoice meta table (right side)
@@ -452,7 +536,9 @@ export async function generateInvoicePdf(invoice: InvoiceData): Promise<{ path: 
     const totalsX = pageW - 250;
     const totals = [
       ['Subtotal', `${String(invoice.subtotal)} ${invoice.currency}`],
-      [`VAT (${(Number(invoice.taxRate) * 100).toFixed(0)}%)`, `${String(invoice.taxAmount)} ${invoice.currency}`],
+      ...(Number(invoice.taxRate) > 0
+        ? [[`VAT (${(Number(invoice.taxRate) * 100).toFixed(0)}%)`, `${String(invoice.taxAmount)} ${invoice.currency}`]]
+        : []),
     ];
 
     doc.moveTo(totalsX, y).lineTo(pageW - 50, y).stroke('#ccc');
@@ -473,7 +559,7 @@ export async function generateInvoicePdf(invoice: InvoiceData): Promise<{ path: 
     // Payment info
     y += 40;
     if (y < doc.page.height - 120) {
-      doc.rect(50, y, pageW - 100, 60).fill('#FCF4DD').stroke(GOLD);
+      doc.rect(50, y, pageW - 100, 60).fill('#ECFEFF').stroke(ACCENT);
       doc.fillColor(NAVY).fontSize(10).font('Helvetica-Bold').text('PAYMENT INFORMATION', 62, y + 10);
       doc.fillColor(GRAY).fontSize(8).font('Helvetica')
         .text('Bank: Elbakri Overseas Bank Account  |  Account: XXXX-XXXX-XXXX', 62, y + 28)

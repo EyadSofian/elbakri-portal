@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/portal.css">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="/assets/i18n.js"></script>
 </head>
 <body>
@@ -254,6 +254,32 @@ async function downloadInvoicePdf(id) {
   }
 }
 
+async function downloadAuthenticatedFile(path, fallbackName) {
+  const token = localStorage.getItem("accessToken");
+  try {
+    const res = await fetch(`/api${path}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      throw new Error(json?.message || json?.error || "Download failed");
+    }
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = match?.[1] || fallbackName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    toast(err.message || "Download failed", "error");
+  }
+}
+
 function toast(message, type = "") {
   const el = document.getElementById("toast");
   el.textContent = message;
@@ -492,7 +518,7 @@ async function renderDashboard() {
   content(pageHeader(`<button class="btn btn-outline" onclick="renderDashboard()">${icon("refresh-cw")}${t("btn.refresh")}</button>`) + `
     <div class="stats-grid">
       ${statCard("stat.totalBookings", d.totalBookings || 0, "stat.allTime", "briefcase-business")}
-      ${statCard("stat.totalRevenue", formatMoney(d.totalRevenue || 0, "USD"), "stat.monthToDate", "banknote")}
+      ${statCard("stat.totalRevenue", formatRevenueSummary(d.totalRevenueByCurrency, d.totalRevenue, d.reportCurrency), "stat.confirmedOnly", "banknote")}
       ${statCard("stat.pending", d.pendingBookings || 0, "toast.validationError", "clock")}
       ${statCard("stat.activeCompanies", d.activeCompanies || 0, "status.ACTIVE", "building-2")}
       ${statCard("topbar.platformWallet", formatMoney(platformBalance, platformWallet.currency || "USD"), "stat.walletExposure", "wallet")}
@@ -521,6 +547,14 @@ function statCard(labelKey, value, subKey, iconName) {
     <div class="stat-value">${value}</div>
     <div class="stat-sub">${t(subKey)}</div>
   </div>`;
+}
+
+function formatRevenueSummary(revenueByCurrency, fallbackAmount = 0, fallbackCurrency = "USD") {
+  const entries = Object.entries(revenueByCurrency || {})
+    .filter(([, amount]) => Number(amount) !== 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+  if (!entries.length) return formatMoney(fallbackAmount || 0, fallbackCurrency || "USD");
+  return entries.map(([currency, amount]) => formatMoney(amount, currency)).join(" · ");
 }
 
 function miniTable(titleKey, rows, columns) {
@@ -747,7 +781,7 @@ async function showCompanyModal(id) {
       <div class="form-grid">
         <div class="form-field"><label>${t("form.tier")} <span class="required">*</span></label><select id="mCoTier">${["STANDARD","SILVER","GOLD","PLATINUM"].map(v => `<option value="${v}" ${v === (c?.tier || "STANDARD") ? "selected" : ""}>${t("tier."+v)} - ${t("tier."+v.toLowerCase()+"Desc")}</option>`).join("")}</select></div>
         ${field("mCoCreditLimit", "form.creditLimit", c?.creditLimit || 0, false, "number")}
-        <div class="form-field"><label>${t("form.market", "Client Market")} <span class="required">*</span></label><select id="mCoMarket" onchange="onMarketChange()">${["EGYPTIAN","GULF","FOREIGN"].map(v => `<option value="${v}" ${v === (c?.market || "FOREIGN") ? "selected" : ""}>${t("market."+v, v)}</option>`).join("")}</select><div class="secondary-text" style="margin-top:4px">${t("market.companyHelp", "Picks the price tier the company sees (Egyptian / Gulf / Foreign).")}</div></div>
+        <div class="form-field"><label>${t("form.market", "Client Market")} <span class="required">*</span></label><select id="mCoMarket" onchange="onMarketChange()">${["EGYPTIAN","INTERNATIONAL"].map(v => `<option value="${v}" ${v === (c?.market === "EGYPTIAN" ? "EGYPTIAN" : "INTERNATIONAL") ? "selected" : ""}>${t("market."+v, v)}</option>`).join("")}</select><div class="secondary-text" style="margin-top:4px">${t("market.companyHelp", "Egyptian companies see EGP pricing; international companies use the base foreign pricing and their configured currency.")}</div></div>
         <div class="form-field"><label>${t("form.currency")} (${t("form.displayCurrency", "Display")})</label><select id="mCoCurrency">${["USD","EGP","EUR","SAR","AED"].map(v => `<option value="${v}" ${v === (c?.currency || "USD") ? "selected" : ""}>${t("currency."+v)}</option>`).join("")}</select></div>
       </div>
     </div>
@@ -1052,18 +1086,16 @@ async function showMasterModal(entity, id = "") {
   `);
 }
 
-/** Egyptian/Gulf explicit-price inputs (USD). Foreign = the base price field above. */
+/** Egyptian explicit price input. International customers use the base price. */
 function marketPriceSection(entity, cfg, mpData, id) {
   const safe = entity.replace(/[^a-z0-9]/gi, "_");
   const note = id
-    ? t("market.pricingHelp", "The price field above is the Foreign/default price. Set Egyptian and Gulf prices here (USD). Leave blank to use the default.")
-    : t("market.pricingHelpNew", "Save first, then re-open this record to set Egyptian and Gulf prices.");
+    ? t("market.pricingHelp", "The price field above is the international/default price. Set an Egyptian price here (USD base); leave blank to use the default.")
+    : t("market.pricingHelpNew", "Save first, then re-open this record to set an Egyptian market price.");
   const rows = (mpData ? cfg.marketPrices : []).map(mp => {
     const eg = mpData[mp.entityType]?.EGYPTIAN ?? "";
-    const gl = mpData[mp.entityType]?.GULF ?? "";
     return `<div class="form-grid">
       <div class="form-field"><label>${escapeHtml(mp.label)} — ${t("market.EGYPTIAN", "Egyptian")} (USD)</label><input id="mp_${safe}_${mp.entityType}_EGYPTIAN" type="number" step="0.01" min="0" value="${escapeHtml(eg)}" ${id ? "" : "disabled"}></div>
-      <div class="form-field"><label>${escapeHtml(mp.label)} — ${t("market.GULF", "Gulf")} (USD)</label><input id="mp_${safe}_${mp.entityType}_GULF" type="number" step="0.01" min="0" value="${escapeHtml(gl)}" ${id ? "" : "disabled"}></div>
     </div>`;
   }).join("");
   return `<div class="form-section"><div class="form-section-title">${t("market.pricingTitle", "Market Pricing (USD)")}</div>
@@ -1103,17 +1135,15 @@ async function saveMasterRecord(entity, id = "") {
     body: JSON.stringify(payload),
   });
   if (res?.success) {
-    // Persist per-market price overrides (Egyptian/Gulf) when editing an existing record
+    // Persist the Egyptian override. International customers use the base price.
     const savedId = id || res.data?.id;
     if (cfg.marketPrices && savedId) {
       const safe = entity.replace(/[^a-z0-9]/gi, "_");
       for (const mp of cfg.marketPrices) {
         const egEl = document.getElementById(`mp_${safe}_${mp.entityType}_EGYPTIAN`);
-        const glEl = document.getElementById(`mp_${safe}_${mp.entityType}_GULF`);
-        if ((!egEl || egEl.disabled) && (!glEl || glEl.disabled)) continue;
+        if (!egEl || egEl.disabled) continue;
         const prices = {
           EGYPTIAN: egEl && egEl.value !== "" ? Number(egEl.value) : null,
-          GULF: glEl && glEl.value !== "" ? Number(glEl.value) : null,
         };
         await apiFetch("/admin/market-prices", {
           method: "PUT",
@@ -1143,7 +1173,7 @@ function onMarketChange() {
   const curSel = document.getElementById("mCoCurrency");
   if (!market || !curSel) return;
   // Suggest a sensible default display currency for the chosen market.
-  const suggested = market === "EGYPTIAN" ? "EGP" : market === "GULF" ? "SAR" : "USD";
+  const suggested = market === "EGYPTIAN" ? "EGP" : "USD";
   if (curSel.dataset.userTouched !== "1") curSel.value = suggested;
 }
 
@@ -2278,22 +2308,63 @@ async function rejectBookingRequest(id) {
 }
 
 async function renderInvoices() {
-  renderSimpleList("invoices", "/invoices?limit=100", [
-    ["th.invoice", i => `<span class="primary-text">${escapeHtml(i.invoiceNumber)}</span>`],
-    ["th.company", i => escapeHtml(i.company?.name || "—")],
-    ["th.ref", i => {
-      const ref = i.booking?.refNumber || i.activityBooking?.refNumber || i.transportBooking?.refNumber || "—";
-      const type = i.booking ? "Hotel" : i.activityBooking ? "Activity" : i.transportBooking ? "Transport" : "—";
-      return `<span class="primary-text">${escapeHtml(ref)}</span><div class="secondary-text">${type}</div>`;
-    }],
-    ["th.amount", i => `<span class="numeric">${formatMoney(i.total, i.currency)}</span>`],
-    ["th.status", i => statusBadge(i.status)],
-    ["th.dueDate", i => formatDate(i.dueDate)],
-    ["th.actions", i => `<div class="row-actions"><button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}${t("btn.downloadPdf")}</button>${i.status==="UNPAID"?`<button class="btn btn-primary btn-sm" onclick="markInvoicePaid('${i.id}')">${icon("check")}${t("btn.markPaid","Mark Paid")}</button>`:""}</div>`],
-  ], `<button class="btn btn-primary" onclick="openConsolidatedInvoiceModal()">${icon("layers")}${t("btn.consolidatedInvoice","Consolidated Invoice")}</button>`);
+  state.page = "invoices";
+  const capturedToken = state.renderToken;
+  content(pageHeader(`
+    <button class="btn btn-primary" onclick="openConsolidatedInvoiceModal()">${icon("layers")}${t("btn.consolidatedInvoice","Create Consolidated Statement")}</button>
+    <button class="btn btn-outline" onclick="exportRows('invoices', state.cache.invoicesRows || [])">${icon("download")}${t("btn.exportExcel")}</button>
+  `) + `
+    <section class="table-card">
+      <div class="table-toolbar"><div><strong>${t("nav.invoices","Invoices")}</strong><div class="secondary-text">${t("invoice.individualHelp","Individual service invoices")}</div></div><button class="refresh-pill" onclick="renderInvoices()">${icon("refresh-cw")}${t("topbar.justNow")}</button></div>
+      <div class="table-scroll"><table class="data-table"><thead><tr>
+        <th>${t("th.invoice")}</th><th>${t("th.company")}</th><th>${t("th.ref")}</th><th>${t("th.amount")}</th><th>${t("th.status")}</th><th>${t("th.dueDate")}</th><th>${t("th.actions")}</th>
+      </tr></thead><tbody id="invoiceRows">${skeletonRows(7, 8)}</tbody></table></div>
+    </section>
+    <section class="table-card" style="margin-top:16px">
+      <div class="table-toolbar"><div><strong>${t("invoice.consolidated","Consolidated Statements")}</strong><div class="secondary-text">${t("invoice.consolidatedHelp","Saved statements combining selected invoices for one company.")}</div></div></div>
+      <div class="table-scroll"><table class="data-table"><thead><tr>
+        <th>${t("th.invoice")}</th><th>${t("th.company")}</th><th>${t("th.period","Period")}</th><th>${t("invoice.items","Items")}</th><th>${t("th.amount")}</th><th>${t("th.status")}</th><th>${t("th.actions")}</th>
+      </tr></thead><tbody id="consolidatedRows">${skeletonRows(7, 5)}</tbody></table></div>
+    </section>`);
+
+  const [invoiceRes, consolidatedRes] = await Promise.all([
+    apiFetch("/invoices?limit=100"),
+    apiFetch("/invoices/consolidated"),
+  ]);
+  if (state.renderToken !== capturedToken) return;
+  const invoices = invoiceRes?.data || [];
+  const statements = consolidatedRes?.data || [];
+  state.cache.invoicesRows = invoices;
+  const invoiceBody = document.getElementById("invoiceRows");
+  const statementBody = document.getElementById("consolidatedRows");
+  if (invoiceBody) invoiceBody.innerHTML = invoices.length ? invoices.map(i => {
+    const ref = i.booking?.refNumber || i.activityBooking?.refNumber || i.transportBooking?.refNumber || i.airportReception?.refNumber || i.cruiseBooking?.refNumber || i.visaApplication?.refNumber || i.simRequest?.refNumber || "—";
+    const type = i.booking ? "Hotel" : i.activityBooking ? "Activity" : i.transportBooking ? "Transport" : i.airportReception ? "Airport Assist" : i.cruiseBooking ? "Nile Cruise" : i.visaApplication ? "Security Approval" : i.simRequest ? "SIM Card" : "Service";
+    return `<tr>
+      <td class="primary-text">${escapeHtml(i.invoiceNumber)}</td>
+      <td>${escapeHtml(i.company?.name || "—")}</td>
+      <td><span class="primary-text">${escapeHtml(ref)}</span><div class="secondary-text">${type}</div></td>
+      <td class="numeric">${formatMoney(i.total, i.currency)}</td>
+      <td>${statusBadge(i.status)}</td>
+      <td>${formatDate(i.dueDate)}</td>
+      <td><div class="row-actions"><button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}${t("btn.downloadPdf")}</button>${i.status === "UNPAID" ? `<button class="btn btn-primary btn-sm" onclick="markInvoicePaid('${i.id}')">${icon("check")}${t("btn.markPaid","Mark Paid")}</button>` : ""}</div></td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="7">${emptyBlock("empty.noData")}</td></tr>`;
+  if (statementBody) statementBody.innerHTML = statements.length ? statements.map(row => `<tr>
+    <td><span class="primary-text">${escapeHtml(row.statementNumber)}</span><div class="secondary-text">${formatDate(row.createdAt)}</div></td>
+    <td>${escapeHtml(row.company?.name || "—")}</td>
+    <td>${row.periodFrom ? formatDate(row.periodFrom) : "—"} → ${row.periodTo ? formatDate(row.periodTo) : "—"}</td>
+    <td>${formatNumber(row._count?.lines || 0)}</td>
+    <td class="numeric">${formatMoney(row.total, row.currency)}</td>
+    <td>${statusBadge(row.status)}</td>
+    <td><div class="row-actions">
+      <button class="btn btn-outline btn-sm" onclick="downloadAuthenticatedFile('/invoices/consolidated/${row.id}/pdf','${escapeHtml(row.statementNumber)}.pdf')">${icon("file-down")}PDF</button>
+      <button class="btn btn-outline btn-sm" onclick="downloadAuthenticatedFile('/invoices/consolidated/${row.id}/excel','${escapeHtml(row.statementNumber)}.xlsx')">${icon("file-spreadsheet")}Excel</button>
+    </div></td>
+  </tr>`).join("") : `<tr><td colspan="7">${emptyBlock("empty.noData")}</td></tr>`;
+  refreshIcons(document.getElementById("content"));
 }
 
-// One PDF per company aggregating its invoices (same filters as the Excel export).
 async function openConsolidatedInvoiceModal() {
   await ensureCompanyOptions();
   const companyOptions = (state.cache.companyOptions || [])
@@ -2301,54 +2372,106 @@ async function openConsolidatedInvoiceModal() {
   const body = `
     <div class="form-grid">
       <div class="form-field full"><label>${t("nav.companies","Company")} <span class="required">*</span></label>
-        <select id="ciCompany"><option value="">${t("form.select","Select")}</option>${companyOptions}</select></div>
+        <select id="ciCompany" onchange="clearConsolidatedSelection()"><option value="">${t("form.select","Select")}</option>${companyOptions}</select></div>
       <div class="form-field"><label>${t("form.status","Status")}</label>
         <select id="ciStatus">${["","UNPAID","PAID","OVERDUE","CANCELLED"].map(s => `<option value="${s}">${s ? t("status."+s, s) : t("form.all","All")}</option>`).join("")}</select></div>
       <div class="form-field"><label>${t("th.before","From")}</label><input id="ciFrom" type="date"></div>
       <div class="form-field"><label>${t("th.after","To")}</label><input id="ciTo" type="date"></div>
+      <div class="form-field full"><label>${t("form.notes","Notes")}</label><textarea id="ciNotes" rows="2"></textarea></div>
     </div>
-    <div class="secondary-text" style="margin-top:8px">${t("invoice.consolidatedHelp","Generates one PDF statement with all matching invoices and totals.")}</div>`;
+    <div class="consolidated-picker" id="ciEligibleList">
+      <div class="empty-inline">${t("invoice.loadEligible","Choose a company, then load eligible invoices.")}</div>
+    </div>`;
   openModal(t("btn.consolidatedInvoice","Consolidated Invoice"), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
-    <button class="btn btn-primary" id="ciGenBtn" onclick="downloadConsolidatedInvoice()">${icon("file-down")}${t("btn.generate","Generate")}</button>`);
+    <button class="btn btn-outline" id="ciLoadBtn" onclick="loadEligibleConsolidatedInvoices()">${icon("search")}${t("btn.load","Load Invoices")}</button>
+    <button class="btn btn-primary" id="ciCreateBtn" onclick="createConsolidatedInvoice()" disabled>${icon("layers")}${t("btn.generate","Create Statement")}</button>`);
 }
 
-async function downloadConsolidatedInvoice() {
-  const companyId = document.getElementById("ciCompany").value;
-  if (!companyId) { toast(t("toast.validationError","Select a company"), "error"); return; }
+function clearConsolidatedSelection() {
+  const host = document.getElementById("ciEligibleList");
+  if (host) host.innerHTML = `<div class="empty-inline">${t("invoice.loadEligible","Choose a company, then load eligible invoices.")}</div>`;
+  const createButton = document.getElementById("ciCreateBtn");
+  if (createButton) createButton.disabled = true;
+}
+
+function consolidatedFilterParams() {
+  const companyId = document.getElementById("ciCompany")?.value || "";
   const params = new URLSearchParams({ companyId });
-  const status = document.getElementById("ciStatus").value;
-  const from = document.getElementById("ciFrom").value;
-  const to = document.getElementById("ciTo").value;
+  const status = document.getElementById("ciStatus")?.value || "";
+  const from = document.getElementById("ciFrom")?.value || "";
+  const to = document.getElementById("ciTo")?.value || "";
   if (status) params.set("status", status);
   if (from) params.set("from", from);
   if (to) params.set("to", to);
+  return params;
+}
 
-  const btn = document.getElementById("ciGenBtn");
-  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("btn.saving","Working...")}`; }
-  try {
-    const res = await fetch(`/api/invoices/consolidated?${params}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("accessToken")}` },
-      credentials: "include",
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toast(err.message || t("toast.error","Failed to generate"), "error");
-      if (btn) { btn.disabled = false; btn.innerHTML = `${icon("file-down")}${t("btn.generate","Generate")}`; refreshIcons(btn.parentElement); }
-      return;
-    }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `consolidated-invoice.pdf`;
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
+async function loadEligibleConsolidatedInvoices() {
+  const params = consolidatedFilterParams();
+  if (!params.get("companyId")) {
+    toast(t("toast.validationError","Select a company"), "error");
+    return;
+  }
+  const host = document.getElementById("ciEligibleList");
+  const button = document.getElementById("ciLoadBtn");
+  setBtnLoading(button, true, "btn.loading");
+  if (host) host.innerHTML = skeletonRows(5, 4);
+  const res = await apiFetch(`/invoices/consolidated/eligible?${params}`);
+  setBtnLoading(button, false);
+  const rows = res?.data || [];
+  state.cache.consolidatedEligible = rows;
+  if (!host) return;
+  host.innerHTML = rows.length ? `
+    <div class="consolidated-picker__toolbar">
+      <label class="check-row"><input type="checkbox" onchange="toggleEligibleInvoices(this.checked)" checked> ${t("btn.selectAll","Select All")}</label>
+      <strong>${formatNumber(rows.length)} ${t("invoice.eligible","eligible invoices")}</strong>
+    </div>
+    <div class="consolidated-picker__list">${rows.map(row => `<label class="consolidated-invoice-option">
+      <input type="checkbox" class="ciInvoiceCheck" value="${row.id}" checked onchange="updateConsolidatedCreateState()">
+      <span><strong>${escapeHtml(row.invoiceNumber)}</strong><small>${escapeHtml(row.company?.name || "")} · ${escapeHtml(row.summary?.service || row.summary?.refNumber || "Service")}</small></span>
+      <span class="numeric">${formatMoney(row.total, row.currency)}</span>
+      ${statusBadge(row.status)}
+    </label>`).join("")}</div>`
+    : `<div class="empty-inline">${t("invoice.noneEligible","No unconsolidated invoices match these filters.")}</div>`;
+  updateConsolidatedCreateState();
+}
+
+function toggleEligibleInvoices(checked) {
+  document.querySelectorAll(".ciInvoiceCheck").forEach(input => { input.checked = checked; });
+  updateConsolidatedCreateState();
+}
+
+function updateConsolidatedCreateState() {
+  const selected = document.querySelectorAll(".ciInvoiceCheck:checked").length;
+  const button = document.getElementById("ciCreateBtn");
+  if (button) button.disabled = selected === 0;
+}
+
+async function createConsolidatedInvoice() {
+  const companyId = document.getElementById("ciCompany")?.value || "";
+  const invoiceIds = [...document.querySelectorAll(".ciInvoiceCheck:checked")].map(input => input.value);
+  if (!companyId || !invoiceIds.length) {
+    toast(t("toast.validationError","Select at least one invoice"), "error");
+    return;
+  }
+  const button = document.getElementById("ciCreateBtn");
+  setBtnLoading(button, true, "btn.saving");
+  const res = await apiFetch("/invoices/consolidated", {
+    method: "POST",
+    body: JSON.stringify({
+      companyId,
+      invoiceIds,
+      from: document.getElementById("ciFrom")?.value || undefined,
+      to: document.getElementById("ciTo")?.value || undefined,
+      notes: document.getElementById("ciNotes")?.value.trim() || undefined,
+    }),
+  });
+  setBtnLoading(button, false);
+  if (res?.success) {
     closeModal();
-    toast(t("toast.exported","Downloaded"), "success");
-  } catch (e) {
-    toast(t("toast.error","Failed to generate"), "error");
-    if (btn) { btn.disabled = false; btn.innerHTML = `${icon("file-down")}${t("btn.generate","Generate")}`; refreshIcons(btn.parentElement); }
+    toast(t("toast.created","Consolidated statement created"), "success");
+    renderInvoices();
   }
 }
 
@@ -2457,6 +2580,7 @@ async function renderActivities() {
     <div style="display:flex;gap:10px;margin-bottom:16px">
       <button class="btn btn-primary" id="actTabCatalog" onclick="actShowTab('catalog')">${icon("list")}&nbsp;Activity Catalog</button>
       <button class="btn btn-outline" id="actTabBookings" onclick="actShowTab('bookings')">${icon("calendar-check")}&nbsp;Bookings</button>
+      <button class="btn btn-outline" id="actTabTypes" onclick="actShowTab('types')">${icon("users")}&nbsp;Service Types</button>
     </div>
     <div id="actCatalogSection">
       <section class="table-card">
@@ -2473,11 +2597,26 @@ async function renderActivities() {
           <th>Ref</th><th>Activity</th><th>Client</th><th>Date / Time</th><th>Pax</th><th>Type</th><th>Hotel</th><th>Total</th><th>Status</th><th>Actions</th>
         </tr></thead><tbody id="actBookingsTbody">${skeletonRows(10, 8)}</tbody></table></div>
       </section>
+    </div>
+    <div id="actTypesSection" style="display:none">
+      <section class="table-card">
+        <div class="table-toolbar">
+          <div><strong>Activity Service Types</strong><div class="secondary-text" id="actTypesMeta">Configure Group, Private and VIP options by destination or activity.</div></div>
+          <div class="toolbar-actions">
+            <button class="btn btn-outline" onclick="loadAdminGroupTypes('ACTIVITY')">${icon("refresh-cw")}${t("btn.refresh")}</button>
+            <button class="btn btn-primary" onclick="openGroupTypeModal('ACTIVITY')">${icon("plus")}${t("btn.addNew")}</button>
+          </div>
+        </div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>Type</th><th>Applies To</th><th>Price Adjustment</th><th>Pax</th><th>Validity</th><th>Status</th><th>Actions</th>
+        </tr></thead><tbody id="actTypesTbody">${skeletonRows(7, 6)}</tbody></table></div>
+      </section>
     </div>`);
 
   const catalogRes = await apiFetch("/activities?limit=200");
   if (state.renderToken !== capturedToken) return;
   const activities = catalogRes?.data || [];
+  state.cache.activitiesRows = activities;
   const cTbody = document.getElementById("actCatalogTbody");
   const cMeta  = document.getElementById("actCatalogMeta");
   if (cMeta) cMeta.textContent = `${formatNumber(activities.length)} activities`;
@@ -2499,12 +2638,15 @@ async function renderActivities() {
 }
 
 function actShowTab(tab) {
-  const isCatalog = tab === "catalog";
-  document.getElementById("actCatalogSection").style.display  = isCatalog ? "" : "none";
-  document.getElementById("actBookingsSection").style.display = isCatalog ? "none" : "";
-  document.getElementById("actTabCatalog").className  = isCatalog ? "btn btn-primary" : "btn btn-outline";
-  document.getElementById("actTabBookings").className = isCatalog ? "btn btn-outline" : "btn btn-primary";
-  if (!isCatalog) loadAdminActivityBookings();
+  ["catalog", "bookings", "types"].forEach(name => {
+    const title = name[0].toUpperCase() + name.slice(1);
+    const section = document.getElementById(`act${title}Section`);
+    const button = document.getElementById(`actTab${title}`);
+    if (section) section.style.display = name === tab ? "" : "none";
+    if (button) button.className = name === tab ? "btn btn-primary" : "btn btn-outline";
+  });
+  if (tab === "bookings") loadAdminActivityBookings();
+  if (tab === "types") loadAdminGroupTypes("ACTIVITY");
 }
 
 async function loadAdminActivityBookings() {
@@ -2520,7 +2662,7 @@ async function loadAdminActivityBookings() {
     <td>${b.clientName ? `<strong>${escapeHtml(b.clientName)}</strong><br>` : ""}${escapeHtml(b.clientPhone||"—")}</td>
     <td>${formatDate(b.activityDate)}${b.selectedTime ? `<div style="font-size:11px;color:var(--info);font-weight:600">${icon("clock")}&nbsp;${escapeHtml(b.selectedTime)}</div>` : ""}</td>
     <td>${b.adultsCount} + ${b.childrenCount}c${b.childAges?.length ? `<div style="font-size:10px;color:var(--text-muted)">ages: ${(b.childAges||[]).join(", ")}</div>` : ""}</td>
-    <td><span class="badge badge-outline">${escapeHtml(b.activityType||"GROUP")}</span></td>
+    <td><span class="badge badge-outline">${escapeHtml(b.groupTypeLabel || b.groupType?.labelEn || b.activityType || "GROUP")}</span></td>
     <td>${escapeHtml(b.hotelName||"—")}</td>
     <td class="numeric">${formatMoney(b.totalAmount, b.currency)}</td>
     <td>${statusBadge(b.status)}${b.confirmedAt ? `<div class="secondary-text" title="${t("th.confirmed","Date Confirmed")}">${icon("check")}&nbsp;${formatDate(b.confirmedAt)}</div>` : ""}</td>
@@ -2551,6 +2693,7 @@ async function renderTransport() {
     <div style="display:flex;gap:10px;margin-bottom:16px">
       <button class="btn btn-primary" id="trTabRates" onclick="trShowTab('rates')">${icon("sliders-horizontal")}&nbsp;Transport Rates</button>
       <button class="btn btn-outline" id="trTabBookings" onclick="trShowTab('bookings')">${icon("list")}&nbsp;Bookings</button>
+      <button class="btn btn-outline" id="trTabTypes" onclick="trShowTab('types')">${icon("users")}&nbsp;Service Types</button>
     </div>
     <div id="trRatesSection">
       <section class="table-card">
@@ -2567,12 +2710,27 @@ async function renderTransport() {
           <th>Ref</th><th>Route</th><th>Pax / Lead</th><th>Vehicle</th><th>Pickup</th><th>Flight</th><th>Amount</th><th>Status</th><th>Actions</th>
         </tr></thead><tbody id="trBookingsTbody">${skeletonRows(9, 8)}</tbody></table></div>
       </section>
+    </div>
+    <div id="trTypesSection" style="display:none">
+      <section class="table-card">
+        <div class="table-toolbar">
+          <div><strong>Transport Service Types</strong><div class="secondary-text" id="trTypesMeta">Configure Private, Group and VIP options by destination or route.</div></div>
+          <div class="toolbar-actions">
+            <button class="btn btn-outline" onclick="loadAdminGroupTypes('TRANSPORT')">${icon("refresh-cw")}${t("btn.refresh")}</button>
+            <button class="btn btn-primary" onclick="openGroupTypeModal('TRANSPORT')">${icon("plus")}${t("btn.addNew")}</button>
+          </div>
+        </div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>Type</th><th>Applies To</th><th>Price Adjustment</th><th>Pax</th><th>Validity</th><th>Status</th><th>Actions</th>
+        </tr></thead><tbody id="trTypesTbody">${skeletonRows(7, 6)}</tbody></table></div>
+      </section>
     </div>`);
 
   // Load rates
   const ratesRes = await apiFetch("/transport-rates?limit=200");
   if (state.renderToken !== capturedToken) return;
   const rates = ratesRes?.data || [];
+  state.cache.transportRows = rates;
   const rTbody = document.getElementById("trRatesTbody");
   const rMeta = document.getElementById("trRatesMeta");
   if (rMeta) rMeta.textContent = `${formatNumber(rates.length)} rates`;
@@ -2592,12 +2750,15 @@ async function renderTransport() {
 }
 
 function trShowTab(tab) {
-  const isRates = tab === "rates";
-  document.getElementById("trRatesSection").style.display    = isRates ? "" : "none";
-  document.getElementById("trBookingsSection").style.display = isRates ? "none" : "";
-  document.getElementById("trTabRates").className    = isRates ? "btn btn-primary" : "btn btn-outline";
-  document.getElementById("trTabBookings").className = isRates ? "btn btn-outline" : "btn btn-primary";
-  if (!isRates) loadAdminTransportBookings();
+  ["rates", "bookings", "types"].forEach(name => {
+    const title = name[0].toUpperCase() + name.slice(1);
+    const section = document.getElementById(`tr${title}Section`);
+    const button = document.getElementById(`trTab${title}`);
+    if (section) section.style.display = name === tab ? "" : "none";
+    if (button) button.className = name === tab ? "btn btn-primary" : "btn btn-outline";
+  });
+  if (tab === "bookings") loadAdminTransportBookings();
+  if (tab === "types") loadAdminGroupTypes("TRANSPORT");
 }
 
 async function loadAdminTransportBookings() {
@@ -2611,7 +2772,7 @@ async function loadAdminTransportBookings() {
     <td class="primary-text">${escapeHtml(b.refNumber)}</td>
     <td>${escapeHtml(b.fromLocation||"—")} → ${escapeHtml(b.toLocation||"—")}<div class="secondary-text">${b.isRoundTrip ? "↔ Round Trip" : "→ One Way"}</div></td>
     <td>${b.passengerName ? `<strong>${escapeHtml(b.passengerName)}</strong><br>` : ""}${escapeHtml(b.contactNumber||"—")}<div class="secondary-text">${b.passengerCount} pax</div></td>
-    <td>${escapeHtml(b.vehicleType?.replace(/_/g," ")||"—")}</td>
+    <td>${escapeHtml(b.vehicleType?.replace(/_/g," ")||"—")}<div class="secondary-text">${escapeHtml(b.groupTypeLabel || b.groupType?.labelEn || "")}</div></td>
     <td>${formatDate(b.pickupDateTime)}</td>
     <td>${b.airlineName ? `${escapeHtml(b.airlineName)} ` : ""}${b.flightNumber ? escapeHtml(b.flightNumber) : "—"}</td>
     <td class="numeric">${formatMoney(b.totalAmount, b.currency)}</td>
@@ -2633,6 +2794,181 @@ async function adminCancelTransport(id) {
   if (!confirm("Cancel this booking?")) return;
   const res = await apiFetch(`/transport-bookings/${id}/cancel`, { method: "PATCH" });
   if (res?.success) { toast("Cancelled", "success"); loadAdminTransportBookings(); }
+}
+
+async function ensureGroupTypeOptions() {
+  if (state.cache.groupTypeDestinations && state.cache.groupTypeActivities && state.cache.groupTypeRates) return;
+  const [destinations, activities, rates] = await Promise.all([
+    apiFetch("/destinations?limit=300"),
+    apiFetch("/activities?limit=300"),
+    apiFetch("/transport-rates?limit=300"),
+  ]);
+  state.cache.groupTypeDestinations = destinations?.data || [];
+  state.cache.groupTypeActivities = activities?.data || [];
+  state.cache.groupTypeRates = rates?.data || [];
+}
+
+function groupTypeTargetLabel(row) {
+  if (row.activity) return `Activity: ${row.activity.name}`;
+  if (row.transportRate) {
+    return `Route: ${row.transportRate.fromLocation} → ${row.transportRate.toLocation} · ${String(row.transportRate.vehicleType || "").replace(/_/g, " ")}`;
+  }
+  if (row.destination) return `Destination: ${state.lang === "ar" ? (row.destination.nameAr || row.destination.name) : row.destination.name}`;
+  return "All services";
+}
+
+function groupTypeAdjustmentLabel(row) {
+  const value = Number(row.adjustmentValue || 0);
+  if (row.adjustmentType === "PERCENTAGE") return value ? `+${formatNumber(value)}%` : "No adjustment";
+  if (row.adjustmentType === "FIXED") return value ? `+${formatNumber(value)} fixed` : "No adjustment";
+  return "No adjustment";
+}
+
+async function loadAdminGroupTypes(scope) {
+  const prefix = scope === "ACTIVITY" ? "act" : "tr";
+  const tbody = document.getElementById(`${prefix}TypesTbody`);
+  const meta = document.getElementById(`${prefix}TypesMeta`);
+  if (tbody) tbody.innerHTML = skeletonRows(7, 6);
+  const res = await apiFetch(`/group-types?scope=${scope}&admin=true`);
+  const rows = res?.data || [];
+  state.cache[`groupTypes_${scope}`] = rows;
+  if (meta) meta.textContent = `${formatNumber(rows.length)} configured types`;
+  if (!tbody) return;
+  tbody.innerHTML = rows.length ? rows.map(row => `<tr>
+    <td><strong>${escapeHtml(row.labelEn)}</strong>${row.labelAr ? `<div class="secondary-text">${escapeHtml(row.labelAr)}</div>` : ""}<div class="secondary-text">${escapeHtml(row.code)}</div></td>
+    <td>${escapeHtml(groupTypeTargetLabel(row))}</td>
+    <td><span class="numeric">${escapeHtml(groupTypeAdjustmentLabel(row))}</span></td>
+    <td>${formatNumber(row.minPax || 1)}${row.maxPax ? `–${formatNumber(row.maxPax)}` : "+"}</td>
+    <td>${row.validFrom ? formatDate(row.validFrom) : "Any"}${row.validTo ? ` → ${formatDate(row.validTo)}` : ""}</td>
+    <td>${statusBadge(row.isActive ? "ACTIVE" : "INACTIVE")}</td>
+    <td><div class="row-actions">
+      <button class="icon-button btn-icon" title="${t("btn.edit")}" onclick="openGroupTypeModal('${scope}','${row.id}')">${icon("pencil")}</button>
+      ${row.isActive ? `<button class="icon-button btn-icon" title="${t("btn.delete")}" onclick="deactivateGroupType('${scope}','${row.id}')">${icon("ban")}</button>` : ""}
+    </div></td>
+  </tr>`).join("") : `<tr><td colspan="7">${emptyBlock("empty.noData")}</td></tr>`;
+  refreshIcons(tbody);
+}
+
+function groupTypeTargetOptions(scope, mode, selectedId) {
+  if (mode === "DESTINATION") {
+    return (state.cache.groupTypeDestinations || []).map(row =>
+      `<option value="${row.id}" ${row.id === selectedId ? "selected" : ""}>${escapeHtml(row.name)}${row.nameAr ? ` · ${escapeHtml(row.nameAr)}` : ""}</option>`
+    ).join("");
+  }
+  if (mode === "ACTIVITY") {
+    return (state.cache.groupTypeActivities || []).map(row =>
+      `<option value="${row.id}" ${row.id === selectedId ? "selected" : ""}>${escapeHtml(row.name)} · ${escapeHtml(row.city || "")}</option>`
+    ).join("");
+  }
+  if (mode === "TRANSPORT_RATE") {
+    return (state.cache.groupTypeRates || []).map(row =>
+      `<option value="${row.id}" ${row.id === selectedId ? "selected" : ""}>${escapeHtml(row.fromLocation || "—")} → ${escapeHtml(row.toLocation || "—")} · ${escapeHtml(String(row.vehicleType || "").replace(/_/g, " "))}</option>`
+    ).join("");
+  }
+  return "";
+}
+
+function updateGroupTypeTarget() {
+  const scope = document.getElementById("gtScope")?.value || "ACTIVITY";
+  const mode = document.getElementById("gtTargetMode")?.value || "GLOBAL";
+  const field = document.getElementById("gtTargetField");
+  const select = document.getElementById("gtTargetId");
+  if (!field || !select) return;
+  field.style.display = mode === "GLOBAL" ? "none" : "";
+  select.innerHTML = groupTypeTargetOptions(scope, mode, select.dataset.selected || "");
+  select.dataset.selected = "";
+}
+
+async function openGroupTypeModal(scope, id = "") {
+  await ensureGroupTypeOptions();
+  if (!state.cache[`groupTypes_${scope}`]) await loadAdminGroupTypes(scope);
+  const row = (state.cache[`groupTypes_${scope}`] || []).find(item => item.id === id) || null;
+  const mode = row?.activityId ? "ACTIVITY" : row?.transportRateId ? "TRANSPORT_RATE" : row?.destinationId ? "DESTINATION" : "GLOBAL";
+  const targetId = row?.activityId || row?.transportRateId || row?.destinationId || "";
+  const targetModes = scope === "ACTIVITY"
+    ? [["GLOBAL","All Activities"],["DESTINATION","One Destination"],["ACTIVITY","One Activity"]]
+    : [["GLOBAL","All Transport"],["DESTINATION","One Destination"],["TRANSPORT_RATE","One Route / Rate"]];
+  const body = `<input type="hidden" id="gtScope" value="${scope}">
+    <div class="form-grid">
+      <div class="form-field"><label>Code <span class="required">*</span></label><input id="gtCode" value="${escapeHtml(row?.code || "")}" placeholder="PRIVATE"></div>
+      <div class="form-field"><label>English Label <span class="required">*</span></label><input id="gtLabelEn" value="${escapeHtml(row?.labelEn || "")}" placeholder="Private"></div>
+      <div class="form-field"><label>Arabic Label</label><input id="gtLabelAr" dir="rtl" value="${escapeHtml(row?.labelAr || "")}" placeholder="خاص"></div>
+      <div class="form-field"><label>Applies To</label><select id="gtTargetMode" onchange="updateGroupTypeTarget()">${targetModes.map(([value,label]) => `<option value="${value}" ${value === mode ? "selected" : ""}>${label}</option>`).join("")}</select></div>
+      <div class="form-field full" id="gtTargetField" ${mode === "GLOBAL" ? 'style="display:none"' : ""}><label>Target</label>
+        <select id="gtTargetId" data-selected="${escapeHtml(targetId)}">${groupTypeTargetOptions(scope, mode, targetId)}</select></div>
+      <div class="form-field full"><label>English Description</label><textarea id="gtDescriptionEn" rows="2">${escapeHtml(row?.descriptionEn || "")}</textarea></div>
+      <div class="form-field full"><label>Arabic Description</label><textarea id="gtDescriptionAr" dir="rtl" rows="2">${escapeHtml(row?.descriptionAr || "")}</textarea></div>
+      <div class="form-field"><label>Price Adjustment</label><select id="gtAdjustmentType">
+        ${["NONE","FIXED","PERCENTAGE"].map(value => `<option value="${value}" ${value === (row?.adjustmentType || "NONE") ? "selected" : ""}>${value.replace(/_/g," ")}</option>`).join("")}
+      </select></div>
+      <div class="form-field"><label>Adjustment Value</label><input id="gtAdjustmentValue" type="number" min="0" step="0.01" value="${escapeHtml(row?.adjustmentValue || 0)}"></div>
+      <div class="form-field"><label>Minimum Pax</label><input id="gtMinPax" type="number" min="1" value="${escapeHtml(row?.minPax || 1)}"></div>
+      <div class="form-field"><label>Maximum Pax</label><input id="gtMaxPax" type="number" min="1" value="${escapeHtml(row?.maxPax || "")}" placeholder="No limit"></div>
+      <div class="form-field"><label>Valid From</label><input id="gtValidFrom" type="datetime-local" value="${row?.validFrom ? String(row.validFrom).slice(0,16) : ""}"></div>
+      <div class="form-field"><label>Valid To</label><input id="gtValidTo" type="datetime-local" value="${row?.validTo ? String(row.validTo).slice(0,16) : ""}"></div>
+      <div class="form-field"><label>Display Order</label><input id="gtDisplayOrder" type="number" min="0" value="${escapeHtml(row?.displayOrder || 0)}"></div>
+      <div class="form-field"><label>Status</label><label class="check-row"><input id="gtIsActive" type="checkbox" ${row?.isActive === false ? "" : "checked"}> Active</label></div>
+    </div>`;
+  openModal(id ? "Edit Service Type" : "New Service Type", body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" onclick="saveGroupType('${scope}','${id}')">${icon("save")}${t("btn.save")}</button>`);
+}
+
+async function saveGroupType(scope, id) {
+  const code = document.getElementById("gtCode")?.value.trim();
+  const labelEn = document.getElementById("gtLabelEn")?.value.trim();
+  if (!code || !labelEn) {
+    toast(t("toast.validationError","Code and English label are required"), "error");
+    return;
+  }
+  const mode = document.getElementById("gtTargetMode")?.value || "GLOBAL";
+  const targetId = document.getElementById("gtTargetId")?.value || null;
+  if (mode !== "GLOBAL" && !targetId) {
+    toast(t("toast.validationError","Select a target"), "error");
+    return;
+  }
+  const dateValue = inputId => {
+    const value = document.getElementById(inputId)?.value;
+    return value ? new Date(value).toISOString() : null;
+  };
+  const payload = {
+    scope,
+    code,
+    labelEn,
+    labelAr: document.getElementById("gtLabelAr")?.value.trim() || null,
+    descriptionEn: document.getElementById("gtDescriptionEn")?.value.trim() || null,
+    descriptionAr: document.getElementById("gtDescriptionAr")?.value.trim() || null,
+    destinationId: mode === "DESTINATION" ? targetId : null,
+    activityId: mode === "ACTIVITY" ? targetId : null,
+    transportRateId: mode === "TRANSPORT_RATE" ? targetId : null,
+    adjustmentType: document.getElementById("gtAdjustmentType")?.value || "NONE",
+    adjustmentValue: Number(document.getElementById("gtAdjustmentValue")?.value || 0),
+    minPax: Number(document.getElementById("gtMinPax")?.value || 1),
+    maxPax: document.getElementById("gtMaxPax")?.value ? Number(document.getElementById("gtMaxPax").value) : null,
+    validFrom: dateValue("gtValidFrom"),
+    validTo: dateValue("gtValidTo"),
+    displayOrder: Number(document.getElementById("gtDisplayOrder")?.value || 0),
+    isActive: Boolean(document.getElementById("gtIsActive")?.checked),
+  };
+  const res = await apiFetch(id ? `/group-types/${id}` : "/group-types", {
+    method: id ? "PUT" : "POST",
+    body: JSON.stringify(payload),
+  });
+  if (res?.success) {
+    closeModal();
+    toast(t("toast.saved","Saved"), "success");
+    loadAdminGroupTypes(scope);
+  }
+}
+
+async function deactivateGroupType(scope, id) {
+  confirmAction("Deactivate this service type? Existing bookings will keep their saved label.", async () => {
+    const res = await apiFetch(`/group-types/${id}`, { method: "DELETE" });
+    if (res?.success) {
+      toast(t("toast.saved","Deactivated"), "success");
+      loadAdminGroupTypes(scope);
+    }
+  });
 }
 
 async function renderVisa() {
@@ -2851,7 +3187,7 @@ function setFxHealth(status, lastUpdated) {
     dot = "var(--success)";
     label = t("fx.providerLive", "Live — provider reachable");
   } else {
-    dot = "var(--warning, #C4920A)";
+    dot = "var(--warning, #D97706)";
     label = t("fx.providerStale", "Cached — rates may be stale");
   }
   el.innerHTML = `<span class="secondary-text" style="display:inline-flex;align-items:center;gap:7px">

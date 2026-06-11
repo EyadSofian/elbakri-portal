@@ -121,7 +121,7 @@ export const templateConfigSchema = z.object({
   layout: z.enum(['compact_b2b', 'spacious', 'grid']).optional(),
   theme: z.object({
     glass: z.boolean().optional(),
-    accent: z.enum(['navy_gold', 'navy_blue', 'slate']).optional(),
+    accent: z.enum(['navy_teal', 'navy_blue', 'slate', 'navy_gold']).optional(),
     density: z.enum(['compact', 'comfortable']).optional(),
   }).optional(),
   // offer_popup specific

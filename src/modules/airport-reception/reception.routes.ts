@@ -7,7 +7,7 @@ const router = Router();
 router.get('/quote', getReceptionQuote);
 router.get('/', listReceptions);
 router.post('/', createReception);
-router.patch('/:id/confirm', requireRole('SUPERADMIN', 'COMPANY_ADMIN'), confirmReception);
+router.patch('/:id/confirm', requireRole('SUPERADMIN'), confirmReception);
 router.patch('/:id/cancel', cancelReception);
 
 export default router;

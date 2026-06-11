@@ -28,8 +28,20 @@ enum CompanyTier {
 // company sees and its default display currency.
 enum Market {
   EGYPTIAN
+  INTERNATIONAL
   GULF
   FOREIGN
+}
+
+enum ServiceScope {
+  ACTIVITY
+  TRANSPORT
+}
+
+enum PricingAdjustmentType {
+  NONE
+  FIXED
+  PERCENTAGE
 }
 
 enum HotelSource {
@@ -224,39 +236,40 @@ enum QuoteServiceType {
 // ─────────────────────────────────────────────
 
 model User {
-  id                   String               @id @default(cuid())
-  email                String               @unique
-  password             String
-  name                 String
-  nameAr               String?
-  role                 Role                 @default(AGENT)
-  companyId            String?
-  company              Company?             @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  bookings             Booking[]            @relation("BookingCreatedBy")
-  transactions         WalletTransaction[]  @relation("TransactionCreatedBy")
-  platformTransactions PlatformWalletTransaction[] @relation("PlatformWalletTransactionCreatedBy")
-  cruiseBookings       CruiseBooking[]      @relation("CruiseBookingCreatedBy")
-  transportBookings    TransportBooking[]   @relation("TransportBookingCreatedBy")
-  activityBookings     ActivityBooking[]    @relation("ActivityBookingCreatedBy")
-  visaApplications     VisaApplication[]   @relation("VisaCreatedBy")
-  airportReceptions    AirportReception[]   @relation("ReceptionCreatedBy")
-  quoteRequests        QuoteRequest[]       @relation("QuoteRequestCreatedBy")
-  assignedQuotes       QuoteRequest[]       @relation("QuoteRequestAssignedTo")
-  simRequests          SimRequest[]         @relation("SimRequestCreatedBy")
+  id                          String                      @id @default(cuid())
+  email                       String                      @unique
+  password                    String
+  name                        String
+  nameAr                      String?
+  role                        Role                        @default(AGENT)
+  companyId                   String?
+  company                     Company?                    @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  bookings                    Booking[]                   @relation("BookingCreatedBy")
+  transactions                WalletTransaction[]         @relation("TransactionCreatedBy")
+  platformTransactions        PlatformWalletTransaction[] @relation("PlatformWalletTransactionCreatedBy")
+  cruiseBookings              CruiseBooking[]             @relation("CruiseBookingCreatedBy")
+  transportBookings           TransportBooking[]          @relation("TransportBookingCreatedBy")
+  activityBookings            ActivityBooking[]           @relation("ActivityBookingCreatedBy")
+  visaApplications            VisaApplication[]           @relation("VisaCreatedBy")
+  airportReceptions           AirportReception[]          @relation("ReceptionCreatedBy")
+  quoteRequests               QuoteRequest[]              @relation("QuoteRequestCreatedBy")
+  assignedQuotes              QuoteRequest[]              @relation("QuoteRequestAssignedTo")
+  simRequests                 SimRequest[]                @relation("SimRequestCreatedBy")
   // Lifecycle audit — bookings/requests this user confirmed (Phase 1)
-  confirmedBookings    Booking[]            @relation("BookingConfirmedBy")
-  confirmedTransport   TransportBooking[]   @relation("TransportConfirmedBy")
-  confirmedActivities  ActivityBooking[]    @relation("ActivityConfirmedBy")
-  confirmedReceptions  AirportReception[]   @relation("ReceptionConfirmedBy")
-  confirmedCruises     CruiseBooking[]      @relation("CruiseConfirmedBy")
-  confirmedSims        SimRequest[]         @relation("SimConfirmedBy")
-  confirmedVisas       VisaApplication[]    @relation("VisaConfirmedBy")
-  confirmedQuotes      QuoteRequest[]       @relation("QuoteConfirmedBy")
-  refreshTokens        RefreshToken[]
-  isActive             Boolean              @default(true)
-  lastLoginAt          DateTime?
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
+  confirmedBookings           Booking[]                   @relation("BookingConfirmedBy")
+  confirmedTransport          TransportBooking[]          @relation("TransportConfirmedBy")
+  confirmedActivities         ActivityBooking[]           @relation("ActivityConfirmedBy")
+  confirmedReceptions         AirportReception[]          @relation("ReceptionConfirmedBy")
+  confirmedCruises            CruiseBooking[]             @relation("CruiseConfirmedBy")
+  confirmedSims               SimRequest[]                @relation("SimConfirmedBy")
+  confirmedVisas              VisaApplication[]           @relation("VisaConfirmedBy")
+  confirmedQuotes             QuoteRequest[]              @relation("QuoteConfirmedBy")
+  createdConsolidatedInvoices ConsolidatedInvoice[]       @relation("ConsolidatedInvoiceCreatedBy")
+  refreshTokens               RefreshToken[]
+  isActive                    Boolean                     @default(true)
+  lastLoginAt                 DateTime?
+  createdAt                   DateTime                    @default(now())
+  updatedAt                   DateTime                    @updatedAt
 
   @@index([email])
   @@index([companyId])
@@ -283,7 +296,7 @@ model Company {
   name                 String
   nameAr               String?
   email                String                      @unique
-  contactEmail         String?                     // Separate contact email from admin user login email
+  contactEmail         String? // Separate contact email from admin user login email
   phone                String
   address              String?
   billingAddress       String?
@@ -294,7 +307,7 @@ model Company {
   balance              Decimal                     @default(0) @db.Decimal(12, 2)
   currency             String                      @default("USD")
   // Client market — picks the explicit per-market price tier (see MarketPrice)
-  market               Market                      @default(FOREIGN)
+  market               Market                      @default(INTERNATIONAL)
   tier                 CompanyTier                 @default(STANDARD)
   logoUrl              String?
   themeColor           String?
@@ -312,7 +325,8 @@ model Company {
   airportReceptions    AirportReception[]
   quoteRequests        QuoteRequest[]
   simRequests          SimRequest[]
-  hotelVisibility       HotelCompanyVisibility[]
+  consolidatedInvoices ConsolidatedInvoice[]
+  hotelVisibility      HotelCompanyVisibility[]
   createdAt            DateTime                    @default(now())
   updatedAt            DateTime                    @updatedAt
 
@@ -324,24 +338,25 @@ model Company {
 // ─────────────────────────────────────────────
 
 model Destination {
-  id             String          @id @default(cuid())
-  name           String
-  nameAr         String?
-  slug           String          @unique
-  country        String          @default("EG")
-  region         String?
-  type           DestinationType @default(CITY)
-  imageUrl       String?
-  imageAltEn     String?
-  imageAltAr     String?
-  galleryUrls    String[]        @default([])
-  isActive       Boolean         @default(true)
-  hotels         Hotel[]
-  activities     Activity[]
-  transportRates TransportRate[]
-  quoteRequests  QuoteRequest[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id                String             @id @default(cuid())
+  name              String
+  nameAr            String?
+  slug              String             @unique
+  country           String             @default("EG")
+  region            String?
+  type              DestinationType    @default(CITY)
+  imageUrl          String?
+  imageAltEn        String?
+  imageAltAr        String?
+  galleryUrls       String[]           @default([])
+  isActive          Boolean            @default(true)
+  hotels            Hotel[]
+  activities        Activity[]
+  transportRates    TransportRate[]
+  quoteRequests     QuoteRequest[]
+  serviceGroupTypes ServiceGroupType[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   @@index([slug])
   @@index([country])
@@ -353,62 +368,62 @@ model Destination {
 // ─────────────────────────────────────────────
 
 model Hotel {
-  id                String         @id @default(cuid())
-  name              String
-  nameAr            String?
-  city              String
-  cityAr            String?
-  country           String
-  stars             Int            @default(3)
-  address           String
-  description       String?
-  descriptionAr     String?
-  amenities         String[]       @default([])
+  id                     String                   @id @default(cuid())
+  name                   String
+  nameAr                 String?
+  city                   String
+  cityAr                 String?
+  country                String
+  stars                  Int                      @default(3)
+  address                String
+  description            String?
+  descriptionAr          String?
+  amenities              String[]                 @default([])
   // Sub-area within the city (e.g. Naama Bay, Nabq, Sahl Hasheesh)
-  area              String?
+  area                   String?
   // Structured attributes (synced from Verified_Hotels sheet) — drive agent filters
-  seaFront          Boolean        @default(false)
-  privateBeach      Boolean        @default(false)
-  sandyBeach        Boolean        @default(false)
-  kidsPool          Boolean        @default(false)
-  kidsClub          Boolean        @default(false)
-  aquaPark          Boolean        @default(false)
-  snorkeling        Boolean        @default(false)
-  diving            Boolean        @default(false)
-  adultsOnly        Boolean        @default(false)
-  allInclusive      Boolean        @default(false)
-  totalPools        Int?
-  googleRating      Decimal?       @db.Decimal(3, 2)
-  imageUrl          String?
-  galleryUrls       String[]       @default([])
+  seaFront               Boolean                  @default(false)
+  privateBeach           Boolean                  @default(false)
+  sandyBeach             Boolean                  @default(false)
+  kidsPool               Boolean                  @default(false)
+  kidsClub               Boolean                  @default(false)
+  aquaPark               Boolean                  @default(false)
+  snorkeling             Boolean                  @default(false)
+  diving                 Boolean                  @default(false)
+  adultsOnly             Boolean                  @default(false)
+  allInclusive           Boolean                  @default(false)
+  totalPools             Int?
+  googleRating           Decimal?                 @db.Decimal(3, 2)
+  imageUrl               String?
+  galleryUrls            String[]                 @default([])
   // Booking.com media enrichment (Apify) — see HotelMediaSyncLog
   bookingHotelId         String?
   bookingUrl             String?
   bookingMatchedName     String?
-  bookingMatchScore      Decimal?  @db.Decimal(4, 3)
-  mediaNeedsManualReview Boolean   @default(false)
+  bookingMatchScore      Decimal?                 @db.Decimal(4, 3)
+  mediaNeedsManualReview Boolean                  @default(false)
   mediaSyncedAt          DateTime?
-  pricePerNight     Decimal        @db.Decimal(10, 2)
-  currency          String         @default("USD")
-  commissionPercent Decimal        @default(0) @db.Decimal(5, 2)
-  availableRooms    Int            @default(0)
-  maxGuestsPerRoom  Int            @default(2)
+  pricePerNight          Decimal                  @db.Decimal(10, 2)
+  currency               String                   @default("USD")
+  commissionPercent      Decimal                  @default(0) @db.Decimal(5, 2)
+  availableRooms         Int                      @default(0)
+  maxGuestsPerRoom       Int                      @default(2)
   // Price visibility controls
-  showPriceToAgents Boolean        @default(false)
-  allowQuoteRequest Boolean        @default(true)
-  minVisibleTier    CompanyTier?
-  source            HotelSource    @default(MANUAL)
-  sheetsRowId       String?
-  isActive          Boolean        @default(true)
-  destinationId     String?
-  destination       Destination?   @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  rooms             Room[]
-  bookings          Booking[]
-  pricing           HotelPricing[]
-  quoteRequests     QuoteRequest[]
-  companyVisibility HotelCompanyVisibility[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  showPriceToAgents      Boolean                  @default(false)
+  allowQuoteRequest      Boolean                  @default(true)
+  minVisibleTier         CompanyTier?
+  source                 HotelSource              @default(MANUAL)
+  sheetsRowId            String?
+  isActive               Boolean                  @default(true)
+  destinationId          String?
+  destination            Destination?             @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  rooms                  Room[]
+  bookings               Booking[]
+  pricing                HotelPricing[]
+  quoteRequests          QuoteRequest[]
+  companyVisibility      HotelCompanyVisibility[]
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
   @@index([city])
   @@index([country])
@@ -506,6 +521,10 @@ model Booking {
   discount           Decimal       @default(0) @db.Decimal(12, 2)
   totalAmount        Decimal       @db.Decimal(12, 2)
   currency           String        @default("USD")
+  sourceAmount       Decimal?      @db.Decimal(12, 2)
+  sourceCurrency     String?
+  exchangeRate       Decimal?      @db.Decimal(18, 8)
+  exchangeRateAt     DateTime?
   notes              String?
   internalNotes      String?
   invoice            Invoice?
@@ -536,51 +555,51 @@ model BookingCounter {
 // ─────────────────────────────────────────────
 
 model QuoteRequest {
-  id               String             @id @default(cuid())
-  refNumber        String             @unique
-  serviceType      QuoteServiceType
-  status           QuoteRequestStatus @default(NEW)
-  companyId        String
-  company          Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  createdById      String
-  createdBy        User               @relation("QuoteRequestCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  destinationId    String?
-  destination      Destination?       @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  destinationName  String?
-  hotelId          String?
-  hotel            Hotel?             @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  id                String             @id @default(cuid())
+  refNumber         String             @unique
+  serviceType       QuoteServiceType
+  status            QuoteRequestStatus @default(NEW)
+  companyId         String
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdById       String
+  createdBy         User               @relation("QuoteRequestCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  destinationId     String?
+  destination       Destination?       @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  destinationName   String?
+  hotelId           String?
+  hotel             Hotel?             @relation(fields: [hotelId], references: [id], onDelete: SetNull)
   // Service identity for non-hotel services (soft refs — no FK constraint for flexibility)
-  serviceId        String?            // cruiseId, activityId, or transportRateId as plain text
-  serviceName      String?            // Human-readable display name of the quoted service
-  cruiseId         String?            // NileCruise.id — soft reference
-  activityId       String?            // Activity.id — soft reference
-  checkIn          DateTime?
-  checkOut         DateTime?
-  adultsCount      Int                @default(1)
-  childrenCount    Int                @default(0)
-  infantsCount     Int                @default(0)
-  roomsCount       Int?
-  nationality      String?
-  travelFrom       String?
-  mealPlan         MealPlan?
-  childAges        Json?
-  budget           Decimal?           @db.Decimal(12, 2)
-  quotedAmount     Decimal?           @db.Decimal(12, 2)
-  currency         String             @default("USD")
-  customerNotes    String?
-  internalNotes    String?
+  serviceId         String? // cruiseId, activityId, or transportRateId as plain text
+  serviceName       String? // Human-readable display name of the quoted service
+  cruiseId          String? // NileCruise.id — soft reference
+  activityId        String? // Activity.id — soft reference
+  checkIn           DateTime?
+  checkOut          DateTime?
+  adultsCount       Int                @default(1)
+  childrenCount     Int                @default(0)
+  infantsCount      Int                @default(0)
+  roomsCount        Int?
+  nationality       String?
+  travelFrom        String?
+  mealPlan          MealPlan?
+  childAges         Json?
+  budget            Decimal?           @db.Decimal(12, 2)
+  quotedAmount      Decimal?           @db.Decimal(12, 2)
+  currency          String             @default("USD")
+  customerNotes     String?
+  internalNotes     String?
   contactPreference String?
-  customFields     Json?              // dynamic fields captured by the Request Form Builder template
-  assignedToId     String?
-  assignedTo       User?              @relation("QuoteRequestAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-  respondedAt      DateTime?
-  closedAt         DateTime?
-  requestedAt      DateTime           @default(now())
-  confirmedAt      DateTime?
-  confirmedById    String?
-  confirmedBy      User?              @relation("QuoteConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  customFields      Json? // dynamic fields captured by the Request Form Builder template
+  assignedToId      String?
+  assignedTo        User?              @relation("QuoteRequestAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  respondedAt       DateTime?
+  closedAt          DateTime?
+  requestedAt       DateTime           @default(now())
+  confirmedAt       DateTime?
+  confirmedById     String?
+  confirmedBy       User?              @relation("QuoteConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   @@index([companyId])
   @@index([status])
@@ -601,34 +620,87 @@ model QuoteRequestCounter {
 // ─────────────────────────────────────────────
 
 model Invoice {
-  id                 String           @id @default(cuid())
-  invoiceNumber      String           @unique
+  id                 String                   @id @default(cuid())
+  invoiceNumber      String                   @unique
   // bookingId is now optional — invoice may belong to activity or transport booking
-  bookingId          String?          @unique
-  booking            Booking?         @relation(fields: [bookingId], references: [id], onDelete: Restrict)
-  activityBookingId  String?          @unique
-  activityBooking    ActivityBooking? @relation(fields: [activityBookingId], references: [id], onDelete: Restrict)
-  transportBookingId String?          @unique
-  transportBooking   TransportBooking? @relation(fields: [transportBookingId], references: [id], onDelete: Restrict)
-  airportReceptionId String?          @unique
-  airportReception   AirportReception? @relation(fields: [airportReceptionId], references: [id], onDelete: Restrict)
+  bookingId          String?                  @unique
+  booking            Booking?                 @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  activityBookingId  String?                  @unique
+  activityBooking    ActivityBooking?         @relation(fields: [activityBookingId], references: [id], onDelete: Restrict)
+  transportBookingId String?                  @unique
+  transportBooking   TransportBooking?        @relation(fields: [transportBookingId], references: [id], onDelete: Restrict)
+  airportReceptionId String?                  @unique
+  airportReception   AirportReception?        @relation(fields: [airportReceptionId], references: [id], onDelete: Restrict)
+  cruiseBookingId    String?                  @unique
+  cruiseBooking      CruiseBooking?           @relation(fields: [cruiseBookingId], references: [id], onDelete: Restrict)
+  visaApplicationId  String?                  @unique
+  visaApplication    VisaApplication?         @relation(fields: [visaApplicationId], references: [id], onDelete: Restrict)
+  simRequestId       String?                  @unique
+  simRequest         SimRequest?              @relation(fields: [simRequestId], references: [id], onDelete: Restrict)
   companyId          String
-  company            Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  subtotal           Decimal          @db.Decimal(12, 2)
-  taxRate            Decimal          @default(0.14) @db.Decimal(5, 4)
-  taxAmount          Decimal          @db.Decimal(12, 2)
-  total              Decimal          @db.Decimal(12, 2)
-  currency           String           @default("USD")
-  status             InvoiceStatus    @default(UNPAID)
+  company            Company                  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  subtotal           Decimal                  @db.Decimal(12, 2)
+  taxRate            Decimal                  @default(0) @db.Decimal(5, 4)
+  taxAmount          Decimal                  @db.Decimal(12, 2)
+  total              Decimal                  @db.Decimal(12, 2)
+  currency           String                   @default("USD")
+  sourceSubtotal     Decimal?                 @db.Decimal(12, 2)
+  sourceCurrency     String?
+  exchangeRate       Decimal?                 @db.Decimal(18, 8)
+  exchangeRateAt     DateTime?
+  status             InvoiceStatus            @default(UNPAID)
   pdfPath            String?
   dueDate            DateTime
   paidAt             DateTime?
   notes              String?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  consolidatedLine   ConsolidatedInvoiceLine?
 
   @@index([companyId])
   @@index([status])
+}
+
+model ConsolidatedInvoice {
+  id              String                    @id @default(cuid())
+  statementNumber String                    @unique
+  companyId       String
+  company         Company                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdById     String?
+  createdBy       User?                     @relation("ConsolidatedInvoiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  periodFrom      DateTime?
+  periodTo        DateTime?
+  subtotal        Decimal                   @db.Decimal(12, 2)
+  total           Decimal                   @db.Decimal(12, 2)
+  currency        String
+  status          InvoiceStatus             @default(UNPAID)
+  pdfPath         String?
+  notes           String?
+  lines           ConsolidatedInvoiceLine[]
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ConsolidatedInvoiceLine {
+  id                    String              @id @default(cuid())
+  consolidatedInvoiceId String
+  consolidatedInvoice   ConsolidatedInvoice @relation(fields: [consolidatedInvoiceId], references: [id], onDelete: Cascade)
+  invoiceId             String              @unique
+  invoice               Invoice             @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  invoiceNumber         String
+  refNumber             String?
+  service               String
+  serviceDate           DateTime
+  amount                Decimal             @db.Decimal(12, 2)
+  currency              String
+  status                InvoiceStatus
+  createdAt             DateTime            @default(now())
+
+  @@index([consolidatedInvoiceId])
 }
 
 model InvoiceCounter {
@@ -733,8 +805,13 @@ model CruiseBooking {
   childrenCount  Int           @default(0)
   totalAmount    Decimal       @db.Decimal(12, 2)
   currency       String        @default("USD")
+  sourceAmount   Decimal?      @db.Decimal(12, 2)
+  sourceCurrency String?
+  exchangeRate   Decimal?      @db.Decimal(18, 8)
+  exchangeRateAt DateTime?
   status         BookingStatus @default(PENDING)
   notes          String?
+  invoice        Invoice?
   requestedAt    DateTime      @default(now())
   confirmedAt    DateTime?
   confirmedById  String?
@@ -752,66 +829,75 @@ model CruiseBooking {
 // ─────────────────────────────────────────────
 
 model TransportBooking {
-  id              String        @id @default(cuid())
-  refNumber       String        @unique
-  companyId       String
-  company         Company       @relation(fields: [companyId], references: [id])
-  createdById     String
-  createdBy       User          @relation("TransportBookingCreatedBy", fields: [createdById], references: [id])
-  type            TransportType
-  vehicleType     VehicleType   @default(SEDAN)
-  fromLocation    String
-  toLocation      String
-  fromType        String?       // AIRPORT | DESTINATION
-  toType          String?       // AIRPORT | DESTINATION
-  pickupDateTime  DateTime
-  returnDateTime  DateTime?
-  isRoundTrip     Boolean       @default(false)
-  passengerCount  Int           @default(1)
-  passengerNames  String[]      @default([])
-  passengerName   String?       // lead passenger name
-  flightNumber    String?
-  airlineName     String?
+  id                 String            @id @default(cuid())
+  refNumber          String            @unique
+  companyId          String
+  company            Company           @relation(fields: [companyId], references: [id])
+  createdById        String
+  createdBy          User              @relation("TransportBookingCreatedBy", fields: [createdById], references: [id])
+  type               TransportType
+  vehicleType        VehicleType       @default(SEDAN)
+  fromLocation       String
+  toLocation         String
+  fromType           String? // AIRPORT | DESTINATION
+  toType             String? // AIRPORT | DESTINATION
+  pickupDateTime     DateTime
+  returnDateTime     DateTime?
+  isRoundTrip        Boolean           @default(false)
+  passengerCount     Int               @default(1)
+  passengerNames     String[]          @default([])
+  passengerName      String? // lead passenger name
+  flightNumber       String?
+  airlineName        String?
   returnFlightNumber String?
   returnAirlineName  String?
-  contactNumber   String?
-  totalAmount     Decimal       @db.Decimal(12, 2)
-  currency        String        @default("USD")
-  status          BookingStatus @default(PENDING)
-  notes           String?
-  customFields    Json?         // dynamic fields captured by the Request Form Builder template
-  invoice         Invoice?
-  requestedAt     DateTime      @default(now())
-  confirmedAt     DateTime?
-  confirmedById   String?
-  confirmedBy     User?         @relation("TransportConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  contactNumber      String?
+  groupTypeId        String?
+  groupType          ServiceGroupType? @relation("TransportBookingGroupType", fields: [groupTypeId], references: [id], onDelete: SetNull)
+  groupTypeLabel     String?
+  totalAmount        Decimal           @db.Decimal(12, 2)
+  currency           String            @default("USD")
+  sourceAmount       Decimal?          @db.Decimal(12, 2)
+  sourceCurrency     String?
+  exchangeRate       Decimal?          @db.Decimal(18, 8)
+  exchangeRateAt     DateTime?
+  status             BookingStatus     @default(PENDING)
+  notes              String?
+  customFields       Json? // dynamic fields captured by the Request Form Builder template
+  invoice            Invoice?
+  requestedAt        DateTime          @default(now())
+  confirmedAt        DateTime?
+  confirmedById      String?
+  confirmedBy        User?             @relation("TransportConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([companyId])
   @@index([status])
   @@index([confirmedById])
+  @@index([groupTypeId])
 }
 
 model TransportRate {
-  id             String        @id @default(cuid())
-  sheetsRowId    String?
-  type           TransportType @default(PRIVATE_TRANSFER)
-  vehicleType    VehicleType   @default(SEDAN)
-  city           String?
-  fromLocation   String?
-  toLocation     String?
-  rate           Decimal       @db.Decimal(10, 2)   // one-way rate
-  roundTripRate  Decimal?      @db.Decimal(10, 2)   // explicit round-trip rate (optional)
-  currency       String        @default("USD")
-  minCapacity    Int           @default(1)
-  maxCapacity    Int?
-  notes          String?
-  isActive       Boolean       @default(true)
-  destinationId  String?
-  destination    Destination?  @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id                String             @id @default(cuid())
+  sheetsRowId       String?
+  type              TransportType      @default(PRIVATE_TRANSFER)
+  vehicleType       VehicleType        @default(SEDAN)
+  city              String?
+  fromLocation      String?
+  toLocation        String?
+  rate              Decimal            @db.Decimal(10, 2) // one-way rate
+  roundTripRate     Decimal?           @db.Decimal(10, 2) // explicit round-trip rate (optional)
+  currency          String             @default("USD")
+  minCapacity       Int                @default(1)
+  maxCapacity       Int?
+  notes             String?
+  isActive          Boolean            @default(true)
+  destinationId     String?
+  destination       Destination?       @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  serviceGroupTypes ServiceGroupType[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   @@index([sheetsRowId])
   @@index([type])
@@ -824,33 +910,34 @@ model TransportRate {
 // ─────────────────────────────────────────────
 
 model Activity {
-  id                 String            @id @default(cuid())
+  id                 String             @id @default(cuid())
   name               String
   nameAr             String?
   // city is now free-text (replaces ActivityCity enum) — dynamic destinations
   city               String
-  category           ActivityCategory  @default(SIGHTSEEING)
+  category           ActivityCategory   @default(SIGHTSEEING)
   duration           String?
-  timeSlots          String[]          @default([])   // e.g. ["09:00 AM","02:00 PM"]
+  timeSlots          String[]           @default([]) // e.g. ["09:00 AM","02:00 PM"]
   description        String?
   descriptionAr      String?
-  includes           String[]          @default([])
-  excludes           String[]          @default([])
+  includes           String[]           @default([])
+  excludes           String[]           @default([])
   imageUrl           String?
-  priceAdult         Decimal           @db.Decimal(10, 2)
-  priceChild         Decimal           @db.Decimal(10, 2)
-  currency           String            @default("USD")
+  priceAdult         Decimal            @db.Decimal(10, 2)
+  priceChild         Decimal            @db.Decimal(10, 2)
+  currency           String             @default("USD")
   sheetsRowId        String?
-  minPax             Int               @default(1)
-  maxPax             Int               @default(20)
-  isActive           Boolean           @default(true)
+  minPax             Int                @default(1)
+  maxPax             Int                @default(20)
+  isActive           Boolean            @default(true)
   // If false, creates a quote request instead of a confirmed booking
-  isConfirmableInApp Boolean           @default(true)
+  isConfirmableInApp Boolean            @default(true)
   destinationId      String?
-  destination        Destination?      @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  destination        Destination?       @relation(fields: [destinationId], references: [id], onDelete: SetNull)
   bookings           ActivityBooking[]
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  serviceGroupTypes  ServiceGroupType[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([city])
   @@index([sheetsRowId])
@@ -858,39 +945,81 @@ model Activity {
 }
 
 model ActivityBooking {
-  id             String        @id @default(cuid())
-  refNumber      String        @unique
+  id             String            @id @default(cuid())
+  refNumber      String            @unique
   activityId     String
-  activity       Activity      @relation(fields: [activityId], references: [id])
+  activity       Activity          @relation(fields: [activityId], references: [id])
   companyId      String
-  company        Company       @relation(fields: [companyId], references: [id])
+  company        Company           @relation(fields: [companyId], references: [id])
   createdById    String
-  createdBy      User          @relation("ActivityBookingCreatedBy", fields: [createdById], references: [id])
+  createdBy      User              @relation("ActivityBookingCreatedBy", fields: [createdById], references: [id])
   activityDate   DateTime
-  selectedTime   String?       // time slot chosen by user e.g. "09:00 AM"
-  activityType   String?       // GROUP | PRIVATE | VIP
-  adultsCount    Int           @default(1)
-  childrenCount  Int           @default(0)
-  childAges      Json?         // array of child ages
-  clientName     String?       // lead client name
+  selectedTime   String? // time slot chosen by user e.g. "09:00 AM"
+  activityType   String? // GROUP | PRIVATE | VIP
+  groupTypeId    String?
+  groupType      ServiceGroupType? @relation("ActivityBookingGroupType", fields: [groupTypeId], references: [id], onDelete: SetNull)
+  groupTypeLabel String?
+  adultsCount    Int               @default(1)
+  childrenCount  Int               @default(0)
+  childAges      Json? // array of child ages
+  clientName     String? // lead client name
   clientPhone    String?
   hotelName      String?
-  passengerNames String[]      @default([])
-  totalAmount    Decimal       @db.Decimal(12, 2)
-  currency       String        @default("USD")
-  status         BookingStatus @default(PENDING)
+  passengerNames String[]          @default([])
+  totalAmount    Decimal           @db.Decimal(12, 2)
+  currency       String            @default("USD")
+  sourceAmount   Decimal?          @db.Decimal(12, 2)
+  sourceCurrency String?
+  exchangeRate   Decimal?          @db.Decimal(18, 8)
+  exchangeRateAt DateTime?
+  status         BookingStatus     @default(PENDING)
   notes          String?
   invoice        Invoice?
-  requestedAt    DateTime      @default(now())
+  requestedAt    DateTime          @default(now())
   confirmedAt    DateTime?
   confirmedById  String?
-  confirmedBy    User?         @relation("ActivityConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  confirmedBy    User?             @relation("ActivityConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
 
   @@index([companyId])
   @@index([activityId])
   @@index([confirmedById])
+  @@index([groupTypeId])
+}
+
+model ServiceGroupType {
+  id                String                @id @default(cuid())
+  scope             ServiceScope
+  code              String
+  labelEn           String
+  labelAr           String?
+  descriptionEn     String?
+  descriptionAr     String?
+  destinationId     String?
+  destination       Destination?          @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+  activityId        String?
+  activity          Activity?             @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  transportRateId   String?
+  transportRate     TransportRate?        @relation(fields: [transportRateId], references: [id], onDelete: Cascade)
+  adjustmentType    PricingAdjustmentType @default(NONE)
+  adjustmentValue   Decimal               @default(0) @db.Decimal(12, 2)
+  minPax            Int                   @default(1)
+  maxPax            Int?
+  isActive          Boolean               @default(true)
+  displayOrder      Int                   @default(0)
+  validFrom         DateTime?
+  validTo           DateTime?
+  activityBookings  ActivityBooking[]     @relation("ActivityBookingGroupType")
+  transportBookings TransportBooking[]    @relation("TransportBookingGroupType")
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([scope, code, destinationId, activityId, transportRateId])
+  @@index([scope, isActive])
+  @@index([destinationId])
+  @@index([activityId])
+  @@index([transportRateId])
 }
 
 // ─────────────────────────────────────────────
@@ -915,13 +1044,18 @@ model VisaApplication {
   status             VisaStatus     @default(PENDING)
   totalAmount        Decimal        @db.Decimal(12, 2)
   currency           String         @default("USD")
+  sourceAmount       Decimal?       @db.Decimal(12, 2)
+  sourceCurrency     String?
+  exchangeRate       Decimal?       @db.Decimal(18, 8)
+  exchangeRateAt     DateTime?
   notes              String?
   phone              String?
   hotelName          String?
   paxCount           Int            @default(1)
   passportUrl        String?
   flightTicketUrl    String?
-  customFields       Json?          // dynamic fields captured by the Request Form Builder template
+  customFields       Json? // dynamic fields captured by the Request Form Builder template
+  invoice            Invoice?
   submittedAt        DateTime?
   approvedAt         DateTime?
   rejectedAt         DateTime?
@@ -982,9 +1116,13 @@ model AirportReception {
   travelDetails   String?
   totalAmount     Decimal       @db.Decimal(12, 2)
   currency        String        @default("USD")
+  sourceAmount    Decimal?      @db.Decimal(12, 2)
+  sourceCurrency  String?
+  exchangeRate    Decimal?      @db.Decimal(18, 8)
+  exchangeRateAt  DateTime?
   status          BookingStatus @default(PENDING)
   notes           String?
-  customFields    Json?         // dynamic fields captured by the Request Form Builder template
+  customFields    Json? // dynamic fields captured by the Request Form Builder template
   invoice         Invoice?
   requestedAt     DateTime      @default(now())
   confirmedAt     DateTime?
@@ -1063,29 +1201,34 @@ model SimPackage {
 }
 
 model SimRequest {
-  id          String        @id @default(cuid())
-  refNumber   String        @unique
-  companyId   String
-  company     Company       @relation(fields: [companyId], references: [id])
-  createdById String
-  createdBy   User          @relation("SimRequestCreatedBy", fields: [createdById], references: [id])
-  packageId   String?
-  package     SimPackage?   @relation(fields: [packageId], references: [id], onDelete: SetNull)
-  clientName  String
-  phone       String
-  quantity    Int           @default(1)
-  arrivalDate DateTime?
-  notes       String?
-  customFields Json?        // dynamic fields captured by the Request Form Builder template
-  status      BookingStatus @default(PENDING)
-  totalAmount Decimal       @db.Decimal(12, 2)
-  currency    String        @default("USD")
-  requestedAt DateTime      @default(now())
-  confirmedAt DateTime?
-  confirmedById String?
-  confirmedBy User?         @relation("SimConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  refNumber      String        @unique
+  companyId      String
+  company        Company       @relation(fields: [companyId], references: [id])
+  createdById    String
+  createdBy      User          @relation("SimRequestCreatedBy", fields: [createdById], references: [id])
+  packageId      String?
+  package        SimPackage?   @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  clientName     String
+  phone          String
+  quantity       Int           @default(1)
+  arrivalDate    DateTime?
+  notes          String?
+  customFields   Json? // dynamic fields captured by the Request Form Builder template
+  invoice        Invoice?
+  status         BookingStatus @default(PENDING)
+  totalAmount    Decimal       @db.Decimal(12, 2)
+  currency       String        @default("USD")
+  sourceAmount   Decimal?      @db.Decimal(12, 2)
+  sourceCurrency String?
+  exchangeRate   Decimal?      @db.Decimal(18, 8)
+  exchangeRateAt DateTime?
+  requestedAt    DateTime      @default(now())
+  confirmedAt    DateTime?
+  confirmedById  String?
+  confirmedBy    User?         @relation("SimConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   @@index([companyId])
   @@index([status])
@@ -1097,18 +1240,18 @@ model SimRequest {
 // ─────────────────────────────────────────────
 
 model UiTemplate {
-  id          String              @id @default(cuid())
-  key         String              @unique
+  id          String               @id @default(cuid())
+  key         String               @unique
   name        String
-  target      String              // company_dashboard | hotel_request | activity_request | transport_booking | security_approval | airport_assist | sim_card | offer_popup
+  target      String // company_dashboard | hotel_request | activity_request | transport_booking | security_approval | airport_assist | sim_card | offer_popup
   serviceType String?
-  langMode    String              @default("both")  // en | ar | both
-  version     Int                 @default(1)
-  isActive    Boolean             @default(false)
+  langMode    String               @default("both") // en | ar | both
+  version     Int                  @default(1)
+  isActive    Boolean              @default(false)
   config      Json
   revisions   UiTemplateRevision[]
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
 
   @@index([target])
   @@index([isActive])
@@ -1168,13 +1311,13 @@ model SyncLog {
 // ─────────────────────────────────────────────
 // The existing base price column on each service (Hotel.pricePerNight,
 // Activity.priceAdult/priceChild, TransportRate.rate/roundTripRate,
-// NileCruise.priceFrom, SimPackage.price) is treated as the default / FOREIGN
+// NileCruise.priceFrom, SimPackage.price) is treated as the international default.
 // price. A MarketPrice row holds a per-market override (in USD). Resolution =
 // override row when present, else the base column — so existing data keeps working.
 
 model MarketPrice {
   id         String   @id @default(cuid())
-  entityType String   // HOTEL | ACTIVITY_ADULT | ACTIVITY_CHILD | TRANSPORT | TRANSPORT_RT | CRUISE | SIM
+  entityType String // HOTEL | ACTIVITY_ADULT | ACTIVITY_CHILD | TRANSPORT | TRANSPORT_RT | CRUISE | SIM
   entityId   String
   market     Market
   priceUsd   Decimal  @db.Decimal(12, 2)
@@ -1199,7 +1342,7 @@ model FxRateCache {
 
 model HotelMediaSyncLog {
   id            String     @id @default(cuid())
-  stage         String     // discover | fetch | sync
+  stage         String // discover | fetch | sync
   city          String?
   actorId       String?
   dryRun        Boolean    @default(true)

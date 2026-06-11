@@ -1,0 +1,6 @@
+UPDATE "Company"
+SET "market" = 'INTERNATIONAL'
+WHERE "market" IN ('GULF', 'FOREIGN');
+
+ALTER TABLE "Company"
+ALTER COLUMN "market" SET DEFAULT 'INTERNATIONAL';

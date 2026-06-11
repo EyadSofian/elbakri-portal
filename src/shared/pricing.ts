@@ -9,10 +9,9 @@ import { prisma } from '../config/db';
  * Each service stores its base price on its own column (Hotel.pricePerNight,
  * Activity.priceAdult/priceChild, TransportRate.rate/roundTripRate,
  * NileCruise.priceFrom, SimPackage.price). That base is treated as the
- * default / FOREIGN price. EGYPTIAN and GULF prices are stored as overrides in
- * the MarketPrice table; when no override exists we fall back to the base price
- * so existing data keeps working. All prices are USD — currency display
- * conversion happens on the frontend (see formatPrice + /api/fx/rates).
+ * international/default price. Egyptian prices can be stored as overrides in
+ * MarketPrice; when no override exists the base amount and currency remain
+ * authoritative. Legacy GULF/FOREIGN values are still read during migration.
  */
 
 export type MarketEntityType =
@@ -25,14 +24,14 @@ export type MarketEntityType =
   | 'SIM';
 
 function isMarket(v: unknown): v is Market {
-  return v === 'EGYPTIAN' || v === 'GULF' || v === 'FOREIGN';
+  return v === 'EGYPTIAN' || v === 'INTERNATIONAL' || v === 'GULF' || v === 'FOREIGN';
 }
 
 /**
  * Resolve the market that prices should be shown in for this request.
  * - Company callers → their company's `market`.
  * - SUPERADMIN → optional `?market=` query (admin price preview), else null.
- * `null` / `FOREIGN` mean "use the base price column" (no override lookup).
+ * `null` / `INTERNATIONAL` / legacy `FOREIGN` use the base price column.
  */
 export async function resolveCallerMarket(req: Request): Promise<Market | null> {
   const caller = req.user;
@@ -51,7 +50,7 @@ export async function resolveCallerMarket(req: Request): Promise<Market | null> 
 
 /**
  * Batch-load per-market price overrides for a set of entity ids.
- * Returns an empty map for FOREIGN / null (base column is authoritative there).
+ * Returns an empty map for international / legacy foreign / null.
  */
 export async function resolveMarketPrices(
   entityType: MarketEntityType,
@@ -59,7 +58,7 @@ export async function resolveMarketPrices(
   market: Market | null,
 ): Promise<Map<string, Decimal>> {
   const out = new Map<string, Decimal>();
-  if (!market || market === 'FOREIGN' || ids.length === 0) return out;
+  if (!market || market === 'FOREIGN' || market === 'INTERNATIONAL' || ids.length === 0) return out;
   const rows = await prisma.marketPrice.findMany({
     where: { entityType, market, entityId: { in: ids } },
     select: { entityId: true, priceUsd: true },
@@ -71,22 +70,52 @@ export async function resolveMarketPrices(
 /**
  * Mutate a list of records in place, overriding `priceField` with the market
  * override when present. Used for list/detail read paths returning prices to
- * company users. No-op for FOREIGN / null.
+ * company users. No-op for international / legacy foreign / null.
  */
 export async function applyMarketPrice<T extends Record<string, unknown>>(
   items: T[],
-  opts: { entityType: MarketEntityType; market: Market | null; priceField: keyof T; idKey?: keyof T },
+  opts: {
+    entityType: MarketEntityType;
+    market: Market | null;
+    priceField: keyof T;
+    idKey?: keyof T;
+    currencyField?: keyof T;
+  },
 ): Promise<T[]> {
   const { entityType, market, priceField } = opts;
   const idKey = opts.idKey ?? ('id' as keyof T);
-  if (!market || market === 'FOREIGN' || items.length === 0) return items;
+  if (!market || market === 'FOREIGN' || market === 'INTERNATIONAL' || items.length === 0) return items;
   const ids = items.map((i) => String(i[idKey]));
   const overrides = await resolveMarketPrices(entityType, ids, market);
   for (const it of items) {
     const ov = overrides.get(String(it[idKey]));
-    if (ov != null && it[priceField] != null) (it as Record<string, unknown>)[priceField as string] = ov;
+    if (ov != null && it[priceField] != null) {
+      (it as Record<string, unknown>)[priceField as string] = ov;
+      if (opts.currencyField) {
+        (it as Record<string, unknown>)[opts.currencyField as string] = 'USD';
+      }
+    }
   }
   return items;
+}
+
+export async function resolveMarketMoney(
+  entityType: MarketEntityType,
+  entityId: string,
+  market: Market | null,
+  baseAmount: Decimal,
+  baseCurrency: string,
+): Promise<{ amount: Decimal; currency: string; overridden: boolean }> {
+  if (!market || market === 'FOREIGN' || market === 'INTERNATIONAL') {
+    return { amount: baseAmount, currency: baseCurrency, overridden: false };
+  }
+  const row = await prisma.marketPrice.findUnique({
+    where: { entityType_entityId_market: { entityType, entityId, market } },
+    select: { priceUsd: true },
+  });
+  return row
+    ? { amount: row.priceUsd, currency: 'USD', overridden: true }
+    : { amount: baseAmount, currency: baseCurrency, overridden: false };
 }
 
 /** Single-entity market price with base fallback. */
@@ -96,7 +125,7 @@ export async function getMarketPrice(
   market: Market | null,
   baseUsd: Decimal,
 ): Promise<Decimal> {
-  if (!market || market === 'FOREIGN') return baseUsd;
+  if (!market || market === 'FOREIGN' || market === 'INTERNATIONAL') return baseUsd;
   const row = await prisma.marketPrice.findUnique({
     where: { entityType_entityId_market: { entityType, entityId, market } },
     select: { priceUsd: true },
@@ -106,7 +135,7 @@ export async function getMarketPrice(
 
 /**
  * Upsert (or clear when value is null/empty) a per-market price override.
- * Admin-only callers. FOREIGN overrides are ignored (edit the base column).
+ * Admin-only callers. International/legacy foreign overrides are ignored.
  */
 export async function upsertMarketPrice(
   entityType: MarketEntityType,
@@ -114,7 +143,7 @@ export async function upsertMarketPrice(
   market: Market,
   priceUsd: number | string | null | undefined,
 ): Promise<void> {
-  if (market === 'FOREIGN') return;
+  if (market === 'FOREIGN' || market === 'INTERNATIONAL') return;
   const raw = priceUsd == null || priceUsd === '' ? null : Number(priceUsd);
   if (raw == null || !Number.isFinite(raw) || raw <= 0) {
     await prisma.marketPrice.deleteMany({ where: { entityType, entityId, market } });

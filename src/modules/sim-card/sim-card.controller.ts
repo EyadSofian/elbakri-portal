@@ -1,7 +1,11 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
-import { sanitizeCustomFields } from '../../shared/helpers';
-import { resolveCallerMarket, applyMarketPrice, getMarketPrice } from '../../shared/pricing';
+import { Decimal } from '@prisma/client/runtime/library';
+import { generateInvoiceNumber, sanitizeCustomFields } from '../../shared/helpers';
+import { resolveCallerMarket, applyMarketPrice, resolveMarketMoney } from '../../shared/pricing';
+import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { generateInvoicePdf } from '../invoices/pdf.generator';
+import { buildInvoiceTotals } from '../../shared/invoicing';
 
 // ─── Packages (admin managed) ────────────────────────────────────────────────
 
@@ -20,7 +24,9 @@ export async function listPackages(req: Request, res: Response) {
 
     // Apply explicit per-market price overrides for the caller's market
     const market = await resolveCallerMarket(req);
-    await applyMarketPrice(packages, { entityType: 'SIM', market, priceField: 'price' });
+    await applyMarketPrice(packages, {
+      entityType: 'SIM', market, priceField: 'price', currencyField: 'currency',
+    });
 
     res.json({
       success: true,
@@ -124,7 +130,12 @@ export async function listRequests(req: Request, res: Response) {
     const [requests, total] = await Promise.all([
       prisma.simRequest.findMany({
         where,
-        include: { package: true, company: { select: { name: true } }, confirmedBy: { select: { id: true, name: true } } },
+        include: {
+          package: true,
+          company: { select: { name: true } },
+          confirmedBy: { select: { id: true, name: true } },
+          invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
+        },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limitNum,
@@ -152,34 +163,92 @@ export async function createRequest(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: 'clientName and phone are required' });
     }
 
-    const pkg = packageId ? await prisma.simPackage.findUnique({ where: { id: packageId } }) : null;
+    const pkg = packageId
+      ? await prisma.simPackage.findFirst({ where: { id: packageId, isActive: true } })
+      : null;
+    if (packageId && !pkg) {
+      return res.status(404).json({ success: false, error: 'PACKAGE_NOT_AVAILABLE' });
+    }
     const qty = Math.max(1, parseInt(quantity) || 1);
     // Server-authoritative unit price using the company's market tier
-    const company = await prisma.company.findUnique({ where: { id: user.companyId }, select: { market: true } });
-    const unitPrice = pkg ? Number(await getMarketPrice('SIM', pkg.id, company?.market ?? null, pkg.price)) : 0;
-    const totalAmount = unitPrice * qty;
-    const currency = pkg?.currency || 'USD';
-
-    const refNumber = await generateSimRef();
-
-    const simReq = await prisma.simRequest.create({
-      data: {
-        refNumber,
-        companyId: user.companyId,
-        createdById: user.id,
-        packageId: packageId || null,
-        clientName,
-        phone,
-        quantity: qty,
-        arrivalDate: arrivalDate ? new Date(arrivalDate) : null,
-        notes: notes || null,
-        customFields: sanitizeCustomFields(customFields) ?? undefined,
-        totalAmount,
-        currency,
-        status: 'PENDING',
-      },
-      include: { package: true },
+    const company = await prisma.company.findUnique({
+      where: { id: user.companyId },
+      select: { market: true, currency: true, isActive: true },
     });
+    if (!company?.isActive) {
+      return res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
+    }
+    const sourceMoney = pkg
+      ? await resolveMarketMoney('SIM', pkg.id, company?.market ?? null, pkg.price, pkg.currency)
+      : { amount: new Decimal(0), currency: company?.currency ?? 'USD' };
+    const charge = await convertMoney(
+      sourceMoney.amount.mul(qty),
+      sourceMoney.currency,
+      company?.currency ?? sourceMoney.currency,
+    );
+    const totalAmount = charge.totalAmount;
+    const currency = charge.currency;
+
+    const [refNumber, invoiceNumber] = await Promise.all([
+      generateSimRef(),
+      generateInvoiceNumber(prisma),
+    ]);
+    const simReq = await prisma.$transaction(async (tx) => {
+      const created = await tx.simRequest.create({
+        data: {
+          refNumber,
+          companyId: user.companyId!,
+          createdById: user.id,
+          packageId: packageId || null,
+          clientName,
+          phone,
+          quantity: qty,
+          arrivalDate: arrivalDate ? new Date(arrivalDate) : null,
+          notes: notes || null,
+          customFields: sanitizeCustomFields(customFields) ?? undefined,
+          totalAmount,
+          currency,
+          sourceAmount: charge.sourceAmount,
+          sourceCurrency: charge.sourceCurrency,
+          exchangeRate: charge.exchangeRate,
+          exchangeRateAt: charge.exchangeRateAt,
+          status: 'PENDING',
+        },
+      });
+      if (totalAmount.gt(0)) {
+        const invoiceTotals = buildInvoiceTotals(totalAmount);
+        await tx.invoice.create({
+          data: {
+            invoiceNumber,
+            simRequestId: created.id,
+            companyId: user.companyId!,
+            ...invoiceTotals,
+            currency,
+            ...invoiceMoneySnapshotData(charge),
+            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        });
+      }
+      return tx.simRequest.findUniqueOrThrow({
+        where: { id: created.id },
+        include: {
+          package: true,
+          invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
+        },
+      });
+    });
+
+    if (simReq.invoice) {
+      const invoice = await prisma.invoice.findUnique({
+        where: { id: simReq.invoice.id },
+        include: { simRequest: { include: { company: true, package: true } }, company: true },
+      });
+      if (invoice) {
+        generateInvoicePdf(invoice as Parameters<typeof generateInvoicePdf>[0])
+          .then(({ path }) => prisma.invoice.update({ where: { id: invoice.id }, data: { pdfPath: path } }))
+          .catch(console.error);
+      }
+    }
 
     res.status(201).json({ success: true, data: simReq });
   } catch (err) {
@@ -190,20 +259,117 @@ export async function createRequest(req: Request, res: Response) {
 export async function updateRequestStatus(req: Request, res: Response) {
   try {
     const { id } = req.params;
-    const { status } = req.body;
-    const data: Record<string, unknown> = { status };
-    // Stamp the confirming admin + time when the request transitions to CONFIRMED,
-    // preserving any original audit values so re-confirm never overwrites them.
-    if (status === 'CONFIRMED') {
-      const existing = await prisma.simRequest.findUniqueOrThrow({
-        where: { id }, select: { confirmedAt: true, confirmedById: true },
-      });
-      data.confirmedAt = existing.confirmedAt ?? new Date();
-      data.confirmedById = existing.confirmedById ?? req.user!.id;
+    const status = String(req.body.status ?? '').toUpperCase();
+    if (!['CONFIRMED', 'CANCELLED', 'REJECTED'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'INVALID_STATUS' });
     }
-    const updated = await prisma.simRequest.update({ where: { id }, data });
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.simRequest.findUniqueOrThrow({
+        where: { id },
+        include: { company: true, invoice: true },
+      });
+      if (existing.status === status) return;
+
+      if (status === 'CONFIRMED') {
+        if (existing.status !== 'PENDING') throw new Error('INVALID_STATUS');
+        if (!existing.company.isActive) throw new Error('COMPANY_INACTIVE');
+        const debit = await tx.walletTransaction.findFirst({
+          where: { reference: existing.refNumber, type: 'DEBIT' },
+        });
+        if (!debit && existing.totalAmount.gt(0)) {
+          if (existing.company.balance.lt(existing.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
+          const balanceBefore = existing.company.balance;
+          const balanceAfter = balanceBefore.sub(existing.totalAmount);
+          await tx.company.update({ where: { id: existing.companyId }, data: { balance: balanceAfter } });
+          await tx.walletTransaction.create({
+            data: {
+              companyId: existing.companyId,
+              type: 'DEBIT',
+              amount: existing.totalAmount,
+              balanceBefore,
+              balanceAfter,
+              reference: existing.refNumber,
+              description: `Confirmed SIM request ${existing.refNumber}`,
+              createdById: req.user!.id,
+            },
+          });
+        }
+        if (!existing.invoice && existing.totalAmount.gt(0)) {
+          const invoiceNumber = await generateInvoiceNumber(prisma);
+          const invoiceTotals = buildInvoiceTotals(existing.totalAmount);
+          await tx.invoice.create({
+            data: {
+              invoiceNumber,
+              simRequestId: existing.id,
+              companyId: existing.companyId,
+              ...invoiceTotals,
+              currency: existing.currency,
+              ...invoiceMoneySnapshotData({
+                sourceAmount: existing.sourceAmount ?? existing.totalAmount,
+                sourceCurrency: existing.sourceCurrency ?? existing.currency,
+                totalAmount: existing.totalAmount,
+                currency: existing.currency,
+                exchangeRate: existing.exchangeRate ?? new Decimal(1),
+                exchangeRateAt: existing.exchangeRateAt ?? existing.createdAt,
+              }),
+              dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            },
+          });
+        }
+        await tx.simRequest.update({
+          where: { id },
+          data: {
+            status: 'CONFIRMED',
+            confirmedAt: existing.confirmedAt ?? new Date(),
+            confirmedById: existing.confirmedById ?? req.user!.id,
+          },
+        });
+        return;
+      }
+
+      const debit = await tx.walletTransaction.findFirst({
+        where: { reference: existing.refNumber, type: 'DEBIT' },
+      });
+      if (existing.status === 'CONFIRMED' && debit) {
+        const balanceBefore = existing.company.balance;
+        const balanceAfter = balanceBefore.add(existing.totalAmount);
+        await tx.company.update({ where: { id: existing.companyId }, data: { balance: balanceAfter } });
+        await tx.walletTransaction.create({
+          data: {
+            companyId: existing.companyId,
+            type: 'REFUND',
+            amount: existing.totalAmount,
+            balanceBefore,
+            balanceAfter,
+            reference: existing.refNumber,
+            description: `Refund SIM request ${existing.refNumber}`,
+            createdById: req.user!.id,
+          },
+        });
+      }
+      if (existing.invoice) {
+        await tx.invoice.update({ where: { id: existing.invoice.id }, data: { status: 'CANCELLED' } });
+      }
+      await tx.simRequest.update({ where: { id }, data: { status: status as 'CANCELLED' | 'REJECTED' } });
+    });
+    const updated = await prisma.simRequest.findUniqueOrThrow({
+      where: { id },
+      include: {
+        package: true,
+        company: { select: { name: true } },
+        confirmedBy: { select: { id: true, name: true } },
+        invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
+      },
+    });
     res.json({ success: true, data: updated });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    const message = String((err as Error).message);
+    if (message === 'INVALID_STATUS' || message === 'COMPANY_INACTIVE') {
+      res.status(400).json({ success: false, error: message });
+    } else if (message === 'INSUFFICIENT_BALANCE') {
+      res.status(400).json({ success: false, error: message, message: 'Insufficient wallet balance' });
+    } else {
+      res.status(500).json({ success: false, message });
+    }
   }
 }

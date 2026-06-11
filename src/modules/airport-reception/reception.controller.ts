@@ -5,6 +5,8 @@ import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
+import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { buildInvoiceTotals } from '../../shared/invoicing';
 
 const receptionInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -75,10 +77,21 @@ export async function getReceptionQuote(req: Request, res: Response): Promise<vo
     return;
   }
 
-  const { found, unitPrice, total, currency } = await resolveReceptionRate(serviceType, airport, pax);
+  const source = await resolveReceptionRate(serviceType, airport, pax);
+  const company = req.user?.companyId
+    ? await prisma.company.findUnique({ where: { id: req.user.companyId }, select: { currency: true } })
+    : null;
+  const charge = await convertMoney(source.total, source.currency, company?.currency ?? source.currency);
   res.json({
     success: true,
-    data: { found, unitPrice: Number(unitPrice), totalAmount: Number(total), currency, pax },
+    data: {
+      found: source.found,
+      unitPrice: Number(source.unitPrice),
+      totalAmount: Number(charge.totalAmount),
+      currency: charge.currency,
+      sourceCurrency: source.currency,
+      pax,
+    },
   });
 }
 
@@ -106,31 +119,20 @@ export async function createReception(req: Request, res: Response): Promise<void
 
   const guestCount = Math.max(1, body.guestCount ?? 1);
   // Server-authoritative price — the browser-submitted total is ignored entirely.
-  const { total: totalAmount, currency } = await resolveReceptionRate(body.serviceType, body.airport, guestCount);
-  const priced = totalAmount.gt(0);
+  const sourcePrice = await resolveReceptionRate(body.serviceType, body.airport, guestCount);
 
   try {
     const refNumber = await generateRef(prisma, 'RCP');
 
     const reception = await prisma.$transaction(async (tx) => {
       const company = await tx.company.findUniqueOrThrow({
-        where: { id: companyId }, select: { balance: true, isActive: true },
+        where: { id: companyId }, select: { isActive: true, currency: true },
       });
       if (!company.isActive) throw new Error('COMPANY_INACTIVE');
-
-      // Only move money when the service is actually priced.
-      if (priced) {
-        if (company.balance.lt(totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
-        const balanceBefore = company.balance;
-        const balanceAfter = company.balance.sub(totalAmount);
-        await tx.company.update({ where: { id: companyId }, data: { balance: balanceAfter } });
-        await tx.walletTransaction.create({
-          data: {
-            companyId, type: 'DEBIT', amount: totalAmount, balanceBefore, balanceAfter,
-            reference: refNumber, description: `Airport reception ${refNumber}`, createdById: caller.id,
-          },
-        });
-      }
+      const charge = await convertMoney(sourcePrice.total, sourcePrice.currency, company.currency);
+      const totalAmount = charge.totalAmount;
+      const currency = charge.currency;
+      const priced = totalAmount.gt(0);
 
       const created = await tx.airportReception.create({
         data: {
@@ -144,7 +146,13 @@ export async function createReception(req: Request, res: Response): Promise<void
           signboardName: body.signboardName,
           hotelName: body.hotelName,
           specialRequests: body.specialRequests,
-          totalAmount, currency, notes: body.notes,
+          totalAmount,
+          currency,
+          sourceAmount: charge.sourceAmount,
+          sourceCurrency: charge.sourceCurrency,
+          exchangeRate: charge.exchangeRate,
+          exchangeRateAt: charge.exchangeRateAt,
+          notes: body.notes,
           phone: body.phone,
           ticketUrl: body.ticketUrl,
           travelDetails: body.travelDetails,
@@ -154,18 +162,16 @@ export async function createReception(req: Request, res: Response): Promise<void
 
       // Issue an invoice only when the service is priced.
       if (priced) {
-        const subtotal = totalAmount;
-        const taxAmount = subtotal.mul(new Decimal('0.14'));
+        const invoiceTotals = buildInvoiceTotals(totalAmount);
         const invoiceNumber = await generateInvoiceNumber(prisma);
         await tx.invoice.create({
           data: {
             invoiceNumber,
             airportReceptionId: created.id,
             companyId,
-            subtotal,
-            taxAmount,
-            total: subtotal.add(taxAmount),
+            ...invoiceTotals,
             currency,
+            ...invoiceMoneySnapshotData(charge),
             dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
           },
         });
@@ -200,7 +206,7 @@ export async function createReception(req: Request, res: Response): Promise<void
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Airport</td><td style="padding:6px 12px">${body.airport}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Guest</td><td style="padding:6px 12px">${body.guestName} (${guestCount})</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Flight</td><td style="padding:6px 12px">${body.flightNumber} — ${body.flightDateTime}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${priced ? `${totalAmount} ${currency}` : 'Price on request'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${reception.totalAmount.gt(0) ? `${reception.totalAmount} ${reception.currency}` : 'Price on request'}</td></tr>
         </table>`,
       ).catch(console.error);
     }
@@ -209,22 +215,63 @@ export async function createReception(req: Request, res: Response): Promise<void
   } catch (err) {
     const msg = String((err as Error).message);
     if (msg === 'COMPANY_INACTIVE') res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
-    else if (msg === 'INSUFFICIENT_BALANCE') res.status(400).json({ success: false, error: 'INSUFFICIENT_BALANCE', message: 'Insufficient wallet balance' });
     else { console.error(err); res.status(500).json({ success: false, error: 'INTERNAL_ERROR' }); }
   }
 }
 
 export async function confirmReception(req: Request, res: Response): Promise<void> {
-  const existing = await prisma.airportReception.findUniqueOrThrow({
-    where: { id: req.params.id }, select: { confirmedAt: true, confirmedById: true },
-  });
-  const reception = await prisma.airportReception.update({
+  try {
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.airportReception.findUniqueOrThrow({
+        where: { id: req.params.id },
+        include: { company: true },
+      });
+      if (existing.status !== 'PENDING') throw new Error('INVALID_STATUS');
+      if (!existing.company.isActive) throw new Error('COMPANY_INACTIVE');
+      const alreadyDebited = await tx.walletTransaction.findFirst({
+        where: { reference: existing.refNumber, type: 'DEBIT' },
+      });
+      if (!alreadyDebited && existing.totalAmount.gt(0)) {
+        if (existing.company.balance.lt(existing.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
+        const balanceBefore = existing.company.balance;
+        const balanceAfter = balanceBefore.sub(existing.totalAmount);
+        await tx.company.update({ where: { id: existing.companyId }, data: { balance: balanceAfter } });
+        await tx.walletTransaction.create({
+          data: {
+            companyId: existing.companyId,
+            type: 'DEBIT',
+            amount: existing.totalAmount,
+            balanceBefore,
+            balanceAfter,
+            reference: existing.refNumber,
+            description: `Confirmed airport assist ${existing.refNumber}`,
+            createdById: req.user!.id,
+          },
+        });
+      }
+      await tx.airportReception.update({
+        where: { id: existing.id },
+        data: {
+          status: 'CONFIRMED',
+          confirmedAt: existing.confirmedAt ?? new Date(),
+          confirmedById: existing.confirmedById ?? req.user!.id,
+        },
+      });
+    });
+  } catch (error) {
+    const message = String((error as Error).message);
+    if (message === 'INVALID_STATUS' || message === 'COMPANY_INACTIVE') {
+      res.status(400).json({ success: false, error: message });
+    } else if (message === 'INSUFFICIENT_BALANCE') {
+      res.status(400).json({ success: false, error: message, message: 'Insufficient wallet balance' });
+    } else {
+      console.error(error);
+      res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
+    }
+    return;
+  }
+  const reception = await prisma.airportReception.findUniqueOrThrow({
     where: { id: req.params.id },
-    data: {
-      status: 'CONFIRMED',
-      confirmedAt: existing.confirmedAt ?? new Date(),
-      confirmedById: existing.confirmedById ?? req.user!.id,
-    },
     include: receptionInclude,
   });
   res.json({ success: true, data: reception });
@@ -233,9 +280,21 @@ export async function confirmReception(req: Request, res: Response): Promise<voi
 export async function cancelReception(req: Request, res: Response): Promise<void> {
   const caller = req.user!;
   const reception = await prisma.airportReception.findUniqueOrThrow({ where: { id: req.params.id }, include: { invoice: true } });
+  if (caller.role !== 'SUPERADMIN' && reception.companyId !== caller.companyId) {
+    res.status(403).json({ success: false, error: 'FORBIDDEN' });
+    return;
+  }
+  if (!['PENDING', 'CONFIRMED'].includes(reception.status)) {
+    res.status(400).json({ success: false, error: 'INVALID_STATUS' });
+    return;
+  }
 
-  // Refund the wallet (only priced receptions ever debited it) and void the invoice.
-  if (['CONFIRMED', 'PENDING'].includes(reception.status) && reception.totalAmount.gt(0)) {
+  const [debit, priorRefund] = await Promise.all([
+    prisma.walletTransaction.findFirst({ where: { reference: reception.refNumber, type: 'DEBIT' }, select: { id: true } }),
+    prisma.walletTransaction.findFirst({ where: { reference: reception.refNumber, type: 'REFUND' }, select: { id: true } }),
+  ]);
+  // Refund only a confirmed charge. Pending requests never move wallet money.
+  if (debit && !priorRefund && reception.totalAmount.gt(0)) {
     await prisma.$transaction(async (tx) => {
       const company = await tx.company.findUniqueOrThrow({ where: { id: reception.companyId } });
       const balanceBefore = company.balance;
@@ -248,14 +307,19 @@ export async function cancelReception(req: Request, res: Response): Promise<void
           reference: reception.refNumber, description: `Refund reception ${reception.refNumber}`, createdById: caller.id,
         },
       });
-      if (reception.invoice) {
-        await tx.invoice.updateMany({ where: { airportReceptionId: reception.id }, data: { status: 'CANCELLED' } });
-      }
     });
   }
 
-  const updated = await prisma.airportReception.update({
-    where: { id: req.params.id }, data: { status: 'CANCELLED' }, include: receptionInclude,
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.invoice.updateMany({
+      where: { airportReceptionId: reception.id },
+      data: { status: 'CANCELLED' },
+    });
+    return tx.airportReception.update({
+      where: { id: req.params.id },
+      data: { status: 'CANCELLED' },
+      include: receptionInclude,
+    });
   });
   res.json({ success: true, data: updated });
 }

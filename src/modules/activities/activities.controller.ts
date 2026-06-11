@@ -3,15 +3,19 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { ActivityCategory, BookingStatus } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta } from '../../shared/helpers';
-import { resolveCallerMarket, applyMarketPrice, getMarketPrice } from '../../shared/pricing';
+import { resolveCallerMarket, applyMarketPrice, resolveMarketMoney } from '../../shared/pricing';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
+import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/group-types.service';
+import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { buildInvoiceTotals } from '../../shared/invoicing';
 
 const activityInclude = {
   activity: { select: { id: true, name: true, city: true, category: true } },
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
   confirmedBy: { select: { id: true, name: true } },
+  groupType: { select: { id: true, code: true, labelEn: true, labelAr: true } },
   invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
 };
 
@@ -33,8 +37,12 @@ export async function listActivities(req: Request, res: Response): Promise<void>
   });
   // Apply explicit per-market price overrides (adult + child) for the caller's market
   const market = await resolveCallerMarket(req);
-  await applyMarketPrice(activities, { entityType: 'ACTIVITY_ADULT', market, priceField: 'priceAdult' });
-  await applyMarketPrice(activities, { entityType: 'ACTIVITY_CHILD', market, priceField: 'priceChild' });
+  await applyMarketPrice(activities, {
+    entityType: 'ACTIVITY_ADULT', market, priceField: 'priceAdult', currencyField: 'currency',
+  });
+  await applyMarketPrice(activities, {
+    entityType: 'ACTIVITY_CHILD', market, priceField: 'priceChild', currencyField: 'currency',
+  });
   res.json({ success: true, data: activities });
 }
 
@@ -94,7 +102,7 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     activityId: string; companyId?: string;
     activityDate: string;
     selectedTime?: string;
-    activityType?: string;   // GROUP | PRIVATE | VIP
+    groupTypeId?: string;
     adultsCount?: number; childrenCount?: number;
     childAges?: number[];
     clientName?: string;
@@ -114,7 +122,14 @@ export async function createActivityBooking(req: Request, res: Response): Promis
   // Resolve activity to compute amount server-side — never trust client totals
   const activity = await prisma.activity.findUnique({
     where: { id: body.activityId },
-    select: { priceAdult: true, priceChild: true, currency: true, isActive: true, isConfirmableInApp: true },
+    select: {
+      priceAdult: true,
+      priceChild: true,
+      currency: true,
+      isActive: true,
+      isConfirmableInApp: true,
+      destinationId: true,
+    },
   });
   if (!activity || !activity.isActive) {
     res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Activity not found or inactive' });
@@ -126,7 +141,10 @@ export async function createActivityBooking(req: Request, res: Response): Promis
   }
 
   // Verify company is active — no wallet debit at creation; booking is PENDING
-  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { isActive: true, email: true, market: true } });
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { isActive: true, email: true, market: true, currency: true },
+  });
   if (!company?.isActive) {
     res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
     return;
@@ -135,10 +153,56 @@ export async function createActivityBooking(req: Request, res: Response): Promis
   const adultsCount = Math.max(1, body.adultsCount ?? 1);
   const childrenCount = Math.max(0, body.childrenCount ?? 0);
   // Server-side calculation — authoritative amount, using the company's market price tier
-  const priceAdult = await getMarketPrice('ACTIVITY_ADULT', body.activityId, company.market, activity.priceAdult);
-  const priceChild = await getMarketPrice('ACTIVITY_CHILD', body.activityId, company.market, activity.priceChild);
-  const totalAmount = priceAdult.mul(adultsCount).add(priceChild.mul(childrenCount));
-  const currency = activity.currency;
+  const activityDate = new Date(body.activityDate);
+  const applicableTypes = await findApplicableGroupTypes({
+    scope: 'ACTIVITY',
+    activityId: body.activityId,
+    destinationId: activity.destinationId ?? undefined,
+    pax: adultsCount + childrenCount,
+    date: activityDate,
+  });
+  const groupType = body.groupTypeId
+    ? applicableTypes.find((option) => option.id === body.groupTypeId)
+    : applicableTypes[0];
+  if (!groupType) {
+    res.status(400).json({ success: false, error: 'INVALID_GROUP_TYPE', message: 'Selected activity type is not available' });
+    return;
+  }
+
+  const [adultPrice, childPrice] = await Promise.all([
+    resolveMarketMoney('ACTIVITY_ADULT', body.activityId, company.market, activity.priceAdult, activity.currency),
+    resolveMarketMoney('ACTIVITY_CHILD', body.activityId, company.market, activity.priceChild, activity.currency),
+  ]);
+  const currency = company.currency;
+  let sourceCurrency: string;
+  let sourceAmount: Decimal;
+  let totalAmount: Decimal;
+  let exchangeRate: Decimal;
+  let exchangeRateAt: Date;
+  if (adultPrice.currency === childPrice.currency) {
+    sourceCurrency = adultPrice.currency;
+    sourceAmount = applyGroupAdjustment(
+      adultPrice.amount.mul(adultsCount).add(childPrice.amount.mul(childrenCount)),
+      groupType,
+    );
+    const charge = await convertMoney(sourceAmount, sourceCurrency, currency);
+    totalAmount = charge.totalAmount;
+    exchangeRate = charge.exchangeRate;
+    exchangeRateAt = charge.exchangeRateAt;
+  } else {
+    const [adultCharge, childCharge] = await Promise.all([
+      convertMoney(adultPrice.amount, adultPrice.currency, currency),
+      convertMoney(childPrice.amount, childPrice.currency, currency),
+    ]);
+    sourceCurrency = currency;
+    sourceAmount = applyGroupAdjustment(
+      adultCharge.totalAmount.mul(adultsCount).add(childCharge.totalAmount.mul(childrenCount)),
+      groupType,
+    );
+    totalAmount = sourceAmount;
+    exchangeRate = new Decimal(1);
+    exchangeRateAt = adultCharge.exchangeRateAt;
+  }
 
   try {
     const refNumber = await generateRef(prisma, 'ACT');
@@ -149,9 +213,11 @@ export async function createActivityBooking(req: Request, res: Response): Promis
         activityId: body.activityId,
         companyId,
         createdById: caller.id,
-        activityDate: new Date(body.activityDate),
+        activityDate,
         selectedTime: body.selectedTime ?? null,
-        activityType: body.activityType ?? 'GROUP',
+        activityType: groupType.code,
+        groupTypeId: groupType.id,
+        groupTypeLabel: groupType.labelEn,
         adultsCount,
         childrenCount,
         childAges: body.childAges ?? undefined,
@@ -160,7 +226,11 @@ export async function createActivityBooking(req: Request, res: Response): Promis
         hotelName: body.hotelName ?? null,
         passengerNames: body.passengerNames ?? [],
         totalAmount,   // server-calculated
-        currency,      // from Activity record
+        currency,
+        sourceAmount,
+        sourceCurrency,
+        exchangeRate,
+        exchangeRateAt,
         notes: body.notes,
         status: 'PENDING',
       },
@@ -176,7 +246,7 @@ export async function createActivityBooking(req: Request, res: Response): Promis
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Activity</td><td style="padding:6px 12px">${booking.activity?.name ?? body.activityId}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Date</td><td style="padding:6px 12px">${body.activityDate}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Time</td><td style="padding:6px 12px">${body.selectedTime ?? '—'}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Type</td><td style="padding:6px 12px">${body.activityType ?? 'GROUP'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Type</td><td style="padding:6px 12px">${groupType.labelEn}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Client</td><td style="padding:6px 12px">${body.clientName ?? '—'}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Phone</td><td style="padding:6px 12px">${body.clientPhone ?? '—'}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Hotel</td><td style="padding:6px 12px">${body.hotelName ?? '—'}</td></tr>
@@ -230,19 +300,23 @@ export async function confirmActivityBooking(req: Request, res: Response): Promi
           },
         });
 
-        const subtotal = booking.totalAmount;
-        const taxAmount = subtotal.mul(new Decimal('0.14'));
-        const total = subtotal.add(taxAmount);
+        const invoiceTotals = buildInvoiceTotals(booking.totalAmount);
 
         await tx.invoice.create({
           data: {
             invoiceNumber,
             activityBookingId: booking.id,
             companyId: booking.companyId,
-            subtotal,
-            taxAmount,
-            total,
+            ...invoiceTotals,
             currency: booking.currency,
+            ...invoiceMoneySnapshotData({
+              sourceAmount: booking.sourceAmount ?? booking.totalAmount,
+              sourceCurrency: booking.sourceCurrency ?? booking.currency,
+              totalAmount: booking.totalAmount,
+              currency: booking.currency,
+              exchangeRate: booking.exchangeRate ?? new Decimal(1),
+              exchangeRateAt: booking.exchangeRateAt ?? booking.createdAt,
+            }),
             dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
           },
         });
@@ -295,9 +369,20 @@ export async function confirmActivityBooking(req: Request, res: Response): Promi
 export async function cancelActivityBooking(req: Request, res: Response): Promise<void> {
   const caller = req.user!;
   const booking = await prisma.activityBooking.findUniqueOrThrow({ where: { id: req.params.id }, include: { invoice: true } });
+  if (caller.role !== 'SUPERADMIN' && booking.companyId !== caller.companyId) {
+    res.status(403).json({ success: false, error: 'FORBIDDEN' });
+    return;
+  }
+  if (!['PENDING', 'CONFIRMED'].includes(booking.status)) {
+    res.status(400).json({ success: false, error: 'INVALID_STATUS' });
+    return;
+  }
 
-  // Only refund if already confirmed (wallet was debited)
-  if (booking.status === 'CONFIRMED' && booking.invoice && booking.invoice.status !== 'CANCELLED') {
+  const [debit, priorRefund] = await Promise.all([
+    prisma.walletTransaction.findFirst({ where: { reference: booking.refNumber, type: 'DEBIT' }, select: { id: true } }),
+    prisma.walletTransaction.findFirst({ where: { reference: booking.refNumber, type: 'REFUND' }, select: { id: true } }),
+  ]);
+  if (debit && !priorRefund) {
     await prisma.$transaction(async (tx) => {
       const company = await tx.company.findUniqueOrThrow({ where: { id: booking.companyId } });
       const balanceBefore = company.balance;
@@ -315,14 +400,19 @@ export async function cancelActivityBooking(req: Request, res: Response): Promis
           createdById: caller.id,
         },
       });
-      await tx.invoice.updateMany({ where: { activityBookingId: booking.id }, data: { status: 'CANCELLED' } });
     });
   }
 
-  const updated = await prisma.activityBooking.update({
-    where: { id: req.params.id },
-    data: { status: 'CANCELLED' },
-    include: activityInclude,
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.invoice.updateMany({
+      where: { activityBookingId: booking.id },
+      data: { status: 'CANCELLED' },
+    });
+    return tx.activityBooking.update({
+      where: { id: req.params.id },
+      data: { status: 'CANCELLED' },
+      include: activityInclude,
+    });
   });
   res.json({ success: true, data: updated });
 }

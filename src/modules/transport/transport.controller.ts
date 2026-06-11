@@ -3,14 +3,18 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { BookingStatus, TransportType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
-import { resolveCallerMarket, resolveMarketPrices, getMarketPrice } from '../../shared/pricing';
+import { resolveCallerMarket, resolveMarketPrices, resolveMarketMoney } from '../../shared/pricing';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
+import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/group-types.service';
+import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { buildInvoiceTotals } from '../../shared/invoicing';
 
 const transportInclude = {
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
   confirmedBy: { select: { id: true, name: true } },
+  groupType: { select: { id: true, code: true, labelEn: true, labelAr: true } },
   invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
 };
 
@@ -44,6 +48,7 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
   const vehicleType = String(req.query.vehicleType ?? '').trim();
   const pax         = Math.max(1, parseInt(String(req.query.pax ?? '1'), 10));
   const roundTrip   = req.query.roundTrip === 'true';
+  const groupTypeId = String(req.query.groupTypeId ?? '').trim();
 
   const where: Record<string, unknown> = {
     isActive: true,
@@ -66,10 +71,34 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
 
   // Apply the caller's market price tier (USD)
   const market = await resolveCallerMarket(req);
-  const oneWayRate = Number(await getMarketPrice('TRANSPORT', rate.id, market, rate.rate));
-  const roundTripRate = rate.roundTripRate
-    ? Number(await getMarketPrice('TRANSPORT_RT', rate.id, market, rate.roundTripRate))
-    : oneWayRate * 2;
+  const company = req.user?.companyId
+    ? await prisma.company.findUnique({ where: { id: req.user.companyId }, select: { currency: true } })
+    : null;
+  const targetCurrency = company?.currency ?? rate.currency;
+  const oneWayMoney = await resolveMarketMoney('TRANSPORT', rate.id, market, rate.rate, rate.currency);
+  const roundTripMoney = rate.roundTripRate
+    ? await resolveMarketMoney('TRANSPORT_RT', rate.id, market, rate.roundTripRate, rate.currency)
+    : { amount: oneWayMoney.amount.mul(2), currency: oneWayMoney.currency, overridden: oneWayMoney.overridden };
+  const applicableTypes = await findApplicableGroupTypes({
+    scope: 'TRANSPORT',
+    transportRateId: rate.id,
+    destinationId: rate.destinationId ?? undefined,
+    pax,
+    date: req.query.date ? new Date(String(req.query.date)) : undefined,
+  });
+  const groupType = groupTypeId
+    ? applicableTypes.find((option) => option.id === groupTypeId)
+    : applicableTypes[0];
+  if (!groupType) {
+    res.status(400).json({ success: false, error: 'INVALID_GROUP_TYPE', message: 'Selected transport type is not available' });
+    return;
+  }
+  const [oneWayCharge, roundTripCharge] = await Promise.all([
+    convertMoney(applyGroupAdjustment(oneWayMoney.amount, groupType), oneWayMoney.currency, targetCurrency),
+    convertMoney(applyGroupAdjustment(roundTripMoney.amount, groupType), roundTripMoney.currency, targetCurrency),
+  ]);
+  const oneWayRate = oneWayCharge.totalAmount;
+  const roundTripRate = roundTripCharge.totalAmount;
   const totalAmount = roundTrip ? roundTripRate : oneWayRate;
 
   res.json({
@@ -80,8 +109,10 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
       oneWayRate,
       roundTripRate,
       totalAmount,
-      currency: rate.currency,
+      currency: targetCurrency,
       vehicleType: rate.vehicleType,
+      rateType: rate.type,
+      groupType,
       notes: rate.notes,
     },
   });
@@ -120,6 +151,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     returnAirlineName?: string;
     contactNumber?: string;
     destinationId?: string;
+    groupTypeId?: string;
     // totalAmount / currency intentionally not accepted — resolved server-side from TransportRate
     notes?: string;
     customFields?: unknown;
@@ -131,13 +163,20 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     return;
   }
 
-  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { isActive: true, email: true, market: true } });
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { isActive: true, email: true, market: true, currency: true },
+  });
   if (!company?.isActive) {
     res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
     return;
   }
 
   const passengerCount = Math.max(1, body.passengerCount ?? 1);
+  if (body.isRoundTrip && !body.returnDateTime) {
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Return date and time are required for a round trip' });
+    return;
+  }
 
   // Resolve price server-side — client totalAmount is ignored entirely
   const matchingRate = await prisma.transportRate.findFirst({
@@ -167,13 +206,32 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   }
 
   // Server-authoritative price using the company's market tier (USD)
-  const oneWayRate = await getMarketPrice('TRANSPORT', matchingRate.id, company.market, matchingRate.rate);
-  const totalAmount = body.isRoundTrip
-    ? (matchingRate.roundTripRate
-        ? await getMarketPrice('TRANSPORT_RT', matchingRate.id, company.market, matchingRate.roundTripRate)
-        : oneWayRate.mul(2))
-    : oneWayRate;
-  const currency = matchingRate.currency;
+  const applicableTypes = await findApplicableGroupTypes({
+    scope: 'TRANSPORT',
+    transportRateId: matchingRate.id,
+    destinationId: matchingRate.destinationId ?? undefined,
+    pax: passengerCount,
+    date: new Date(body.pickupDateTime),
+  });
+  const groupType = body.groupTypeId
+    ? applicableTypes.find((option) => option.id === body.groupTypeId)
+    : applicableTypes[0];
+  if (!groupType) {
+    res.status(400).json({ success: false, error: 'INVALID_GROUP_TYPE', message: 'Selected transport type is not available' });
+    return;
+  }
+
+  const sourceMoney = body.isRoundTrip && matchingRate.roundTripRate
+    ? await resolveMarketMoney('TRANSPORT_RT', matchingRate.id, company.market, matchingRate.roundTripRate, matchingRate.currency)
+    : await resolveMarketMoney('TRANSPORT', matchingRate.id, company.market, matchingRate.rate, matchingRate.currency);
+  if (body.isRoundTrip && !matchingRate.roundTripRate) sourceMoney.amount = sourceMoney.amount.mul(2);
+  const charge = await convertMoney(
+    applyGroupAdjustment(sourceMoney.amount, groupType),
+    sourceMoney.currency,
+    company.currency,
+  );
+  const totalAmount = charge.totalAmount;
+  const currency = company.currency;
 
   try {
     const refNumber = await generateRef(prisma, 'TRN');
@@ -204,26 +262,34 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           returnFlightNumber: body.returnFlightNumber ?? null,
           returnAirlineName: body.returnAirlineName ?? null,
           contactNumber: body.contactNumber ?? null,
+          groupTypeId: groupType.id,
+          groupTypeLabel: groupType.labelEn,
           totalAmount,  // server-calculated from TransportRate
-          currency,     // from TransportRate record
+          currency,
+          sourceAmount: charge.sourceAmount,
+          sourceCurrency: charge.sourceCurrency,
+          exchangeRate: charge.exchangeRate,
+          exchangeRateAt: charge.exchangeRateAt,
           notes: body.notes,
           customFields: sanitizeCustomFields(body.customFields) ?? undefined,
           status: 'PENDING',
         },
       });
 
-      const subtotal = totalAmount;
-      const taxAmount = subtotal.mul(new Decimal('0.14'));
+      const invoiceTotals = buildInvoiceTotals(totalAmount);
       const invoiceNumber = await generateInvoiceNumber(prisma);
       await tx.invoice.create({
         data: {
           invoiceNumber,
           transportBookingId: created.id,
           companyId,
-          subtotal,
-          taxAmount,
-          total: subtotal.add(taxAmount),
+          ...invoiceTotals,
           currency,
+          ...invoiceMoneySnapshotData({
+            ...charge,
+            totalAmount,
+            currency,
+          }),
           dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         },
       });
@@ -245,7 +311,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     }
 
     // Notify the configured recipient(s). TRANSPORT_NOTIFY_EMAIL is the
-    // operations inbox (set on Railway; left unset by default — TODO).
+    // optional operations inbox configured in Railway.
     const recipients = [company.email, process.env.TRANSPORT_NOTIFY_EMAIL].filter(Boolean) as string[];
     if (recipients.length) {
       sendEmail(
@@ -255,6 +321,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Ref</td><td style="padding:6px 12px">${booking.refNumber}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Route</td><td style="padding:6px 12px">${body.fromLocation} → ${body.toLocation}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Vehicle</td><td style="padding:6px 12px">${body.vehicleType ?? 'SEDAN'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Service Type</td><td style="padding:6px 12px">${groupType.labelEn}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pickup</td><td style="padding:6px 12px">${body.pickupDateTime}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pax</td><td style="padding:6px 12px">${passengerCount}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Lead Pax</td><td style="padding:6px 12px">${body.passengerName ?? '—'}</td></tr>
@@ -316,9 +383,7 @@ export async function confirmTransportBooking(req: Request, res: Response): Prom
 
       // Create the invoice only if one wasn't already generated at booking time.
       if (!booking.invoice) {
-        const subtotal = booking.totalAmount;
-        const taxAmount = subtotal.mul(new Decimal('0.14'));
-        const total = subtotal.add(taxAmount);
+        const invoiceTotals = buildInvoiceTotals(booking.totalAmount);
         const invoiceNumber = await generateInvoiceNumber(prisma);
 
         await tx.invoice.create({
@@ -326,10 +391,16 @@ export async function confirmTransportBooking(req: Request, res: Response): Prom
             invoiceNumber,
             transportBookingId: booking.id,
             companyId: booking.companyId,
-            subtotal,
-            taxAmount,
-            total,
+            ...invoiceTotals,
             currency: booking.currency,
+            ...invoiceMoneySnapshotData({
+              sourceAmount: booking.sourceAmount ?? booking.totalAmount,
+              sourceCurrency: booking.sourceCurrency ?? booking.currency,
+              totalAmount: booking.totalAmount,
+              currency: booking.currency,
+              exchangeRate: booking.exchangeRate ?? new Decimal(1),
+              exchangeRateAt: booking.exchangeRateAt ?? booking.createdAt,
+            }),
             dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
           },
         });
@@ -382,9 +453,20 @@ export async function confirmTransportBooking(req: Request, res: Response): Prom
 export async function cancelTransportBooking(req: Request, res: Response): Promise<void> {
   const caller = req.user!;
   const booking = await prisma.transportBooking.findUniqueOrThrow({ where: { id: req.params.id }, include: { invoice: true } });
+  if (caller.role !== 'SUPERADMIN' && booking.companyId !== caller.companyId) {
+    res.status(403).json({ success: false, error: 'FORBIDDEN' });
+    return;
+  }
+  if (!['PENDING', 'CONFIRMED'].includes(booking.status)) {
+    res.status(400).json({ success: false, error: 'INVALID_STATUS' });
+    return;
+  }
 
-  // Only refund if already confirmed (wallet was debited on confirmation)
-  if (booking.status === 'CONFIRMED' && booking.invoice && booking.invoice.status !== 'CANCELLED') {
+  const [debit, priorRefund] = await Promise.all([
+    prisma.walletTransaction.findFirst({ where: { reference: booking.refNumber, type: 'DEBIT' }, select: { id: true } }),
+    prisma.walletTransaction.findFirst({ where: { reference: booking.refNumber, type: 'REFUND' }, select: { id: true } }),
+  ]);
+  if (debit && !priorRefund) {
     await prisma.$transaction(async (tx) => {
       const company = await tx.company.findUniqueOrThrow({ where: { id: booking.companyId } });
       const balanceBefore = company.balance;
@@ -402,14 +484,19 @@ export async function cancelTransportBooking(req: Request, res: Response): Promi
           createdById: caller.id,
         },
       });
-      await tx.invoice.updateMany({ where: { transportBookingId: booking.id }, data: { status: 'CANCELLED' } });
     });
   }
 
-  const updated = await prisma.transportBooking.update({
-    where: { id: req.params.id },
-    data: { status: 'CANCELLED' },
-    include: transportInclude,
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.invoice.updateMany({
+      where: { transportBookingId: booking.id },
+      data: { status: 'CANCELLED' },
+    });
+    return tx.transportBooking.update({
+      where: { id: req.params.id },
+      data: { status: 'CANCELLED' },
+      include: transportInclude,
+    });
   });
   res.json({ success: true, data: updated });
 }
@@ -438,9 +525,15 @@ export async function listTransportRates(req: Request, res: Response): Promise<v
   ]);
   for (const r of rates) {
     const ow = oneWayOv.get(r.id);
-    if (ow != null) r.rate = ow;
+    if (ow != null) {
+      r.rate = ow;
+      r.currency = 'USD';
+    }
     const rt = rtOv.get(r.id);
-    if (rt != null) r.roundTripRate = rt;
+    if (rt != null) {
+      r.roundTripRate = rt;
+      r.currency = 'USD';
+    }
   }
   res.json({ success: true, data: rates });
 }

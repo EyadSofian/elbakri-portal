@@ -102,6 +102,7 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
 
   const tempPassword = generatePassword(12);
   const hashedPassword = await bcrypt.hash(tempPassword, 12);
+  const market = body.market === 'EGYPTIAN' ? 'EGYPTIAN' : 'INTERNATIONAL';
 
   const company = await prisma.company.create({
     data: {
@@ -116,8 +117,8 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
       taxId: nullable(body.taxId),
       website: nullable(body.website),
       creditLimit: new Decimal(body.creditLimit ?? 0),
-      currency: body.currency ?? 'USD',
-      market: (body.market as 'EGYPTIAN' | 'GULF' | 'FOREIGN') ?? 'FOREIGN',
+      currency: body.currency ?? (market === 'EGYPTIAN' ? 'EGP' : 'USD'),
+      market,
       tier: (body.tier as 'STANDARD' | 'SILVER' | 'GOLD' | 'PLATINUM') ?? 'STANDARD',
       logoUrl: nullable(body.logoUrl),
       themeColor: nullable(body.themeColor),
@@ -217,7 +218,7 @@ export async function updateCompany(req: Request, res: Response): Promise<void> 
       ...(body.taxId !== undefined && { taxId: nullable(body.taxId) }),
       ...(body.website !== undefined && { website: nullable(body.website) }),
       ...(body.tier && { tier: body.tier as 'STANDARD' | 'SILVER' | 'GOLD' | 'PLATINUM' }),
-      ...(body.market && { market: body.market as 'EGYPTIAN' | 'GULF' | 'FOREIGN' }),
+      ...(body.market && { market: body.market as 'EGYPTIAN' | 'INTERNATIONAL' }),
       ...(body.creditLimit !== undefined && { creditLimit: new Decimal(body.creditLimit) }),
       ...(body.currency && { currency: body.currency }),
       ...(body.logoUrl !== undefined && { logoUrl: nullable(body.logoUrl) }),

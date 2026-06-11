@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import bcrypt from 'bcryptjs';
+import { buildInvoiceTotals } from '../src/shared/invoicing';
 
 const prisma = new PrismaClient();
 
@@ -302,9 +303,7 @@ async function main() {
     });
 
     // Invoice
-    const subtotal = totalAmount;
-    const taxAmount = subtotal.mul(new Decimal('0.14'));
-    const total = subtotal.add(taxAmount);
+    const invoiceTotals = buildInvoiceTotals(totalAmount);
     const invoiceStatus = bd.status === 'CANCELLED' ? 'CANCELLED' as const
       : bd.status === 'COMPLETED' ? 'PAID' as const : 'UNPAID' as const;
 
@@ -315,9 +314,7 @@ async function main() {
         invoiceNumber,
         bookingId: booking.id,
         companyId: bd.company.id,
-        subtotal,
-        taxAmount,
-        total,
+        ...invoiceTotals,
         currency: 'USD',
         status: invoiceStatus,
         dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
