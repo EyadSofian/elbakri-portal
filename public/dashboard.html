@@ -121,6 +121,13 @@ const state = {
 
 // Default display currency by market when the company has no explicit currency set.
 const MARKET_DEFAULT_CURRENCY = { EGYPTIAN: "EGP", INTERNATIONAL: "USD", GULF: "USD", FOREIGN: "USD" };
+const COMPANY_DISPLAY_CURRENCIES = ["USD", "EGP"];
+
+function normalizeCompanyDisplayCurrency(value, market) {
+  const cur = String(value || "").toUpperCase();
+  if (COMPANY_DISPLAY_CURRENCIES.includes(cur)) return cur;
+  return MARKET_DEFAULT_CURRENCY[market] || "USD";
+}
 
 /** Convert a live catalog price from its source currency to the company's display currency. */
 function convertLiveMoney(amount, sourceCurrency = "USD") {
@@ -864,6 +871,13 @@ async function showAgentHotelDetails(id) {
 // Store the selected destination so filters/refresh know what context they are in
 state.selectedDest = { id: "", name: "" };
 
+function cssUrl(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\r?\n/g, "");
+}
+
 async function renderHotels() {
   state.selectedDest = { id: "", name: "" };
   const capturedToken = state.renderToken;
@@ -897,16 +911,14 @@ async function renderHotels() {
   );
 
   const destCards = [
-    `<button class="dest-card" onclick="renderHotelsByDest('','${escapeHtml(t("hotel.allDestinations","All Destinations"))}')">
-      <div class="dest-card-icon"><i data-lucide="hotel"></i></div>
+    `<button class="dest-card dest-card-all" onclick="renderHotelsByDest('',${inlineJsonArg(t("hotel.allDestinations","All Destinations"))})">
+      <div class="dest-card-icon dest-card-media"><i data-lucide="hotel"></i></div>
       <div class="dest-card-name">${t("hotel.allDestinations","All Destinations")}</div>
       <div class="dest-card-count">${formatNumber(totalHotels)} ${t("nav.hotels","Hotels")}</div>
     </button>`,
     ...dests.map(d => `
-      <button class="dest-card" onclick="renderHotelsByDest('${d.id}','${escapeHtml(locName(d.name, d.nameAr))}')">
-        ${d.imageUrl
-          ? `<div class="dest-card-img"><img src="${escapeHtml(d.imageUrl)}" alt="${escapeHtml(locName(d.imageAltEn, d.imageAltAr) || locName(d.name, d.nameAr))}" loading="lazy" onerror="this.parentElement.outerHTML='<div class=\\'dest-card-icon\\'><i data-lucide=&quot;map-pin&quot;></i></div>'"></div>`
-          : `<div class="dest-card-icon"><i data-lucide="map-pin"></i></div>`}
+      <button class="dest-card ${d.imageUrl ? "has-bg" : ""}" ${d.imageUrl ? `style="--dest-bg:url('${escapeHtml(cssUrl(d.imageUrl))}')"` : ""} onclick="renderHotelsByDest('${escapeHtml(d.id)}',${inlineJsonArg(locName(d.name, d.nameAr))})">
+        <div class="dest-card-icon dest-card-media"><i data-lucide="map-pin"></i></div>
         <div class="dest-card-name">${escapeHtml(locName(d.name, d.nameAr))}</div>
         ${(!isArabic() && d.nameAr) ? `<div class="dest-card-sub">${escapeHtml(d.nameAr)}</div>` : ""}
         <div class="dest-card-count">${
@@ -2199,7 +2211,7 @@ async function renderTransportHistory() {
     ["th.invoice", r => r.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${r.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : "—"],
   ], {
     filters: [["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]]],
-    extraActions: `<button class="btn btn-primary" onclick="renderTransport()">${icon("plus")}&nbsp;${t("transport.newBooking","New Booking")}</button>`,
+    extraActions: requestCta("renderTransport()", t("transport.newBooking","New Transport Booking"), "bus"),
   });
 }
 
@@ -2227,7 +2239,7 @@ async function renderActivities() {
       </div>`],
     ["th.city", a => escapeHtml(a.city)],
     ["th.amount", a => `<span class="numeric">${formatPrice(a.priceAdult, a.currency)}</span><div class="secondary-text">${a.priceChild ? t("form.child","Child")+": "+formatPrice(a.priceChild, a.currency) : ""}</div>`],
-    ["th.actions", a => `<button class="btn btn-primary btn-sm" onclick="openActivityDetails('${a.id}')">${icon("info")}&nbsp;${t("btn.view","Details")}</button>`],
+    ["th.actions", a => `<button class="btn btn-primary btn-sm request-cta request-cta-sm" onclick="openActivityDetails('${a.id}')">${icon("send")}&nbsp;${t("btn.detailsRequest","Details / Request")}</button>`],
   ], {
     filters: [
       ["city", "th.city", destOptions],
@@ -2563,10 +2575,9 @@ function renderSecurityApproval() {
     ["th.status", v => statusBadge(v.status)],
     ["th.requested", v => requestedDate(v)],
     ["th.confirmed", v => confirmedDate(v)],
-    ["th.actions",v => `<button class="btn btn-outline btn-sm" onclick="openSecurityApprovalForm()">${icon("plus")}&nbsp;${t("btn.add","New")}</button>`],
   ], {
     filters: [["status","form.status",["","PENDING","SUBMITTED","APPROVED","REJECTED"]]],
-    extraActions: `<button class="btn btn-primary" onclick="openSecurityApprovalForm()">${icon("plus")}&nbsp;${t("btn.add","New Request")}</button>`,
+    extraActions: requestCta("openSecurityApprovalForm()", t("securityApproval.newRequest","New Security Request"), "shield-check"),
   });
 }
 
@@ -2700,7 +2711,7 @@ function renderAirportAssist() {
     ["th.confirmed", r => confirmedDate(r)],
   ], {
     filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
-    extraActions: `<button class="btn btn-primary" onclick="openAirportAssistForm()">${icon("plus")}&nbsp;${t("btn.add","New Request")}</button>`,
+    extraActions: requestCta("openAirportAssistForm()", t("airportAssist.newRequest","New Airport Assist"), "plane-landing"),
   });
 }
 
@@ -2803,7 +2814,7 @@ async function renderSimCard() {
   if (state.renderToken !== capturedToken) return;
   const packages = pkgRes?.data || [];
 
-  content(pageHeader(`<button class="btn btn-primary" onclick="openSimRequestForm(${JSON.stringify(packages).replace(/"/g,'&quot;')})">${icon("plus")}&nbsp;${t("btn.add","New Request")}</button>`) + `
+  content(pageHeader(requestCta(`openSimRequestForm(${JSON.stringify(packages).replace(/"/g,'&quot;')})`, t("simCard.newRequest","New SIM Request"), "credit-card")) + `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:24px">
       ${packages.length ? packages.map(p => `
         <div class="stat-card" style="cursor:pointer" onclick="openSimRequestForm(${JSON.stringify(packages).replace(/"/g,'&quot;')}, '${p.id}')">
@@ -2827,7 +2838,10 @@ async function renderSimCard() {
     ["th.status", r => statusBadge(r.status)],
     ["th.requested", r => requestedDate(r)],
     ["th.confirmed", r => confirmedDate(r)],
-  ], { filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]] });
+  ], {
+    filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
+    extraActions: requestCta(`openSimRequestForm(${JSON.stringify(packages).replace(/"/g,'&quot;')})`, t("simCard.newRequest","New SIM Request"), "credit-card"),
+  });
 }
 
 async function openSimRequestForm(packages, preselect) {
@@ -3192,6 +3206,10 @@ function renderSupport() {
   content(pageHeader() + `<section class="panel"><div class="panel-body"><div class="info-grid"><div class="info-item"><div class="info-label">Email</div><div class="info-value">bookings@elbakri.com</div></div><div class="info-item"><div class="info-label">Phone</div><div class="info-value">+20 2 0000 0000</div></div></div></div></section>`);
 }
 
+function requestCta(onclick, label, iconName = "plus") {
+  return `<button class="btn btn-primary request-cta" onclick="${onclick}">${icon(iconName)}<span>${escapeHtml(label)}</span></button>`;
+}
+
 async function renderListPage(page, endpoint, columns, options = {}) {
   state.page = page;
   state.listConfigs[page] = { endpoint, columns };
@@ -3496,8 +3514,10 @@ async function bootstrapUser() {
   }
   state.user = me.data;
   // Display currency: explicit company currency, else market default.
-  state.displayCurrency = me.data.company?.currency
-    || MARKET_DEFAULT_CURRENCY[me.data.company?.market] || "USD";
+  state.displayCurrency = normalizeCompanyDisplayCurrency(
+    me.data.company?.currency,
+    me.data.company?.market,
+  );
   await loadFxRates();
   localStorage.setItem("user", JSON.stringify(me.data));
   localStorage.setItem("userRole", me.data.role);

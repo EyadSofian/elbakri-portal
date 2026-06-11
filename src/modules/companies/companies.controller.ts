@@ -13,6 +13,17 @@ function nullable(value: unknown): string | null | undefined {
   return text ? text : null;
 }
 
+function defaultCompanyCurrency(market: 'EGYPTIAN' | 'INTERNATIONAL'): 'EGP' | 'USD' {
+  return market === 'EGYPTIAN' ? 'EGP' : 'USD';
+}
+
+function normalizeCompanyCurrency(
+  value: string | undefined,
+  market: 'EGYPTIAN' | 'INTERNATIONAL',
+): 'EGP' | 'USD' {
+  return value === 'EGP' || value === 'USD' ? value : defaultCompanyCurrency(market);
+}
+
 export async function listCompanies(req: Request, res: Response): Promise<void> {
   const page = parseInt(String(req.query.page ?? '1'));
   const limit = parseInt(String(req.query.limit ?? '20'));
@@ -103,6 +114,7 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
   const tempPassword = generatePassword(12);
   const hashedPassword = await bcrypt.hash(tempPassword, 12);
   const market = body.market === 'EGYPTIAN' ? 'EGYPTIAN' : 'INTERNATIONAL';
+  const currency = normalizeCompanyCurrency(body.currency, market);
 
   const company = await prisma.company.create({
     data: {
@@ -117,7 +129,7 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
       taxId: nullable(body.taxId),
       website: nullable(body.website),
       creditLimit: new Decimal(body.creditLimit ?? 0),
-      currency: body.currency ?? (market === 'EGYPTIAN' ? 'EGP' : 'USD'),
+      currency,
       market,
       tier: (body.tier as 'STANDARD' | 'SILVER' | 'GOLD' | 'PLATINUM') ?? 'STANDARD',
       logoUrl: nullable(body.logoUrl),
@@ -204,6 +216,19 @@ export async function updateCompany(req: Request, res: Response): Promise<void> 
     themeColor?: string; isActive?: boolean;
   };
 
+  const current = await prisma.company.findUniqueOrThrow({
+    where: { id: req.params.id },
+    select: { market: true, currency: true },
+  });
+  const nextMarket = body.market === 'EGYPTIAN'
+    ? 'EGYPTIAN'
+    : body.market === 'INTERNATIONAL'
+      ? 'INTERNATIONAL'
+      : (current.market === 'EGYPTIAN' ? 'EGYPTIAN' : 'INTERNATIONAL');
+  const nextCurrency = body.currency !== undefined || body.market !== undefined
+    ? normalizeCompanyCurrency(body.currency ?? current.currency, nextMarket)
+    : undefined;
+
   const company = await prisma.company.update({
     where: { id: req.params.id },
     data: {
@@ -218,9 +243,9 @@ export async function updateCompany(req: Request, res: Response): Promise<void> 
       ...(body.taxId !== undefined && { taxId: nullable(body.taxId) }),
       ...(body.website !== undefined && { website: nullable(body.website) }),
       ...(body.tier && { tier: body.tier as 'STANDARD' | 'SILVER' | 'GOLD' | 'PLATINUM' }),
-      ...(body.market && { market: body.market as 'EGYPTIAN' | 'INTERNATIONAL' }),
+      ...(body.market && { market: nextMarket }),
       ...(body.creditLimit !== undefined && { creditLimit: new Decimal(body.creditLimit) }),
-      ...(body.currency && { currency: body.currency }),
+      ...(nextCurrency && { currency: nextCurrency }),
       ...(body.logoUrl !== undefined && { logoUrl: nullable(body.logoUrl) }),
       ...(body.themeColor !== undefined && { themeColor: nullable(body.themeColor) }),
       ...(body.isActive !== undefined && { isActive: body.isActive }),

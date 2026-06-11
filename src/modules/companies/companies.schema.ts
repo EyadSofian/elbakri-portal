@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const companyCurrencySchema = z.enum(['USD', 'EGP']);
+
 export const createCompanySchema = z.object({
   name: z.string().min(2),
   nameAr: z.string().optional(),
@@ -13,7 +15,7 @@ export const createCompanySchema = z.object({
   taxId: z.string().optional(),
   website: z.string().url().optional().or(z.literal('')),
   creditLimit: z.number().min(0).default(0),
-  currency: z.string().min(3).max(3).optional(),
+  currency: companyCurrencySchema.optional(),
   market: z.enum(['EGYPTIAN', 'INTERNATIONAL']).default('INTERNATIONAL'),
   tier: z.enum(['STANDARD', 'SILVER', 'GOLD', 'PLATINUM']).default('STANDARD'),
   logoUrl: z.string().optional(),
@@ -33,7 +35,7 @@ export const updateCompanySchema = z.object({
   tier: z.enum(['STANDARD', 'SILVER', 'GOLD', 'PLATINUM']).optional(),
   market: z.enum(['EGYPTIAN', 'INTERNATIONAL']).optional(),
   creditLimit: z.number().min(0).optional(),
-  currency: z.string().min(3).max(3).optional(),
+  currency: companyCurrencySchema.optional(),
   logoUrl: z.string().optional(),
   themeColor: z.string().optional(),
   isActive: z.boolean().optional(),
@@ -41,7 +43,7 @@ export const updateCompanySchema = z.object({
 
 export const topupSchema = z.object({
   amount: z.number().positive(),
-  currency: z.string().min(3).max(3).default('USD'),
+  currency: companyCurrencySchema.default('USD'),
   description: z.string().min(1),
   notify: z.boolean().optional(),
 });

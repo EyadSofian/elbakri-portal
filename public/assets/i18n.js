@@ -767,8 +767,8 @@
   };
 
   // ── Supplemental keys (full EN/AR coverage for strings referenced in the app) ──
-  Object.assign(en.btn, { addPricing: "Add price period", importExcel: "Import Excel", syncing: "Syncing…", importing: "Importing…" });
-  Object.assign(ar.btn, { addPricing: "إضافة فترة سعر", importExcel: "استيراد Excel", syncing: "جاري المزامنة…", importing: "جاري الاستيراد…" });
+  Object.assign(en.btn, { addPricing: "Add price period", importExcel: "Import Excel", syncing: "Syncing…", importing: "Importing…", detailsRequest: "Details / Request" });
+  Object.assign(ar.btn, { addPricing: "إضافة فترة سعر", importExcel: "استيراد Excel", syncing: "جاري المزامنة…", importing: "جاري الاستيراد…", detailsRequest: "التفاصيل / طلب" });
   Object.assign(en.toast, { syncDetail: "{synced} synced · {created} new · {updated} updated · {errors} errors" });
   Object.assign(ar.toast, { syncDetail: "{synced} تمت · {created} جديد · {updated} محدث · {errors} أخطاء" });
   Object.assign(en.filter, { any: "Any" });
@@ -791,6 +791,8 @@
   Object.assign(ar.toast, { invalidDateRange: "تاريخ النهاية يجب أن يكون بعد تاريخ البداية" });
   Object.assign(en.validation, { requiredFields: "From, To, and Date are required" });
   Object.assign(ar.validation, { requiredFields: "الحقول: من، إلى، والتاريخ مطلوبة" });
+  Object.assign(en.currency, { companyHelp: "Company wallets support USD or EGP only. Egyptian companies default to EGP; international companies default to USD." });
+  Object.assign(ar.currency, { companyHelp: "محافظ الشركات تدعم الدولار أو الجنيه فقط. الشركات المصرية افتراضياً بالجنيه، والشركات الدولية افتراضياً بالدولار." });
 
   // ── Security Approval (renamed Visa) ──────────────────────────────────────
   en.nav.securityApproval = "Security Approval";
@@ -830,6 +832,7 @@
     passportNumber: "Passport Number", travelDate: "Arrival / Travel Date",
     consent: "I confirm the passenger details above are accurate and consent to sharing them with the relevant authorities for security clearance.",
     consentRequired: "Please confirm consent to proceed",
+    newRequest: "New Security Request",
   };
   ar.securityApproval = {
     sharm: "شرم الشيخ", cairo: "القاهرة", borgElArab: "برج العرب",
@@ -841,16 +844,17 @@
     passportNumber: "رقم جواز السفر", travelDate: "تاريخ الوصول / السفر",
     consent: "أؤكد أن بيانات المسافر أعلاه صحيحة وأوافق على مشاركتها مع الجهات المختصة للحصول على الموافقة الأمنية.",
     consentRequired: "يرجى تأكيد الموافقة للمتابعة",
+    newRequest: "طلب موافقة أمنية جديد",
   };
 
   // ── Airport Assist form ────────────────────────────────────────────────────
   en.airportAssist = {
     ticketUpload: "Flight Ticket (image or PDF)", arrivalDeparture: "Arrival / Departure Details",
-    form: "Request Airport Assist", serviceType: "Service Type",
+    form: "Request Airport Assist", serviceType: "Service Type", newRequest: "New Airport Assist",
   };
   ar.airportAssist = {
     ticketUpload: "تذكرة الطيران (صورة أو PDF)", arrivalDeparture: "تفاصيل الوصول / المغادرة",
-    form: "طلب مساعدة المطار", serviceType: "نوع الخدمة",
+    form: "طلب مساعدة المطار", serviceType: "نوع الخدمة", newRequest: "طلب مساعدة مطار جديد",
   };
 
   // ── SIM Card ───────────────────────────────────────────────────────────────
@@ -859,14 +863,14 @@
     minutes: "Minutes / Calls", validity: "Validity", clientName: "Client Name",
     phone: "Client Phone", quantity: "Quantity", arrivalDate: "Arrival Date",
     requestTitle: "Request SIM Card", noPackages: "No SIM packages available",
-    perSim: "per SIM",
+    perSim: "per SIM", newRequest: "New SIM Request",
   };
   ar.simCard = {
     package: "باقة الشريحة", selectPackage: "اختر باقة", dataSize: "البيانات",
     minutes: "دقائق / مكالمات", validity: "الصلاحية", clientName: "اسم العميل",
     phone: "هاتف العميل", quantity: "الكمية", arrivalDate: "تاريخ الوصول",
     requestTitle: "طلب شريحة اتصال", noPackages: "لا توجد باقات متاحة",
-    perSim: "للشريحة",
+    perSim: "للشريحة", newRequest: "طلب شريحة جديد",
   };
 
   // ── Offers ─────────────────────────────────────────────────────────────────

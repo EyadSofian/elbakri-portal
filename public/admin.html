@@ -132,6 +132,24 @@ const state = {
   sort: {},
 };
 
+const COMPANY_DISPLAY_CURRENCIES = ["USD", "EGP"];
+
+function companyDefaultCurrency(market) {
+  return market === "EGYPTIAN" ? "EGP" : "USD";
+}
+
+function normalizedCompanyCurrency(value, market) {
+  const cur = String(value || "").toUpperCase();
+  return COMPANY_DISPLAY_CURRENCIES.includes(cur) ? cur : companyDefaultCurrency(market);
+}
+
+function companyCurrencyOptions(selected, market) {
+  const value = normalizedCompanyCurrency(selected, market);
+  return COMPANY_DISPLAY_CURRENCIES
+    .map(cur => `<option value="${cur}" ${cur === value ? "selected" : ""}>${t("currency."+cur, cur)}</option>`)
+    .join("");
+}
+
 const pageMeta = {
   dashboard: ["page.dashboardTitle", "page.dashboardSub"],
   companies: ["page.companiesTitle", "page.companiesSub"],
@@ -781,8 +799,8 @@ async function showCompanyModal(id) {
       <div class="form-grid">
         <div class="form-field"><label>${t("form.tier")} <span class="required">*</span></label><select id="mCoTier">${["STANDARD","SILVER","GOLD","PLATINUM"].map(v => `<option value="${v}" ${v === (c?.tier || "STANDARD") ? "selected" : ""}>${t("tier."+v)} - ${t("tier."+v.toLowerCase()+"Desc")}</option>`).join("")}</select></div>
         ${field("mCoCreditLimit", "form.creditLimit", c?.creditLimit || 0, false, "number")}
-        <div class="form-field"><label>${t("form.market", "Client Market")} <span class="required">*</span></label><select id="mCoMarket" onchange="onMarketChange()">${["EGYPTIAN","INTERNATIONAL"].map(v => `<option value="${v}" ${v === (c?.market === "EGYPTIAN" ? "EGYPTIAN" : "INTERNATIONAL") ? "selected" : ""}>${t("market."+v, v)}</option>`).join("")}</select><div class="secondary-text" style="margin-top:4px">${t("market.companyHelp", "Egyptian companies see EGP pricing; international companies use the base foreign pricing and their configured currency.")}</div></div>
-        <div class="form-field"><label>${t("form.currency")} (${t("form.displayCurrency", "Display")})</label><select id="mCoCurrency">${["USD","EGP","EUR","SAR","AED"].map(v => `<option value="${v}" ${v === (c?.currency || "USD") ? "selected" : ""}>${t("currency."+v)}</option>`).join("")}</select></div>
+        <div class="form-field"><label>${t("form.market", "Client Market")} <span class="required">*</span></label><select id="mCoMarket" onchange="onMarketChange()">${["EGYPTIAN","INTERNATIONAL"].map(v => `<option value="${v}" ${v === (c?.market === "EGYPTIAN" ? "EGYPTIAN" : "INTERNATIONAL") ? "selected" : ""}>${t("market."+v, v)}</option>`).join("")}</select><div class="secondary-text" style="margin-top:4px">${t("market.companyHelp", "Egyptian companies default to EGP. International companies default to USD. Nationality/market and wallet currency are managed separately.")}</div></div>
+        <div class="form-field"><label>${t("form.currency")} (${t("form.displayCurrency", "Display")})</label><select id="mCoCurrency" onchange="this.dataset.userTouched='1'">${companyCurrencyOptions(c?.currency, c?.market)}</select><div class="secondary-text" style="margin-top:4px">${t("currency.companyHelp", "Company wallets support USD or EGP only.")}</div></div>
       </div>
     </div>
     <div class="form-section">
@@ -1173,7 +1191,7 @@ function onMarketChange() {
   const curSel = document.getElementById("mCoCurrency");
   if (!market || !curSel) return;
   // Suggest a sensible default display currency for the chosen market.
-  const suggested = market === "EGYPTIAN" ? "EGP" : "USD";
+  const suggested = companyDefaultCurrency(market);
   if (curSel.dataset.userTouched !== "1") curSel.value = suggested;
 }
 
@@ -1286,7 +1304,7 @@ function switchDetailTab(tab, btn) {
 async function showTopupModal(id, bulkIds, forcedCurrency) {
   const company = id ? state.companies.find(c => c.id === id) || state.currentCompany : null;
   const ids = bulkIds || (id ? [id] : Array.from(state.selectedCompanies));
-  const currency = forcedCurrency || company?.currency || "USD";
+  const currency = normalizedCompanyCurrency(forcedCurrency || company?.currency, company?.market);
   const platform = await apiFetch(`/admin/wallet/platform?currency=${encodeURIComponent(currency)}`);
   const platformWallet = platform?.data?.wallet || { balance: 0, currency };
   const label = company?.name || `${ids.length} ${t("nav.companies")}`;
@@ -1295,7 +1313,7 @@ async function showTopupModal(id, bulkIds, forcedCurrency) {
     <div class="info-item" style="margin-bottom:14px"><div class="info-label">${t("form.currentBalance")}</div><div class="info-value">${company ? formatMoney(company.balance, company.currency || "USD") : "—"}</div></div>
     <div class="form-grid">
       ${field("topupAmount", "form.amount", "", true, "number")}
-      <div class="form-field"><label>${t("form.currency")}</label><select id="topupCurrency">${["USD","EGP","EUR","SAR","AED"].map(item => `<option value="${item}" ${item === currency ? "selected" : ""}>${item}</option>`).join("")}</select></div>
+      <div class="form-field"><label>${t("form.currency")}</label><select id="topupCurrency">${companyCurrencyOptions(currency, company?.market)}</select><div class="secondary-text" style="margin-top:4px">${t("currency.companyHelp", "Company wallets support USD or EGP only.")}</div></div>
       <div class="form-field full"><label>${t("form.description")} <span class="required">*</span></label><input id="topupDescription" placeholder="${t("placeholder.description")}"></div>
       <label class="form-field full" style="display:flex;grid-template-columns:auto 1fr;align-items:center;gap:8px"><input type="checkbox" id="topupNotify" checked style="width:auto"> ${t("btn.sendNotification")}</label>
       <div class="info-item full"><div class="info-label">${t("modal.review")}</div><div class="info-value" id="topupSummary">Top up ${escapeHtml(label)}</div></div>
