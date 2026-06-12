@@ -9,6 +9,7 @@ import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/group-types.service';
 import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
+import { createVoucherForService } from '../vouchers/vouchers.controller';
 
 const transportInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -16,6 +17,7 @@ const transportInclude = {
   confirmedBy: { select: { id: true, name: true } },
   groupType: { select: { id: true, code: true, labelEn: true, labelAr: true } },
   invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
+  voucher: { select: { id: true, voucherNumber: true } },
 };
 
 export async function listTransportBookings(req: Request, res: Response): Promise<void> {
@@ -309,6 +311,14 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           .catch(console.error);
       }
     }
+
+    // Generate customer voucher (no price) in background
+    createVoucherForService({
+      type: 'transport',
+      bookingId: booking.id,
+      companyId,
+      clientName: body.passengerName ?? null,
+    }).catch(console.error);
 
     // Notify the configured recipient(s). TRANSPORT_NOTIFY_EMAIL is the
     // optional operations inbox configured in Railway.

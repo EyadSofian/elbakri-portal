@@ -237,6 +237,34 @@ function apiFetch(path, options = {}) {
   });
 }
 
+async function downloadVoucherPdf(id) {
+  const token = localStorage.getItem("accessToken");
+  try {
+    const res = await fetch(`/api/vouchers/${id}/download`, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      throw new Error(json?.message || json?.error || "Voucher download failed");
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const filename = match?.[1] || `voucher-${id}.pdf`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    toast(err.message || "Voucher download failed", "error");
+  }
+}
+
 async function downloadInvoicePdf(id) {
   const token = localStorage.getItem("accessToken");
   try {
@@ -2208,7 +2236,11 @@ async function renderTransportHistory() {
     ["th.pickup", r => `<div>${formatDate(r.pickupDateTime)}</div>${r.passengerName ? `<div class="secondary-text">${escapeHtml(r.passengerName)}</div>` : ""}`],
     ["th.requested", r => requestedDate(r)],
     ["th.confirmed", r => confirmedDate(r)],
-    ["th.invoice", r => r.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${r.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : "—"],
+    ["th.invoice", r => `<div style="display:flex;gap:4px;flex-wrap:wrap">
+      ${r.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${r.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : ""}
+      ${r.voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${r.voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
+      ${!r.invoice && !r.voucher ? "—" : ""}
+    </div>`],
   ], {
     filters: [["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]]],
     extraActions: requestCta("renderTransport()", t("transport.newBooking","New Transport Booking"), "bus"),
@@ -2575,6 +2607,11 @@ function renderSecurityApproval() {
     ["th.status", v => statusBadge(v.status)],
     ["th.requested", v => requestedDate(v)],
     ["th.confirmed", v => confirmedDate(v)],
+    ["th.invoice", v => `<div style="display:flex;gap:4px;flex-wrap:wrap">
+      ${v.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${v.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : ""}
+      ${v.voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${v.voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
+      ${!v.invoice && !v.voucher ? "—" : ""}
+    </div>`],
   ], {
     filters: [["status","form.status",["","PENDING","SUBMITTED","APPROVED","REJECTED"]]],
     extraActions: requestCta("openSecurityApprovalForm()", t("securityApproval.newRequest","New Security Request"), "shield-check"),
@@ -2709,6 +2746,11 @@ function renderAirportAssist() {
     ["th.status", r => statusBadge(r.status)],
     ["th.requested", r => requestedDate(r)],
     ["th.confirmed", r => confirmedDate(r)],
+    ["th.invoice", r => `<div style="display:flex;gap:4px;flex-wrap:wrap">
+      ${r.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${r.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : ""}
+      ${r.voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${r.voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
+      ${!r.invoice && !r.voucher ? "—" : ""}
+    </div>`],
   ], {
     filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
     extraActions: requestCta("openAirportAssistForm()", t("airportAssist.newRequest","New Airport Assist"), "plane-landing"),
@@ -3057,7 +3099,13 @@ async function renderCompanyInvoiceLists() {
     ["th.amount", i => `<span class="numeric">${formatStoredMoney(i.total, i.currency)}</span>`],
     ["th.status", i => statusBadge(i.status)],
     ["th.dueDate", i => formatDate(i.dueDate)],
-    ["th.actions", i => `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}${t("btn.downloadPdf")}</button>`],
+    ["th.actions", i => {
+      const voucher = i.activityBooking?.voucher || i.transportBooking?.voucher || i.airportReception?.voucher || i.visaApplication?.voucher || i.simRequest?.voucher;
+      return `<div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>
+        ${voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
+      </div>`;
+    }],
   ], invoiceRows);
   if (consolidatedHost) consolidatedHost.innerHTML = simpleDataTable([
     ["th.invoice", row => `<span class="primary-text">${escapeHtml(row.statementNumber)}</span><div class="secondary-text">${formatNumber(row._count?.lines || 0)} ${t("invoice.items","items")}</div>`],
@@ -3096,11 +3144,17 @@ async function downloadAuthenticatedFile(path, filename) {
 function renderLegacyInvoices() {
   renderListPage("invoices", "/invoices", [
     ["th.invoice", i => `<span class="primary-text">${escapeHtml(i.invoiceNumber)}</span>`],
-    ["th.ref", i => escapeHtml(i.booking?.refNumber || "—")],
+    ["th.ref", i => escapeHtml(i.booking?.refNumber || i.activityBooking?.refNumber || i.transportBooking?.refNumber || i.airportReception?.refNumber || i.visaApplication?.refNumber || "—")],
     ["th.amount", i => `<span class="numeric">${formatStoredMoney(i.total, i.currency)}</span>`],
     ["th.status", i => statusBadge(i.status)],
     ["th.dueDate", i => formatDate(i.dueDate)],
-    ["th.actions", i => `<button class="btn btn-outline" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}${t("btn.downloadPdf")}</button>`],
+    ["th.actions", i => {
+      const voucher = i.activityBooking?.voucher || i.transportBooking?.voucher || i.airportReception?.voucher || i.visaApplication?.voucher || i.simRequest?.voucher;
+      return `<div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>
+        ${voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
+      </div>`;
+    }],
   ], { filters: [["status", "form.status", ["", "UNPAID", "PAID", "OVERDUE", "CANCELLED"]]] });
 }
 

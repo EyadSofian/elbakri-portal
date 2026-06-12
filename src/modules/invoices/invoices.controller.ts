@@ -25,6 +25,7 @@ const invoiceInclude = {
       requestedAt: true, confirmedAt: true,
       activity: { select: { id: true, name: true, city: true, category: true } },
       company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
+      voucher: { select: { id: true, voucherNumber: true } },
     },
   },
   transportBooking: {
@@ -34,6 +35,7 @@ const invoiceInclude = {
       totalAmount: true, currency: true,
       requestedAt: true, confirmedAt: true,
       company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
+      voucher: { select: { id: true, voucherNumber: true } },
     },
   },
   airportReception: {
@@ -43,6 +45,7 @@ const invoiceInclude = {
       totalAmount: true, currency: true,
       requestedAt: true, confirmedAt: true,
       company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
+      voucher: { select: { id: true, voucherNumber: true } },
     },
   },
   cruiseBooking: {
@@ -60,6 +63,7 @@ const invoiceInclude = {
       paxCount: true, totalAmount: true, currency: true,
       requestedAt: true, confirmedAt: true,
       company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
+      voucher: { select: { id: true, voucherNumber: true } },
     },
   },
   simRequest: {
@@ -68,6 +72,7 @@ const invoiceInclude = {
       totalAmount: true, currency: true, requestedAt: true, confirmedAt: true,
       package: { select: { name: true } },
       company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
+      voucher: { select: { id: true, voucherNumber: true } },
     },
   },
   consolidatedLine: {

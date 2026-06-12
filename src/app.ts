@@ -32,6 +32,7 @@ import { adminUiTemplatesRouter, userUiTemplatesRouter } from './modules/ui-temp
 import { enrichRouter } from './modules/enrichment/enrichment.routes';
 import fxRouter from './modules/fx/fx.routes';
 import groupTypesRouter from './modules/group-types/group-types.routes';
+import vouchersRouter from './modules/vouchers/vouchers.routes';
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3000');
@@ -118,6 +119,7 @@ app.use('/api/sim-card', authenticate, simCardRouter);
 app.use('/api/upload', authenticate, uploadRouter);
 app.use('/api/fx', authenticate, fxRouter);
 app.use('/api/group-types', authenticate, groupTypesRouter);
+app.use('/api/vouchers', authenticate, vouchersRouter);
 app.use('/api/admin/fx', authenticate, fxRouter);
 app.use('/api/ui-templates', authenticate, userUiTemplatesRouter);
 app.use('/api/admin/ui-templates', authenticate, adminUiTemplatesRouter);

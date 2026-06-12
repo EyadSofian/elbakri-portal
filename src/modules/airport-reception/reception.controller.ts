@@ -7,12 +7,14 @@ import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
+import { createVoucherForService } from '../vouchers/vouchers.controller';
 
 const receptionInclude = {
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
   confirmedBy: { select: { id: true, name: true } },
   invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
+  voucher: { select: { id: true, voucherNumber: true } },
 };
 
 /**
@@ -192,6 +194,14 @@ export async function createReception(req: Request, res: Response): Promise<void
           .catch(console.error);
       }
     }
+
+    // Generate customer voucher (no price) in background
+    createVoucherForService({
+      type: 'reception',
+      id: reception.id,
+      companyId,
+      clientName: body.guestName,
+    }).catch(console.error);
 
     // Notify company + the operations inbox (RECEPTION_NOTIFY_EMAIL, else the team inbox).
     const companyEmail = (await prisma.company.findUnique({ where: { id: companyId }, select: { email: true } }))?.email;

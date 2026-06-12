@@ -9,6 +9,7 @@ import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/group-types.service';
 import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
+import { createVoucherForService } from '../vouchers/vouchers.controller';
 
 const activityInclude = {
   activity: { select: { id: true, name: true, city: true, category: true } },
@@ -17,6 +18,7 @@ const activityInclude = {
   confirmedBy: { select: { id: true, name: true } },
   groupType: { select: { id: true, code: true, labelEn: true, labelAr: true } },
   invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
+  voucher: { select: { id: true, voucherNumber: true } },
 };
 
 export async function listActivities(req: Request, res: Response): Promise<void> {
@@ -236,6 +238,14 @@ export async function createActivityBooking(req: Request, res: Response): Promis
       },
       include: activityInclude,
     });
+
+    // Generate customer voucher (no price) in background
+    createVoucherForService({
+      type: 'activity',
+      bookingId: booking.id,
+      companyId,
+      clientName: body.clientName ?? null,
+    }).catch(console.error);
 
     // Rich email notification
     if (company.email && process.env.INTERNAL_TEAM_EMAIL) {

@@ -327,6 +327,7 @@ model Company {
   simRequests          SimRequest[]
   consolidatedInvoices ConsolidatedInvoice[]
   hotelVisibility      HotelCompanyVisibility[]
+  vouchers             Voucher[]
   createdAt            DateTime                    @default(now())
   updatedAt            DateTime                    @updatedAt
 
@@ -865,6 +866,7 @@ model TransportBooking {
   notes              String?
   customFields       Json? // dynamic fields captured by the Request Form Builder template
   invoice            Invoice?
+  voucher            Voucher?          @relation("VoucherTransport")
   requestedAt        DateTime          @default(now())
   confirmedAt        DateTime?
   confirmedById      String?
@@ -975,6 +977,7 @@ model ActivityBooking {
   status         BookingStatus     @default(PENDING)
   notes          String?
   invoice        Invoice?
+  voucher        Voucher?          @relation("VoucherActivity")
   requestedAt    DateTime          @default(now())
   confirmedAt    DateTime?
   confirmedById  String?
@@ -1064,6 +1067,7 @@ model VisaApplication {
   confirmedAt        DateTime?
   confirmedById      String?
   confirmedBy        User?          @relation("VisaConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  voucher            Voucher?       @relation("VoucherVisa")
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
@@ -1128,6 +1132,7 @@ model AirportReception {
   confirmedAt     DateTime?
   confirmedById   String?
   confirmedBy     User?         @relation("ReceptionConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  voucher         Voucher?      @relation("VoucherReception")
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -1227,6 +1232,7 @@ model SimRequest {
   confirmedAt    DateTime?
   confirmedById  String?
   confirmedBy    User?         @relation("SimConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  voucher        Voucher?      @relation("VoucherSim")
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -1338,6 +1344,43 @@ model FxRateCache {
   rates     Json
   fetchedAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────
+// VOUCHERS (customer-facing, no price shown)
+// ─────────────────────────────────────────────
+
+model Voucher {
+  id                 String            @id @default(cuid())
+  voucherNumber      String            @unique
+  serviceType        String // TRANSPORT | ACTIVITY | SECURITY_APPROVAL | AIRPORT_ASSIST | SIM_CARD
+  // Only one relation populated per voucher (polymorphic)
+  transportBookingId    String?        @unique
+  transportBooking      TransportBooking?   @relation("VoucherTransport",    fields: [transportBookingId],    references: [id], onDelete: Restrict)
+  activityBookingId     String?        @unique
+  activityBooking       ActivityBooking?    @relation("VoucherActivity",     fields: [activityBookingId],     references: [id], onDelete: Restrict)
+  visaApplicationId     String?        @unique
+  visaApplication       VisaApplication?    @relation("VoucherVisa",         fields: [visaApplicationId],     references: [id], onDelete: Restrict)
+  airportReceptionId    String?        @unique
+  airportReception      AirportReception?   @relation("VoucherReception",    fields: [airportReceptionId],    references: [id], onDelete: Restrict)
+  simRequestId          String?        @unique
+  simRequest            SimRequest?         @relation("VoucherSim",          fields: [simRequestId],          references: [id], onDelete: Restrict)
+  companyId          String
+  company            Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  clientName         String?
+  pdfPath            String?
+  notes              String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([companyId])
+  @@index([serviceType])
+  @@index([createdAt])
+}
+
+model VoucherCounter {
+  year    Int @id
+  lastSeq Int @default(0)
 }
 
 model HotelMediaSyncLog {

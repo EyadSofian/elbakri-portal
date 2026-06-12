@@ -13,12 +13,14 @@ import {
 import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
+import { createVoucherForService } from '../vouchers/vouchers.controller';
 
 const visaInclude = {
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
   confirmedBy: { select: { id: true, name: true } },
   invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
+  voucher: { select: { id: true, voucherNumber: true } },
 };
 
 const destinationAliases: Record<string, string[]> = {
@@ -231,6 +233,13 @@ export async function createVisaApplication(req: Request, res: Response): Promis
     if (application.invoice) {
       generateVisaInvoicePdf(application.invoice.id).catch(console.error);
     }
+    // Generate customer voucher (no price) in background
+    createVoucherForService({
+      type: 'visa',
+      appId: application.id,
+      companyId,
+      clientName: body.applicantName,
+    }).catch(console.error);
     const recipients = [company.email, process.env.INTERNAL_TEAM_EMAIL].filter(Boolean) as string[];
     if (recipients.length) {
       sendEmail(
