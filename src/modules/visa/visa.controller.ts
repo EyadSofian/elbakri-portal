@@ -233,13 +233,17 @@ export async function createVisaApplication(req: Request, res: Response): Promis
     if (application.invoice) {
       generateVisaInvoicePdf(application.invoice.id).catch(console.error);
     }
-    // Generate customer voucher (no price) in background
-    createVoucherForService({
+    // Generate customer voucher (no price) before responding when possible so
+    // the company portal can show the voucher action immediately.
+    const voucherId = await createVoucherForService({
       type: 'visa',
       appId: application.id,
       companyId,
       clientName: body.applicantName,
-    }).catch(console.error);
+    });
+    const responseApplication = voucherId
+      ? await prisma.visaApplication.findUnique({ where: { id: application.id }, include: visaInclude })
+      : application;
     const recipients = [company.email, process.env.INTERNAL_TEAM_EMAIL].filter(Boolean) as string[];
     if (recipients.length) {
       sendEmail(
@@ -248,7 +252,7 @@ export async function createVisaApplication(req: Request, res: Response): Promis
         `<p>Security approval <strong>${application.refNumber}</strong> was submitted for ${body.applicantName}.</p>`,
       ).catch(console.error);
     }
-    res.status(201).json({ success: true, data: application });
+    res.status(201).json({ success: true, data: responseApplication ?? application });
   } catch (error) {
     const message = String((error as Error).message);
     if (message === 'COMPANY_INACTIVE') {

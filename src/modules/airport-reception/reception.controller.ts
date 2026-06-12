@@ -195,13 +195,17 @@ export async function createReception(req: Request, res: Response): Promise<void
       }
     }
 
-    // Generate customer voucher (no price) in background
-    createVoucherForService({
+    // Generate customer voucher (no price) before responding when possible so
+    // the company portal can show the voucher action immediately.
+    const voucherId = await createVoucherForService({
       type: 'reception',
       id: reception.id,
       companyId,
       clientName: body.guestName,
-    }).catch(console.error);
+    });
+    const responseReception = voucherId
+      ? await prisma.airportReception.findUnique({ where: { id: reception.id }, include: receptionInclude })
+      : reception;
 
     // Notify company + the operations inbox (RECEPTION_NOTIFY_EMAIL, else the team inbox).
     const companyEmail = (await prisma.company.findUnique({ where: { id: companyId }, select: { email: true } }))?.email;
@@ -221,7 +225,7 @@ export async function createReception(req: Request, res: Response): Promise<void
       ).catch(console.error);
     }
 
-    res.status(201).json({ success: true, data: reception });
+    res.status(201).json({ success: true, data: responseReception ?? reception });
   } catch (err) {
     const msg = String((err as Error).message);
     if (msg === 'COMPANY_INACTIVE') res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });

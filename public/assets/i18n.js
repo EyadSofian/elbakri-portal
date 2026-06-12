@@ -142,6 +142,7 @@
       pickup: "موعد الانطلاق",
       dueDate: "تاريخ الاستحقاق",
       invoice: "الفاتورة",
+      voucher: "الباوتشر",
       before: "قبل",
       after: "بعد",
       reference: "مرجع",
@@ -585,7 +586,7 @@
       balance: "Balance", creditLimit: "Credit Limit", bookingsCount: "Bookings", usersCount: "Users", status: "Status",
       lastActivity: "Last Activity", actions: "Actions", ref: "Ref", type: "Type", details: "Details", service: "Service",
       route: "Route", city: "City", stars: "Stars", amount: "Amount", commission: "Commission", markup: "Markup", total: "Total",
-      currency: "Currency", date: "Date", requested: "Date Requested", confirmed: "Date Confirmed", notConfirmed: "Not confirmed", confirmedBy: "Confirmed By", pickup: "Pickup", dueDate: "Due Date", invoice: "Invoice", before: "Before", after: "After",
+      currency: "Currency", date: "Date", requested: "Date Requested", confirmed: "Date Confirmed", notConfirmed: "Not confirmed", confirmedBy: "Confirmed By", pickup: "Pickup", dueDate: "Due Date", invoice: "Invoice", voucher: "Voucher", before: "Before", after: "After",
       reference: "Reference", description: "Description", errors: "Errors", created: "Created", updated: "Updated",
       skipped: "Skipped", synced: "Synced", sheet: "Sheet", lastSync: "Last Sync", schedule: "Schedule", entity: "Entity", result: "Result",
       destination: "Destination", hotel: "Hotel", travelDates: "Travel Dates", assignedTo: "Assigned To",
@@ -793,6 +794,8 @@
   Object.assign(ar.toast, { invalidDateRange: "تاريخ النهاية يجب أن يكون بعد تاريخ البداية" });
   Object.assign(en.validation, { requiredFields: "From, To, and Date are required" });
   Object.assign(ar.validation, { requiredFields: "الحقول: من، إلى، والتاريخ مطلوبة" });
+  en.voucher = { ...(en.voucher || {}), pending: "Voucher pending" };
+  ar.voucher = { ...(ar.voucher || {}), pending: "الباوتشر قيد التجهيز" };
   Object.assign(en.currency, { companyHelp: "Company wallets support USD or EGP only. Egyptian companies default to EGP; international companies default to USD." });
   Object.assign(ar.currency, { companyHelp: "محافظ الشركات تدعم الدولار أو الجنيه فقط. الشركات المصرية افتراضياً بالجنيه، والشركات الدولية افتراضياً بالدولار." });
 
@@ -988,6 +991,34 @@
     timeSlot: "التاريخ والوقت", duration: "المدة / الوقت", actType: "نوع الحجز",
     contactForTime: "تواصل معنا للاستفسار عن الأوقات المتاحة",
   };
+  Object.assign(en.activity, {
+    singleMode: "Single Activity",
+    singleModeHelp: "Pick one trip, fill its details, then confirm the request.",
+    packageMode: "Activity Package",
+    packageModeHelp: "Add multiple trips to one package cart and submit them together.",
+    packageCart: "Package Cart",
+    packagePickHelp: "Choose each trip and fill its own details before submitting.",
+    addToPackage: "Add to Package",
+    submitPackage: "Submit Package",
+    packageEmpty: "No trips added yet",
+    timeConflict: "This package already has a trip at the same date/time.",
+    packageSubmitted: "Package submitted",
+    packagePartial: "Package stopped because one trip failed.",
+  });
+  Object.assign(ar.activity, {
+    singleMode: "رحلة واحدة",
+    singleModeHelp: "اختر رحلة واحدة واملأ بياناتها ثم أكد الطلب.",
+    packageMode: "باكدج رحلات",
+    packageModeHelp: "أضف أكثر من رحلة في سلة واحدة وأرسلهم معاً.",
+    packageCart: "سلة الباكدج",
+    packagePickHelp: "اختر كل رحلة واملأ بياناتها قبل الإرسال.",
+    addToPackage: "أضف للباكدج",
+    submitPackage: "إرسال الباكدج",
+    packageEmpty: "لم يتم إضافة رحلات بعد",
+    timeConflict: "يوجد رحلة في نفس التاريخ والوقت داخل الباكدج.",
+    packageSubmitted: "تم إرسال الباكدج",
+    packagePartial: "توقف إرسال الباكدج بسبب فشل إحدى الرحلات.",
+  });
 
   // ── Transport extra keys ───────────────────────────────────────────────────
   Object.assign(en.transport, {

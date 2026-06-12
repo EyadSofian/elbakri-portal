@@ -239,13 +239,17 @@ export async function createActivityBooking(req: Request, res: Response): Promis
       include: activityInclude,
     });
 
-    // Generate customer voucher (no price) in background
-    createVoucherForService({
+    // Generate customer voucher (no price) before responding when possible so
+    // the company portal can show "Download Voucher" after creation/refresh.
+    const voucherId = await createVoucherForService({
       type: 'activity',
       bookingId: booking.id,
       companyId,
       clientName: body.clientName ?? null,
-    }).catch(console.error);
+    });
+    const responseBooking = voucherId
+      ? await prisma.activityBooking.findUnique({ where: { id: booking.id }, include: activityInclude })
+      : booking;
 
     // Rich email notification
     if (company.email && process.env.INTERNAL_TEAM_EMAIL) {
@@ -268,7 +272,7 @@ export async function createActivityBooking(req: Request, res: Response): Promis
       ).catch(console.error);
     }
 
-    res.status(201).json({ success: true, data: booking });
+    res.status(201).json({ success: true, data: responseBooking ?? booking });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });

@@ -312,13 +312,17 @@ export async function createTransportBooking(req: Request, res: Response): Promi
       }
     }
 
-    // Generate customer voucher (no price) in background
-    createVoucherForService({
+    // Generate customer voucher (no price) before responding when possible so
+    // the company portal can show "Download Voucher" immediately.
+    const voucherId = await createVoucherForService({
       type: 'transport',
       bookingId: booking.id,
       companyId,
       clientName: body.passengerName ?? null,
-    }).catch(console.error);
+    });
+    const responseBooking = voucherId
+      ? await prisma.transportBooking.findUnique({ where: { id: booking.id }, include: transportInclude })
+      : booking;
 
     // Notify the configured recipient(s). TRANSPORT_NOTIFY_EMAIL is the
     // optional operations inbox configured in Railway.
@@ -344,7 +348,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
       ).catch(console.error);
     }
 
-    res.status(201).json({ success: true, data: booking });
+    res.status(201).json({ success: true, data: responseBooking ?? booking });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });

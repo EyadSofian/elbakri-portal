@@ -109,13 +109,38 @@ async function buildReceptionVoucherData(receptionId: string): Promise<VoucherDa
   };
 }
 
+async function buildSimVoucherData(simRequestId: string): Promise<VoucherData | null> {
+  const s = await prisma.simRequest.findUnique({
+    where: { id: simRequestId },
+    include: {
+      company: { select: { name: true, logoUrl: true } },
+      package: { select: { name: true, dataSize: true, validity: true } },
+    },
+  });
+  if (!s) return null;
+  return {
+    serviceType: 'SIM_CARD',
+    voucherNumber: '',
+    company: s.company,
+    clientName: s.clientName,
+    clientPhone: s.phone,
+    packageName: s.package?.name ?? null,
+    dataSize: s.package?.dataSize ?? null,
+    validity: s.package?.validity ?? null,
+    quantity: s.quantity,
+    arrivalDate: s.arrivalDate,
+    notes: s.notes,
+  };
+}
+
 // ── Internal generator (called by service controllers) ───────────────────────
 
 type ServiceRef =
   | { type: 'transport';   bookingId: string; companyId: string; clientName?: string | null }
   | { type: 'activity';    bookingId: string; companyId: string; clientName?: string | null }
   | { type: 'visa';        appId:     string; companyId: string; clientName?: string | null }
-  | { type: 'reception';   id:        string; companyId: string; clientName?: string | null };
+  | { type: 'reception';   id:        string; companyId: string; clientName?: string | null }
+  | { type: 'sim';         simRequestId: string; companyId: string; clientName?: string | null };
 
 export async function createVoucherForService(ref: ServiceRef): Promise<string | null> {
   try {
@@ -139,6 +164,10 @@ export async function createVoucherForService(ref: ServiceRef): Promise<string |
         data = await buildReceptionVoucherData(ref.id);
         fieldKey = { airportReceptionId: ref.id };
         break;
+      case 'sim':
+        data = await buildSimVoucherData(ref.simRequestId);
+        fieldKey = { simRequestId: ref.simRequestId };
+        break;
     }
 
     if (!data) return null;
@@ -151,6 +180,7 @@ export async function createVoucherForService(ref: ServiceRef): Promise<string |
       activity:   'ACTIVITY',
       visa:       'SECURITY_APPROVAL',
       reception:  'AIRPORT_ASSIST',
+      sim:        'SIM_CARD',
     };
 
     // Check if voucher already exists for this booking (idempotent)
@@ -163,6 +193,8 @@ export async function createVoucherForService(ref: ServiceRef): Promise<string |
       existing = await prisma.voucher.findUnique({ where: { visaApplicationId: fieldKey.visaApplicationId }, select: { id: true } });
     else if (fieldKey.airportReceptionId)
       existing = await prisma.voucher.findUnique({ where: { airportReceptionId: fieldKey.airportReceptionId }, select: { id: true } });
+    else if (fieldKey.simRequestId)
+      existing = await prisma.voucher.findUnique({ where: { simRequestId: fieldKey.simRequestId }, select: { id: true } });
     if (existing) return existing.id;
 
     const voucher = await prisma.voucher.create({
@@ -209,6 +241,7 @@ export async function downloadVoucher(req: Request, res: Response): Promise<void
     else if (voucher.activityBookingId)  data = await buildActivityVoucherData(voucher.activityBookingId);
     else if (voucher.visaApplicationId)  data = await buildVisaVoucherData(voucher.visaApplicationId);
     else if (voucher.airportReceptionId) data = await buildReceptionVoucherData(voucher.airportReceptionId);
+    else if (voucher.simRequestId)       data = await buildSimVoucherData(voucher.simRequestId);
 
     if (data) {
       data.voucherNumber = voucher.voucherNumber;
@@ -243,6 +276,7 @@ export async function regenerateVoucher(req: Request, res: Response): Promise<vo
   else if (voucher.activityBookingId)  data = await buildActivityVoucherData(voucher.activityBookingId);
   else if (voucher.visaApplicationId)  data = await buildVisaVoucherData(voucher.visaApplicationId);
   else if (voucher.airportReceptionId) data = await buildReceptionVoucherData(voucher.airportReceptionId);
+  else if (voucher.simRequestId)       data = await buildSimVoucherData(voucher.simRequestId);
 
   if (!data) { res.status(400).json({ success: false, error: 'NO_DATA' }); return; }
   data.voucherNumber = voucher.voucherNumber;

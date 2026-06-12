@@ -662,6 +662,28 @@ function simpleDataTable(columns, rows, emptyKey = "empty.noData") {
   </table></div>`;
 }
 
+function voucherButton(voucher, size = "btn-sm") {
+  return voucher?.id
+    ? `<button class="btn btn-teal ${size}" onclick="downloadVoucherPdf('${voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.downloadVoucher","Download Voucher")}</button>`
+    : `<button class="btn btn-outline ${size}" disabled>${icon("ticket")}&nbsp;${t("voucher.pending","Voucher pending")}</button>`;
+}
+
+// Shared success modal for confirm/create booking flows. Always offers the
+// customer voucher (when ready) plus a shortcut to the company Invoices page.
+function serviceSuccessModal(refNumber, voucher) {
+  const voucherId = voucher?.id;
+  openModal(`✅ ${t("toast.created","Request Submitted")}`, `
+    <div style="text-align:center;padding:12px 0">
+      <div style="font-size:40px;line-height:1">🎫</div>
+      <div class="secondary-text" style="margin-top:6px">${t("toast.created","Submitted")}</div>
+      <div class="primary-text" style="font-size:20px;margin-top:2px">${escapeHtml(refNumber || "")}</div>
+      ${voucherId ? "" : `<div class="secondary-text" style="margin-top:8px">${t("voucher.pending","Voucher pending")}</div>`}
+    </div>`, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.close","Close")}</button>
+    ${voucherId ? `<button class="btn btn-teal" onclick="downloadVoucherPdf('${voucherId}')">${icon("ticket")}&nbsp;${t("btn.downloadVoucher","Download Voucher")}</button>` : ""}
+    <button class="btn btn-primary" onclick="closeModal();setPage('invoices')">${icon("receipt-text")}&nbsp;${t("nav.invoices","Invoices")}</button>`);
+}
+
 function renderBookings() {
   renderListPage("bookings", "/bookings", [
     ["th.ref",     b => `<span class="primary-text">${escapeHtml(b.refNumber)}</span>`],
@@ -2162,7 +2184,6 @@ async function trConfirmBooking() {
   if (res?.success) {
     const ref = res.data.refNumber;
     const amount = formatStoredMoney(res.data.totalAmount, res.data.currency);
-    const invoiceId = res.data.invoice?.id;
     const voucherId = res.data.voucher?.id;
     openModal(`✅ ${t("toast.created","Booking Created")}`, `
       <div style="text-align:center;padding:10px 0">
@@ -2176,8 +2197,8 @@ async function trConfirmBooking() {
         </div>
       </div>`, `
       <button class="btn btn-outline" onclick="closeModal()">${t("btn.close","Close")}</button>
-      ${invoiceId ? `<button class="btn btn-outline" onclick="downloadInvoicePdf('${invoiceId}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : ""}
-      ${voucherId ? `<button class="btn btn-teal" onclick="downloadVoucherPdf('${voucherId}')">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
+      ${voucherId ? `<button class="btn btn-teal" onclick="downloadVoucherPdf('${voucherId}')">${icon("ticket")}&nbsp;${t("btn.downloadVoucher","Download Voucher")}</button>` : ""}
+      <button class="btn btn-outline" onclick="closeModal();setPage('invoices')">${icon("receipt-text")}&nbsp;${t("nav.invoices","Invoices")}</button>
       <button class="btn btn-primary" onclick="closeModal();renderTransportHistory()">${icon("list")}&nbsp;${t("nav.bookings","My Bookings")}</button>`);
   } else {
     if (btn) { btn.disabled = false; btn.innerHTML = `${icon("calendar-check")}&nbsp;${t("transport.bookConfirmed","Confirm Booking")}`; }
@@ -2238,11 +2259,7 @@ async function renderTransportHistory() {
     ["th.pickup", r => `<div>${formatDate(r.pickupDateTime)}</div>${r.passengerName ? `<div class="secondary-text">${escapeHtml(r.passengerName)}</div>` : ""}`],
     ["th.requested", r => requestedDate(r)],
     ["th.confirmed", r => confirmedDate(r)],
-    ["th.invoice", r => `<div style="display:flex;gap:4px;flex-wrap:wrap">
-      ${r.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${r.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : ""}
-      ${r.voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${r.voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
-      ${!r.invoice && !r.voucher ? "—" : ""}
-    </div>`],
+    ["th.voucher", r => voucherButton(r.voucher)],
   ], {
     filters: [["status", "form.status", ["", "PENDING", "CONFIRMED", "CANCELLED", "COMPLETED"]]],
     extraActions: requestCta("renderTransport()", t("transport.newBooking","New Transport Booking"), "bus"),
@@ -2250,7 +2267,36 @@ async function renderTransportHistory() {
 }
 
 // ─── Activities ────────────────────────────────────────────────────────────────
-async function renderActivities() {
+async function renderActivities(mode = "choice") {
+  state.page = "activities";
+  state.activityMode = mode;
+  if (mode === "single") return renderSingleActivities();
+  if (mode === "package") return renderActivityPackagePicker();
+  content(pageHeader() + `
+    <div class="mode-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">
+      <button class="panel mode-card" onclick="renderActivities('single')" style="text-align:left;padding:0;cursor:pointer;overflow:hidden">
+        <div class="panel-body" style="display:flex;gap:14px;align-items:flex-start">
+          <span class="stat-ico">${icon("ticket")}</span>
+          <span>
+            <strong style="font-size:18px">${t("activity.singleMode","Single Activity")}</strong>
+            <span class="secondary-text" style="display:block;margin-top:6px">${t("activity.singleModeHelp","Pick one trip, fill its details, then confirm the request.")}</span>
+          </span>
+        </div>
+      </button>
+      <button class="panel mode-card" onclick="renderActivities('package')" style="text-align:left;padding:0;cursor:pointer;overflow:hidden">
+        <div class="panel-body" style="display:flex;gap:14px;align-items:flex-start">
+          <span class="stat-ico">${icon("shopping-cart")}</span>
+          <span>
+            <strong style="font-size:18px">${t("activity.packageMode","Activity Package")}</strong>
+            <span class="secondary-text" style="display:block;margin-top:6px">${t("activity.packageModeHelp","Add multiple trips to one package cart and submit them together.")}</span>
+          </span>
+        </div>
+      </button>
+    </div>`);
+  refreshIcons(document.getElementById("content"));
+}
+
+async function renderSingleActivities() {
   state.page = "activities";
   const capturedToken = state.renderToken;
 
@@ -2280,6 +2326,216 @@ async function renderActivities() {
       ["category", "th.type", ["","SIGHTSEEING","DIVING","SNORKELING","DESERT_SAFARI","WATER_SPORTS","CULTURAL","ADVENTURE"]],
     ],
   });
+}
+
+async function renderActivityPackagePicker() {
+  state.page = "activities";
+  state.activityPackageCart = state.activityPackageCart || [];
+  const capturedToken = state.renderToken;
+  const res = await apiFetch("/activities?confirmableOnly=true");
+  if (state.renderToken !== capturedToken) return;
+  const activities = res?.data || [];
+  state.activityPackageSource = activities;
+  content(pageHeader(`
+    <button class="btn btn-outline" onclick="renderActivities()">${icon("arrow-left")}${t("btn.back","Back")}</button>
+    <button class="btn btn-primary" onclick="submitActivityPackage()" ${state.activityPackageCart.length ? "" : "disabled"}>${icon("send")}${t("activity.submitPackage","Submit Package")}</button>
+  `) + `
+    <div class="workbench">
+      <aside class="filter-rail">
+        <div class="filter-head"><span>${t("activity.packageCart","Package Cart")}</span>${icon("shopping-cart")}</div>
+        <div class="filter-body" id="activityPackageCart">${activityPackageCartHtml()}</div>
+      </aside>
+      <section class="workbench-main table-card">
+        <div class="table-toolbar">
+          <div><strong>${t("activity.packageMode","Activity Package")}</strong><div class="secondary-text">${t("activity.packagePickHelp","Choose each trip and fill its own details before submitting.")}</div></div>
+          <div class="toolbar-actions"><button class="btn btn-outline" onclick="renderActivities('single')">${icon("ticket")}${t("activity.singleMode","Single Activity")}</button></div>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th>${t("th.name","Name")}</th><th>${t("th.city","City")}</th><th>${t("form.duration","Duration")}</th><th>${t("th.amount","Amount")}</th><th>${t("th.actions","Actions")}</th></tr></thead>
+            <tbody>${activities.length ? activities.map(a => `
+              <tr>
+                <td><span class="primary-text">${escapeHtml(a.name)}</span><div class="secondary-text">${escapeHtml(a.category || "")}</div></td>
+                <td>${escapeHtml(a.city || "—")}</td>
+                <td>${escapeHtml(a.duration || "—")}</td>
+                <td><span class="numeric">${formatPrice(a.priceAdult, a.currency)}</span></td>
+                <td><button class="btn btn-primary btn-sm" onclick="openPackageActivityForm('${a.id}')">${icon("plus")}${t("activity.addToPackage","Add to Package")}</button></td>
+              </tr>`).join("") : `<tr><td colspan="5">${emptyBlock("empty.noData")}</td></tr>`}</tbody>
+          </table>
+        </div>
+      </section>
+    </div>`);
+  refreshIcons(document.getElementById("content"));
+}
+
+function activityPackageCartHtml() {
+  const cart = state.activityPackageCart || [];
+  if (!cart.length) return `<div class="empty-state" style="padding:18px">${t("activity.packageEmpty","No trips added yet")}</div>`;
+  const total = cart.reduce((sum, item) => sum + Number(item.totalPreview || 0), 0);
+  const currency = cart[0]?.currency || state.displayCurrency || "USD";
+  return `
+    <div style="display:grid;gap:10px">
+      ${cart.map(item => `<div class="info-item" style="padding:10px;border:1px solid var(--border);border-radius:var(--r-8);background:var(--surface)">
+        <div class="primary-text">${escapeHtml(item.activityName)}</div>
+        <div class="secondary-text">${escapeHtml(item.activityDate)} ${item.selectedTime ? "· " + escapeHtml(item.selectedTime) : ""}</div>
+        <div class="secondary-text">${t("form.passengers","Passengers")}: ${formatNumber(item.adultsCount + item.childrenCount)}</div>
+        <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="removePackageActivity('${item.localId}')">${icon("trash-2")}${t("btn.remove","Remove")}</button>
+      </div>`).join("")}
+      <div class="info-item" style="padding:12px;border-radius:var(--r-8);background:var(--info-soft)">
+        <div class="info-label">${t("th.total","Total")}</div>
+        <div class="info-value">${formatPrice(total, currency)}</div>
+      </div>
+    </div>`;
+}
+
+function removePackageActivity(localId) {
+  state.activityPackageCart = (state.activityPackageCart || []).filter(item => item.localId !== localId);
+  renderActivityPackagePicker();
+}
+
+async function openPackageActivityForm(activityId) {
+  const activity = (state.activityPackageSource || []).find(a => a.id === activityId);
+  if (!activity) return toast(t("empty.failed","Failed to load"), "error");
+  const slots = Array.isArray(activity.timeSlots) ? activity.timeSlots : [];
+  const groupRes = await apiFetch(`/group-types?${new URLSearchParams({
+    scope: "ACTIVITY",
+    activityId: activity.id,
+    ...(activity.destinationId ? { destinationId: activity.destinationId } : {}),
+    pax: "2",
+  })}`);
+  const groupTypes = groupRes?.data || [];
+  openModal(`${t("activity.addToPackage","Add to Package")} — ${escapeHtml(activity.name)}`, `
+    <div class="form-grid">
+      <div class="form-field"><label>${t("th.name","Client Name")} *</label><input id="pkgClientName" value="${escapeHtml(state.activityPackageCart?.[0]?.clientName || "")}"></div>
+      <div class="form-field"><label>${t("form.phone","Phone")} *</label><input id="pkgClientPhone" type="tel" value="${escapeHtml(state.activityPackageCart?.[0]?.clientPhone || "")}"></div>
+      <div class="form-field"><label>${t("th.hotel","Hotel Name")}</label><input id="pkgHotelName" value="${escapeHtml(state.activityPackageCart?.[0]?.hotelName || "")}"></div>
+      <div class="form-field"><label>${t("form.date","Date")} *</label><input id="pkgDate" type="date"></div>
+      <div class="form-field"><label>${t("form.time","Time")}</label>${slots.length ? `<select id="pkgTime"><option value="">${t("form.select","Select")}</option>${slots.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("")}</select>` : `<input id="pkgTime" placeholder="09:00">`}</div>
+      <div class="form-field"><label>${t("form.adults","Adults / Pax")} *</label><input id="pkgAdults" type="number" min="1" value="2" oninput="pkgUpdateTotal(${Number(activity.priceAdult)||0},${Number(activity.priceChild)||0},'${escapeHtml(activity.currency || "USD")}')"></div>
+      <div class="form-field"><label>${t("form.children","Children")}</label><input id="pkgChildren" type="number" min="0" value="0" oninput="pkgUpdateTotal(${Number(activity.priceAdult)||0},${Number(activity.priceChild)||0},'${escapeHtml(activity.currency || "USD")}');pkgUpdateChildAges()"></div>
+      <div class="form-field full" id="pkgChildAgesBox" style="display:none"></div>
+      <div class="form-field full"><label>${t("activity.actType","Service Type")}</label><div id="pkgGroupTypes" class="service-type-grid">${activityGroupTypeOptions(groupTypes)}</div></div>
+      <div class="form-field full"><label>${t("form.notes","Notes")}</label><textarea id="pkgNotes" rows="2"></textarea></div>
+    </div>
+    <div class="tr-price-card" style="margin-top:12px">
+      <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="pkgTotalPreview">${formatPrice((Number(activity.priceAdult)||0)*2, activity.currency || "USD")}</span></div>
+    </div>`, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel","Cancel")}</button>
+    <button class="btn btn-primary" onclick="addPackageActivity('${activity.id}')">${icon("plus")}${t("activity.addToPackage","Add to Package")}</button>`);
+}
+
+function pkgUpdateTotal(priceAdult, priceChild, currency) {
+  const adults = Math.max(1, parseInt(document.getElementById("pkgAdults")?.value || "1"));
+  const children = Math.max(0, parseInt(document.getElementById("pkgChildren")?.value || "0"));
+  const el = document.getElementById("pkgTotalPreview");
+  if (el) el.textContent = formatPrice((adults * priceAdult) + (children * (priceChild || priceAdult)), currency);
+}
+
+function pkgUpdateChildAges() {
+  const count = Math.max(0, parseInt(document.getElementById("pkgChildren")?.value || "0"));
+  const box = document.getElementById("pkgChildAgesBox");
+  if (!box) return;
+  box.style.display = count > 0 ? "" : "none";
+  box.innerHTML = count > 0
+    ? `<label>${t("hotel.childAge","Children Ages")}</label>
+       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin-top:6px">
+         ${Array.from({length: count}, (_, i) => `<div>
+           <label style="font-size:11px;color:var(--text-muted)">${t("hotel.childAge","Child {n} Age").replace("{n}", i + 1)}</label>
+           <input type="number" min="0" max="17" value="7" id="pkgChildAge_${i}" style="width:100%">
+         </div>`).join("")}
+       </div>`
+    : "";
+}
+
+function addPackageActivity(activityId) {
+  const activity = (state.activityPackageSource || []).find(a => a.id === activityId);
+  if (!activity) return;
+  const activityDate = document.getElementById("pkgDate")?.value;
+  const selectedTime = document.getElementById("pkgTime")?.value || "";
+  const clientName = document.getElementById("pkgClientName")?.value.trim();
+  const clientPhone = document.getElementById("pkgClientPhone")?.value.trim();
+  const adultsCount = Math.max(1, parseInt(document.getElementById("pkgAdults")?.value || "1"));
+  const childrenCount = Math.max(0, parseInt(document.getElementById("pkgChildren")?.value || "0"));
+  if (!activityDate || !clientName || !clientPhone) return toast(t("toast.validationError","Check required fields"), "error");
+  const conflict = (state.activityPackageCart || []).find(item => item.activityDate === activityDate && selectedTime && item.selectedTime === selectedTime);
+  if (conflict) return toast(t("activity.timeConflict","This package already has a trip at the same date/time."), "error");
+  const childAges = Array.from({length: childrenCount}, (_, i) =>
+    parseInt(document.getElementById(`pkgChildAge_${i}`)?.value || "7"));
+  const groupType = document.querySelector('input[name="actGroupType"]:checked');
+  state.activityPackageCart = state.activityPackageCart || [];
+  state.activityPackageCart.push({
+    localId: `pkg_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    activityId,
+    activityName: activity.name,
+    activityDate,
+    selectedTime,
+    groupTypeId: groupType?.value || undefined,
+    adultsCount,
+    childrenCount,
+    childAges: childrenCount > 0 ? childAges : undefined,
+    clientName,
+    clientPhone,
+    hotelName: document.getElementById("pkgHotelName")?.value.trim() || undefined,
+    notes: document.getElementById("pkgNotes")?.value.trim() || undefined,
+    totalPreview: adultsCount * (Number(activity.priceAdult) || 0) + childrenCount * (Number(activity.priceChild || activity.priceAdult) || 0),
+    currency: activity.currency || "USD",
+  });
+  closeModal();
+  renderActivityPackagePicker();
+}
+
+async function submitActivityPackage() {
+  const cart = state.activityPackageCart || [];
+  if (!cart.length) return toast(t("activity.packageEmpty","No trips added yet"), "error");
+  const packageRef = `PKG-${new Date().toISOString().slice(2,10).replace(/-/g,"")}-${String(Date.now()).slice(-5)}`;
+  const createdBookings = [];
+  for (const item of cart) {
+    const res = await apiFetch("/activity-bookings", { method: "POST", body: JSON.stringify({
+      activityId: item.activityId,
+      activityDate: item.activityDate,
+      selectedTime: item.selectedTime || undefined,
+      groupTypeId: item.groupTypeId,
+      adultsCount: item.adultsCount,
+      childrenCount: item.childrenCount,
+      childAges: item.childAges && item.childAges.length ? item.childAges : undefined,
+      clientName: item.clientName,
+      clientPhone: item.clientPhone,
+      hotelName: item.hotelName,
+      notes: [`Package ${packageRef}`, item.notes].filter(Boolean).join(" | "),
+    })});
+    if (!res?.success) {
+      // Drop the trips already created from the cart; surface what succeeded.
+      state.activityPackageCart = cart.slice(createdBookings.length);
+      renderActivityPackagePicker();
+      if (createdBookings.length) packageSuccessModal(packageRef, createdBookings, true);
+      else toast(t("activity.packagePartial","Package stopped because one trip failed."), "error");
+      return;
+    }
+    createdBookings.push(res.data);
+  }
+  state.activityPackageCart = [];
+  renderActivities();
+  packageSuccessModal(packageRef, createdBookings, false);
+}
+
+// Success modal listing every booking created by the package, each with its own
+// Download Voucher button, plus a shortcut to the company Invoices page.
+function packageSuccessModal(packageRef, bookings, partial) {
+  openModal(`✅ ${t("activity.packageSubmitted","Package submitted")}`, `
+    <div style="text-align:center;padding:6px 0 12px">
+      <div style="font-size:38px;line-height:1">🎫</div>
+      <div class="primary-text" style="font-size:18px;margin-top:4px">${escapeHtml(packageRef)}</div>
+      <div class="secondary-text">${formatNumber(bookings.length)} ${t("nav.bookings","Bookings")}</div>
+      ${partial ? `<div class="secondary-text" style="margin-top:6px">⚠️ ${t("activity.packagePartial","Package stopped because one trip failed.")}</div>` : ""}
+    </div>
+    <div style="display:grid;gap:8px">
+      ${bookings.map(b => `<div class="info-item" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:var(--r-8)">
+        <span><span class="primary-text">${escapeHtml(b.refNumber)}</span><div class="secondary-text">${escapeHtml(b.activity?.name || "")}</div></span>
+        ${voucherButton(b.voucher)}
+      </div>`).join("")}
+    </div>`, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.close","Close")}</button>
+    <button class="btn btn-primary" onclick="closeModal();setPage('invoices')">${icon("receipt-text")}&nbsp;${t("nav.invoices","Invoices")}</button>`);
 }
 
 // Fetch full activity details then open rich popup
@@ -2513,8 +2769,7 @@ async function _submitActivityBooking(activityId, activityName, priceAdult, pric
   })});
 
   if (res?.success) {
-    closeModal();
-    toast(`✅ ${t("toast.created","Submitted")} — ${res.data.refNumber} (${formatStoredMoney(res.data.totalAmount, res.data.currency)})`, "success");
+    serviceSuccessModal(res.data.refNumber, res.data.voucher);
   } else {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = `${icon("calendar-check")}&nbsp;${t("btn.submitRequest","Submit Request")}`; }
   }
@@ -2609,11 +2864,7 @@ function renderSecurityApproval() {
     ["th.status", v => statusBadge(v.status)],
     ["th.requested", v => requestedDate(v)],
     ["th.confirmed", v => confirmedDate(v)],
-    ["th.invoice", v => `<div style="display:flex;gap:4px;flex-wrap:wrap">
-      ${v.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${v.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : ""}
-      ${v.voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${v.voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
-      ${!v.invoice && !v.voucher ? "—" : ""}
-    </div>`],
+    ["th.voucher", v => voucherButton(v.voucher)],
   ], {
     filters: [["status","form.status",["","PENDING","SUBMITTED","APPROVED","REJECTED"]]],
     extraActions: requestCta("openSecurityApprovalForm()", t("securityApproval.newRequest","New Security Request"), "shield-check"),
@@ -2706,9 +2957,8 @@ async function openSecurityApprovalForm() {
       currency: "USD",
     })});
     if (res?.success) {
-      closeModal();
-      toast(`✅ ${t("toast.created","Submitted")} — ${res.data.refNumber}`, "success");
       renderSecurityApproval();
+      serviceSuccessModal(res.data.refNumber, res.data.voucher);
     } else {
       document.getElementById("submitSaBtn").disabled = false;
     }
@@ -2748,11 +2998,7 @@ function renderAirportAssist() {
     ["th.status", r => statusBadge(r.status)],
     ["th.requested", r => requestedDate(r)],
     ["th.confirmed", r => confirmedDate(r)],
-    ["th.invoice", r => `<div style="display:flex;gap:4px;flex-wrap:wrap">
-      ${r.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${r.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : ""}
-      ${r.voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${r.voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
-      ${!r.invoice && !r.voucher ? "—" : ""}
-    </div>`],
+    ["th.voucher", r => voucherButton(r.voucher)],
   ], {
     filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
     extraActions: requestCta("openAirportAssistForm()", t("airportAssist.newRequest","New Airport Assist"), "plane-landing"),
@@ -2825,9 +3071,8 @@ async function openAirportAssistForm() {
       // totalAmount/currency intentionally omitted — resolved server-side from ReceptionServiceRate
     })});
     if (res?.success) {
-      closeModal();
-      toast(`✅ ${t("toast.created","Submitted")} — ${res.data.refNumber}`, "success");
       renderAirportAssist();
+      serviceSuccessModal(res.data.refNumber, res.data.voucher);
     } else {
       document.getElementById("submitAaBtn").disabled = false;
     }
@@ -2882,6 +3127,7 @@ async function renderSimCard() {
     ["th.status", r => statusBadge(r.status)],
     ["th.requested", r => requestedDate(r)],
     ["th.confirmed", r => confirmedDate(r)],
+    ["th.voucher", r => voucherButton(r.voucher)],
   ], {
     filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
     extraActions: requestCta(`openSimRequestForm(${JSON.stringify(packages).replace(/"/g,'&quot;')})`, t("simCard.newRequest","New SIM Request"), "credit-card"),
@@ -2947,9 +3193,8 @@ async function openSimRequestForm(packages, preselect) {
       notes: document.getElementById("simNotes").value.trim() || undefined,
     })});
     if (res?.success) {
-      closeModal();
-      toast(`✅ ${t("toast.created","Submitted")} — ${res.data.refNumber}`, "success");
       renderSimCard();
+      serviceSuccessModal(res.data.refNumber, res.data.voucher);
     } else {
       document.getElementById("submitSimBtn").disabled = false;
     }

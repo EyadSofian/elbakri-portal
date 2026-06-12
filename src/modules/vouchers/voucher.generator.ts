@@ -85,11 +85,26 @@ export interface AirportAssistVoucherData {
   notes?: string | null;
 }
 
+export interface SimVoucherData {
+  serviceType: 'SIM_CARD';
+  voucherNumber: string;
+  company: VoucherCompany;
+  clientName: string;
+  clientPhone?: string | null;
+  packageName?: string | null;
+  dataSize?: string | null;
+  validity?: string | null;
+  quantity: number;
+  arrivalDate?: Date | null;
+  notes?: string | null;
+}
+
 export type VoucherData =
   | TransportVoucherData
   | ActivityVoucherData
   | SecurityApprovalVoucherData
-  | AirportAssistVoucherData;
+  | AirportAssistVoucherData
+  | SimVoucherData;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -241,6 +256,19 @@ function buildAirportAssistFields(d: AirportAssistVoucherData): Field[] {
   ];
 }
 
+function buildSimFields(d: SimVoucherData): Field[] {
+  return [
+    { label: 'Client Name',  value: d.clientName },
+    { label: 'Phone Number', value: d.clientPhone ?? '' },
+    { label: 'SIM Package',  value: d.packageName ?? '' },
+    { label: 'Data',         value: d.dataSize ?? '' },
+    { label: 'Validity',     value: d.validity ?? '' },
+    { label: 'Quantity',     value: String(d.quantity) },
+    { label: 'Arrival Date', value: d.arrivalDate ? fmtDate(d.arrivalDate) : '' },
+    { label: 'Notes',        value: d.notes ?? '' },
+  ];
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 function titleForService(serviceType: string): string {
@@ -269,6 +297,7 @@ export async function generateVoucherPdf(
     case 'ACTIVITY':           fields = buildActivityFields(data);           break;
     case 'SECURITY_APPROVAL':  fields = buildSecurityApprovalFields(data);   break;
     case 'AIRPORT_ASSIST':     fields = buildAirportAssistFields(data);      break;
+    case 'SIM_CARD':           fields = buildSimFields(data);                break;
     default:                   fields = [];
   }
 

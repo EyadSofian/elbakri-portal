@@ -6,6 +6,7 @@ import { resolveCallerMarket, applyMarketPrice, resolveMarketMoney } from '../..
 import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
+import { createVoucherForService } from '../vouchers/vouchers.controller';
 
 // ─── Packages (admin managed) ────────────────────────────────────────────────
 
@@ -135,6 +136,7 @@ export async function listRequests(req: Request, res: Response) {
           company: { select: { name: true } },
           confirmedBy: { select: { id: true, name: true } },
           invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
+          voucher: { select: { id: true, voucherNumber: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip,
@@ -250,7 +252,26 @@ export async function createRequest(req: Request, res: Response) {
       }
     }
 
-    res.status(201).json({ success: true, data: simReq });
+    // Generate the customer voucher (no price) before responding so the company
+    // portal can show "Download Voucher" immediately after the request is created.
+    const voucherId = await createVoucherForService({
+      type: 'sim',
+      simRequestId: simReq.id,
+      companyId: user.companyId!,
+      clientName,
+    });
+    const responseSim = voucherId
+      ? await prisma.simRequest.findUnique({
+          where: { id: simReq.id },
+          include: {
+            package: true,
+            invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
+            voucher: { select: { id: true, voucherNumber: true } },
+          },
+        })
+      : simReq;
+
+    res.status(201).json({ success: true, data: responseSim ?? simReq });
   } catch (err) {
     res.status(500).json({ success: false, message: (err as Error).message });
   }
@@ -352,6 +373,23 @@ export async function updateRequestStatus(req: Request, res: Response) {
       }
       await tx.simRequest.update({ where: { id }, data: { status: status as 'CANCELLED' | 'REJECTED' } });
     });
+
+    // Ensure a customer voucher exists once the request is confirmed (idempotent).
+    if (status === 'CONFIRMED') {
+      const sim = await prisma.simRequest.findUnique({
+        where: { id },
+        select: { companyId: true, clientName: true },
+      });
+      if (sim) {
+        await createVoucherForService({
+          type: 'sim',
+          simRequestId: id,
+          companyId: sim.companyId,
+          clientName: sim.clientName,
+        });
+      }
+    }
+
     const updated = await prisma.simRequest.findUniqueOrThrow({
       where: { id },
       include: {
@@ -359,6 +397,7 @@ export async function updateRequestStatus(req: Request, res: Response) {
         company: { select: { name: true } },
         confirmedBy: { select: { id: true, name: true } },
         invoice: { select: { id: true, invoiceNumber: true, status: true, total: true } },
+        voucher: { select: { id: true, voucherNumber: true } },
       },
     });
     res.json({ success: true, data: updated });
