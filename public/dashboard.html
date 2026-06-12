@@ -2163,6 +2163,7 @@ async function trConfirmBooking() {
     const ref = res.data.refNumber;
     const amount = formatStoredMoney(res.data.totalAmount, res.data.currency);
     const invoiceId = res.data.invoice?.id;
+    const voucherId = res.data.voucher?.id;
     openModal(`✅ ${t("toast.created","Booking Created")}`, `
       <div style="text-align:center;padding:10px 0">
         <div style="font-size:48px;margin-bottom:12px">🚐</div>
@@ -2175,7 +2176,8 @@ async function trConfirmBooking() {
         </div>
       </div>`, `
       <button class="btn btn-outline" onclick="closeModal()">${t("btn.close","Close")}</button>
-      ${invoiceId ? `<button class="btn btn-success" onclick="downloadInvoicePdf('${invoiceId}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Download Invoice")}</button>` : ""}
+      ${invoiceId ? `<button class="btn btn-outline" onclick="downloadInvoicePdf('${invoiceId}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : ""}
+      ${voucherId ? `<button class="btn btn-teal" onclick="downloadVoucherPdf('${voucherId}')">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
       <button class="btn btn-primary" onclick="closeModal();renderTransportHistory()">${icon("list")}&nbsp;${t("nav.bookings","My Bookings")}</button>`);
   } else {
     if (btn) { btn.disabled = false; btn.innerHTML = `${icon("calendar-check")}&nbsp;${t("transport.bookConfirmed","Confirm Booking")}`; }

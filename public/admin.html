@@ -272,6 +272,35 @@ async function downloadInvoicePdf(id) {
   }
 }
 
+async function downloadVoucherPdf(id) {
+  const token = localStorage.getItem("accessToken");
+  try {
+    const res = await fetch(`/api/vouchers/${id}/download`, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => null);
+      throw new Error(json?.message || json?.error || "Voucher download failed");
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const filename = match?.[1] || `voucher-${id}.pdf`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = filename;
+    document.body.appendChild(link); link.click(); link.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) { toast(err.message || "Download failed", "error"); }
+}
+
+async function regenerateVoucher(id) {
+  if (!confirm("Regenerate voucher PDF?")) return;
+  const res = await apiFetch(`/vouchers/${id}/regenerate`, { method: "POST" });
+  if (res?.success) toast("Voucher regenerated", "success");
+}
+
 async function downloadAuthenticatedFile(path, fallbackName) {
   const token = localStorage.getItem("accessToken");
   try {
@@ -2365,7 +2394,11 @@ async function renderInvoices() {
       <td class="numeric">${formatMoney(i.total, i.currency)}</td>
       <td>${statusBadge(i.status)}</td>
       <td>${formatDate(i.dueDate)}</td>
-      <td><div class="row-actions"><button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}${t("btn.downloadPdf")}</button>${i.status === "UNPAID" ? `<button class="btn btn-primary btn-sm" onclick="markInvoicePaid('${i.id}')">${icon("check")}${t("btn.markPaid","Mark Paid")}</button>` : ""}</div></td>
+      <td><div class="row-actions">
+        <button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}${t("btn.downloadPdf")}</button>
+        ${(() => { const v = i.activityBooking?.voucher || i.transportBooking?.voucher || i.airportReception?.voucher || i.visaApplication?.voucher || i.simRequest?.voucher; return v ? `<button class="btn btn-teal btn-sm" title="Voucher" onclick="downloadVoucherPdf('${v.id}')">${icon("ticket")}</button><button class="btn btn-outline btn-sm" title="Regenerate" onclick="regenerateVoucher('${v.id}')">${icon("refresh-cw")}</button>` : ""; })()}
+        ${i.status === "UNPAID" ? `<button class="btn btn-primary btn-sm" onclick="markInvoicePaid('${i.id}')">${icon("check")}${t("btn.markPaid","Mark Paid")}</button>` : ""}
+      </div></td>
     </tr>`;
   }).join("") : `<tr><td colspan="7">${emptyBlock("empty.noData")}</td></tr>`;
   if (statementBody) statementBody.innerHTML = statements.length ? statements.map(row => `<tr>
@@ -2684,9 +2717,12 @@ async function loadAdminActivityBookings() {
     <td>${escapeHtml(b.hotelName||"—")}</td>
     <td class="numeric">${formatMoney(b.totalAmount, b.currency)}</td>
     <td>${statusBadge(b.status)}${b.confirmedAt ? `<div class="secondary-text" title="${t("th.confirmed","Date Confirmed")}">${icon("check")}&nbsp;${formatDate(b.confirmedAt)}</div>` : ""}</td>
-    <td style="display:flex;gap:4px">
+    <td style="display:flex;gap:4px;flex-wrap:wrap">
       ${b.status === "PENDING" ? `<button class="btn btn-success btn-sm" onclick="adminConfirmActivity('${b.id}')">${icon("check")}</button>` : ""}
       ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-danger btn-sm" onclick="adminCancelActivity('${b.id}')">${icon("x")}</button>` : ""}
+      ${b.invoice?.id ? `<button class="btn btn-outline btn-sm" title="Download Invoice" onclick="downloadInvoicePdf('${b.invoice.id}')">${icon("file-down")}</button>` : ""}
+      ${b.voucher?.id ? `<button class="btn btn-teal btn-sm" title="Download Voucher" onclick="downloadVoucherPdf('${b.voucher.id}')">${icon("ticket")}</button>` : ""}
+      ${b.voucher?.id ? `<button class="btn btn-outline btn-sm" title="Regenerate Voucher" onclick="regenerateVoucher('${b.voucher.id}')">${icon("refresh-cw")}</button>` : ""}
     </td>
   </tr>`).join("") : `<tr><td colspan="10">${emptyBlock("empty.noData")}</td></tr>`;
   refreshIcons(tbody);
@@ -2795,9 +2831,12 @@ async function loadAdminTransportBookings() {
     <td>${b.airlineName ? `${escapeHtml(b.airlineName)} ` : ""}${b.flightNumber ? escapeHtml(b.flightNumber) : "—"}</td>
     <td class="numeric">${formatMoney(b.totalAmount, b.currency)}</td>
     <td>${statusBadge(b.status)}${b.confirmedAt ? `<div class="secondary-text" title="${t("th.confirmed","Date Confirmed")}">${icon("check")}&nbsp;${formatDate(b.confirmedAt)}</div>` : ""}</td>
-    <td style="display:flex;gap:6px">
+    <td style="display:flex;gap:4px;flex-wrap:wrap">
       ${b.status === "PENDING" ? `<button class="btn btn-success btn-sm" onclick="adminConfirmTransport('${b.id}')">${icon("check")}</button>` : ""}
       ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-danger btn-sm" onclick="adminCancelTransport('${b.id}')">${icon("x")}</button>` : ""}
+      ${b.invoice?.id ? `<button class="btn btn-outline btn-sm" title="Download Invoice" onclick="downloadInvoicePdf('${b.invoice.id}')">${icon("file-down")}</button>` : ""}
+      ${b.voucher?.id ? `<button class="btn btn-teal btn-sm" title="Download Voucher" onclick="downloadVoucherPdf('${b.voucher.id}')">${icon("ticket")}</button>` : ""}
+      ${b.voucher?.id ? `<button class="btn btn-outline btn-sm" title="Regenerate Voucher" onclick="regenerateVoucher('${b.voucher.id}')">${icon("refresh-cw")}</button>` : ""}
     </td>
   </tr>`).join("") : `<tr><td colspan="9">${emptyBlock("empty.noData")}</td></tr>`;
   refreshIcons(tbody);
@@ -3258,11 +3297,15 @@ async function renderSecurityApproval() {
     ["form.notes", v => v.notes ? `<span title="${escapeHtml(v.notes)}">${escapeHtml(v.notes.slice(0,40))}${v.notes.length>40?"…":""}</span>` : "—"],
     ["th.amount", v => formatMoney(v.totalAmount, v.currency)],
     ["th.status", v => statusBadge(v.status)],
-    ["th.actions",v => `
+    ["th.actions",v => `<div style="display:flex;gap:4px;flex-wrap:wrap">
       ${v.passportUrl ? `<a href="${escapeHtml(v.passportUrl)}" target="_blank" class="btn btn-outline btn-sm">${icon("file-text")} Passport</a>` : ""}
       ${v.flightTicketUrl ? `<a href="${escapeHtml(v.flightTicketUrl)}" target="_blank" class="btn btn-outline btn-sm">${icon("ticket")} Ticket</a>` : ""}
-      <button class="btn btn-success btn-sm" onclick="adminApproveVisa('${v.id}')">${icon("check")} Approve</button>
-      <button class="btn btn-danger btn-sm" onclick="adminRejectVisa('${v.id}')">${icon("x")} Reject</button>`],
+      ${["PENDING","SUBMITTED"].includes(v.status) ? `<button class="btn btn-success btn-sm" onclick="adminApproveVisa('${v.id}')">${icon("check")} Approve</button>` : ""}
+      ${["PENDING","SUBMITTED"].includes(v.status) ? `<button class="btn btn-danger btn-sm" onclick="adminRejectVisa('${v.id}')">${icon("x")} Reject</button>` : ""}
+      ${v.invoice?.id ? `<button class="btn btn-outline btn-sm" title="Invoice" onclick="downloadInvoicePdf('${v.invoice.id}')">${icon("file-down")}</button>` : ""}
+      ${v.voucher?.id ? `<button class="btn btn-teal btn-sm" title="Voucher" onclick="downloadVoucherPdf('${v.voucher.id}')">${icon("ticket")}</button>` : ""}
+      ${v.voucher?.id ? `<button class="btn btn-outline btn-sm" title="Regenerate" onclick="regenerateVoucher('${v.voucher.id}')">${icon("refresh-cw")}</button>` : ""}
+    </div>`],
   ], {
     filters: [["status","form.status",["","PENDING","SUBMITTED","APPROVED","REJECTED"]]],
   });
@@ -3292,10 +3335,14 @@ async function renderAirportAssist() {
     ["form.notes", r => r.notes ? `<span title="${escapeHtml(r.notes)}">${escapeHtml(r.notes.slice(0,40))}${r.notes.length>40?"…":""}</span>` : "—"],
     ["th.amount", r => formatMoney(r.totalAmount, r.currency)],
     ["th.status", r => statusBadge(r.status)],
-    ["th.actions",r => `
+    ["th.actions",r => `<div style="display:flex;gap:4px;flex-wrap:wrap">
       ${r.ticketUrl ? `<a href="${escapeHtml(r.ticketUrl)}" target="_blank" class="btn btn-outline btn-sm">${icon("ticket")} Ticket</a>` : ""}
-      <button class="btn btn-success btn-sm" onclick="adminConfirmReception('${r.id}')">${icon("check")} Confirm</button>
-      <button class="btn btn-danger btn-sm" onclick="adminCancelReception('${r.id}')">${icon("x")} Cancel</button>`],
+      ${r.status === "PENDING" ? `<button class="btn btn-success btn-sm" onclick="adminConfirmReception('${r.id}')">${icon("check")} Confirm</button>` : ""}
+      ${["PENDING","CONFIRMED"].includes(r.status) ? `<button class="btn btn-danger btn-sm" onclick="adminCancelReception('${r.id}')">${icon("x")} Cancel</button>` : ""}
+      ${r.invoice?.id ? `<button class="btn btn-outline btn-sm" title="Invoice" onclick="downloadInvoicePdf('${r.invoice.id}')">${icon("file-down")}</button>` : ""}
+      ${r.voucher?.id ? `<button class="btn btn-teal btn-sm" title="Voucher" onclick="downloadVoucherPdf('${r.voucher.id}')">${icon("ticket")}</button>` : ""}
+      ${r.voucher?.id ? `<button class="btn btn-outline btn-sm" title="Regenerate" onclick="regenerateVoucher('${r.voucher.id}')">${icon("refresh-cw")}</button>` : ""}
+    </div>`],
   ], {
     filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
   });
