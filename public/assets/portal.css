@@ -45,7 +45,9 @@
   --r-8: 8px;
   --r-12: 12px;
   --r-16: 16px;
-  --sidebar-w: 240px;
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 76px;
+  --sidebar-w: var(--sidebar-width);
   --topbar-h: 64px;
   --font-en: "Plus Jakarta Sans", "Inter", "DM Sans", system-ui, sans-serif;
   --font-ar: "Cairo", "Tajawal", system-ui, sans-serif;
@@ -5231,3 +5233,116 @@ html[lang="ar"] .hero-metric__label { text-transform: none; letter-spacing: 0; }
 .dest-card.has-bg > * { position: relative; z-index: 1; }
 .dest-card.has-bg .dest-card-name, .dest-card.has-bg .dest-card-sub, .dest-card.has-bg .dest-card-count { color: #fff; }
 .dest-card.has-bg .dest-card-count { color: rgba(255,255,255,0.85); }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   COLLAPSIBLE DESKTOP SIDEBAR (2026-06-13d) — icons-only at 76px, smooth
+   resize of shell via the shared --sidebar-w var. Mobile keeps the overlay
+   drawer (collapse disabled <=860px).
+   ═════════════════════════════════════════════════════════════════════════ */
+.sidebar-collapse-btn { display: none; }   /* desktop-only; shown in the desktop media query */
+
+@media (min-width: 861px) {
+  .sidebar, .topbar, .main-content { transition: width .22s var(--ease-out), margin .22s var(--ease-out), left .22s var(--ease-out), right .22s var(--ease-out); }
+  .sidebar-collapse-btn { display: inline-grid; }
+
+  body.sidebar-collapsed { --sidebar-w: var(--sidebar-collapsed-width); }
+
+  /* Hide text-y bits when collapsed → icons only */
+  body.sidebar-collapsed .brand-name,
+  body.sidebar-collapsed .brand-sub,
+  body.sidebar-collapsed .tier-chip,
+  body.sidebar-collapsed .role-chip,
+  body.sidebar-collapsed .nav-label,
+  body.sidebar-collapsed .nav-item > span,
+  body.sidebar-collapsed .nav-item .nav-count,
+  body.sidebar-collapsed .account-mini .truncate,
+  body.sidebar-collapsed .sidebar-footer .btn span { display: none; }
+
+  /* Compact brand → teal "E" mark */
+  body.sidebar-collapsed .brand-block { padding: 16px 0 14px; }
+  body.sidebar-collapsed .brand-logo { display: none; }
+  body.sidebar-collapsed .brand-row { justify-content: center; }
+  body.sidebar-collapsed .brand-row::before {
+    content: "E"; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px;
+    background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan)); color: var(--brand-navy);
+    font-weight: 800; font-size: 19px; box-shadow: var(--shadow-glow-teal);
+  }
+
+  body.sidebar-collapsed .nav-scroll { padding: 10px 8px 16px; }
+  body.sidebar-collapsed .nav-group { margin-top: 6px; }
+  body.sidebar-collapsed .nav-item { justify-content: center; padding: 7px; gap: 0; }
+  body.sidebar-collapsed .nav-item.active::before { display: none; }
+  body.sidebar-collapsed .account-mini { justify-content: center; padding: 8px 0; }
+  body.sidebar-collapsed .sidebar-footer .btn { justify-content: center; }
+
+  /* Hover tooltip for collapsed nav items (label pulled into data-tip by JS) */
+  body.sidebar-collapsed .nav-item[data-tip]::after {
+    content: attr(data-tip); position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%);
+    background: var(--brand-navy); color: #fff; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .12s var(--ease-out); z-index: 120; box-shadow: var(--shadow-popover);
+  }
+  body.sidebar-collapsed .nav-item[data-tip]:hover::after { opacity: 1; }
+  [dir="rtl"] body.sidebar-collapsed .nav-item[data-tip]::after { left: auto; right: calc(100% + 12px); }
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   HOTELS: card view, view toggle, mobile filter drawer, active chips
+   ═════════════════════════════════════════════════════════════════════════ */
+.hotel-view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.hotel-view-btn { width: 34px; height: 34px; display: grid; place-items: center; color: var(--text-muted); transition: background .14s, color .14s; }
+.hotel-view-btn svg { width: 17px; height: 17px; }
+.hotel-view-btn.active { background: var(--brand-accent-soft); color: var(--brand-teal-2); }
+.hotel-filter-btn { display: none; }            /* mobile only */
+.filter-close, .filter-apply { display: none; } /* mobile only */
+.filter-backdrop { display: none; }
+.filter-actions { display: flex; gap: 8px; }
+.filter-actions .btn { flex: 1; }
+
+.hotel-gallery-ind { color: var(--brand-cyan-2); display: inline-flex; }
+.hotel-gallery-ind svg { width: 14px; height: 14px; }
+
+.hotel-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; padding: 12px; }
+.hotel-card { display: flex; gap: 12px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-16); box-shadow: var(--shadow-soft); transition: transform .16s var(--ease-out), box-shadow .16s, border-color .16s; }
+.hotel-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); border-color: rgba(20, 184, 166, 0.4); }
+.hotel-card__media { position: relative; width: 92px; height: 92px; flex: 0 0 92px; border-radius: 12px; overflow: hidden; background: var(--surface-muted); padding: 0; cursor: pointer; }
+.hotel-card__media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hotel-card__initials { width: 100%; height: 100%; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan)); color: #fff; font-weight: 800; font-size: 22px; }
+.hotel-gallery-badge { position: absolute; bottom: 5px; right: 5px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; background: rgba(7, 31, 92, 0.72); color: #fff; }
+[dir="rtl"] .hotel-gallery-badge { right: auto; left: 5px; }
+.hotel-gallery-badge svg { width: 13px; height: 13px; }
+.hotel-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.hotel-card__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.hotel-card__name { font-weight: 800; font-size: 14px; color: var(--text-primary); line-height: 1.25; }
+.hotel-card__meta { font-size: 12px; color: var(--text-secondary); }
+.hotel-card__chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.hotel-attr-more { background: var(--surface-muted); color: var(--text-secondary); }
+.hotel-card__price { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-primary); margin-top: 2px; }
+.hotel-card__actions { display: flex; gap: 6px; margin-top: auto; padding-top: 6px; }
+.hotel-card__actions .btn { flex: 1; min-height: 38px; }
+
+.hotel-active-chips { display: none; }
+.filter-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--brand-accent-soft); color: var(--brand-teal-2); font-size: 12px; font-weight: 700; }
+.filter-chip svg { width: 13px; height: 13px; }
+.filter-chip--clear { background: var(--surface-muted); color: var(--text-secondary); }
+
+/* ≤768px: cards forced, filters become a slide-in drawer, active chips visible */
+@media (max-width: 768px) {
+  .hotel-view-toggle { display: none; }
+  .hotel-filter-btn { display: inline-flex; }
+  .hotel-cards { grid-template-columns: 1fr; }
+  .workbench { display: block; }
+  .filter-rail {
+    position: fixed; top: 0; bottom: 0; left: 0; width: min(330px, 90vw); z-index: 95;
+    transform: translateX(-100%); transition: transform .2s var(--ease-out);
+    border-radius: 0; max-height: 100vh; overflow-y: auto; box-shadow: var(--shadow-float);
+    animation: none !important; /* defeat fadeInUp's lingering transform that traps the drawer */
+  }
+  [dir="rtl"] .filter-rail { left: auto; right: 0; transform: translateX(100%); }
+  .filter-rail.open { transform: translateX(0); }
+  .filter-backdrop { display: block; position: fixed; inset: 0; z-index: 94; background: rgba(7, 31, 92, 0.5); opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .filter-backdrop.open { opacity: 1; pointer-events: auto; }
+  .filter-close { display: inline-grid; }
+  .filter-apply { display: inline-flex; }
+  .filter-head { justify-content: space-between; }
+  .hotel-active-chips:not(:empty) { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 2px; }
+}

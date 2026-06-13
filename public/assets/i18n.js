@@ -99,6 +99,10 @@
       adminTitle: "لوحة تحكم المشرف",
       adminSub: "تابع الحجوزات والأرصدة والشركات والطلبات عبر المنصة.",
     },
+    view: {
+      table: "عرض جدول", cards: "عرض بطاقات", label: "العرض",
+      details: "عرض التفاصيل", apply: "تطبيق", gallery: "صور متاحة",
+    },
     stat: {
       totalBookings: "إجمالي الحجوزات",
       totalRevenue: "إجمالي الإيرادات",
@@ -593,6 +597,10 @@
       bookHotel: "Book a Hotel", newTransfer: "New Transfer", quickActions: "Quick actions",
       adminEyebrow: "Platform overview", adminTitle: "Super Admin Console",
       adminSub: "Monitor bookings, balances, companies and requests across the platform.",
+    },
+    view: {
+      table: "Table view", cards: "Card view", label: "View",
+      details: "View Details", apply: "Apply", gallery: "Photos available",
     },
     stat: {
       totalBookings: "Total Bookings", totalRevenue: "Total Revenue", pending: "Pending", activeCompanies: "Active Companies",

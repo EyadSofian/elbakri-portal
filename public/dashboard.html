@@ -72,6 +72,7 @@
     <div class="main-content">
       <header class="topbar">
         <button class="icon-button mobile-menu" onclick="toggleSidebar()" aria-label="Menu"><i data-lucide="menu"></i></button>
+        <button class="icon-button sidebar-collapse-btn" onclick="toggleSidebarCollapse()" aria-label="Collapse sidebar" title="Collapse sidebar"><i data-lucide="panel-left"></i></button>
         <div class="breadcrumb">
           <div class="breadcrumb-label" id="companyBreadcrumb">Agency</div>
           <div class="breadcrumb-title" id="breadcrumbTitle">Dashboard</div>
@@ -465,6 +466,23 @@ function closeSidebar() {
   document.body.classList.remove("sidebar-open");
   document.getElementById("sidebarBackdrop")?.classList.remove("open");
 }
+
+// Desktop collapse (icons-only). Persisted; mobile uses the overlay drawer instead.
+function toggleSidebarCollapse() {
+  const collapsed = document.body.classList.toggle("sidebar-collapsed");
+  localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0");
+  syncNavTips();
+  if (window.lucide) lucide.createIcons();
+}
+function syncNavTips() {
+  document.querySelectorAll(".sidebar .nav-item[data-page]").forEach(b => {
+    const s = b.querySelector("span");
+    if (s) b.setAttribute("data-tip", s.textContent.trim());
+  });
+}
+if (localStorage.getItem("sidebarCollapsed") === "1") document.body.classList.add("sidebar-collapsed");
+syncNavTips();
+document.addEventListener("portal:lang", syncNavTips);
 
 function logout() {
   apiFetch("/auth/logout", { method: "POST" }).finally(() => {
@@ -918,10 +936,11 @@ function hotelNameCell(h) {
   const attrBadges = hotelAttrBadges(h);
   const areaLine = h.area ? ` · ${escapeHtml(locName(h.area, h.area))}` : "";
   const rating = h.googleRating ? `<span class="hotel-rating">${icon("star")}${Number(h.googleRating).toFixed(1)}</span>` : "";
+  const gallery = hotelHasGallery(h) ? `<span class="hotel-gallery-ind" title="${t("view.gallery","Photos available")}">${icon("images")}</span>` : "";
   return `<div style="display:flex;gap:10px;align-items:center">
     ${hotelThumbAgent({ ...h, name: hotelName(h) })}
     <div style="min-width:0">
-      <div class="primary-text" style="display:flex;align-items:center;gap:6px">${escapeHtml(hotelName(h))}${rating}</div>
+      <div class="primary-text" style="display:flex;align-items:center;gap:6px">${escapeHtml(hotelName(h))}${rating}${gallery}</div>
       <div class="secondary-text">${"★".repeat(Math.min(h.stars||0,5))} · ${escapeHtml(hotelCity(h))}${areaLine}</div>
       <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px">${attrBadges}</div>
     </div>
@@ -1079,8 +1098,11 @@ async function renderHotelsByDest(destId, destName) {
     <button class="btn btn-outline" onclick="exportRows('hotels', state.cache['hotelsRows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>
   `) + `
     <div class="workbench">
-      <aside class="filter-rail">
-        <div class="filter-head"><span>${t("filter.title","Filters")}</span>${icon("sliders-horizontal")}</div>
+      <div class="filter-backdrop" id="hotelFilterBackdrop" onclick="toggleHotelFilters()"></div>
+      <aside class="filter-rail" id="hotelFilterRail">
+        <div class="filter-head"><span>${t("filter.title","Filters")}</span>
+          <button class="icon-button filter-close" onclick="toggleHotelFilters()" aria-label="${t("btn.close","Close")}">${icon("x")}</button>
+        </div>
         <div class="filter-body">
           <div class="field"><label>${t("filter.search","Search")}</label>
             <input id="hotelSearchBox" placeholder="${t("hotel.searchName","Hotel name...")}" oninput="debouncedHotelFilter()"></div>
@@ -1093,7 +1115,10 @@ async function renderHotelsByDest(destId, destName) {
           <div class="field"><label>${t("filter.amenities","Amenities")}</label>
             <div class="amenity-chip-row">${amenityChips}</div>
           </div>
-          <button class="btn btn-outline" onclick="resetHotelFilters()">${icon("rotate-ccw")}${t("btn.reset","Reset")}</button>
+          <div class="filter-actions">
+            <button class="btn btn-outline" onclick="resetHotelFilters()">${icon("rotate-ccw")}${t("btn.reset","Reset")}</button>
+            <button class="btn btn-primary filter-apply" onclick="toggleHotelFilters()">${t("view.apply","Apply")}</button>
+          </div>
         </div>
       </aside>
       <section class="workbench-main table-card">
@@ -1105,13 +1130,17 @@ async function renderHotelsByDest(destId, destName) {
             </div>
             <div class="secondary-text" id="hotelsMeta">${t("empty.loading","Loading")}</div>
           </div>
-          <div class="toolbar-actions"><button class="btn btn-outline" onclick="loadHotelList()">${icon("refresh-cw")}${t("btn.refresh")}</button></div>
+          <div class="toolbar-actions">
+            <button class="btn btn-outline hotel-filter-btn" onclick="toggleHotelFilters()">${icon("sliders-horizontal")}${t("filter.title","Filters")}</button>
+            <div class="hotel-view-toggle" role="group" aria-label="${t("view.label","View")}">
+              <button class="hotel-view-btn" data-view="table" onclick="setHotelView('table')" title="${t("view.table","Table view")}">${icon("table-2")}</button>
+              <button class="hotel-view-btn" data-view="cards" onclick="setHotelView('cards')" title="${t("view.cards","Card view")}">${icon("layout-grid")}</button>
+            </div>
+            <button class="btn btn-outline" onclick="loadHotelList()" aria-label="${t("btn.refresh")}">${icon("refresh-cw")}</button>
+          </div>
         </div>
-        <div class="table-scroll">
-          <table class="data-table"><thead><tr>
-            <th>${t("th.name")}</th><th>${t("th.amount")}</th><th>${t("th.actions")}</th>
-          </tr></thead><tbody id="hotelsTbody">${skeletonRows(3, 8)}</tbody></table>
-        </div>
+        <div id="hotelActiveChips" class="hotel-active-chips"></div>
+        <div id="hotelsListHost"><div class="table-scroll"><table class="data-table"><tbody id="hotelsTbody">${skeletonRows(3, 8)}</tbody></table></div></div>
       </section>
     </div>`);
 
@@ -1157,21 +1186,119 @@ async function loadHotelList() {
 
   const res = await apiFetch(`/hotels?${params}`);
   if (!res) return;
-  const rows = res.data || [];
-  state.cache.hotelsRows = rows;
-  const tbody = document.getElementById("hotelsTbody");
-  if (!tbody) return;
-  tbody.innerHTML = rows.length
-    ? rows.map(h => `<tr>
-        <td>${hotelNameCell(h)}</td>
-        <td>${hotelPriceCell(h)}</td>
-        <td>${hotelActionCell(h)}</td>
-      </tr>`).join("")
-    : `<tr><td colspan="3"><div class="empty-state">${icon("hotel")}<strong>${t("empty.noData","No hotels match")}</strong><span>${t("empty.adjustFilters","Try adjusting the filters")}</span><button class="btn btn-outline" style="margin-top:12px" onclick="resetHotelFilters()">${icon("rotate-ccw")}${t("btn.reset","Reset Filters")}</button></div></td></tr>`;
-  const meta = document.getElementById("hotelsMeta");
-  if (meta) meta.textContent = `${formatNumber(res.meta?.total ?? rows.length)} ${t("nav.hotels","Hotels")}`;
-  refreshIcons(tbody);
+  state.cache.hotelsRows = res.data || [];
+  state.cache.hotelsTotal = res.meta?.total ?? state.cache.hotelsRows.length;
+  renderHotelRows();
+  renderHotelActiveChips();
 }
+
+// View mode: table (desktop default) or cards. Mobile (<=768px) always forces cards
+// because the dense table is unusable there.
+function hotelViewMode() {
+  if (window.matchMedia("(max-width:768px)").matches) return "cards";
+  return localStorage.getItem("hotelView") || "table";
+}
+function setHotelView(mode) {
+  localStorage.setItem("hotelView", mode);
+  renderHotelRows();
+}
+function renderHotelRows() {
+  const host = document.getElementById("hotelsListHost");
+  if (!host) return;
+  const rows = state.cache.hotelsRows || [];
+  const mode = hotelViewMode();
+  document.querySelectorAll(".hotel-view-btn").forEach(b => b.classList.toggle("active", b.dataset.view === mode));
+  if (!rows.length) {
+    host.innerHTML = `<div class="empty-state">${icon("hotel")}<strong>${t("empty.noData","No hotels match")}</strong><span>${t("empty.adjustFilters","Try adjusting the filters")}</span><button class="btn btn-outline" style="margin-top:12px" onclick="resetHotelFilters()">${icon("rotate-ccw")}${t("btn.reset","Reset Filters")}</button></div>`;
+  } else if (mode === "cards") {
+    host.innerHTML = `<div class="hotel-cards">${rows.map(hotelCard).join("")}</div>`;
+  } else {
+    host.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr>
+        <th>${t("th.name")}</th><th>${t("th.amount")}</th><th>${t("th.actions")}</th>
+      </tr></thead><tbody id="hotelsTbody">${rows.map(h => `<tr>
+        <td>${hotelNameCell(h)}</td><td>${hotelPriceCell(h)}</td><td>${hotelActionCell(h)}</td>
+      </tr>`).join("")}</tbody></table></div>`;
+  }
+  const meta = document.getElementById("hotelsMeta");
+  if (meta) meta.textContent = `${formatNumber(state.cache.hotelsTotal || rows.length)} ${t("nav.hotels","Hotels")}`;
+  refreshIcons(host);
+}
+
+function hotelHasGallery(h) { return !!(h.imageUrl || (h.galleryUrls && h.galleryUrls.length)); }
+
+function hotelCardThumb(h) {
+  if (h.imageUrl) return `<img src="${escapeHtml(hotelImageSrc(h.imageUrl))}" alt="${escapeHtml(hotelName(h))}" loading="lazy">`;
+  const initials = (hotelName(h) || "?").split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase();
+  return `<span class="hotel-card__initials">${escapeHtml(initials)}</span>`;
+}
+
+// Mobile-friendly travel card for a hotel.
+function hotelCard(h) {
+  const rating = h.googleRating ? `<span class="hotel-rating">${icon("star")}${Number(h.googleRating).toFixed(1)}</span>` : "";
+  const stars = "★".repeat(Math.min(h.stars || 0, 5));
+  const area = h.area ? ` · ${escapeHtml(locName(h.area, h.area))}` : "";
+  const am = HOTEL_AMENITY_DEFS.filter(([k]) => h[k] === true);
+  const chips = am.slice(0, 3).map(([k, lk]) => `<span class="hotel-attr-chip">${t(lk, k)}</span>`).join("")
+    + (am.length > 3 ? `<span class="hotel-attr-chip hotel-attr-more">+${am.length - 3}</span>` : "");
+  const quote = (h.canRequestQuote === false || h.allowQuoteRequest === false) ? "" :
+    `<button class="btn btn-primary" onclick="openQuoteRequestModal('HOTEL','${h.id}',${inlineJsonArg(h.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`;
+  return `<article class="hotel-card">
+    <button type="button" class="hotel-card__media" onclick="showAgentHotelDetails('${h.id}')" aria-label="${t("view.details","View Details")}">
+      ${hotelCardThumb(h)}
+      ${hotelHasGallery(h) ? `<span class="hotel-gallery-badge">${icon("images")}</span>` : ""}
+    </button>
+    <div class="hotel-card__body">
+      <div class="hotel-card__top">
+        <div class="hotel-card__name">${escapeHtml(hotelName(h))}</div>
+        ${rating}
+      </div>
+      <div class="hotel-card__meta">${stars ? stars + " · " : ""}${escapeHtml(hotelCity(h))}${area}</div>
+      ${chips ? `<div class="hotel-card__chips">${chips}</div>` : ""}
+      <div class="hotel-card__price">${hotelPriceCell(h)}</div>
+      <div class="hotel-card__actions">
+        ${quote}
+        <button class="btn btn-glass" onclick="showAgentHotelDetails('${h.id}')">${icon("eye")}&nbsp;${t("view.details","View Details")}</button>
+      </div>
+    </div>
+  </article>`;
+}
+
+// Mobile filter drawer toggle
+function toggleHotelFilters() {
+  const rail = document.getElementById("hotelFilterRail");
+  if (!rail) return;
+  const open = rail.classList.toggle("open");
+  document.getElementById("hotelFilterBackdrop")?.classList.toggle("open", open);
+  document.body.classList.toggle("filters-open", open);
+}
+
+// Active-filter chips summary (so hotels show first on mobile)
+function renderHotelActiveChips() {
+  const host = document.getElementById("hotelActiveChips");
+  if (!host) return;
+  const f = state.hotelFilters;
+  const chips = [];
+  const sb = document.getElementById("hotelSearchBox")?.value.trim();
+  if (sb) chips.push(`<button class="filter-chip" onclick="clearHotelFilter('search')">${icon("search")}${escapeHtml(sb)}${icon("x")}</button>`);
+  if (f.area) chips.push(`<button class="filter-chip" onclick="clearHotelFilter('area')">${escapeHtml(locName(f.area, f.area))}${icon("x")}</button>`);
+  if (f.stars) chips.push(`<button class="filter-chip" onclick="clearHotelFilter('stars')">${f.stars}★${icon("x")}</button>`);
+  f.amenities.forEach(a => { const def = HOTEL_AMENITY_DEFS.find(([k]) => k === a); if (def) chips.push(`<button class="filter-chip" onclick="clearHotelFilter('amenity','${a}')">${t(def[1], a)}${icon("x")}</button>`); });
+  host.innerHTML = chips.length ? chips.join("") + `<button class="filter-chip filter-chip--clear" onclick="resetHotelFilters()">${icon("rotate-ccw")}${t("btn.reset","Reset")}</button>` : "";
+  if (chips.length) refreshIcons(host);
+}
+function clearHotelFilter(kind, key) {
+  const f = state.hotelFilters;
+  if (kind === "search") { const sb = document.getElementById("hotelSearchBox"); if (sb) sb.value = ""; }
+  else if (kind === "area") { f.area = ""; document.querySelectorAll(".area-chip").forEach(c => c.classList.toggle("active", c.dataset.area === "")); }
+  else if (kind === "stars") { f.stars = ""; const st = document.getElementById("hotelStarsSel"); if (st) st.value = ""; }
+  else if (kind === "amenity") { f.amenities.delete(key); const chip = document.querySelector(`.amenity-chip[data-amenity="${key}"]`); if (chip) chip.classList.remove("active"); }
+  loadHotelList();
+}
+
+// Re-render hotels when crossing the mobile breakpoint (table <-> cards)
+window.matchMedia("(max-width:768px)").addEventListener("change", () => {
+  if (document.getElementById("hotelsListHost")) renderHotelRows();
+});
 
 function renderCruises() {
   renderListPage("cruises", "/cruises", [

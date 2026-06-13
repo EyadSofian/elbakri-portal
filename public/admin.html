@@ -81,6 +81,7 @@
     <div class="main-content">
       <header class="topbar">
         <button class="icon-button mobile-menu" onclick="toggleSidebar()" aria-label="Menu"><i data-lucide="menu"></i></button>
+        <button class="icon-button sidebar-collapse-btn" onclick="toggleSidebarCollapse()" aria-label="Collapse sidebar" title="Collapse sidebar"><i data-lucide="panel-left"></i></button>
         <div class="breadcrumb">
           <div class="breadcrumb-label" data-i18n="app.superAdmin">Super Admin</div>
           <div class="breadcrumb-title" id="breadcrumbTitle">Dashboard</div>
@@ -530,6 +531,23 @@ function closeSidebar() {
   document.body.classList.remove("sidebar-open");
   document.getElementById("sidebarBackdrop")?.classList.remove("open");
 }
+
+// Desktop collapse (icons-only). Persisted; mobile uses the overlay drawer instead.
+function toggleSidebarCollapse() {
+  const collapsed = document.body.classList.toggle("sidebar-collapsed");
+  localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0");
+  syncNavTips();
+  if (window.lucide) lucide.createIcons();
+}
+function syncNavTips() {
+  document.querySelectorAll(".sidebar .nav-item[data-page]").forEach(b => {
+    const s = b.querySelector("span");
+    if (s) b.setAttribute("data-tip", s.textContent.trim());
+  });
+}
+if (localStorage.getItem("sidebarCollapsed") === "1") document.body.classList.add("sidebar-collapsed");
+syncNavTips();
+document.addEventListener("portal:lang", syncNavTips);
 
 function logout() {
   apiFetch("/auth/logout", { method: "POST" }).finally(() => {
