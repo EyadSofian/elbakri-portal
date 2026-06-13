@@ -3416,16 +3416,6 @@ function renderInvoices() {
         <div><strong>${t("nav.invoices","Invoices")}</strong><div class="secondary-text">${t("invoice.individualHelp","Individual booking invoices")}</div></div>
         <div class="toolbar-actions"><button class="btn btn-outline" onclick="renderInvoices()">${icon("refresh-cw")}${t("btn.refresh")}</button></div>
       </div>
-      <div id="invBulkBar" class="bulk-toolbar" style="display:none">
-        <div class="bulk-info">
-          <span id="invBulkCount" class="primary-text"></span>
-          <span id="invBulkAmount" class="secondary-text"></span>
-        </div>
-        <div class="bulk-actions">
-          <button class="btn btn-outline btn-sm" onclick="invClearSelection()">${t("btn.clear","Clear")}</button>
-          <button class="btn btn-primary btn-sm" id="invBulkBtn" onclick="invBulkDownloadPdf()">${icon("file-down")}&nbsp;${t("invoice.downloadCombined","Download Combined PDF")}</button>
-        </div>
-      </div>
       <div id="companyInvoiceList"></div>
     </section>
     <section class="table-card" style="margin-top:16px">
@@ -3433,7 +3423,20 @@ function renderInvoices() {
         <div><strong>${t("invoice.consolidated","Consolidated Statements")}</strong><div class="secondary-text">${t("invoice.consolidatedCompanyHelp","Download a combined PDF or Excel statement prepared by the admin.")}</div></div>
       </div>
       <div id="companyConsolidatedList"></div>
-    </section>`);
+    </section>
+    <!-- Floating bulk-action bar: rendered OUTSIDE the table cards so its
+         position:fixed resolves against the viewport (a .table-card's entrance
+         animation leaves an identity transform that would otherwise trap it). -->
+    <div id="invBulkBar" class="bulk-toolbar" style="display:none">
+      <div class="bulk-info">
+        <span id="invBulkCount" class="primary-text"></span>
+        <span id="invBulkAmount" class="secondary-text"></span>
+      </div>
+      <div class="bulk-actions">
+        <button class="btn btn-outline btn-sm" onclick="invClearSelection()">${t("btn.clear","Clear")}</button>
+        <button class="btn btn-primary btn-sm" id="invBulkBtn" onclick="invBulkDownloadPdf()">${icon("file-down")}&nbsp;${t("invoice.downloadCombined","Download Combined PDF")}</button>
+      </div>
+    </div>`);
   renderCompanyInvoiceLists();
 }
 
@@ -3446,6 +3449,7 @@ function invBulkSync() {
   const amt = document.getElementById("invBulkAmount");
   const btn = document.getElementById("invBulkBtn");
   if (bar) bar.style.display = checked.length ? "flex" : "none";
+  document.body.classList.toggle("has-bulkbar", checked.length > 0);
   if (cnt) cnt.textContent = `${checked.length} ${t("invoice.selected","selected")}`;
   if (amt) {
     const totals = {};
