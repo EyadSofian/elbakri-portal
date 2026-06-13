@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
-import { generateInvoicePdf } from './pdf.generator';
+import { generateInvoicePdf, generateBulkInvoicePdf } from './pdf.generator';
 import { sendEmail } from '../../shared/email.templates';
 
 const invoiceInclude = {
@@ -75,6 +75,15 @@ const invoiceInclude = {
       voucher: { select: { id: true, voucherNumber: true } },
     },
   },
+  activityPackage: {
+    select: {
+      id: true, refNumber: true, clientName: true, adultsCount: true, childrenCount: true,
+      totalAmount: true, currency: true, requestedAt: true, confirmedAt: true,
+      items: { select: { activityName: true, activityDate: true, city: true }, orderBy: { displayOrder: 'asc' as const } },
+      company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
+      voucher: { select: { id: true, voucherNumber: true } },
+    },
+  },
   consolidatedLine: {
     select: { consolidatedInvoiceId: true },
   },
@@ -137,6 +146,49 @@ export async function downloadPdf(req: Request, res: Response): Promise<void> {
   stream.pipe(res);
 }
 
+/**
+ * POST /api/invoices/bulk-pdf  { invoiceIds: string[] }
+ * Merge several invoices into one paginated PDF. Ownership is enforced: company
+ * users can only export their own invoices; SUPERADMIN can export any.
+ */
+export async function bulkPdf(req: Request, res: Response): Promise<void> {
+  const caller = req.user!;
+  const ids = Array.isArray(req.body?.invoiceIds) ? (req.body.invoiceIds as unknown[]).map(String) : [];
+  if (ids.length === 0) {
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'invoiceIds is required' });
+    return;
+  }
+  if (ids.length > 200) {
+    res.status(400).json({ success: false, error: 'TOO_MANY', message: 'Select up to 200 invoices' });
+    return;
+  }
+
+  const where = {
+    id: { in: ids },
+    ...(caller.role !== 'SUPERADMIN' ? { companyId: caller.companyId! } : {}),
+  };
+  const invoices = await prisma.invoice.findMany({ where, orderBy: { createdAt: 'desc' }, include: invoiceInclude });
+  if (invoices.length === 0) {
+    res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'No accessible invoices found' });
+    return;
+  }
+
+  const companyName = invoices[0].company?.name ?? 'COMPANY';
+  const { path: pdfPath, filename } = await generateBulkInvoicePdf(
+    invoices as unknown as Parameters<typeof generateBulkInvoicePdf>[0],
+    { companyName },
+  );
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  const stream = fs.createReadStream(pdfPath);
+  stream.on('error', (error) => {
+    console.error(error);
+    if (!res.headersSent) res.status(500).json({ success: false, error: 'PDF_READ_FAILED' });
+  });
+  stream.pipe(res);
+}
+
 export async function markPaid(req: Request, res: Response): Promise<void> {
   const invoice = await prisma.invoice.update({
     where: { id: req.params.id },
@@ -152,7 +204,8 @@ export async function markPaid(req: Request, res: Response): Promise<void> {
     ?? invoice.airportReception?.company.email
     ?? invoice.cruiseBooking?.company.email
     ?? invoice.visaApplication?.company.email
-    ?? invoice.simRequest?.company.email;
+    ?? invoice.simRequest?.company.email
+    ?? invoice.activityPackage?.company.email;
 
   const teamEmail = process.env.INTERNAL_TEAM_EMAIL;
   const recipients = [companyEmail, teamEmail].filter(Boolean) as string[];

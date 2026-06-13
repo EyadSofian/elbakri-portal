@@ -1260,5 +1260,58 @@
     }).format(new Date(value));
   }
 
+  // ── Additional keys (2026-06-13: transport hotels/round-trip, packages,
+  //    bulk invoices, currency-aware pricing). Deep-merged so existing keys win. ──
+  (function mergeNewKeys() {
+    const add = {
+      en: {
+        transport: {
+          hotel: "Hotel", pickupHotelName: "Pickup Hotel Name", dropoffHotelName: "Drop-off Hotel Name",
+          returnFrom: "Return From", returnTo: "Return To",
+          returnFromPlaceholder: "Defaults to drop-off location", returnToPlaceholder: "Defaults to pickup location",
+          returnPickupHotelName: "Return Pickup Hotel Name", returnDropoffHotelName: "Return Drop-off Hotel Name",
+          pickupHotelRequired: "Pickup hotel name is required", dropoffHotelRequired: "Drop-off hotel name is required",
+        },
+        activity: {
+          transferIncluded: "Transport included", myPackages: "My Packages",
+          myPackagesHelp: "Each package groups several activities under one reference.",
+          activities: "activities", timeConflict: "This package already has a trip overlapping that date/time.",
+        },
+        invoice: { downloadSelected: "Download selected as PDF", selected: "selected", selectAll: "Select all", downloaded: "Combined invoice PDF downloaded" },
+        form: { currency: "Currency", price: "Price" },
+        market: { pricingTitle: "Egyptian Market Price" },
+        btn: { clear: "Clear" },
+        simCard: { quantity: "Quantity", perSim: "per SIM" },
+      },
+      ar: {
+        transport: {
+          hotel: "فندق", pickupHotelName: "اسم فندق الاستلام", dropoffHotelName: "اسم فندق التوصيل",
+          returnFrom: "العودة من", returnTo: "العودة إلى",
+          returnFromPlaceholder: "افتراضيًا مكان التوصيل", returnToPlaceholder: "افتراضيًا مكان الاستلام",
+          returnPickupHotelName: "فندق استلام العودة", returnDropoffHotelName: "فندق توصيل العودة",
+          pickupHotelRequired: "اسم فندق الاستلام مطلوب", dropoffHotelRequired: "اسم فندق التوصيل مطلوب",
+        },
+        activity: {
+          transferIncluded: "يشمل المواصلات", myPackages: "باقاتي",
+          myPackagesHelp: "كل باقة تجمع عدة أنشطة تحت مرجع واحد.",
+          activities: "أنشطة", timeConflict: "هذه الباقة بها رحلة في نفس التاريخ/الوقت المتداخل.",
+        },
+        invoice: { downloadSelected: "تحميل المحدد كـ PDF", selected: "محدد", selectAll: "تحديد الكل", downloaded: "تم تحميل ملف الفواتير المجمّع" },
+        form: { currency: "العملة", price: "السعر" },
+        market: { pricingTitle: "سعر السوق المصري" },
+        btn: { clear: "مسح" },
+        simCard: { quantity: "الكمية", perSim: "لكل شريحة" },
+      },
+    };
+    const merge = (target, src) => {
+      for (const k of Object.keys(src)) {
+        if (src[k] && typeof src[k] === "object") { target[k] = target[k] || {}; merge(target[k], src[k]); }
+        else if (target[k] === undefined) target[k] = src[k];
+      }
+    };
+    if (dict.en) merge(dict.en, add.en);
+    if (dict.ar) merge(dict.ar, add.ar);
+  })();
+
   window.PortalI18n = { dict, t, setLang, initI18n, applyTranslations, formatNumber, formatMoney, formatDate };
 })();

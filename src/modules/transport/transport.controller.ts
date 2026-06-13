@@ -143,8 +143,13 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     vehicleType?: 'SEDAN' | 'SUV' | 'VAN_6' | 'VAN_12' | 'MINIBUS_20' | 'BUS_45' | 'LUXURY_LIMO';
     fromLocation: string; toLocation: string;
     fromType?: string; toType?: string;
+    pickupHotelName?: string; dropoffHotelName?: string;
     pickupDateTime: string; returnDateTime?: string;
     isRoundTrip?: boolean; passengerCount?: number;
+    // Return leg
+    returnFromLocation?: string; returnToLocation?: string;
+    returnFromType?: string; returnToType?: string;
+    returnPickupHotelName?: string; returnDropoffHotelName?: string;
     passengerNames?: string[];
     passengerName?: string;    // lead passenger
     flightNumber?: string;
@@ -178,6 +183,24 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   if (body.isRoundTrip && !body.returnDateTime) {
     res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Return date and time are required for a round trip' });
     return;
+  }
+
+  // Required hotel / pickup-location validation.
+  const isHotel = (t?: string) => String(t ?? '').toUpperCase() === 'HOTEL';
+  const fail = (message: string) => res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message });
+  if (isHotel(body.fromType) && !body.pickupHotelName?.trim()) { fail('Pickup hotel name is required when the pickup is a hotel'); return; }
+  if (isHotel(body.toType) && !body.dropoffHotelName?.trim()) { fail('Drop-off hotel name is required when the destination is a hotel'); return; }
+  // Hourly / day-use transport must know where the client starts.
+  if (body.type === 'DAY_TOUR_TRANSPORT' && !body.fromLocation?.trim() && !body.pickupHotelName?.trim()) {
+    fail('A pickup location or hotel is required for hourly / day-use transport'); return;
+  }
+  if (body.isRoundTrip) {
+    if (isHotel(body.returnFromType ?? body.toType) && !(body.returnPickupHotelName ?? body.dropoffHotelName)?.toString().trim()) {
+      fail('Return pickup hotel name is required when the return pickup is a hotel'); return;
+    }
+    if (isHotel(body.returnToType ?? body.fromType) && !(body.returnDropoffHotelName ?? body.pickupHotelName)?.toString().trim()) {
+      fail('Return drop-off hotel name is required when the return destination is a hotel'); return;
+    }
   }
 
   // Resolve price server-side — client totalAmount is ignored entirely
@@ -253,9 +276,17 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           toLocation: body.toLocation,
           fromType: body.fromType ?? null,
           toType: body.toType ?? null,
+          pickupHotelName: body.pickupHotelName?.trim() || null,
+          dropoffHotelName: body.dropoffHotelName?.trim() || null,
           pickupDateTime: new Date(body.pickupDateTime),
           returnDateTime: body.returnDateTime ? new Date(body.returnDateTime) : null,
           isRoundTrip: body.isRoundTrip ?? false,
+          returnFromLocation: body.isRoundTrip ? (body.returnFromLocation?.trim() || body.toLocation) : null,
+          returnToLocation: body.isRoundTrip ? (body.returnToLocation?.trim() || body.fromLocation) : null,
+          returnFromType: body.isRoundTrip ? (body.returnFromType ?? body.toType ?? null) : null,
+          returnToType: body.isRoundTrip ? (body.returnToType ?? body.fromType ?? null) : null,
+          returnPickupHotelName: body.isRoundTrip ? (body.returnPickupHotelName?.trim() || body.dropoffHotelName?.trim() || null) : null,
+          returnDropoffHotelName: body.isRoundTrip ? (body.returnDropoffHotelName?.trim() || body.pickupHotelName?.trim() || null) : null,
           passengerCount,
           passengerNames: body.passengerNames ?? [],
           passengerName: body.passengerName ?? null,

@@ -24,20 +24,66 @@ async function buildTransportVoucherData(bookingId: string): Promise<VoucherData
     include: { company: { select: { name: true, logoUrl: true } } },
   });
   if (!b) return null;
+  const t = (d: Date | null) => (d ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
   return {
     serviceType: 'TRANSPORT',
     voucherNumber: '',
     company: b.company,
     clientName: b.passengerName ?? b.passengerNames[0] ?? 'Guest',
+    isRoundTrip: b.isRoundTrip,
     date: b.pickupDateTime,
-    time: b.pickupDateTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+    time: t(b.pickupDateTime),
     airlineName: b.airlineName,
     flightNumber: b.flightNumber,
     fromLocation: b.fromLocation,
     toLocation: b.toLocation,
+    pickupHotelName: b.pickupHotelName,
+    dropoffHotelName: b.dropoffHotelName,
     vehicleType: b.vehicleType,
     passengerCount: b.passengerCount,
+    returnDate: b.returnDateTime,
+    returnTime: t(b.returnDateTime),
+    returnFromLocation: b.returnFromLocation ?? (b.isRoundTrip ? b.toLocation : null),
+    returnToLocation: b.returnToLocation ?? (b.isRoundTrip ? b.fromLocation : null),
+    returnPickupHotelName: b.returnPickupHotelName,
+    returnDropoffHotelName: b.returnDropoffHotelName,
+    returnAirlineName: b.returnAirlineName,
+    returnFlightNumber: b.returnFlightNumber,
     notes: b.notes,
+  };
+}
+
+async function buildActivityPackageVoucherData(packageId: string): Promise<VoucherData | null> {
+  const p = await prisma.activityPackage.findUnique({
+    where: { id: packageId },
+    include: {
+      company: { select: { name: true, logoUrl: true } },
+      items: { orderBy: { displayOrder: 'asc' } },
+    },
+  });
+  if (!p) return null;
+  return {
+    serviceType: 'ACTIVITY_PACKAGE',
+    voucherNumber: '',
+    company: p.company,
+    clientName: p.clientName ?? 'Guest',
+    clientPhone: p.clientPhone,
+    hotelName: p.hotelName,
+    adultsCount: p.adultsCount,
+    childrenCount: p.childrenCount,
+    childAges: Array.isArray(p.childAges) ? (p.childAges as number[]) : null,
+    notes: p.notes,
+    items: p.items.map((it) => ({
+      activityName: it.activityName,
+      city: it.city,
+      date: it.activityDate,
+      time: it.selectedTime,
+      groupType: it.groupTypeLabel ?? it.activityType,
+      transferIncluded: it.transferIncluded,
+      adultsCount: it.adultsCount,
+      childrenCount: it.childrenCount,
+      notes: it.notes,
+    })),
   };
 }
 
@@ -46,7 +92,7 @@ async function buildActivityVoucherData(bookingId: string): Promise<VoucherData 
     where: { id: bookingId },
     include: {
       company: { select: { name: true, logoUrl: true } },
-      activity: { select: { name: true } },
+      activity: { select: { name: true, city: true } },
     },
   });
   if (!b) return null;
@@ -61,7 +107,8 @@ async function buildActivityVoucherData(bookingId: string): Promise<VoucherData 
     adultsCount: b.adultsCount,
     childrenCount: b.childrenCount,
     activityName: b.activity?.name ?? 'Activity',
-    activityType: b.activityType,
+    city: b.activity?.city,
+    activityType: b.groupTypeLabel ?? b.activityType,
     selectedTime: b.selectedTime,
     notes: b.notes,
   };
@@ -73,18 +120,21 @@ async function buildVisaVoucherData(appId: string): Promise<VoucherData | null> 
     include: { company: { select: { name: true, logoUrl: true } } },
   });
   if (!v) return null;
+  const cf = (v.customFields ?? {}) as Record<string, string>;
   return {
     serviceType: 'SECURITY_APPROVAL',
     voucherNumber: '',
     company: v.company,
     clientName: v.applicantName,
-    date: v.travelDate,
+    date: v.arrivalTime ?? v.travelDate,
     nationality: v.nationality,
     passportNumber: v.passportNumber,
-    flightNumber: v.customFields ? (v.customFields as Record<string, string>)['flightNumber'] ?? null : null,
-    arrivalTime: v.travelDate,
-    originCountry: v.notes ? undefined : undefined,
+    flightNumber: v.flightNumber ?? cf['flightNumber'] ?? null,
+    arrivalTime: v.arrivalTime ?? v.travelDate,
+    comingFrom: v.comingFrom ?? cf['comingFrom'] ?? null,
     arrivalDestination: v.destinationCountry,
+    hotelName: v.hotelName,
+    notes: v.notes,
   };
 }
 
@@ -104,7 +154,7 @@ async function buildReceptionVoucherData(receptionId: string): Promise<VoucherDa
     date: r.flightDateTime,
     flightNumber: r.flightNumber,
     passengerCount: r.guestCount,
-    origin: r.travelDetails,
+    comingFrom: r.comingFrom ?? r.travelDetails,
     notes: r.notes ?? r.specialRequests,
   };
 }
@@ -138,6 +188,7 @@ async function buildSimVoucherData(simRequestId: string): Promise<VoucherData | 
 type ServiceRef =
   | { type: 'transport';   bookingId: string; companyId: string; clientName?: string | null }
   | { type: 'activity';    bookingId: string; companyId: string; clientName?: string | null }
+  | { type: 'package';     packageId: string; companyId: string; clientName?: string | null }
   | { type: 'visa';        appId:     string; companyId: string; clientName?: string | null }
   | { type: 'reception';   id:        string; companyId: string; clientName?: string | null }
   | { type: 'sim';         simRequestId: string; companyId: string; clientName?: string | null };
@@ -155,6 +206,10 @@ export async function createVoucherForService(ref: ServiceRef): Promise<string |
       case 'activity':
         data = await buildActivityVoucherData(ref.bookingId);
         fieldKey = { activityBookingId: ref.bookingId };
+        break;
+      case 'package':
+        data = await buildActivityPackageVoucherData(ref.packageId);
+        fieldKey = { activityPackageId: ref.packageId };
         break;
       case 'visa':
         data = await buildVisaVoucherData(ref.appId);
@@ -178,6 +233,7 @@ export async function createVoucherForService(ref: ServiceRef): Promise<string |
     const serviceTypeMap: Record<string, string> = {
       transport:  'TRANSPORT',
       activity:   'ACTIVITY',
+      package:    'ACTIVITY_PACKAGE',
       visa:       'SECURITY_APPROVAL',
       reception:  'AIRPORT_ASSIST',
       sim:        'SIM_CARD',
@@ -189,6 +245,8 @@ export async function createVoucherForService(ref: ServiceRef): Promise<string |
       existing = await prisma.voucher.findUnique({ where: { transportBookingId: fieldKey.transportBookingId }, select: { id: true } });
     else if (fieldKey.activityBookingId)
       existing = await prisma.voucher.findUnique({ where: { activityBookingId: fieldKey.activityBookingId }, select: { id: true } });
+    else if (fieldKey.activityPackageId)
+      existing = await prisma.voucher.findUnique({ where: { activityPackageId: fieldKey.activityPackageId }, select: { id: true } });
     else if (fieldKey.visaApplicationId)
       existing = await prisma.voucher.findUnique({ where: { visaApplicationId: fieldKey.visaApplicationId }, select: { id: true } });
     else if (fieldKey.airportReceptionId)
@@ -225,8 +283,9 @@ export async function downloadVoucher(req: Request, res: Response): Promise<void
   const voucher = await prisma.voucher.findUnique({
     where: { id: req.params.id },
     select: { id: true, pdfPath: true, voucherNumber: true, companyId: true, serviceType: true,
-      transportBookingId: true, activityBookingId: true, visaApplicationId: true,
-      airportReceptionId: true, simRequestId: true },
+      transportBookingId: true, activityBookingId: true, activityPackageId: true, visaApplicationId: true,
+      airportReceptionId: true, simRequestId: true,
+      company: { select: { name: true } } },
   });
 
   if (!voucher) { res.status(404).json({ success: false, error: 'NOT_FOUND' }); return; }
@@ -236,13 +295,7 @@ export async function downloadVoucher(req: Request, res: Response): Promise<void
 
   // Regenerate if PDF missing
   if (!voucher.pdfPath || !fs.existsSync(voucher.pdfPath)) {
-    let data: VoucherData | null = null;
-    if (voucher.transportBookingId)  data = await buildTransportVoucherData(voucher.transportBookingId);
-    else if (voucher.activityBookingId)  data = await buildActivityVoucherData(voucher.activityBookingId);
-    else if (voucher.visaApplicationId)  data = await buildVisaVoucherData(voucher.visaApplicationId);
-    else if (voucher.airportReceptionId) data = await buildReceptionVoucherData(voucher.airportReceptionId);
-    else if (voucher.simRequestId)       data = await buildSimVoucherData(voucher.simRequestId);
-
+    const data = await buildVoucherDataFor(voucher);
     if (data) {
       data.voucherNumber = voucher.voucherNumber;
       const { path: pdfPath } = await generateVoucherPdf(data);
@@ -256,8 +309,33 @@ export async function downloadVoucher(req: Request, res: Response): Promise<void
   }
 
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="VCH-${voucher.voucherNumber}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${voucherFileName(voucher.serviceType, voucher.voucherNumber, voucher.company?.name)}"`);
   fs.createReadStream(voucher.pdfPath).pipe(res);
+}
+
+/** Clean customer-facing filename: ELBAKRI-VOUCHER-[TYPE]-[REF]-[COMPANY].pdf */
+function voucherFileName(serviceType: string, voucherNumber: string, companyName?: string | null): string {
+  const slug = (s: string) => s.replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'NA';
+  const typeMap: Record<string, string> = {
+    TRANSPORT: 'TRANSPORT', ACTIVITY: 'ACTIVITY', ACTIVITY_PACKAGE: 'PACKAGE',
+    SECURITY_APPROVAL: 'SECURITY', AIRPORT_ASSIST: 'AIRPORT', SIM_CARD: 'SIM',
+  };
+  const type = typeMap[serviceType] ?? slug(serviceType);
+  return `ELBAKRI-VOUCHER-${type}-${slug(voucherNumber)}-${slug(companyName ?? 'COMPANY')}.pdf`;
+}
+
+/** Resolve voucher data from whichever polymorphic relation is populated. */
+async function buildVoucherDataFor(v: {
+  transportBookingId?: string | null; activityBookingId?: string | null; activityPackageId?: string | null;
+  visaApplicationId?: string | null; airportReceptionId?: string | null; simRequestId?: string | null;
+}): Promise<VoucherData | null> {
+  if (v.transportBookingId)  return buildTransportVoucherData(v.transportBookingId);
+  if (v.activityBookingId)   return buildActivityVoucherData(v.activityBookingId);
+  if (v.activityPackageId)   return buildActivityPackageVoucherData(v.activityPackageId);
+  if (v.visaApplicationId)   return buildVisaVoucherData(v.visaApplicationId);
+  if (v.airportReceptionId)  return buildReceptionVoucherData(v.airportReceptionId);
+  if (v.simRequestId)        return buildSimVoucherData(v.simRequestId);
+  return null;
 }
 
 export async function regenerateVoucher(req: Request, res: Response): Promise<void> {
@@ -267,17 +345,11 @@ export async function regenerateVoucher(req: Request, res: Response): Promise<vo
   const voucher = await prisma.voucher.findUnique({
     where: { id: req.params.id },
     select: { id: true, voucherNumber: true, transportBookingId: true, activityBookingId: true,
-      visaApplicationId: true, airportReceptionId: true, simRequestId: true },
+      activityPackageId: true, visaApplicationId: true, airportReceptionId: true, simRequestId: true },
   });
   if (!voucher) { res.status(404).json({ success: false, error: 'NOT_FOUND' }); return; }
 
-  let data: VoucherData | null = null;
-  if (voucher.transportBookingId)  data = await buildTransportVoucherData(voucher.transportBookingId);
-  else if (voucher.activityBookingId)  data = await buildActivityVoucherData(voucher.activityBookingId);
-  else if (voucher.visaApplicationId)  data = await buildVisaVoucherData(voucher.visaApplicationId);
-  else if (voucher.airportReceptionId) data = await buildReceptionVoucherData(voucher.airportReceptionId);
-  else if (voucher.simRequestId)       data = await buildSimVoucherData(voucher.simRequestId);
-
+  const data = await buildVoucherDataFor(voucher);
   if (!data) { res.status(400).json({ success: false, error: 'NO_DATA' }); return; }
   data.voucherNumber = voucher.voucherNumber;
   const { path: pdfPath } = await generateVoucherPdf(data);
@@ -292,6 +364,7 @@ export async function getVoucherByBooking(req: Request, res: Response): Promise<
   const fieldMap: Record<string, Record<string, string>> = {
     transport:  { transportBookingId:  bookingId },
     activity:   { activityBookingId:   bookingId },
+    package:    { activityPackageId:   bookingId },
     visa:       { visaApplicationId:   bookingId },
     reception:  { airportReceptionId:  bookingId },
     sim:        { simRequestId:        bookingId },

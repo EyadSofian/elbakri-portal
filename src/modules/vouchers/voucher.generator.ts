@@ -1,21 +1,35 @@
 /**
  * Voucher PDF generator — customer-facing, NO prices shown.
- * Branding: Company name/logo at top; Elbakri subtle footer only.
- * 4 service-specific templates:
- *   TRANSPORT       → "Transfer Booking"
- *   ACTIVITY        → "Booking Trip"
- *   SECURITY_APPROVAL → "Security Approval"
- *   AIRPORT_ASSIST  → "Airport Assist Booking"
+ *
+ * Professional B2B travel-voucher layout:
+ *   • Navy header with the Elbakri wordmark + voucher no./date + type badge
+ *   • "Issued for [Company]" block (company logo embedded when available)
+ *   • Section tables (label / value), with a dedicated section per leg so a
+ *     round-trip shows OUTBOUND + RETURN separately, and an activity package
+ *     shows one block per activity.
+ *   • Arabic / RTL notes render correctly (bundled Tajawal font + auto align).
+ *
+ * Service templates: TRANSPORT, ACTIVITY, ACTIVITY_PACKAGE, SECURITY_APPROVAL,
+ * AIRPORT_ASSIST, SIM_CARD.
  */
 
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
+import { registerPdfFonts, hasArabic } from '../../shared/pdf';
 
-const NAVY  = '#1B2B6B';
-const TEAL  = '#0891B2';
-const GRAY  = '#555555';
-const LIGHT = '#F0F4FF';
+const NAVY = '#16224F';
+const NAVY_SOFT = '#243363';
+const TEAL = '#0E9AA7';
+const INK = '#1A1A2E';
+const GRAY = '#5A6275';
+const LINE = '#E3E7F0';
+const ALT = '#F6F8FC';
+
+const ELBAKRI_NAME = 'ELBAKRI OVERSEAS';
+const ELBAKRI_TAGLINE = 'Travel & Tourism Services';
+const ELBAKRI_CONTACT = process.env.ELBAKRI_VOUCHER_CONTACT
+  ?? 'Cairo, Egypt  •  info@elbakri.com  •  www.elbakri.com';
 
 // ─── Shared types ────────────────────────────────────────────────────────────
 
@@ -29,14 +43,26 @@ export interface TransportVoucherData {
   voucherNumber: string;
   company: VoucherCompany;
   clientName: string;
+  isRoundTrip?: boolean;
   date: Date;
   time: string;
   airlineName?: string | null;
   flightNumber?: string | null;
   fromLocation: string;
   toLocation: string;
+  pickupHotelName?: string | null;
+  dropoffHotelName?: string | null;
   vehicleType: string;
   passengerCount: number;
+  // Return leg (round trip)
+  returnDate?: Date | null;
+  returnTime?: string | null;
+  returnFromLocation?: string | null;
+  returnToLocation?: string | null;
+  returnPickupHotelName?: string | null;
+  returnDropoffHotelName?: string | null;
+  returnAirlineName?: string | null;
+  returnFlightNumber?: string | null;
   notes?: string | null;
 }
 
@@ -51,9 +77,36 @@ export interface ActivityVoucherData {
   adultsCount: number;
   childrenCount: number;
   activityName: string;
+  city?: string | null;
   activityType?: string | null;
   selectedTime?: string | null;
   transferIncluded?: boolean;
+  notes?: string | null;
+}
+
+export interface ActivityPackageItemData {
+  activityName: string;
+  city?: string | null;
+  date: Date;
+  time?: string | null;
+  groupType?: string | null;
+  transferIncluded?: boolean | null;
+  adultsCount?: number;
+  childrenCount?: number;
+  notes?: string | null;
+}
+
+export interface ActivityPackageVoucherData {
+  serviceType: 'ACTIVITY_PACKAGE';
+  voucherNumber: string;
+  company: VoucherCompany;
+  clientName: string;
+  clientPhone?: string | null;
+  hotelName?: string | null;
+  adultsCount: number;
+  childrenCount: number;
+  childAges?: number[] | null;
+  items: ActivityPackageItemData[];
   notes?: string | null;
 }
 
@@ -67,8 +120,10 @@ export interface SecurityApprovalVoucherData {
   passportNumber: string;
   flightNumber?: string | null;
   arrivalTime?: Date | null;
-  originCountry?: string | null;
+  comingFrom?: string | null;
   arrivalDestination: string;
+  hotelName?: string | null;
+  notes?: string | null;
 }
 
 export interface AirportAssistVoucherData {
@@ -81,7 +136,7 @@ export interface AirportAssistVoucherData {
   date: Date;
   flightNumber: string;
   passengerCount: number;
-  origin?: string | null;
+  comingFrom?: string | null;
   notes?: string | null;
 }
 
@@ -102,207 +157,380 @@ export interface SimVoucherData {
 export type VoucherData =
   | TransportVoucherData
   | ActivityVoucherData
+  | ActivityPackageVoucherData
   | SecurityApprovalVoucherData
   | AirportAssistVoucherData
   | SimVoucherData;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmtDate(d: Date) {
+function fmtDate(d?: Date | null): string {
+  if (!d) return '';
   return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
-
-function fmtTime(d: Date) {
+function fmtTime(d?: Date | null): string {
+  if (!d) return '';
   return new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
-
-function vehicleLabel(v: string) {
+function titleCase(v?: string | null): string {
+  if (!v) return '';
   return v.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function serviceTypeLabel(s: string) {
-  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+interface Field { label: string; value: string }
+interface Section { title: string; fields: Field[] }
+
+function row(label: string, value?: string | number | null): Field {
+  return { label, value: value == null ? '' : String(value) };
 }
 
-// ─── PDF builder ─────────────────────────────────────────────────────────────
+// ─── PDF drawing primitives ──────────────────────────────────────────────────
 
-interface Field { label: string; value: string }
+type Doc = InstanceType<typeof PDFDocument>;
 
-function drawVoucherPdf(
-  doc: InstanceType<typeof PDFDocument>,
-  title: string,
-  company: VoucherCompany,
-  voucherNumber: string,
-  fields: Field[],
-) {
+const MARGIN = 48;
+
+function ensureSpace(doc: Doc, needed: number, y: number): number {
+  const bottom = doc.page.height - 78; // keep clear of footer band
+  if (y + needed > bottom) {
+    doc.addPage();
+    return 56;
+  }
+  return y;
+}
+
+function drawHeader(doc: Doc, badge: string, voucherNumber: string): number {
   const pageW = doc.page.width;
-  const MARGIN = 50;
+  doc.rect(0, 0, pageW, 104).fill(NAVY);
+  doc.rect(0, 104, pageW, 4).fill(TEAL);
+
+  // Wordmark
+  doc.fillColor('#FFFFFF').font('body-bold').fontSize(22)
+    .text(ELBAKRI_NAME, MARGIN, 30, { lineBreak: false });
+  doc.fillColor('#AEB8DA').font('body').fontSize(9.5)
+    .text(ELBAKRI_TAGLINE, MARGIN, 60, { lineBreak: false });
+
+  // Right column — badge + ref + date
+  const rightW = 220;
+  const rightX = pageW - MARGIN - rightW;
+  doc.fillColor(TEAL).font('body-bold').fontSize(11)
+    .text(badge.toUpperCase(), rightX, 32, { width: rightW, align: 'right' });
+  doc.fillColor('#FFFFFF').font('body').fontSize(9.5)
+    .text(`Voucher No.  ${voucherNumber}`, rightX, 54, { width: rightW, align: 'right' });
+  doc.fillColor('#AEB8DA').font('body').fontSize(9.5)
+    .text(`Issued  ${fmtDate(new Date())}`, rightX, 70, { width: rightW, align: 'right' });
+
+  return 132;
+}
+
+function tryEmbedLogo(doc: Doc, logoUrl: string | null | undefined, x: number, y: number, size: number): boolean {
+  if (!logoUrl) return false;
+  try {
+    let p = logoUrl;
+    if (/^https?:\/\//i.test(p)) return false; // remote logos not fetched here
+    p = p.replace(/^\//, '');
+    const candidates = [
+      path.join(process.cwd(), p),
+      path.join(process.cwd(), 'public', p),
+      path.join(process.cwd(), 'uploads', path.basename(p)),
+    ];
+    const found = candidates.find((c) => fs.existsSync(c) && /\.(png|jpe?g)$/i.test(c));
+    if (!found) return false;
+    doc.image(found, x, y, { fit: [size, size] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function drawIssuedFor(doc: Doc, company: VoucherCompany, title: string, y: number): number {
+  const pageW = doc.page.width;
   const contentW = pageW - MARGIN * 2;
 
-  // ── Header bar ────────────────────────────────────────────────────────────
-  doc.rect(0, 0, pageW, 90).fill(NAVY);
+  doc.fillColor(GRAY).font('body-medium').fontSize(8.5)
+    .text('ISSUED FOR', MARGIN, y, { characterSpacing: 1 });
+  const logoOk = tryEmbedLogo(doc, company.logoUrl, MARGIN, y + 12, 44);
+  const nameX = logoOk ? MARGIN + 54 : MARGIN;
+  doc.fillColor(NAVY).font('body-bold').fontSize(16)
+    .text(company.name, nameX, y + 13, {
+      width: contentW - (logoOk ? 54 : 0),
+      align: hasArabic(company.name) ? 'right' : 'left',
+      lineBreak: false,
+    });
 
-  // Company name (left)
-  doc.fillColor('#fff').fontSize(20).font('Helvetica-Bold')
-    .text(company.name, MARGIN, 28, { width: contentW * 0.65, lineBreak: false });
+  // Document title (centered)
+  const ty = y + (logoOk ? 46 : 40);
+  doc.fillColor(INK).font('body-bold').fontSize(17)
+    .text(title.toUpperCase(), MARGIN, ty, { width: contentW, align: 'center', characterSpacing: 0.5 });
+  const dy = ty + 26;
+  doc.moveTo(MARGIN, dy).lineTo(pageW - MARGIN, dy).lineWidth(1).strokeColor(TEAL).stroke();
+  return dy + 16;
+}
 
-  // Voucher number (right, subtle)
-  doc.fillColor('rgba(255,255,255,0.7)').fontSize(9).font('Helvetica')
-    .text(`Ref: ${voucherNumber}`, MARGIN, 68, { width: contentW, align: 'right' });
+function drawSection(doc: Doc, section: Section, y: number): number {
+  const pageW = doc.page.width;
+  const contentW = pageW - MARGIN * 2;
+  const fields = section.fields.filter((f) => f.value && f.value.trim() !== '');
+  if (fields.length === 0) return y;
 
-  // Accent strip
-  doc.rect(0, 90, pageW, 4).fill(TEAL);
+  y = ensureSpace(doc, 28 + fields.length * 22, y);
 
-  // ── Title ─────────────────────────────────────────────────────────────────
-  let y = 118;
-  doc.fillColor(NAVY).fontSize(22).font('Helvetica-Bold')
-    .text(title, 0, y, { width: pageW, align: 'center' });
-  y += 38;
+  // Section title bar
+  doc.rect(MARGIN, y, contentW, 22).fill(NAVY_SOFT);
+  doc.fillColor('#FFFFFF').font('body-bold').fontSize(9.5)
+    .text(section.title.toUpperCase(), MARGIN + 10, y + 6, { characterSpacing: 0.6 });
+  y += 22;
 
-  // Thin divider
-  doc.moveTo(MARGIN, y).lineTo(pageW - MARGIN, y).lineWidth(1).strokeColor(TEAL).stroke();
-  y += 16;
-
-  // ── Fields ────────────────────────────────────────────────────────────────
-  const labelW  = 160;
-  const valueW  = contentW - labelW - 12;
-  const rowH    = 26;
-  const altFill = '#F7F9FF';
-
+  const labelW = 168;
+  const valueW = contentW - labelW - 16;
   for (let i = 0; i < fields.length; i++) {
     const { label, value } = fields[i];
-    if (!value) continue;
-    const bg = i % 2 === 0 ? '#FFFFFF' : altFill;
-    const rowFullH = Math.max(rowH, doc.heightOfString(value, { width: valueW }) + 10);
-    doc.rect(MARGIN, y, contentW, rowFullH).fill(bg).stroke('#E8EAF0');
-    doc.fillColor(GRAY).fontSize(9).font('Helvetica-Bold')
-      .text(label, MARGIN + 8, y + 7, { width: labelW - 8 });
-    doc.fillColor('#1A1A2E').fontSize(10).font('Helvetica')
-      .text(value, MARGIN + labelW + 4, y + 7, { width: valueW });
-    y += rowFullH;
+    const ar = hasArabic(value);
+    const valueH = doc.font('body').fontSize(10).heightOfString(value, { width: valueW });
+    const rowH = Math.max(22, valueH + 11);
+    y = ensureSpace(doc, rowH, y);
+    doc.rect(MARGIN, y, contentW, rowH).fill(i % 2 === 0 ? '#FFFFFF' : ALT);
+    doc.rect(MARGIN, y, contentW, rowH).lineWidth(0.5).strokeColor(LINE).stroke();
+    doc.fillColor(GRAY).font('body-medium').fontSize(8.5)
+      .text(label.toUpperCase(), MARGIN + 10, y + 7, { width: labelW - 12, characterSpacing: 0.3 });
+    doc.fillColor(INK).font('body').fontSize(10)
+      .text(value, MARGIN + labelW + 6, y + 6, { width: valueW, align: ar ? 'right' : 'left' });
+    y += rowH;
   }
+  return y + 14;
+}
 
-  y += 20;
+function drawNotes(doc: Doc, notes: string | null | undefined, y: number): number {
+  if (!notes || !notes.trim()) return y;
+  const pageW = doc.page.width;
+  const contentW = pageW - MARGIN * 2;
+  const ar = hasArabic(notes);
+  const innerW = contentW - 24;
+  const textH = doc.font('body').fontSize(10).heightOfString(notes, { width: innerW });
+  const boxH = textH + 34;
+  y = ensureSpace(doc, boxH, y);
+  doc.rect(MARGIN, y, contentW, boxH).fill('#FBFAF3');
+  doc.rect(MARGIN, y, 4, boxH).fill(TEAL);
+  doc.fillColor(GRAY).font('body-medium').fontSize(8.5)
+    .text('NOTES', MARGIN + 14, y + 9, { characterSpacing: 0.6, align: ar ? 'right' : 'left', width: innerW });
+  doc.fillColor(INK).font('body').fontSize(10)
+    .text(notes, MARGIN + 14, y + 22, { width: innerW, align: ar ? 'right' : 'left' });
+  return y + boxH + 14;
+}
 
-  // ── Notes box ─────────────────────────────────────────────────────────────
-  const noteField = fields.find((f) => f.label === 'Notes' && f.value);
-  if (noteField) {
-    // Already rendered in the loop; skip duplicate rendering
+function drawFooter(doc: Doc): void {
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    const pageW = doc.page.width;
+    const fy = doc.page.height - 56;
+    // Drawing text below the bottom margin would trigger auto-pagination, so we
+    // temporarily disable the bottom margin and force single-line text.
+    const savedBottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.rect(0, fy, pageW, 56).fill(NAVY);
+    doc.fillColor('#FFFFFF').font('body-medium').fontSize(8.5)
+      .text(`${ELBAKRI_NAME}  —  ${ELBAKRI_CONTACT}`, MARGIN, fy + 14, { align: 'center', width: pageW - MARGIN * 2, lineBreak: false });
+    doc.fillColor('#9AA6CF').font('body').fontSize(7.5)
+      .text('This voucher confirms the service stated above. It is not an invoice and carries no price. Present it on arrival.',
+        MARGIN, fy + 31, { align: 'center', width: pageW - MARGIN * 2, lineBreak: false });
+    doc.page.margins.bottom = savedBottom;
   }
-
-  // ── Footer ────────────────────────────────────────────────────────────────
-  const footerY = doc.page.height - 55;
-  doc.rect(0, footerY, pageW, 55).fill(NAVY);
-  doc.fillColor('rgba(255,255,255,0.5)').fontSize(8).font('Helvetica')
-    .text('This voucher is issued by Elbakri Overseas and is valid only for the service stated above.', 0, footerY + 12, { align: 'center', width: pageW })
-    .text('For assistance contact your travel agent.', 0, footerY + 28, { align: 'center', width: pageW });
 }
 
-// ─── Per-service builders ─────────────────────────────────────────────────────
+// ─── Per-service section builders ──────────────────────────────────────────────
 
-function buildTransportFields(d: TransportVoucherData): Field[] {
-  return [
-    { label: 'Client Name',   value: d.clientName },
-    { label: 'Date',          value: fmtDate(d.date) },
-    { label: 'Time',          value: d.time || fmtTime(d.date) },
-    { label: 'Airline Name',  value: d.airlineName  ?? '' },
-    { label: 'Flight Number', value: d.flightNumber ?? '' },
-    { label: 'From',          value: d.fromLocation },
-    { label: 'To',            value: d.toLocation },
-    { label: 'Vehicle Type',  value: vehicleLabel(d.vehicleType) },
-    { label: 'No. of Pax',    value: String(d.passengerCount) },
-    { label: 'Notes',         value: d.notes ?? '' },
-  ];
+function transportSections(d: TransportVoucherData): { title: string; sections: Section[] } {
+  const round = !!d.isRoundTrip;
+  const outbound: Section = {
+    title: round ? 'Outbound Journey' : 'Transfer Details',
+    fields: [
+      row('Date', fmtDate(d.date)),
+      row('Time', d.time || fmtTime(d.date)),
+      row('From', d.fromLocation),
+      row('Pickup Hotel', d.pickupHotelName),
+      row('To', d.toLocation),
+      row('Drop-off Hotel', d.dropoffHotelName),
+      row('Airline', d.airlineName),
+      row('Flight Number', d.flightNumber),
+    ],
+  };
+  const general: Section = {
+    title: 'Booking Information',
+    fields: [
+      row('Client Name', d.clientName),
+      row('Trip Type', round ? 'Round Trip' : 'One Way'),
+      row('Vehicle Type', titleCase(d.vehicleType)),
+      row('Passengers', d.passengerCount),
+    ],
+  };
+  const sections: Section[] = [general, outbound];
+  if (round) {
+    sections.push({
+      title: 'Return Journey',
+      fields: [
+        row('Date', fmtDate(d.returnDate)),
+        row('Time', d.returnTime),
+        row('From', d.returnFromLocation),
+        row('Pickup Hotel', d.returnPickupHotelName),
+        row('To', d.returnToLocation),
+        row('Drop-off Hotel', d.returnDropoffHotelName),
+        row('Airline', d.returnAirlineName),
+        row('Flight Number', d.returnFlightNumber),
+      ],
+    });
+  }
+  return { title: round ? 'Transfer Voucher — Round Trip' : 'Transfer Voucher', sections };
 }
 
-function buildActivityFields(d: ActivityVoucherData): Field[] {
-  return [
-    { label: 'Client Name',       value: d.clientName },
-    { label: 'Phone Number',      value: d.clientPhone ?? '' },
-    { label: 'Hotel Name',        value: d.hotelName   ?? '' },
-    { label: 'Date',              value: fmtDate(d.date) },
-    { label: 'No. of Adults',     value: String(d.adultsCount) },
-    { label: 'No. of Children',   value: d.childrenCount > 0 ? String(d.childrenCount) : '' },
-    { label: 'Activity Type',     value: d.activityName + (d.activityType ? ` (${serviceTypeLabel(d.activityType)})` : '') },
-    { label: 'Trip Time',         value: d.selectedTime ?? '' },
-    { label: 'Transfer',          value: d.transferIncluded == null ? '' : d.transferIncluded ? 'Included' : 'Not Included' },
-    { label: 'Notes',             value: d.notes ?? '' },
-  ];
+function activitySections(d: ActivityVoucherData): { title: string; sections: Section[] } {
+  return {
+    title: 'Activity Voucher',
+    sections: [{
+      title: 'Activity Details',
+      fields: [
+        row('Client Name', d.clientName),
+        row('Phone', d.clientPhone),
+        row('Hotel', d.hotelName),
+        row('Activity', d.activityName),
+        row('City / Area', d.city),
+        row('Date', fmtDate(d.date)),
+        row('Time', d.selectedTime),
+        row('Group Type', titleCase(d.activityType)),
+        row('Adults', d.adultsCount),
+        row('Children', d.childrenCount > 0 ? d.childrenCount : ''),
+        row('Transfer', d.transferIncluded == null ? '' : d.transferIncluded ? 'Included' : 'Not included'),
+      ],
+    }],
+  };
 }
 
-function buildSecurityApprovalFields(d: SecurityApprovalVoucherData): Field[] {
-  return [
-    { label: 'Client Name',         value: d.clientName },
-    { label: 'Date',                value: fmtDate(d.date) },
-    { label: 'Nationality',         value: d.nationality },
-    { label: 'Passport Number',     value: d.passportNumber },
-    { label: 'Flight Number',       value: d.flightNumber ?? '' },
-    { label: 'Arrival Time',        value: d.arrivalTime ? fmtTime(d.arrivalTime) : '' },
-    { label: 'Coming From',         value: d.originCountry ?? '' },
-    { label: 'Arrival Destination', value: d.arrivalDestination },
-  ];
+function packageSections(d: ActivityPackageVoucherData): { title: string; sections: Section[] } {
+  const childAges = Array.isArray(d.childAges) && d.childAges.length ? d.childAges.join(', ') : '';
+  const sections: Section[] = [{
+    title: 'Package Details',
+    fields: [
+      row('Client Name', d.clientName),
+      row('Phone', d.clientPhone),
+      row('Hotel', d.hotelName),
+      row('Adults', d.adultsCount),
+      row('Children', d.childrenCount > 0 ? d.childrenCount : ''),
+      row('Child Ages', childAges),
+      row('Activities', d.items.length),
+    ],
+  }];
+  d.items.forEach((it, idx) => {
+    sections.push({
+      title: `Activity ${idx + 1} — ${it.activityName}`,
+      fields: [
+        row('City / Area', it.city),
+        row('Date', fmtDate(it.date)),
+        row('Time', it.time),
+        row('Group Type', titleCase(it.groupType)),
+        row('Adults', it.adultsCount),
+        row('Children', it.childrenCount && it.childrenCount > 0 ? it.childrenCount : ''),
+        row('Transfer', it.transferIncluded == null ? '' : it.transferIncluded ? 'Included' : 'Not included'),
+        row('Notes', it.notes),
+      ],
+    });
+  });
+  return { title: 'Activity Package Voucher', sections };
 }
 
-function buildAirportAssistFields(d: AirportAssistVoucherData): Field[] {
-  return [
-    { label: 'Client Name',    value: d.clientName },
-    { label: 'Phone Number',   value: d.clientPhone ?? '' },
-    { label: 'Service Type',   value: serviceTypeLabel(d.serviceTypeName) },
-    { label: 'Date',           value: fmtDate(d.date) },
-    { label: 'Flight Number',  value: d.flightNumber },
-    { label: 'No. of Pax',    value: String(d.passengerCount) },
-    { label: 'Coming From',    value: d.origin ?? '' },
-    { label: 'Notes',          value: d.notes ?? '' },
-  ];
+function securitySections(d: SecurityApprovalVoucherData): { title: string; sections: Section[] } {
+  return {
+    title: 'Security Approval Voucher',
+    sections: [{
+      title: 'Security Approval Details',
+      fields: [
+        row('Client Name', d.clientName),
+        row('Date', fmtDate(d.date)),
+        row('Nationality', d.nationality),
+        row('Passport Number', d.passportNumber),
+        row('Flight Number', d.flightNumber),
+        row('Arrival Time', d.arrivalTime ? `${fmtDate(d.arrivalTime)}  ${fmtTime(d.arrivalTime)}` : ''),
+        row('Coming From', d.comingFrom),
+        row('Arrival Destination', d.arrivalDestination),
+        row('Hotel', d.hotelName),
+      ],
+    }],
+  };
 }
 
-function buildSimFields(d: SimVoucherData): Field[] {
-  return [
-    { label: 'Client Name',  value: d.clientName },
-    { label: 'Phone Number', value: d.clientPhone ?? '' },
-    { label: 'SIM Package',  value: d.packageName ?? '' },
-    { label: 'Data',         value: d.dataSize ?? '' },
-    { label: 'Validity',     value: d.validity ?? '' },
-    { label: 'Quantity',     value: String(d.quantity) },
-    { label: 'Arrival Date', value: d.arrivalDate ? fmtDate(d.arrivalDate) : '' },
-    { label: 'Notes',        value: d.notes ?? '' },
-  ];
+function airportSections(d: AirportAssistVoucherData): { title: string; sections: Section[] } {
+  return {
+    title: 'Airport Assistant Voucher',
+    sections: [{
+      title: 'Airport Assistance Details',
+      fields: [
+        row('Client Name', d.clientName),
+        row('Phone', d.clientPhone),
+        row('Service Type', titleCase(d.serviceTypeName)),
+        row('Date', fmtDate(d.date)),
+        row('Flight Number', d.flightNumber),
+        row('Passengers', d.passengerCount),
+        row('Coming From', d.comingFrom),
+      ],
+    }],
+  };
+}
+
+function simSections(d: SimVoucherData): { title: string; sections: Section[] } {
+  return {
+    title: 'SIM Card Voucher',
+    sections: [{
+      title: 'SIM Card Details',
+      fields: [
+        row('Client Name', d.clientName),
+        row('Phone', d.clientPhone),
+        row('SIM Package', d.packageName),
+        row('Data', d.dataSize),
+        row('Validity', d.validity),
+        row('Quantity', d.quantity),
+        row('Arrival Date', fmtDate(d.arrivalDate)),
+      ],
+    }],
+  };
+}
+
+function badgeForService(serviceType: string): string {
+  switch (serviceType) {
+    case 'TRANSPORT': return 'Transfer Booking';
+    case 'ACTIVITY': return 'Activity Booking';
+    case 'ACTIVITY_PACKAGE': return 'Activity Package';
+    case 'SECURITY_APPROVAL': return 'Security Approval';
+    case 'AIRPORT_ASSIST': return 'Airport Assistant';
+    case 'SIM_CARD': return 'SIM Card';
+    default: return 'Service Voucher';
+  }
+}
+
+function buildDoc(data: VoucherData): { title: string; sections: Section[]; notes?: string | null } {
+  switch (data.serviceType) {
+    case 'TRANSPORT': { const r = transportSections(data); return { ...r, notes: data.notes }; }
+    case 'ACTIVITY': { const r = activitySections(data); return { ...r, notes: data.notes }; }
+    case 'ACTIVITY_PACKAGE': { const r = packageSections(data); return { ...r, notes: data.notes }; }
+    case 'SECURITY_APPROVAL': { const r = securitySections(data); return { ...r, notes: data.notes }; }
+    case 'AIRPORT_ASSIST': { const r = airportSections(data); return { ...r, notes: data.notes }; }
+    case 'SIM_CARD': { const r = simSections(data); return { ...r, notes: data.notes }; }
+    default: return { title: 'Service Voucher', sections: [] };
+  }
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
-
-function titleForService(serviceType: string): string {
-  switch (serviceType) {
-    case 'TRANSPORT':          return 'Transfer Booking';
-    case 'ACTIVITY':           return 'Booking Trip';
-    case 'SECURITY_APPROVAL':  return 'Security Approval';
-    case 'AIRPORT_ASSIST':     return 'Airport Assist Booking';
-    case 'SIM_CARD':           return 'SIM Card Service';
-    default:                   return 'Service Voucher';
-  }
-}
 
 export async function generateVoucherPdf(
   data: VoucherData,
 ): Promise<{ path: string; buffer: Buffer }> {
   const pdfDir = process.env.PDF_DIR ?? './generated';
   if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
-
   const filePath = path.join(pdfDir, `VCH-${data.voucherNumber}.pdf`);
-  const buffers: Buffer[] = [];
 
-  let fields: Field[];
-  switch (data.serviceType) {
-    case 'TRANSPORT':          fields = buildTransportFields(data);          break;
-    case 'ACTIVITY':           fields = buildActivityFields(data);           break;
-    case 'SECURITY_APPROVAL':  fields = buildSecurityApprovalFields(data);   break;
-    case 'AIRPORT_ASSIST':     fields = buildAirportAssistFields(data);      break;
-    case 'SIM_CARD':           fields = buildSimFields(data);                break;
-    default:                   fields = [];
-  }
+  const { title, sections, notes } = buildDoc(data);
 
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new PDFDocument({ size: 'A4', margin: MARGIN, bufferPages: true });
+    const buffers: Buffer[] = [];
     doc.on('data', (chunk: Buffer) => buffers.push(chunk));
     doc.on('error', reject);
     doc.on('end', () => {
@@ -311,7 +539,13 @@ export async function generateVoucherPdf(
       resolve({ path: filePath, buffer });
     });
 
-    drawVoucherPdf(doc, titleForService(data.serviceType), data.company, data.voucherNumber, fields);
+    registerPdfFonts(doc);
+    let y = drawHeader(doc, badgeForService(data.serviceType), data.voucherNumber);
+    y = drawIssuedFor(doc, data.company, title, y);
+    for (const section of sections) y = drawSection(doc, section, y);
+    drawNotes(doc, notes, y);
+    drawFooter(doc);
+
     doc.end();
   });
 }

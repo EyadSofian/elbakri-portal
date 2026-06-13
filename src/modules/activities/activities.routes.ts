@@ -4,6 +4,10 @@ import {
   listActivities, createActivity, updateActivity, deleteActivity,
   listActivityBookings, createActivityBooking, confirmActivityBooking, cancelActivityBooking,
 } from './activities.controller';
+import {
+  listActivityPackages, getActivityPackage, createActivityPackage,
+  confirmActivityPackage, cancelActivityPackage,
+} from './activity-packages.controller';
 
 const router = Router();
 
@@ -16,5 +20,12 @@ router.get('/activity-bookings', listActivityBookings);
 router.post('/activity-bookings', createActivityBooking);
 router.patch('/activity-bookings/:id/confirm', requireRole('SUPERADMIN'), confirmActivityBooking);
 router.patch('/activity-bookings/:id/cancel', cancelActivityBooking);
+
+// Activity packages (one package = many activities, one voucher)
+router.get('/activity-packages', listActivityPackages);
+router.get('/activity-packages/:id', getActivityPackage);
+router.post('/activity-packages', createActivityPackage);
+router.patch('/activity-packages/:id/confirm', requireRole('SUPERADMIN'), confirmActivityPackage);
+router.patch('/activity-packages/:id/cancel', cancelActivityPackage);
 
 export default router;

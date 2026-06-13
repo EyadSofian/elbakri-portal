@@ -146,11 +146,14 @@ function convertLiveMoney(amount, sourceCurrency = "USD") {
   return { amount: (value / sourceRate) * targetRate, currency: target, converted: true };
 }
 
-/** Market-tier prices are selected server-side, then converted here for catalog display. */
+/**
+ * Sale prices are admin-defined per currency and resolved server-side; they are
+ * shown verbatim in their own currency (NO automatic FX conversion). The live
+ * currency converter remains available separately on the Calculators page.
+ */
 function formatPrice(amount, sourceCurrency = "USD") {
   if (amount == null || amount === "") return "—";
-  const { amount: convertedAmount, currency } = convertLiveMoney(amount, sourceCurrency);
-  return formatMoney(convertedAmount, currency);
+  return formatMoney(Number(amount), sourceCurrency || "USD");
 }
 
 /** Amounts already stored on bookings, invoices and wallets must never be converted twice. */
@@ -1795,27 +1798,31 @@ function renderTransportForm() {
         <div class="form-grid">
           <div class="form-field">
             <label>${t("form.from","From")} <span class="required">*</span></label>
-            <div style="display:flex;gap:8px;margin-bottom:6px">
-              <label class="tr-radio-label"><input type="radio" name="fromType" value="AIRPORT" onchange="trUpdateQuote()" checked> ${icon("plane")} ${t("transport.airport","Airport")}</label>
-              <label class="tr-radio-label"><input type="radio" name="fromType" value="DESTINATION" onchange="trUpdateQuote()"> ${icon("map-pin")} ${t("transport.destination","Destination")}</label>
+            <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+              <label class="tr-radio-label"><input type="radio" name="fromType" value="AIRPORT" onchange="trTypeChanged()" checked> ${icon("plane")} ${t("transport.airport","Airport")}</label>
+              <label class="tr-radio-label"><input type="radio" name="fromType" value="DESTINATION" onchange="trTypeChanged()"> ${icon("map-pin")} ${t("transport.destination","Destination")}</label>
+              <label class="tr-radio-label"><input type="radio" name="fromType" value="HOTEL" onchange="trTypeChanged()"> ${icon("building")} ${t("transport.hotel","Hotel")}</label>
             </div>
             <select id="trFrom" required onchange="trRouteChanged()" ${fromOpts ? "" : 'style="display:none"'}>
               <option value="">${t("transport.selectLocation","Select location...")}</option>
               ${fromOpts}
             </select>
             ${!fromOpts ? `<input id="trFromText" placeholder="${t("form.from","e.g. Cairo Airport, Sharm Hotel")}" oninput="trRouteChanged()">` : ""}
+            <input id="trPickupHotel" style="display:none;margin-top:6px" placeholder="${t("transport.pickupHotelName","Pickup Hotel Name")}">
           </div>
           <div class="form-field">
             <label>${t("form.to","To")} <span class="required">*</span></label>
-            <div style="display:flex;gap:8px;margin-bottom:6px">
-              <label class="tr-radio-label"><input type="radio" name="toType" value="AIRPORT" onchange="trUpdateQuote()"> ${icon("plane")} ${t("transport.airport","Airport")}</label>
-              <label class="tr-radio-label"><input type="radio" name="toType" value="DESTINATION" onchange="trUpdateQuote()" checked> ${icon("map-pin")} ${t("transport.destination","Destination")}</label>
+            <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+              <label class="tr-radio-label"><input type="radio" name="toType" value="AIRPORT" onchange="trTypeChanged()"> ${icon("plane")} ${t("transport.airport","Airport")}</label>
+              <label class="tr-radio-label"><input type="radio" name="toType" value="DESTINATION" onchange="trTypeChanged()" checked> ${icon("map-pin")} ${t("transport.destination","Destination")}</label>
+              <label class="tr-radio-label"><input type="radio" name="toType" value="HOTEL" onchange="trTypeChanged()"> ${icon("building")} ${t("transport.hotel","Hotel")}</label>
             </div>
             <select id="trTo" required onchange="trRouteChanged()" ${toOpts ? "" : 'style="display:none"'}>
               <option value="">${t("transport.selectLocation","Select location...")}</option>
               ${toOpts}
             </select>
             ${!toOpts ? `<input id="trToText" placeholder="${t("form.to","e.g. Sharm El Sheikh Hotel")}" oninput="trRouteChanged()">` : ""}
+            <input id="trDropoffHotel" style="display:none;margin-top:6px" placeholder="${t("transport.dropoffHotelName","Drop-off Hotel Name")}">
           </div>
         </div>
       </div>
@@ -1831,6 +1838,16 @@ function renderTransportForm() {
           <div class="form-field">
             <label>${t("transport.returnTime","Return Time")}</label>
             <input id="trReturnTime" type="time" value="10:00">
+          </div>
+          <div class="form-field">
+            <label>${t("transport.returnFrom","Return From")}</label>
+            <input id="trReturnFrom" placeholder="${t("transport.returnFromPlaceholder","Defaults to drop-off location")}">
+            <input id="trReturnPickupHotel" style="display:none;margin-top:6px" placeholder="${t("transport.returnPickupHotelName","Return Pickup Hotel Name")}">
+          </div>
+          <div class="form-field">
+            <label>${t("transport.returnTo","Return To")}</label>
+            <input id="trReturnTo" placeholder="${t("transport.returnToPlaceholder","Defaults to pickup location")}">
+            <input id="trReturnDropoffHotel" style="display:none;margin-top:6px" placeholder="${t("transport.returnDropoffHotelName","Return Drop-off Hotel Name")}">
           </div>
           <div class="form-field">
             <label>${t("transport.returnAirline","Return Airline")}</label>
@@ -1957,6 +1974,21 @@ function setTripType(type) {
   document.getElementById("trRoundBtn").classList.toggle("active", type === "ROUND_TRIP");
   const returnSec = document.getElementById("trReturnSection");
   if (returnSec) returnSec.style.display = type === "ROUND_TRIP" ? "" : "none";
+  trTypeChanged();
+}
+
+/** Show/hide the hotel-name inputs based on the From/To type, then re-quote. */
+function trTypeChanged() {
+  const fromType = document.querySelector('input[name="fromType"]:checked')?.value;
+  const toType   = document.querySelector('input[name="toType"]:checked')?.value;
+  const isRound  = document.getElementById("trTripType")?.value === "ROUND_TRIP";
+  const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? "" : "none"; };
+  show("trPickupHotel", fromType === "HOTEL");
+  show("trDropoffHotel", toType === "HOTEL");
+  // On a round trip the return swaps the legs, so the return pickup hotel maps
+  // to the outbound drop-off hotel and vice-versa.
+  show("trReturnPickupHotel", isRound && toType === "HOTEL");
+  show("trReturnDropoffHotel", isRound && fromType === "HOTEL");
   trUpdateQuote();
 }
 
@@ -2147,10 +2179,25 @@ async function trConfirmBooking() {
   const fromType    = document.querySelector('input[name="fromType"]:checked')?.value || "AIRPORT";
   const toType      = document.querySelector('input[name="toType"]:checked')?.value || "DESTINATION";
   const groupTypeId = document.querySelector('input[name="trGroupType"]:checked')?.value || undefined;
+  const pickupHotel  = document.getElementById("trPickupHotel")?.value.trim();
+  const dropoffHotel = document.getElementById("trDropoffHotel")?.value.trim();
+  const retFrom      = document.getElementById("trReturnFrom")?.value.trim();
+  const retTo        = document.getElementById("trReturnTo")?.value.trim();
+  const retPickupHotel  = document.getElementById("trReturnPickupHotel")?.value.trim();
+  const retDropoffHotel = document.getElementById("trReturnDropoffHotel")?.value.trim();
 
   if (!from || !to || !date || !paxName || !contact || !vehicle || (isRoundTrip && !retDate)) {
     toast(t("transport.requiredFields","Please fill all required fields: route, date, lead name, contact, vehicle"), "error");
     return;
+  }
+  // Required hotel-name validation (matches server-side rules)
+  if (fromType === "HOTEL" && !pickupHotel) {
+    toast(t("transport.pickupHotelRequired","Pickup hotel name is required"), "error");
+    document.getElementById("trPickupHotel")?.focus(); return;
+  }
+  if (toType === "HOTEL" && !dropoffHotel) {
+    toast(t("transport.dropoffHotelRequired","Drop-off hotel name is required"), "error");
+    document.getElementById("trDropoffHotel")?.focus(); return;
   }
 
   const pickupDateTime = `${date}T${time}:00`;
@@ -2161,9 +2208,17 @@ async function trConfirmBooking() {
     vehicleType: vehicle,
     fromLocation: from, toLocation: to,
     fromType, toType,
+    pickupHotelName: pickupHotel || undefined,
+    dropoffHotelName: dropoffHotel || undefined,
     pickupDateTime,
     returnDateTime,
     isRoundTrip,
+    returnFromLocation: isRoundTrip ? (retFrom || to) : undefined,
+    returnToLocation: isRoundTrip ? (retTo || from) : undefined,
+    returnFromType: isRoundTrip ? toType : undefined,
+    returnToType: isRoundTrip ? fromType : undefined,
+    returnPickupHotelName: isRoundTrip ? (retPickupHotel || dropoffHotel || undefined) : undefined,
+    returnDropoffHotelName: isRoundTrip ? (retDropoffHotel || pickupHotel || undefined) : undefined,
     passengerCount: pax,
     groupTypeId,
     passengerName: paxName,
@@ -2338,6 +2393,7 @@ async function renderActivityPackagePicker() {
   state.activityPackageSource = activities;
   content(pageHeader(`
     <button class="btn btn-outline" onclick="renderActivities()">${icon("arrow-left")}${t("btn.back","Back")}</button>
+    <button class="btn btn-outline" onclick="renderActivityPackageHistory()">${icon("list")}${t("activity.myPackages","My Packages")}</button>
     <button class="btn btn-primary" onclick="submitActivityPackage()" ${state.activityPackageCart.length ? "" : "disabled"}>${icon("send")}${t("activity.submitPackage","Submit Package")}</button>
   `) + `
     <div class="workbench">
@@ -2365,6 +2421,32 @@ async function renderActivityPackagePicker() {
         </div>
       </section>
     </div>`);
+  refreshIcons(document.getElementById("content"));
+}
+
+async function renderActivityPackageHistory() {
+  state.page = "activities";
+  const capturedToken = state.renderToken;
+  const res = await apiFetch("/activity-packages?limit=100");
+  if (state.renderToken !== capturedToken) return;
+  const rows = res?.data || [];
+  content(pageHeader(`
+    <button class="btn btn-outline" onclick="renderActivities('package')">${icon("arrow-left")}${t("btn.back","Back")}</button>
+  `) + `
+    <section class="table-card">
+      <div class="table-toolbar"><div><strong>${t("activity.myPackages","My Packages")}</strong><div class="secondary-text">${t("activity.myPackagesHelp","Each package groups several activities under one reference.")}</div></div></div>
+      ${simpleDataTable([
+        ["th.ref", p => `<span class="primary-text">${escapeHtml(p.refNumber)}</span>`],
+        ["activity.activities", p => `${formatNumber((p.items||[]).length)} · <span class="secondary-text">${escapeHtml((p.items||[]).map(i=>i.activityName).slice(0,2).join(", "))}${(p.items||[]).length>2?"…":""}</span>`],
+        ["th.client", p => escapeHtml(p.clientName || "—")],
+        ["th.amount", p => `<span class="numeric">${formatStoredMoney(p.totalAmount, p.currency)}</span>`],
+        ["th.status", p => statusBadge(p.status)],
+        ["th.actions", p => `<div style="display:flex;gap:4px;flex-wrap:wrap">
+          ${p.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${p.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : ""}
+          ${p.voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${p.voucher.id}')">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
+        </div>`],
+      ], rows)}
+    </section>`);
   refreshIcons(document.getElementById("content"));
 }
 
@@ -2415,6 +2497,7 @@ async function openPackageActivityForm(activityId) {
       <div class="form-field"><label>${t("form.children","Children")}</label><input id="pkgChildren" type="number" min="0" value="0" oninput="pkgUpdateTotal(${Number(activity.priceAdult)||0},${Number(activity.priceChild)||0},'${escapeHtml(activity.currency || "USD")}');pkgUpdateChildAges()"></div>
       <div class="form-field full" id="pkgChildAgesBox" style="display:none"></div>
       <div class="form-field full"><label>${t("activity.actType","Service Type")}</label><div id="pkgGroupTypes" class="service-type-grid">${activityGroupTypeOptions(groupTypes)}</div></div>
+      <div class="form-field"><label class="tr-radio-label" style="cursor:pointer"><input type="checkbox" id="pkgTransfer"> ${t("activity.transferIncluded","Transport included")}</label></div>
       <div class="form-field full"><label>${t("form.notes","Notes")}</label><textarea id="pkgNotes" rows="2"></textarea></div>
     </div>
     <div class="tr-price-card" style="margin-top:12px">
@@ -2476,7 +2559,9 @@ function addPackageActivity(activityId) {
     clientName,
     clientPhone,
     hotelName: document.getElementById("pkgHotelName")?.value.trim() || undefined,
+    transferIncluded: document.getElementById("pkgTransfer")?.checked || false,
     notes: document.getElementById("pkgNotes")?.value.trim() || undefined,
+    city: activity.city || undefined,
     totalPreview: adultsCount * (Number(activity.priceAdult) || 0) + childrenCount * (Number(activity.priceChild || activity.priceAdult) || 0),
     currency: activity.currency || "USD",
   });
@@ -2487,54 +2572,62 @@ function addPackageActivity(activityId) {
 async function submitActivityPackage() {
   const cart = state.activityPackageCart || [];
   if (!cart.length) return toast(t("activity.packageEmpty","No trips added yet"), "error");
-  const packageRef = `PKG-${new Date().toISOString().slice(2,10).replace(/-/g,"")}-${String(Date.now()).slice(-5)}`;
-  const createdBookings = [];
-  for (const item of cart) {
-    const res = await apiFetch("/activity-bookings", { method: "POST", body: JSON.stringify({
-      activityId: item.activityId,
-      activityDate: item.activityDate,
-      selectedTime: item.selectedTime || undefined,
-      groupTypeId: item.groupTypeId,
-      adultsCount: item.adultsCount,
-      childrenCount: item.childrenCount,
-      childAges: item.childAges && item.childAges.length ? item.childAges : undefined,
-      clientName: item.clientName,
-      clientPhone: item.clientPhone,
-      hotelName: item.hotelName,
-      notes: [`Package ${packageRef}`, item.notes].filter(Boolean).join(" | "),
-    })});
-    if (!res?.success) {
-      // Drop the trips already created from the cart; surface what succeeded.
-      state.activityPackageCart = cart.slice(createdBookings.length);
-      renderActivityPackagePicker();
-      if (createdBookings.length) packageSuccessModal(packageRef, createdBookings, true);
-      else toast(t("activity.packagePartial","Package stopped because one trip failed."), "error");
-      return;
-    }
-    createdBookings.push(res.data);
+  const first = cart[0];
+  const btn = document.querySelector('[onclick="submitActivityPackage()"]');
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("btn.saving","Saving...")}`; }
+
+  // ONE package record with line items (server creates one PKG ref + one voucher).
+  const res = await apiFetch("/activity-packages", { method: "POST", body: JSON.stringify({
+    clientName: first.clientName,
+    clientPhone: first.clientPhone,
+    hotelName: first.hotelName,
+    adultsCount: Math.max(...cart.map(i => i.adultsCount || 1)),
+    childrenCount: Math.max(0, ...cart.map(i => i.childrenCount || 0)),
+    notes: state.activityPackageNotes || undefined,
+    items: cart.map(i => ({
+      activityId: i.activityId,
+      activityDate: i.activityDate,
+      selectedTime: i.selectedTime || undefined,
+      groupTypeId: i.groupTypeId,
+      adultsCount: i.adultsCount,
+      childrenCount: i.childrenCount,
+      childAges: i.childAges && i.childAges.length ? i.childAges : undefined,
+      hotelName: i.hotelName,
+      clientPhone: i.clientPhone,
+      transferIncluded: i.transferIncluded,
+      notes: i.notes,
+    })),
+  })});
+
+  if (!res?.success) {
+    // apiFetch already surfaced the message (e.g. TIME_CONFLICT). Keep the cart.
+    if (btn) { btn.disabled = false; btn.innerHTML = `${icon("send")}${t("activity.submitPackage","Submit Package")}`; refreshIcons(btn.parentElement); }
+    return;
   }
   state.activityPackageCart = [];
+  state.activityPackageNotes = "";
   renderActivities();
-  packageSuccessModal(packageRef, createdBookings, false);
+  packageSuccessModal(res.data);
 }
 
-// Success modal listing every booking created by the package, each with its own
-// Download Voucher button, plus a shortcut to the company Invoices page.
-function packageSuccessModal(packageRef, bookings, partial) {
+// Success modal for the single package created (one ref + one combined voucher).
+function packageSuccessModal(pkg) {
+  const items = pkg?.items || [];
   openModal(`✅ ${t("activity.packageSubmitted","Package submitted")}`, `
     <div style="text-align:center;padding:6px 0 12px">
       <div style="font-size:38px;line-height:1">🎫</div>
-      <div class="primary-text" style="font-size:18px;margin-top:4px">${escapeHtml(packageRef)}</div>
-      <div class="secondary-text">${formatNumber(bookings.length)} ${t("nav.bookings","Bookings")}</div>
-      ${partial ? `<div class="secondary-text" style="margin-top:6px">⚠️ ${t("activity.packagePartial","Package stopped because one trip failed.")}</div>` : ""}
+      <div class="primary-text" style="font-size:18px;margin-top:4px">${escapeHtml(pkg?.refNumber || "")}</div>
+      <div class="secondary-text">${formatNumber(items.length)} ${t("activity.activities","activities")}</div>
+      <div style="margin-top:6px">${statusBadge(pkg?.status || "PENDING")}</div>
     </div>
     <div style="display:grid;gap:8px">
-      ${bookings.map(b => `<div class="info-item" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:var(--r-8)">
-        <span><span class="primary-text">${escapeHtml(b.refNumber)}</span><div class="secondary-text">${escapeHtml(b.activity?.name || "")}</div></span>
-        ${voucherButton(b.voucher)}
+      ${items.map(it => `<div class="info-item" style="padding:10px;border:1px solid var(--border);border-radius:var(--r-8)">
+        <span class="primary-text">${escapeHtml(it.activityName || it.activity?.name || "")}</span>
+        <div class="secondary-text">${escapeHtml(it.city || it.activity?.city || "")}${it.activityDate ? " · " + formatDate(it.activityDate) : ""}${it.selectedTime ? " · " + escapeHtml(it.selectedTime) : ""}</div>
       </div>`).join("")}
     </div>`, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.close","Close")}</button>
+    ${pkg?.voucher?.id ? `<button class="btn btn-teal" onclick="downloadVoucherPdf('${pkg.voucher.id}')">${icon("ticket")}&nbsp;${t("btn.downloadVoucher","Download Voucher")}</button>` : ""}
     <button class="btn btn-primary" onclick="closeModal();setPage('invoices')">${icon("receipt-text")}&nbsp;${t("nav.invoices","Invoices")}</button>`);
 }
 
@@ -3151,8 +3244,8 @@ async function openSimRequestForm(packages, preselect) {
         <input id="simName" placeholder="Full name"></div>
       <div class="form-field"><label>${t("simCard.phone","Client Phone")} *</label>
         <input id="simPhone" type="tel" placeholder="+20..."></div>
-      <div class="form-field"><label>${t("simCard.quantity","Quantity")}</label>
-        <input id="simQty" type="number" min="1" value="1" oninput="updateSimTotal()"></div>
+      <div class="form-field"><label>${t("simCard.quantity","Quantity")} *</label>
+        <input id="simQty" type="number" min="1" value="1"></div>
       <div class="form-field"><label>${t("simCard.arrivalDate","Arrival Date")}</label>
         <input id="simArrival" type="date"></div>
       <div class="form-field full"><label>${t("form.notes","Notes")}</label>
@@ -3167,6 +3260,7 @@ async function openSimRequestForm(packages, preselect) {
     <button class="btn btn-primary" id="submitSimBtn">${icon("send")}&nbsp;${t("btn.sendRequest","Send Request")}</button>`);
 
   document.getElementById("simPkg").addEventListener("change", updateSimTotal);
+  document.getElementById("simQty").addEventListener("input", updateSimTotal);
   updateSimTotal();
 
   function updateSimTotal() {
@@ -3174,9 +3268,10 @@ async function openSimRequestForm(packages, preselect) {
     const opt = sel?.options[sel.selectedIndex];
     const price = parseFloat(opt?.dataset?.price || "0");
     const cur = opt?.dataset?.cur || "USD";
-    const qty = parseInt(document.getElementById("simQty")?.value || "1");
+    const qty = Math.max(1, parseInt(document.getElementById("simQty")?.value || "1") || 1);
     const el = document.getElementById("simTotal");
-    if (el) el.textContent = price > 0 ? formatPrice(price * qty, cur) : "—";
+    // total = unit price × quantity (server re-validates authoritatively)
+    if (el) el.textContent = price > 0 ? `${formatPrice(price * qty, cur)}  (${qty} × ${formatPrice(price, cur)})` : "—";
   }
 
   document.getElementById("submitSimBtn").onclick = async () => {
@@ -3320,6 +3415,11 @@ function renderInvoices() {
         <div><strong>${t("nav.invoices","Invoices")}</strong><div class="secondary-text">${t("invoice.individualHelp","Individual booking invoices")}</div></div>
         <div class="toolbar-actions"><button class="btn btn-outline" onclick="renderInvoices()">${icon("refresh-cw")}${t("btn.refresh")}</button></div>
       </div>
+      <div id="invBulkBar" class="bulk-toolbar" style="display:none;align-items:center;gap:12px;padding:10px 16px;background:var(--surface-muted);border-bottom:1px solid var(--border)">
+        <span id="invBulkCount" class="secondary-text"></span>
+        <button class="btn btn-primary btn-sm" id="invBulkBtn" onclick="invBulkDownloadPdf()">${icon("file-down")}&nbsp;${t("invoice.downloadSelected","Download selected as PDF")}</button>
+        <button class="btn btn-outline btn-sm" onclick="invClearSelection()">${t("btn.clear","Clear")}</button>
+      </div>
       <div id="companyInvoiceList"></div>
     </section>
     <section class="table-card" style="margin-top:16px">
@@ -3331,6 +3431,54 @@ function renderInvoices() {
   renderCompanyInvoiceLists();
 }
 
+const _invoiceRowRef = (i) => i.booking?.refNumber || i.activityBooking?.refNumber || i.transportBooking?.refNumber || i.airportReception?.refNumber || i.cruiseBooking?.refNumber || i.visaApplication?.refNumber || i.simRequest?.refNumber || i.activityPackage?.refNumber || "—";
+
+function invBulkSync() {
+  const checked = document.querySelectorAll(".inv-check:checked");
+  const bar = document.getElementById("invBulkBar");
+  const cnt = document.getElementById("invBulkCount");
+  const btn = document.getElementById("invBulkBtn");
+  if (bar) bar.style.display = checked.length ? "flex" : "none";
+  if (cnt) cnt.textContent = `${checked.length} ${t("invoice.selected","selected")}`;
+  if (btn) btn.disabled = checked.length === 0;
+}
+function invToggleAll(cb) {
+  document.querySelectorAll(".inv-check").forEach(c => { c.checked = cb.checked; });
+  invBulkSync();
+}
+function invClearSelection() {
+  document.querySelectorAll(".inv-check").forEach(c => { c.checked = false; });
+  const all = document.getElementById("invSelectAll"); if (all) all.checked = false;
+  invBulkSync();
+}
+async function invBulkDownloadPdf() {
+  const ids = Array.from(document.querySelectorAll(".inv-check:checked")).map(c => c.value);
+  if (!ids.length) return;
+  const btn = document.getElementById("invBulkBtn");
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("btn.saving","Preparing...")}`; }
+  try {
+    const token = localStorage.getItem("accessToken");
+    const res = await fetch("/api/invoices/bulk-pdf", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ invoiceIds: ids }),
+    });
+    if (!res.ok) throw new Error("bulk pdf failed");
+    const blob = await res.blob();
+    const disp = res.headers.get("Content-Disposition") || "";
+    const name = (disp.match(/filename="?([^"]+)"?/) || [])[1] || "ELBAKRI-INVOICES.pdf";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast(t("invoice.downloaded","Combined invoice PDF downloaded"), "success");
+  } catch (e) {
+    toast(t("toast.error","Download failed"), "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = `${icon("file-down")}&nbsp;${t("invoice.downloadSelected","Download selected as PDF")}`; refreshIcons(btn.parentElement); }
+  }
+}
+
 async function renderCompanyInvoiceLists() {
   const [invoiceRes, consolidatedRes] = await Promise.all([
     apiFetch("/invoices?limit=100"),
@@ -3340,20 +3488,32 @@ async function renderCompanyInvoiceLists() {
   const consolidatedRows = consolidatedRes?.data || [];
   const invoiceHost = document.getElementById("companyInvoiceList");
   const consolidatedHost = document.getElementById("companyConsolidatedList");
-  if (invoiceHost) invoiceHost.innerHTML = simpleDataTable([
-    ["th.invoice", i => `<span class="primary-text">${escapeHtml(i.invoiceNumber)}</span>`],
-    ["th.ref", i => escapeHtml(i.booking?.refNumber || i.activityBooking?.refNumber || i.transportBooking?.refNumber || i.airportReception?.refNumber || i.cruiseBooking?.refNumber || i.visaApplication?.refNumber || i.simRequest?.refNumber || "—")],
-    ["th.amount", i => `<span class="numeric">${formatStoredMoney(i.total, i.currency)}</span>`],
-    ["th.status", i => statusBadge(i.status)],
-    ["th.dueDate", i => formatDate(i.dueDate)],
-    ["th.actions", i => {
-      const voucher = i.activityBooking?.voucher || i.transportBooking?.voucher || i.airportReception?.voucher || i.visaApplication?.voucher || i.simRequest?.voucher;
-      return `<div style="display:flex;gap:4px;flex-wrap:wrap">
-        <button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>
-        ${voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
-      </div>`;
-    }],
-  ], invoiceRows);
+  if (invoiceHost) {
+    invoiceHost.innerHTML = `<div class="table-scroll"><table class="data-table">
+      <thead><tr>
+        <th style="width:34px"><input type="checkbox" id="invSelectAll" onchange="invToggleAll(this)" title="${t("invoice.selectAll","Select all")}"></th>
+        <th>${t("th.invoice","Invoice")}</th><th>${t("th.ref","Ref")}</th><th>${t("th.amount","Amount")}</th>
+        <th>${t("th.status","Status")}</th><th>${t("th.dueDate","Due Date")}</th><th>${t("th.actions","Actions")}</th>
+      </tr></thead>
+      <tbody>${invoiceRows.length ? invoiceRows.map(i => {
+        const voucher = i.activityBooking?.voucher || i.transportBooking?.voucher || i.airportReception?.voucher || i.visaApplication?.voucher || i.simRequest?.voucher || i.activityPackage?.voucher;
+        return `<tr>
+          <td><input type="checkbox" class="inv-check" value="${i.id}" onchange="invBulkSync()"></td>
+          <td><span class="primary-text">${escapeHtml(i.invoiceNumber)}</span></td>
+          <td>${escapeHtml(_invoiceRowRef(i))}</td>
+          <td><span class="numeric">${formatStoredMoney(i.total, i.currency)}</span></td>
+          <td>${statusBadge(i.status)}</td>
+          <td>${formatDate(i.dueDate)}</td>
+          <td><div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${i.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>
+            ${voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${voucher.id}')" title="${t("btn.downloadVoucher","Download Voucher")}">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
+          </div></td>
+        </tr>`;
+      }).join("") : `<tr><td colspan="7">${emptyBlock("empty.noData")}</td></tr>`}</tbody>
+    </table></div>`;
+    refreshIcons(invoiceHost);
+    invBulkSync();
+  }
   if (consolidatedHost) consolidatedHost.innerHTML = simpleDataTable([
     ["th.invoice", row => `<span class="primary-text">${escapeHtml(row.statementNumber)}</span><div class="secondary-text">${formatNumber(row._count?.lines || 0)} ${t("invoice.items","items")}</div>`],
     ["th.period", row => `${row.periodFrom ? formatDate(row.periodFrom) : "—"} → ${row.periodTo ? formatDate(row.periodTo) : "—"}`],

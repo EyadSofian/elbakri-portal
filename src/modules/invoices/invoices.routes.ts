@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   listInvoices,
   downloadPdf,
+  bulkPdf,
   markPaid,
 } from './invoices.controller';
 import {
@@ -16,6 +17,7 @@ import { requireRole } from '../../middleware/role';
 const router = Router();
 
 router.get('/', listInvoices);
+router.post('/bulk-pdf', bulkPdf);
 router.get('/consolidated', listConsolidatedInvoices);
 router.get('/consolidated/eligible', requireRole('SUPERADMIN'), listEligibleConsolidatedInvoices);
 router.post('/consolidated', requireRole('SUPERADMIN'), createConsolidatedInvoice);

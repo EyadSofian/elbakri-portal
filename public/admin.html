@@ -1118,8 +1118,9 @@ async function showMasterModal(entity, id = "") {
   const mpData = {};
   if (cfg.marketPrices && id) {
     for (const mp of cfg.marketPrices) {
-      const res = await apiFetch(`/admin/market-prices?entityType=${mp.entityType}&entityId=${encodeURIComponent(id)}`).catch(() => null);
-      mpData[mp.entityType] = res?.data || {};
+      const res = await apiFetch(`/admin/price-rows?entityType=${mp.entityType}&entityId=${encodeURIComponent(id)}`).catch(() => null);
+      const eg = (res?.data || []).find(r => r.market === "EGYPTIAN" && !r.companyId);
+      mpData[mp.entityType] = eg ? { amount: Number(eg.amount ?? eg.priceUsd ?? ""), currency: eg.currency || "EGP" } : {};
     }
   }
 
@@ -1134,18 +1135,22 @@ async function showMasterModal(entity, id = "") {
 }
 
 /** Egyptian explicit price input. International customers use the base price. */
+const PRICE_CURRENCIES = ["EGP", "USD", "SAR", "AED", "EUR", "GBP"];
 function marketPriceSection(entity, cfg, mpData, id) {
   const safe = entity.replace(/[^a-z0-9]/gi, "_");
   const note = id
-    ? t("market.pricingHelp", "The price field above is the international/default price. Set an Egyptian price here (USD base); leave blank to use the default.")
+    ? t("market.pricingHelp", "The price field above is the international/default price. Set the Egyptian-market price in its own currency (e.g. EGP) — it is shown to Egyptian companies exactly as entered, with no conversion. Leave blank to use the default.")
     : t("market.pricingHelpNew", "Save first, then re-open this record to set an Egyptian market price.");
   const rows = (mpData ? cfg.marketPrices : []).map(mp => {
-    const eg = mpData[mp.entityType]?.EGYPTIAN ?? "";
+    const data = mpData[mp.entityType] || {};
+    const amount = data.amount ?? "";
+    const cur = data.currency || "EGP";
     return `<div class="form-grid">
-      <div class="form-field"><label>${escapeHtml(mp.label)} — ${t("market.EGYPTIAN", "Egyptian")} (USD)</label><input id="mp_${safe}_${mp.entityType}_EGYPTIAN" type="number" step="0.01" min="0" value="${escapeHtml(eg)}" ${id ? "" : "disabled"}></div>
+      <div class="form-field"><label>${escapeHtml(mp.label)} — ${t("market.EGYPTIAN", "Egyptian")} ${t("form.price","Price")}</label><input id="mp_${safe}_${mp.entityType}_amount" type="number" step="0.01" min="0" value="${escapeHtml(amount)}" ${id ? "" : "disabled"}></div>
+      <div class="form-field"><label>${t("form.currency","Currency")}</label><select id="mp_${safe}_${mp.entityType}_cur" ${id ? "" : "disabled"}>${PRICE_CURRENCIES.map(c => `<option value="${c}" ${c === cur ? "selected" : ""}>${c}</option>`).join("")}</select></div>
     </div>`;
   }).join("");
-  return `<div class="form-section"><div class="form-section-title">${t("market.pricingTitle", "Market Pricing (USD)")}</div>
+  return `<div class="form-section"><div class="form-section-title">${t("market.pricingTitle", "Egyptian Market Price")}</div>
     <div class="secondary-text" style="margin-bottom:8px">${note}</div>
     ${rows}</div>`;
 }
@@ -1187,10 +1192,11 @@ async function saveMasterRecord(entity, id = "") {
     if (cfg.marketPrices && savedId) {
       const safe = entity.replace(/[^a-z0-9]/gi, "_");
       for (const mp of cfg.marketPrices) {
-        const egEl = document.getElementById(`mp_${safe}_${mp.entityType}_EGYPTIAN`);
-        if (!egEl || egEl.disabled) continue;
+        const amtEl = document.getElementById(`mp_${safe}_${mp.entityType}_amount`);
+        const curEl = document.getElementById(`mp_${safe}_${mp.entityType}_cur`);
+        if (!amtEl || amtEl.disabled) continue;
         const prices = {
-          EGYPTIAN: egEl && egEl.value !== "" ? Number(egEl.value) : null,
+          EGYPTIAN: amtEl.value !== "" ? { amount: Number(amtEl.value), currency: curEl?.value || "EGP" } : null,
         };
         await apiFetch("/admin/market-prices", {
           method: "PUT",
@@ -2631,6 +2637,7 @@ async function renderActivities() {
     <div style="display:flex;gap:10px;margin-bottom:16px">
       <button class="btn btn-primary" id="actTabCatalog" onclick="actShowTab('catalog')">${icon("list")}&nbsp;Activity Catalog</button>
       <button class="btn btn-outline" id="actTabBookings" onclick="actShowTab('bookings')">${icon("calendar-check")}&nbsp;Bookings</button>
+      <button class="btn btn-outline" id="actTabPackages" onclick="actShowTab('packages')">${icon("shopping-cart")}&nbsp;Packages</button>
       <button class="btn btn-outline" id="actTabTypes" onclick="actShowTab('types')">${icon("users")}&nbsp;Service Types</button>
     </div>
     <div id="actCatalogSection">
@@ -2647,6 +2654,14 @@ async function renderActivities() {
         <div class="table-scroll"><table class="data-table"><thead><tr>
           <th>Ref</th><th>Activity</th><th>Client</th><th>Date / Time</th><th>Pax</th><th>Type</th><th>Hotel</th><th>Total</th><th>Status</th><th>Actions</th>
         </tr></thead><tbody id="actBookingsTbody">${skeletonRows(10, 8)}</tbody></table></div>
+      </section>
+    </div>
+    <div id="actPackagesSection" style="display:none">
+      <section class="table-card">
+        <div class="table-toolbar"><div><strong>Activity Packages</strong><div class="secondary-text" id="actPackagesMeta">Loading…</div></div><div class="toolbar-actions"><button class="btn btn-outline" onclick="loadAdminActivityPackages()">${icon("refresh-cw")}${t("btn.refresh")}</button></div></div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>Ref</th><th>Client</th><th>Activities</th><th>Pax</th><th>Total</th><th>Status</th><th>Actions</th>
+        </tr></thead><tbody id="actPackagesTbody">${skeletonRows(8, 7)}</tbody></table></div>
       </section>
     </div>
     <div id="actTypesSection" style="display:none">
@@ -2689,7 +2704,7 @@ async function renderActivities() {
 }
 
 function actShowTab(tab) {
-  ["catalog", "bookings", "types"].forEach(name => {
+  ["catalog", "bookings", "packages", "types"].forEach(name => {
     const title = name[0].toUpperCase() + name.slice(1);
     const section = document.getElementById(`act${title}Section`);
     const button = document.getElementById(`actTab${title}`);
@@ -2697,7 +2712,44 @@ function actShowTab(tab) {
     if (button) button.className = name === tab ? "btn btn-primary" : "btn btn-outline";
   });
   if (tab === "bookings") loadAdminActivityBookings();
+  if (tab === "packages") loadAdminActivityPackages();
   if (tab === "types") loadAdminGroupTypes("ACTIVITY");
+}
+
+async function loadAdminActivityPackages() {
+  const res = await apiFetch("/activity-packages?limit=100");
+  const packages = res?.data || [];
+  const tbody = document.getElementById("actPackagesTbody");
+  const meta  = document.getElementById("actPackagesMeta");
+  if (meta) meta.textContent = `${formatNumber(packages.length)} packages`;
+  if (!tbody) return;
+  tbody.innerHTML = packages.length ? packages.map(p => `<tr>
+    <td class="primary-text">${escapeHtml(p.refNumber)}<div class="secondary-text">${escapeHtml(p.company?.name||"")}</div></td>
+    <td>${p.clientName ? `<strong>${escapeHtml(p.clientName)}</strong><br>` : ""}${escapeHtml(p.clientPhone||"—")}${p.hotelName ? `<div class="secondary-text">${escapeHtml(p.hotelName)}</div>` : ""}</td>
+    <td>${(p.items||[]).map(it => `<div style="font-size:11px">• ${escapeHtml(it.activityName||it.activity?.name||"")} <span style="color:var(--text-muted)">${formatDate(it.activityDate)}${it.selectedTime?" "+escapeHtml(it.selectedTime):""}</span></div>`).join("") || "—"}</td>
+    <td>${p.adultsCount} + ${p.childrenCount}c</td>
+    <td class="numeric">${formatMoney(p.totalAmount, p.currency)}</td>
+    <td>${statusBadge(p.status)}${p.confirmedAt ? `<div class="secondary-text">${icon("check")}&nbsp;${formatDate(p.confirmedAt)}</div>` : ""}</td>
+    <td style="display:flex;gap:4px;flex-wrap:wrap">
+      ${p.status === "PENDING" ? `<button class="btn btn-success btn-sm" title="Confirm" onclick="adminConfirmPackage('${p.id}')">${icon("check")}</button>` : ""}
+      ${["PENDING","CONFIRMED"].includes(p.status) ? `<button class="btn btn-danger btn-sm" title="Reject / Cancel" onclick="adminRejectPackage('${p.id}')">${icon("x")}</button>` : ""}
+      ${p.invoice?.id ? `<button class="btn btn-outline btn-sm" title="Download Invoice" onclick="downloadInvoicePdf('${p.invoice.id}')">${icon("file-down")}</button>` : ""}
+      ${p.voucher?.id ? `<button class="btn btn-teal btn-sm" title="Download Voucher" onclick="downloadVoucherPdf('${p.voucher.id}')">${icon("ticket")}</button>` : ""}
+      ${p.voucher?.id ? `<button class="btn btn-outline btn-sm" title="Regenerate Voucher" onclick="regenerateVoucher('${p.voucher.id}')">${icon("refresh-cw")}</button>` : ""}
+    </td>
+  </tr>`).join("") : `<tr><td colspan="7">${emptyBlock("empty.noData")}</td></tr>`;
+  refreshIcons(tbody);
+}
+
+async function adminConfirmPackage(id) {
+  if (!confirm("Confirm this activity package? This will debit the company wallet.")) return;
+  const res = await apiFetch(`/activity-packages/${id}/confirm`, { method: "PATCH" });
+  if (res?.success) { toast("Confirmed", "success"); loadAdminActivityPackages(); }
+}
+async function adminRejectPackage(id) {
+  if (!confirm("Reject / cancel this activity package?")) return;
+  const res = await apiFetch(`/activity-packages/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ status: "REJECTED" }) });
+  if (res?.success) { toast("Updated", "success"); loadAdminActivityPackages(); }
 }
 
 async function loadAdminActivityBookings() {

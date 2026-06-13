@@ -126,6 +126,18 @@ interface InvoiceData {
     company: CompanyInfo;
     package: { name: string } | null;
   } | null;
+  activityPackage?: {
+    refNumber: string;
+    requestedAt: Date;
+    confirmedAt?: Date | null;
+    clientName?: string | null;
+    adultsCount: number;
+    childrenCount: number;
+    totalAmount: unknown;
+    currency: string;
+    company: CompanyInfo;
+    items: { activityName: string; activityDate: Date; city?: string | null }[];
+  } | null;
 }
 
 function lifecycleDetails(requestedAt: Date, confirmedAt?: Date | null): string {
@@ -242,6 +254,22 @@ ${request.package?.name ?? 'SIM package'} | Client: ${request.clientName}`;
     }];
   }
 
+  if (data.activityPackage) {
+    const p = data.activityPackage;
+    const list = p.items
+      .map((it) => `• ${it.activityName}${it.city ? ` (${it.city})` : ''} — ${new Date(it.activityDate).toLocaleDateString('en-GB')}`)
+      .join('\n');
+    const description = `Activity Package — ${p.refNumber}${lifecycleDetails(p.requestedAt, p.confirmedAt)}\n${p.items.length} activities | Adults: ${p.adultsCount}${p.childrenCount ? ` | Children: ${p.childrenCount}` : ''}\n${list}`;
+    return [{
+      description,
+      quantity: p.items.length,
+      unitLabel: 'activities',
+      unitPrice: `${String(p.totalAmount)} ${p.currency}`,
+      amount: `${String(p.totalAmount)} ${p.currency}`,
+      currency: p.currency,
+    }];
+  }
+
   return [{
     description: 'Service',
     quantity: 1,
@@ -261,6 +289,7 @@ function resolveCompany(data: InvoiceData): CompanyInfo {
     ?? data.cruiseBooking?.company
     ?? data.visaApplication?.company
     ?? data.simRequest?.company
+    ?? data.activityPackage?.company
     ?? { name: 'N/A', email: '', phone: '' };
 }
 
@@ -272,6 +301,7 @@ function resolveRefNumber(data: InvoiceData): string {
     ?? data.cruiseBooking?.refNumber
     ?? data.visaApplication?.refNumber
     ?? data.simRequest?.refNumber
+    ?? data.activityPackage?.refNumber
     ?? '';
 }
 
@@ -428,27 +458,12 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
   });
 }
 
-export async function generateInvoicePdf(invoice: InvoiceData): Promise<{ path: string; buffer: Buffer }> {
-  const pdfDir = process.env.PDF_DIR ?? './generated';
-  if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
-
-  const filePath = path.join(pdfDir, `INV-${invoice.invoiceNumber}.pdf`);
-  const buffers: Buffer[] = [];
+/** Draw one full invoice onto the current page of `doc` (assumes a fresh page). */
+function drawInvoiceContent(doc: InstanceType<typeof PDFDocument>, invoice: InvoiceData): void {
   const company = resolveCompany(invoice);
   const lines = buildServiceLines(invoice);
   const refNumber = resolveRefNumber(invoice);
-
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
-
-    doc.on('data', (chunk: Buffer) => buffers.push(chunk));
-    doc.on('error', reject);
-    doc.on('end', () => {
-      const buffer = Buffer.concat(buffers);
-      fs.writeFileSync(filePath, buffer);
-      resolve({ path: filePath, buffer });
-    });
-
+  {
     const NAVY = '#1B2B6B';
     const ACCENT = '#0891B2';
     const GRAY = '#666666';
@@ -578,7 +593,58 @@ export async function generateInvoicePdf(invoice: InvoiceData): Promise<{ path: 
     doc.fillColor('#fff').fontSize(9).font('Helvetica')
       .text('Thank you for choosing Elbakri Overseas since 1982', 0, footerY + 14, { align: 'center', width: pageW })
       .text('This is a computer-generated invoice.', 0, footerY + 30, { align: 'center', width: pageW });
+  }
+}
 
+export async function generateInvoicePdf(invoice: InvoiceData): Promise<{ path: string; buffer: Buffer }> {
+  const pdfDir = process.env.PDF_DIR ?? './generated';
+  if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
+  const filePath = path.join(pdfDir, `INV-${invoice.invoiceNumber}.pdf`);
+  const buffers: Buffer[] = [];
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    doc.on('data', (chunk: Buffer) => buffers.push(chunk));
+    doc.on('error', reject);
+    doc.on('end', () => {
+      const buffer = Buffer.concat(buffers);
+      fs.writeFileSync(filePath, buffer);
+      resolve({ path: filePath, buffer });
+    });
+    drawInvoiceContent(doc, invoice);
+    doc.end();
+  });
+}
+
+/**
+ * One PDF aggregating several invoices, each on its own page (page break per
+ * invoice). Used by the company "Download selected" bulk export.
+ */
+export async function generateBulkInvoicePdf(
+  invoices: InvoiceData[],
+  opts: { companyName?: string } = {},
+): Promise<{ path: string; buffer: Buffer; filename: string }> {
+  const pdfDir = process.env.PDF_DIR ?? './generated';
+  if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
+  const slug = (s: string) => (s || 'COMPANY').replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'COMPANY';
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const filename = `ELBAKRI-INVOICES-${slug(opts.companyName ?? 'COMPANY')}-${dateStr}.pdf`;
+  const filePath = path.join(pdfDir, `${filename.replace(/\.pdf$/, '')}-${Date.now()}.pdf`);
+  const buffers: Buffer[] = [];
+
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    doc.on('data', (chunk: Buffer) => buffers.push(chunk));
+    doc.on('error', reject);
+    doc.on('end', () => {
+      const buffer = Buffer.concat(buffers);
+      fs.writeFileSync(filePath, buffer);
+      resolve({ path: filePath, buffer, filename });
+    });
+    invoices.forEach((inv, i) => {
+      if (i > 0) doc.addPage();
+      drawInvoiceContent(doc, inv);
+    });
     doc.end();
   });
 }
