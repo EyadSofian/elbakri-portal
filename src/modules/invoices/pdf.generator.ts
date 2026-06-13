@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
+import { registerPdfFonts, hasArabic } from '../../shared/pdf';
 
 interface CompanyInfo {
   name: string;
@@ -350,6 +351,7 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
       fs.writeFileSync(filePath, buffer);
       resolve({ path: filePath, buffer });
     });
+    registerPdfFonts(doc);
 
     const NAVY = '#1B2B6B';
     const ACCENT = '#0891B2';
@@ -358,10 +360,10 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
 
     const drawHeader = () => {
       doc.rect(0, 0, pageW, 80).fill(NAVY);
-      doc.fillColor('#ffffff').fontSize(22).font('Helvetica-Bold').text('ELBAKRI OVERSEAS', 50, 28);
-      doc.fontSize(10).font('Helvetica').text('EST. 1982', pageW - 120, 35, { width: 70, align: 'right' });
+      doc.fillColor('#ffffff').fontSize(22).font('body-bold').text('ELBAKRI OVERSEAS', 50, 28);
+      doc.fontSize(10).font('body').text('EST. 1982', pageW - 120, 35, { width: 70, align: 'right' });
       doc.rect(0, 80, pageW, 4).fill(ACCENT);
-      doc.fillColor(GRAY).fontSize(9).font('Helvetica')
+      doc.fillColor(GRAY).fontSize(9).font('body')
         .text('Cairo, Egypt  |  +20 2 XXXX XXXX  |  bookings@elbakri.com', 50, 94);
     };
 
@@ -372,14 +374,14 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
     const drawTableHeader = (y: number) => {
       doc.rect(50, y, pageW - 100, 22).fill(NAVY);
       headers.forEach((h, i) => {
-        doc.fillColor('#fff').fontSize(9).font('Helvetica-Bold').text(h, colX[i], y + 6, { width: colW[i] });
+        doc.fillColor('#fff').fontSize(9).font('body-bold').text(h, colX[i], y + 6, { width: colW[i] });
       });
       return y + 22;
     };
 
     drawHeader();
-    doc.fillColor(NAVY).fontSize(18).font('Helvetica-Bold').text('CONSOLIDATED STATEMENT', 50, 130);
-    doc.fillColor(ACCENT).fontSize(11).font('Helvetica').text('ELBAKRI OVERSEAS — INVOICE STATEMENT', 50, 153);
+    doc.fillColor(NAVY).fontSize(18).font('body-bold').text('CONSOLIDATED STATEMENT', 50, 130);
+    doc.fillColor(ACCENT).fontSize(11).font('body').text('ELBAKRI OVERSEAS — INVOICE STATEMENT', 50, 153);
 
     // Meta (right)
     const metaX = pageW - 250;
@@ -394,16 +396,16 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
     ];
     doc.rect(metaX - 10, metaY - 6, 210, metaRows.length * 22 + 12).stroke(NAVY);
     for (const [label, value] of metaRows) {
-      doc.fillColor(NAVY).fontSize(9).font('Helvetica-Bold').text(label + ':', metaX, metaY);
-      doc.fillColor('#000').font('Helvetica').text(value, metaX + 70, metaY, { width: 120 });
+      doc.fillColor(NAVY).fontSize(9).font('body-bold').text(label + ':', metaX, metaY);
+      doc.fillColor('#000').font('body').text(value, metaX + 70, metaY, { width: 120 });
       metaY += 22;
     }
 
     // Bill To
     let y = 235;
     doc.rect(50, y, 250, 90).fill('#f0f4ff').stroke(NAVY);
-    doc.fillColor(NAVY).fontSize(10).font('Helvetica-Bold').text('BILL TO', 62, y + 10);
-    doc.fillColor('#000').fontSize(9).font('Helvetica')
+    doc.fillColor(NAVY).fontSize(10).font('body-bold').text('BILL TO', 62, y + 10);
+    doc.fillColor('#000').fontSize(9).font('body')
       .text(data.company.name, 62, y + 28)
       .text(data.company.address ?? '', 62, y + 42)
       .text(`Tax ID: ${data.company.taxId ?? 'N/A'}`, 62, y + 56)
@@ -411,7 +413,7 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
 
     // Table
     y = 345;
-    doc.fillColor(NAVY).fontSize(11).font('Helvetica-Bold').text('INVOICES', 50, y);
+    doc.fillColor(NAVY).fontSize(11).font('body-bold').text('INVOICES', 50, y);
     y += 20;
     y = drawTableHeader(y);
 
@@ -425,7 +427,7 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
         y = drawTableHeader(y);
       }
       doc.rect(50, y, pageW - 100, rowH).stroke('#e0e0e0');
-      doc.fillColor('#000').fontSize(8).font('Helvetica')
+      doc.fillColor('#000').fontSize(8).font('body')
         .text(line.invoiceNumber, colX[0], y + 8, { width: colW[0] - 6 })
         .text(line.refNumber || '—', colX[1], y + 8, { width: colW[1] - 6 })
         .text(line.service, colX[2], y + 8, { width: colW[2] - 6 })
@@ -441,7 +443,7 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
     doc.moveTo(totalsX, y).lineTo(pageW - 50, y).lineWidth(2).stroke(NAVY);
     y += 8;
     for (const [currency, amount] of totalsByCurrency) {
-      doc.fillColor(NAVY).fontSize(12).font('Helvetica-Bold')
+      doc.fillColor(NAVY).fontSize(12).font('body-bold')
         .text(`GRAND TOTAL (${currency})`, totalsX, y, { width: 150 })
         .text(`${amount.toFixed(2)} ${currency}`, totalsX + 110, y, { width: 90, align: 'right' });
       y += 20;
@@ -449,10 +451,13 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
 
     // Footer
     const footerY = doc.page.height - 60;
+    const savedBottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
     doc.rect(0, footerY, pageW, 60).fill(NAVY);
-    doc.fillColor('#fff').fontSize(9).font('Helvetica')
-      .text('Thank you for choosing Elbakri Overseas since 1982', 0, footerY + 14, { align: 'center', width: pageW })
-      .text('This is a computer-generated statement.', 0, footerY + 30, { align: 'center', width: pageW });
+    doc.fillColor('#fff').fontSize(9).font('body')
+      .text('Thank you for choosing Elbakri Overseas since 1982', 0, footerY + 16, { align: 'center', width: pageW, lineBreak: false })
+      .text('This is a computer-generated statement.', 0, footerY + 32, { align: 'center', width: pageW, lineBreak: false });
+    doc.page.margins.bottom = savedBottom;
 
     doc.end();
   });
@@ -471,21 +476,21 @@ function drawInvoiceContent(doc: InstanceType<typeof PDFDocument>, invoice: Invo
 
     // Header bar
     doc.rect(0, 0, pageW, 80).fill(NAVY);
-    doc.fillColor('#ffffff').fontSize(22).font('Helvetica-Bold')
+    doc.fillColor('#ffffff').fontSize(22).font('body-bold')
       .text('ELBAKRI OVERSEAS', 50, 28);
-    doc.fontSize(10).font('Helvetica')
+    doc.fontSize(10).font('body')
       .text('EST. 1982', pageW - 120, 35, { width: 70, align: 'right' });
 
     // Brand accent divider
     doc.rect(0, 80, pageW, 4).fill(ACCENT);
 
     // Sub-header
-    doc.fillColor(GRAY).fontSize(9).font('Helvetica')
+    doc.fillColor(GRAY).fontSize(9).font('body')
       .text('Cairo, Egypt  |  +20 2 XXXX XXXX  |  bookings@elbakri.com', 50, 94);
 
     // Invoice title
-    doc.fillColor(NAVY).fontSize(18).font('Helvetica-Bold').text('TAX INVOICE', 50, 130);
-    doc.fillColor(ACCENT).fontSize(11).font('Helvetica')
+    doc.fillColor(NAVY).fontSize(18).font('body-bold').text('TAX INVOICE', 50, 130);
+    doc.fillColor(ACCENT).fontSize(11).font('body')
       .text('ELBAKRI OVERSEAS — INVOICE', 50, 153);
 
     // Invoice meta table (right side)
@@ -501,16 +506,16 @@ function drawInvoiceContent(doc: InstanceType<typeof PDFDocument>, invoice: Invo
 
     doc.rect(metaX - 10, metaY - 6, 210, metaRows.length * 22 + 12).stroke(NAVY);
     for (const [label, value] of metaRows) {
-      doc.fillColor(NAVY).fontSize(9).font('Helvetica-Bold').text(label + ':', metaX, metaY);
-      doc.fillColor('#000').font('Helvetica').text(value, metaX + 80, metaY);
+      doc.fillColor(NAVY).fontSize(9).font('body-bold').text(label + ':', metaX, metaY);
+      doc.fillColor('#000').font('body').text(value, metaX + 80, metaY);
       metaY += 22;
     }
 
     // Bill To
     let y = 235;
     doc.rect(50, y, 250, 90).fill('#f0f4ff').stroke(NAVY);
-    doc.fillColor(NAVY).fontSize(10).font('Helvetica-Bold').text('BILL TO', 62, y + 10);
-    doc.fillColor('#000').fontSize(9).font('Helvetica')
+    doc.fillColor(NAVY).fontSize(10).font('body-bold').text('BILL TO', 62, y + 10);
+    doc.fillColor('#000').fontSize(9).font('body')
       .text(company.name, 62, y + 28)
       .text(company.address ?? '', 62, y + 42)
       .text(`Tax ID: ${company.taxId ?? 'N/A'}`, 62, y + 56)
@@ -518,7 +523,7 @@ function drawInvoiceContent(doc: InstanceType<typeof PDFDocument>, invoice: Invo
 
     // Services table
     y = 345;
-    doc.fillColor(NAVY).fontSize(11).font('Helvetica-Bold').text('SERVICE DETAILS', 50, y);
+    doc.fillColor(NAVY).fontSize(11).font('body-bold').text('SERVICE DETAILS', 50, y);
     y += 20;
 
     const colWidths = [260, 60, 80, 90];
@@ -527,13 +532,13 @@ function drawInvoiceContent(doc: InstanceType<typeof PDFDocument>, invoice: Invo
 
     doc.rect(50, y, pageW - 100, 22).fill(NAVY);
     headers.forEach((h, i) => {
-      doc.fillColor('#fff').fontSize(9).font('Helvetica-Bold')
+      doc.fillColor('#fff').fontSize(9).font('body-bold')
         .text(h, colX[i], y + 6, { width: colWidths[i] });
     });
     y += 22;
 
     for (const line of lines) {
-      doc.fontSize(8).font('Helvetica');
+      doc.fontSize(8).font('body');
       const descriptionHeight = doc.heightOfString(line.description, { width: colWidths[0] - 10 });
       const rowHeight = Math.max(60, descriptionHeight + 12);
       doc.rect(50, y, pageW - 100, rowHeight).stroke('#e0e0e0');
@@ -560,14 +565,14 @@ function drawInvoiceContent(doc: InstanceType<typeof PDFDocument>, invoice: Invo
     y += 10;
 
     for (const [label, value] of totals) {
-      doc.fillColor(GRAY).fontSize(9).font('Helvetica').text(label, totalsX, y, { width: 100 });
+      doc.fillColor(GRAY).fontSize(9).font('body').text(label, totalsX, y, { width: 100 });
       doc.fillColor('#000').text(value, totalsX + 110, y, { width: 90, align: 'right' });
       y += 18;
     }
 
     doc.moveTo(totalsX, y).lineTo(pageW - 50, y).lineWidth(2).stroke(NAVY);
     y += 6;
-    doc.fillColor(NAVY).fontSize(13).font('Helvetica-Bold')
+    doc.fillColor(NAVY).fontSize(13).font('body-bold')
       .text('GRAND TOTAL', totalsX, y)
       .text(`${String(invoice.total)} ${invoice.currency}`, totalsX + 110, y, { width: 90, align: 'right' });
 
@@ -575,8 +580,8 @@ function drawInvoiceContent(doc: InstanceType<typeof PDFDocument>, invoice: Invo
     y += 40;
     if (y < doc.page.height - 120) {
       doc.rect(50, y, pageW - 100, 60).fill('#ECFEFF').stroke(ACCENT);
-      doc.fillColor(NAVY).fontSize(10).font('Helvetica-Bold').text('PAYMENT INFORMATION', 62, y + 10);
-      doc.fillColor(GRAY).fontSize(8).font('Helvetica')
+      doc.fillColor(NAVY).fontSize(10).font('body-bold').text('PAYMENT INFORMATION', 62, y + 10);
+      doc.fillColor(GRAY).fontSize(8).font('body')
         .text('Bank: Elbakri Overseas Bank Account  |  Account: XXXX-XXXX-XXXX', 62, y + 28)
         .text('IBAN: EG00 0000 0000 0000 0000 0000 0000 0  |  SWIFT: XXXXXXXX', 62, y + 42);
     }
@@ -584,15 +589,19 @@ function drawInvoiceContent(doc: InstanceType<typeof PDFDocument>, invoice: Invo
     // Notes
     if (invoice.notes) {
       y += 70;
-      doc.fillColor(GRAY).fontSize(8).font('Helvetica').text(`Notes: ${invoice.notes}`, 50, y);
+      doc.fillColor(GRAY).fontSize(8).font('body').text(`Notes: ${invoice.notes}`, 50, y);
     }
 
-    // Footer
+    // Footer — zero the bottom margin + single-line text so it never spills
+    // onto an extra page (critical inside the multi-invoice consolidated doc).
     const footerY = doc.page.height - 60;
+    const savedBottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
     doc.rect(0, footerY, pageW, 60).fill(NAVY);
-    doc.fillColor('#fff').fontSize(9).font('Helvetica')
-      .text('Thank you for choosing Elbakri Overseas since 1982', 0, footerY + 14, { align: 'center', width: pageW })
-      .text('This is a computer-generated invoice.', 0, footerY + 30, { align: 'center', width: pageW });
+    doc.fillColor('#fff').fontSize(9).font('body')
+      .text('Thank you for choosing Elbakri Overseas since 1982', 0, footerY + 16, { align: 'center', width: pageW, lineBreak: false })
+      .text('This is a computer-generated invoice.', 0, footerY + 32, { align: 'center', width: pageW, lineBreak: false });
+    doc.page.margins.bottom = savedBottom;
   }
 }
 
@@ -611,14 +620,19 @@ export async function generateInvoicePdf(invoice: InvoiceData): Promise<{ path: 
       fs.writeFileSync(filePath, buffer);
       resolve({ path: filePath, buffer });
     });
+    registerPdfFonts(doc);
     drawInvoiceContent(doc, invoice);
     doc.end();
   });
 }
 
 /**
- * One PDF aggregating several invoices, each on its own page (page break per
- * invoice). Used by the company "Download selected" bulk export.
+ * One professional CONSOLIDATED document for several invoices:
+ *   1. Cover page  — Elbakri brand, "Issued for [company]", period, count,
+ *                    totals by currency, generated date.
+ *   2. Summary table — invoice #, date, due, ref, status, currency, amount.
+ *   3. One full invoice per page (clean page breaks).
+ * Tajawal font → Arabic company names / notes render correctly.
  */
 export async function generateBulkInvoicePdf(
   invoices: InvoiceData[],
@@ -628,12 +642,28 @@ export async function generateBulkInvoicePdf(
   if (!fs.existsSync(pdfDir)) fs.mkdirSync(pdfDir, { recursive: true });
   const slug = (s: string) => (s || 'COMPANY').replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'COMPANY';
   const dateStr = new Date().toISOString().slice(0, 10);
-  const filename = `ELBAKRI-INVOICES-${slug(opts.companyName ?? 'COMPANY')}-${dateStr}.pdf`;
+  const companyName = opts.companyName ?? resolveCompany(invoices[0] ?? ({} as InvoiceData)).name ?? 'COMPANY';
+  const filename = `ELBAKRI-CONSOLIDATED-INVOICES-${slug(companyName)}-${dateStr}.pdf`;
   const filePath = path.join(pdfDir, `${filename.replace(/\.pdf$/, '')}-${Date.now()}.pdf`);
   const buffers: Buffer[] = [];
 
+  const NAVY = '#16224F', NAVY_SOFT = '#243363', TEAL = '#0E9AA7', INK = '#1A1A2E', GRAY = '#5A6275', LINE = '#E3E7F0', ALT = '#F6F8FC';
+  const MARGIN = 48;
+  const fmt = (d?: Date | null) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+
+  // Aggregate
+  const totalsByCurrency = new Map<string, number>();
+  let minDate: Date | null = null, maxDate: Date | null = null;
+  for (const inv of invoices) {
+    const cur = inv.currency || 'USD';
+    totalsByCurrency.set(cur, (totalsByCurrency.get(cur) ?? 0) + Number(inv.total || 0));
+    const d = new Date(inv.createdAt);
+    if (!minDate || d < minDate) minDate = d;
+    if (!maxDate || d > maxDate) maxDate = d;
+  }
+
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new PDFDocument({ size: 'A4', margin: MARGIN, bufferPages: true });
     doc.on('data', (chunk: Buffer) => buffers.push(chunk));
     doc.on('error', reject);
     doc.on('end', () => {
@@ -641,10 +671,117 @@ export async function generateBulkInvoicePdf(
       fs.writeFileSync(filePath, buffer);
       resolve({ path: filePath, buffer, filename });
     });
-    invoices.forEach((inv, i) => {
-      if (i > 0) doc.addPage();
-      drawInvoiceContent(doc, inv);
+    registerPdfFonts(doc);
+    const pageW = doc.page.width;
+    const contentW = pageW - MARGIN * 2;
+
+    const brandHeader = (badge: string) => {
+      doc.rect(0, 0, pageW, 104).fill(NAVY);
+      doc.rect(0, 104, pageW, 4).fill(TEAL);
+      doc.fillColor('#FFFFFF').font('body-bold').fontSize(22).text('ELBAKRI OVERSEAS', MARGIN, 30, { lineBreak: false });
+      doc.fillColor('#AEB8DA').font('body').fontSize(9.5).text('Travel & Tourism Services', MARGIN, 60, { lineBreak: false });
+      doc.fillColor(TEAL).font('body-bold').fontSize(11).text(badge.toUpperCase(), pageW - MARGIN - 240, 34, { width: 240, align: 'right' });
+      doc.fillColor('#AEB8DA').font('body').fontSize(9.5).text(`Generated ${fmt(new Date())}`, pageW - MARGIN - 240, 56, { width: 240, align: 'right' });
+    };
+    // Footer only the cover + summary pages; per-invoice pages draw their own.
+    const brandFooter = (fromIdx: number, toIdx: number) => {
+      for (let i = fromIdx; i < toIdx; i++) {
+        doc.switchToPage(i);
+        const fy = doc.page.height - 50;
+        const savedBottom = doc.page.margins.bottom; doc.page.margins.bottom = 0;
+        doc.rect(0, fy, pageW, 50).fill(NAVY);
+        doc.fillColor('#FFFFFF').font('body-medium').fontSize(8.5)
+          .text('ELBAKRI OVERSEAS  —  Cairo, Egypt  •  info@elbakri.com  •  www.elbakri.com', MARGIN, fy + 13, { align: 'center', width: contentW, lineBreak: false });
+        doc.fillColor('#9AA6CF').font('body').fontSize(7.5)
+          .text(`Consolidated statement of ${invoices.length} invoice(s) — full invoices follow this summary`, MARGIN, fy + 28, { align: 'center', width: contentW, lineBreak: false });
+        doc.page.margins.bottom = savedBottom;
+      }
+    };
+
+    // ── Cover page ────────────────────────────────────────────────────────────
+    brandHeader('Consolidated Invoices');
+    let y = 140;
+    doc.fillColor(INK).font('body-bold').fontSize(20).text('CONSOLIDATED INVOICES', MARGIN, y, { width: contentW, align: 'center', characterSpacing: 0.5 });
+    y += 30;
+    doc.moveTo(MARGIN, y).lineTo(pageW - MARGIN, y).lineWidth(1).strokeColor(TEAL).stroke();
+    y += 22;
+
+    // Details card
+    const cardH = 96;
+    doc.roundedRect(MARGIN, y, contentW, cardH, 8).fill(ALT);
+    doc.roundedRect(MARGIN, y, contentW, cardH, 8).lineWidth(0.5).strokeColor(LINE).stroke();
+    const colW = contentW / 2;
+    const detail = (label: string, value: string, cx: number, cy: number) => {
+      doc.fillColor(GRAY).font('body-medium').fontSize(8.5).text(label.toUpperCase(), cx, cy, { characterSpacing: 0.4 });
+      doc.fillColor(INK).font('body-bold').fontSize(12).text(value, cx, cy + 13, { width: colW - 28, align: hasArabic(value) ? 'right' : 'left', lineBreak: false });
+    };
+    detail('Issued for', companyName, MARGIN + 16, y + 14);
+    detail('Period', `${fmt(minDate)}  —  ${fmt(maxDate)}`, MARGIN + 16 + colW, y + 14);
+    detail('Invoices', String(invoices.length), MARGIN + 16, y + 52);
+    detail('Generated', fmt(new Date()), MARGIN + 16 + colW, y + 52);
+    y += cardH + 20;
+
+    // Totals by currency
+    doc.rect(MARGIN, y, contentW, 22).fill(NAVY_SOFT);
+    doc.fillColor('#FFFFFF').font('body-bold').fontSize(9.5).text('TOTAL BY CURRENCY', MARGIN + 10, y + 6, { characterSpacing: 0.6 });
+    y += 22;
+    let ti = 0;
+    for (const [cur, amount] of totalsByCurrency) {
+      doc.rect(MARGIN, y, contentW, 26).fill(ti % 2 === 0 ? '#FFFFFF' : ALT);
+      doc.rect(MARGIN, y, contentW, 26).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.fillColor(GRAY).font('body-medium').fontSize(10).text(`Total (${cur})`, MARGIN + 10, y + 8);
+      doc.fillColor(NAVY).font('body-bold').fontSize(12).text(`${amount.toFixed(2)} ${cur}`, MARGIN + 10, y + 7, { width: contentW - 20, align: 'right' });
+      y += 26; ti++;
+    }
+
+    // ── Summary table (new page) ──────────────────────────────────────────────
+    doc.addPage();
+    brandHeader('Invoice Summary');
+    y = 132;
+    doc.fillColor(INK).font('body-bold').fontSize(14).text('INVOICE SUMMARY', MARGIN, y, { characterSpacing: 0.4 });
+    y += 24;
+    const cols = [
+      { k: 'Invoice #', w: 0.18, a: 'left' as const },
+      { k: 'Date', w: 0.13, a: 'left' as const },
+      { k: 'Due', w: 0.13, a: 'left' as const },
+      { k: 'Ref', w: 0.18, a: 'left' as const },
+      { k: 'Status', w: 0.13, a: 'left' as const },
+      { k: 'Amount', w: 0.25, a: 'right' as const },
+    ];
+    const colsX: number[] = []; { let cx = MARGIN; for (const c of cols) { colsX.push(cx); cx += c.w * contentW; } }
+    const drawSummaryHead = () => {
+      doc.rect(MARGIN, y, contentW, 22).fill(NAVY_SOFT);
+      cols.forEach((c, i) => doc.fillColor('#FFFFFF').font('body-bold').fontSize(8.5)
+        .text(c.k.toUpperCase(), colsX[i] + 6, y + 6, { width: c.w * contentW - 10, align: c.a }));
+      y += 22;
+    };
+    drawSummaryHead();
+    invoices.forEach((inv, idx) => {
+      if (y + 24 > doc.page.height - 70) { doc.addPage(); brandHeader('Invoice Summary'); y = 132; drawSummaryHead(); }
+      doc.rect(MARGIN, y, contentW, 22).fill(idx % 2 === 0 ? '#FFFFFF' : ALT);
+      doc.rect(MARGIN, y, contentW, 22).lineWidth(0.4).strokeColor(LINE).stroke();
+      const vals = [
+        inv.invoiceNumber,
+        fmt(inv.createdAt),
+        fmt(inv.dueDate),
+        resolveRefNumber(inv) || '—',
+        String(inv.status),
+        `${Number(inv.total).toFixed(2)} ${inv.currency}`,
+      ];
+      cols.forEach((c, i) => doc.fillColor(INK).font(i === 0 ? 'body-bold' : 'body').fontSize(8.5)
+        .text(vals[i], colsX[i] + 6, y + 7, { width: c.w * contentW - 10, align: c.a, lineBreak: false }));
+      y += 22;
     });
+
+    // Footer the cover + summary pages now (per-invoice pages get their own).
+    brandFooter(0, doc.bufferedPageRange().count);
+
+    // ── One invoice per page ──────────────────────────────────────────────────
+    for (const inv of invoices) {
+      doc.addPage();
+      drawInvoiceContent(doc, inv);
+    }
+
     doc.end();
   });
 }

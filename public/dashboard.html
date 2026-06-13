@@ -2442,8 +2442,9 @@ async function renderActivityPackageHistory() {
         ["th.amount", p => `<span class="numeric">${formatStoredMoney(p.totalAmount, p.currency)}</span>`],
         ["th.status", p => statusBadge(p.status)],
         ["th.actions", p => `<div style="display:flex;gap:4px;flex-wrap:wrap">
-          ${p.invoice ? `<button class="btn btn-outline btn-sm" onclick="downloadInvoicePdf('${p.invoice.id}')">${icon("file-down")}&nbsp;${t("btn.downloadInvoice","Invoice")}</button>` : ""}
-          ${p.voucher ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${p.voucher.id}')">${icon("ticket")}&nbsp;${t("btn.voucher","Voucher")}</button>` : ""}
+          ${p.voucher
+            ? `<button class="btn btn-teal btn-sm" onclick="downloadVoucherPdf('${p.voucher.id}')">${icon("ticket")}&nbsp;${t("btn.downloadVoucher","Download Voucher")}</button>`
+            : `<span class="secondary-text">${t("voucher.pending","Voucher pending")}</span>`}
         </div>`],
       ], rows)}
     </section>`);
@@ -3415,10 +3416,15 @@ function renderInvoices() {
         <div><strong>${t("nav.invoices","Invoices")}</strong><div class="secondary-text">${t("invoice.individualHelp","Individual booking invoices")}</div></div>
         <div class="toolbar-actions"><button class="btn btn-outline" onclick="renderInvoices()">${icon("refresh-cw")}${t("btn.refresh")}</button></div>
       </div>
-      <div id="invBulkBar" class="bulk-toolbar" style="display:none;align-items:center;gap:12px;padding:10px 16px;background:var(--surface-muted);border-bottom:1px solid var(--border)">
-        <span id="invBulkCount" class="secondary-text"></span>
-        <button class="btn btn-primary btn-sm" id="invBulkBtn" onclick="invBulkDownloadPdf()">${icon("file-down")}&nbsp;${t("invoice.downloadSelected","Download selected as PDF")}</button>
-        <button class="btn btn-outline btn-sm" onclick="invClearSelection()">${t("btn.clear","Clear")}</button>
+      <div id="invBulkBar" class="bulk-toolbar" style="display:none">
+        <div class="bulk-info">
+          <span id="invBulkCount" class="primary-text"></span>
+          <span id="invBulkAmount" class="secondary-text"></span>
+        </div>
+        <div class="bulk-actions">
+          <button class="btn btn-outline btn-sm" onclick="invClearSelection()">${t("btn.clear","Clear")}</button>
+          <button class="btn btn-primary btn-sm" id="invBulkBtn" onclick="invBulkDownloadPdf()">${icon("file-down")}&nbsp;${t("invoice.downloadCombined","Download Combined PDF")}</button>
+        </div>
       </div>
       <div id="companyInvoiceList"></div>
     </section>
@@ -3434,12 +3440,25 @@ function renderInvoices() {
 const _invoiceRowRef = (i) => i.booking?.refNumber || i.activityBooking?.refNumber || i.transportBooking?.refNumber || i.airportReception?.refNumber || i.cruiseBooking?.refNumber || i.visaApplication?.refNumber || i.simRequest?.refNumber || i.activityPackage?.refNumber || "—";
 
 function invBulkSync() {
-  const checked = document.querySelectorAll(".inv-check:checked");
+  const checked = Array.from(document.querySelectorAll(".inv-check:checked"));
   const bar = document.getElementById("invBulkBar");
   const cnt = document.getElementById("invBulkCount");
+  const amt = document.getElementById("invBulkAmount");
   const btn = document.getElementById("invBulkBtn");
   if (bar) bar.style.display = checked.length ? "flex" : "none";
   if (cnt) cnt.textContent = `${checked.length} ${t("invoice.selected","selected")}`;
+  if (amt) {
+    const totals = {};
+    for (const c of checked) {
+      const inv = (window._invoiceRows || []).find(i => i.id === c.value);
+      if (inv) totals[inv.currency || "USD"] = (totals[inv.currency || "USD"] || 0) + Number(inv.total || 0);
+    }
+    amt.textContent = Object.entries(totals).map(([cur, v]) => formatStoredMoney(v, cur)).join("  ·  ");
+  }
+  // Keep the select-all checkbox in sync with row state.
+  const all = document.getElementById("invSelectAll");
+  const boxes = document.querySelectorAll(".inv-check");
+  if (all) all.checked = boxes.length > 0 && checked.length === boxes.length;
   if (btn) btn.disabled = checked.length === 0;
 }
 function invToggleAll(cb) {
@@ -3472,10 +3491,11 @@ async function invBulkDownloadPdf() {
     const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
     toast(t("invoice.downloaded","Combined invoice PDF downloaded"), "success");
+    invClearSelection(); // clear after a successful download
   } catch (e) {
     toast(t("toast.error","Download failed"), "error");
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = `${icon("file-down")}&nbsp;${t("invoice.downloadSelected","Download selected as PDF")}`; refreshIcons(btn.parentElement); }
+    if (btn) { btn.disabled = false; btn.innerHTML = `${icon("file-down")}&nbsp;${t("invoice.downloadCombined","Download Combined PDF")}`; refreshIcons(btn.parentElement); }
   }
 }
 
@@ -3485,6 +3505,7 @@ async function renderCompanyInvoiceLists() {
     apiFetch("/invoices/consolidated"),
   ]);
   const invoiceRows = invoiceRes?.data || [];
+  window._invoiceRows = invoiceRows; // used by the bulk toolbar to total the selection
   const consolidatedRows = consolidatedRes?.data || [];
   const invoiceHost = document.getElementById("companyInvoiceList");
   const consolidatedHost = document.getElementById("companyConsolidatedList");

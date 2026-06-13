@@ -4799,3 +4799,70 @@ body {
     line-height: 22px;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   UX refinement pass (2026-06-13) — appended so the cascade wins without
+   disturbing existing rules. Floating bulk-action bar, clearer selected
+   states, consistent button feedback, reduced-motion support.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Floating bulk-action bar — fixed so it survives the table card's
+   overflow:hidden and stays reachable while scrolling. Shown only when rows
+   are selected (JS toggles display:flex). */
+.bulk-toolbar {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: calc(100vw - 28px);
+  padding: 10px 12px 10px 18px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 18px 44px rgba(16, 24, 40, 0.22);
+  animation: bulkBarIn 180ms ease-out;
+}
+@keyframes bulkBarIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.bulk-toolbar .bulk-info { display: flex; flex-direction: column; gap: 1px; line-height: 1.3; }
+.bulk-toolbar .bulk-info .primary-text { font-weight: 800; font-size: 13px; color: var(--text-primary); }
+.bulk-toolbar .bulk-info .secondary-text { font-size: 12px; }
+.bulk-toolbar .bulk-actions { display: flex; gap: 8px; align-items: center; }
+@media (max-width: 600px) {
+  .bulk-toolbar { left: 14px; right: 14px; transform: none; width: auto; justify-content: space-between; }
+  @keyframes bulkBarIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+}
+
+/* Sidebar active item — subtle teal-tinted gradient instead of a flat block,
+   so the selected destination reads clearly; hover stays a neutral overlay. */
+.sidebar .nav-item.active {
+  background: linear-gradient(90deg, rgba(24, 168, 200, 0.22) 0%, rgba(24, 168, 200, 0.05) 100%);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(24, 168, 200, 0.12);
+}
+[dir="rtl"] .sidebar .nav-item.active {
+  background: linear-gradient(270deg, rgba(24, 168, 200, 0.22) 0%, rgba(24, 168, 200, 0.05) 100%);
+}
+.sidebar .nav-item.active::before { top: 7px; bottom: 7px; width: 3px; }
+
+/* Consistent press/hover feedback on all button variants */
+.btn-danger:hover { background: #c81e1e; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(224, 36, 36, 0.30); }
+.btn-success:hover { background: #0b8457; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(14, 159, 110, 0.30); }
+.btn-outline:active, .btn-teal:active, .btn-danger:active, .btn-success:active { transform: translateY(0); }
+
+/* Clickable summary cards get a subtle lift (data-dense dashboard pattern) */
+.mode-card { transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease; }
+.mode-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); border-color: var(--brand-accent); }
+
+/* Accessibility — honour reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  .btn-primary:hover, .btn-teal:hover, .btn-danger:hover, .btn-success:hover, .mode-card:hover { transform: none; }
+}
