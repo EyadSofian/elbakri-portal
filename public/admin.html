@@ -6,7 +6,7 @@
   <title>Elbakri Overseas - Super Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/portal.css">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -562,7 +562,7 @@ async function renderDashboard() {
   document.getElementById("walletPillValue").textContent = formatMoney(platformBalance, platformWallet.currency || "USD");
   document.getElementById("pendingCount").textContent = d.pendingBookings || 0;
 
-  content(pageHeader(`<button class="btn btn-outline" onclick="renderDashboard()">${icon("refresh-cw")}${t("btn.refresh")}</button>`) + `
+  content(adminHero(d, platformBalance, platformWallet.currency || "USD") + `
     <div class="stats-grid">
       ${statCard("stat.totalBookings", d.totalBookings || 0, "stat.allTime", "briefcase-business")}
       ${statCard("stat.totalRevenue", formatRevenueSummary(d.totalRevenueByCurrency, d.totalRevenue, d.reportCurrency), "stat.confirmedOnly", "banknote")}
@@ -586,6 +586,36 @@ async function renderDashboard() {
         ["th.date", r => formatDate(r.createdAt)],
       ])}
     </div>`);
+}
+
+function adminHero(d, platformBalance, platformCurrency) {
+  const bc = document.getElementById("breadcrumbTitle"); if (bc) bc.textContent = t("nav.dashboard");
+  return `<section class="dash-hero">
+    <div class="dash-hero__main">
+      <div class="dash-hero__eyebrow">${t("dash.adminEyebrow", "Platform overview")}</div>
+      <h1 class="dash-hero__title">${t("dash.adminTitle", "Super Admin Console")}</h1>
+      <p class="dash-hero__sub">${t("dash.adminSub", "Monitor bookings, balances, companies and requests across the platform.")}</p>
+      <div class="dash-hero__cta">
+        <button class="btn btn-primary" onclick="setPage('companies')">${icon("building-2")}&nbsp;${t("nav.companies", "Companies")}</button>
+        <button class="btn btn-glass" onclick="setPage('quote-requests')">${icon("mail-question")}&nbsp;${t("nav.quoteRequests", "Requests")}</button>
+        <button class="btn btn-glass" onclick="renderDashboard()">${icon("refresh-cw")}&nbsp;${t("btn.refresh")}</button>
+      </div>
+    </div>
+    <div class="dash-hero__metrics">
+      <div class="hero-metric hero-metric--balance">
+        <div class="hero-metric__label">${t("topbar.platformWallet", "Platform Wallet")}</div>
+        <div class="hero-metric__value">${formatMoney(platformBalance, platformCurrency)}</div>
+      </div>
+      <div class="hero-metric" onclick="setPage('bookings')" style="cursor:pointer">
+        <span class="hero-metric__ico">${icon("clock")}</span>
+        <div><div class="hero-metric__label">${t("stat.pending", "Pending")}</div><div class="hero-metric__num">${formatNumber(d.pendingBookings || 0)}</div></div>
+      </div>
+      <div class="hero-metric" onclick="setPage('companies')" style="cursor:pointer">
+        <span class="hero-metric__ico">${icon("building-2")}</span>
+        <div><div class="hero-metric__label">${t("stat.activeCompanies", "Companies")}</div><div class="hero-metric__num">${formatNumber(d.activeCompanies || 0)}</div></div>
+      </div>
+    </div>
+  </section>`;
 }
 
 function statCard(labelKey, value, subKey, iconName) {

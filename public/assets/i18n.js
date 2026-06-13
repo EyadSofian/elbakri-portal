@@ -87,6 +87,18 @@
       quoteRequestsTitle: "طلبات الأسعار",
       quoteRequestsSub: "طلبات التسعير المقدمة من الوكلاء",
     },
+    dash: {
+      morning: "صباح الخير",
+      afternoon: "مساء الخير",
+      evening: "مساء الخير",
+      heroSub: "هذه نظرة عامة على عملياتك من الحجوزات والرصيد والطلبات.",
+      bookHotel: "حجز فندق",
+      newTransfer: "نقل جديد",
+      quickActions: "إجراءات سريعة",
+      adminEyebrow: "نظرة عامة على المنصة",
+      adminTitle: "لوحة تحكم المشرف",
+      adminSub: "تابع الحجوزات والأرصدة والشركات والطلبات عبر المنصة.",
+    },
     stat: {
       totalBookings: "إجمالي الحجوزات",
       totalRevenue: "إجمالي الإيرادات",
@@ -574,6 +586,13 @@
       calculatorsTitle: "Currency Converter", calculatorsSub: "Currency conversion with updated exchange rates",
       destinationsTitle: "Destinations", destinationsSub: "Manage dynamic travel destinations and areas",
       quoteRequestsTitle: "Quote Requests", quoteRequestsSub: "Price requests submitted by agents",
+    },
+    dash: {
+      morning: "Good morning", afternoon: "Good afternoon", evening: "Good evening",
+      heroSub: "Here is your operations summary across bookings, balance and requests.",
+      bookHotel: "Book a Hotel", newTransfer: "New Transfer", quickActions: "Quick actions",
+      adminEyebrow: "Platform overview", adminTitle: "Super Admin Console",
+      adminSub: "Monitor bookings, balances, companies and requests across the platform.",
     },
     stat: {
       totalBookings: "Total Bookings", totalRevenue: "Total Revenue", pending: "Pending", activeCompanies: "Active Companies",

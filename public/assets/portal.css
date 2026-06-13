@@ -1,33 +1,40 @@
 :root {
-  --surface: #ffffff;
-  --surface-raised: #F7F9FC;
-  --surface-muted: #EFF1F5;
-  --border: #E6EAF2;
-  --border-strong: #CDD4E1;
-  --text-primary: #0F1A33;
-  --text-secondary: #38435C;
-  --text-muted: #6B7689;
-  /* ── Brand: deep navy + indigo, cyan/teal accents (NO gold) ── */
-  --brand-navy: #0B1F52;
-  --brand-navy-2: #102A68;
-  --brand-navy-3: #1B3A86;
-  --brand-indigo: #263B8F;
-  --brand-cyan: #18A8C8;
-  --brand-cyan-2: #1391B0;
-  --brand-teal: #00A88E;
-  /* Primary accent = cyan, secondary = teal. These replace the retired gold. */
-  --brand-accent: #18A8C8;
-  --brand-accent-2: #00A88E;
-  --brand-accent-soft: #E1F4FA;
-  --accent-glow: rgba(24, 168, 200, 0.22);
-  --success: #0E9F6E;
-  --success-soft: #def7ec;
-  --warning: #D97706;            /* soft orange — warnings ONLY, never branding */
-  --warning-soft: #fff1e0;
-  --danger: #E02424;
-  --danger-soft: #fde8e8;
-  --info: #1C64F2;
-  --info-soft: #e6efff;
+  /* ════ PREMIUM TRAVEL TEAL palette (2026-06-13c) — navy is the brand base,
+     teal/cyan is the dominant interactive colour (CTAs, focus, active, wallet,
+     selected rows, glass highlights). White/glass surfaces on cool gray. ════ */
+  --surface: #FFFFFF;
+  --surface-raised: #F4F9FB;
+  --surface-muted: #E9F2F6;
+  --border: #D8E4EC;
+  --border-strong: #BFD2DE;
+  --text-primary: #0B1736;
+  --text-secondary: #516179;
+  --text-muted: #7C8AA0;
+  /* Brand base = navy */
+  --brand-navy: #071F5C;
+  --brand-navy-2: #102A6B;
+  --brand-navy-3: #1C3F8F;
+  --brand-indigo: #27409A;
+  /* Interactive accents = teal + cyan (user palette) */
+  --accent-teal: #14B8A6;
+  --accent-cyan: #38BDF8;
+  --brand-teal: #14B8A6;
+  --brand-teal-2: #0D9488;       /* deeper teal — hover / text on light */
+  --brand-cyan: #38BDF8;
+  --brand-cyan-2: #0EA5E9;       /* deeper sky — hover / text on light */
+  /* Primary accent = teal, secondary = cyan. */
+  --brand-accent: #14B8A6;
+  --brand-accent-2: #38BDF8;
+  --brand-accent-soft: #D6F3EF;
+  --accent-glow: rgba(20, 184, 166, 0.26);
+  --success: #059669;
+  --success-soft: #D1FAE5;
+  --warning: #F59E0B;            /* amber — warnings ONLY, never branding */
+  --warning-soft: #FEF3C7;
+  --danger: #DC2626;
+  --danger-soft: #FEE2E2;
+  --info: #0EA5E9;
+  --info-soft: #E0F2FE;
   --purple: #6941c6;
   --purple-soft: #f1edff;
   --shadow-subtle: 0 1px 2px rgba(16, 24, 40, 0.05);
@@ -40,7 +47,7 @@
   --r-16: 16px;
   --sidebar-w: 240px;
   --topbar-h: 64px;
-  --font-en: "Inter", "DM Sans", "Barlow", system-ui, sans-serif;
+  --font-en: "Plus Jakarta Sans", "Inter", "DM Sans", system-ui, sans-serif;
   --font-ar: "Cairo", "Tajawal", system-ui, sans-serif;
   --font: var(--font-en);
 }
@@ -4875,14 +4882,15 @@ body {
    ═════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --bg-app: #E9EFF7;
-  --bg-glass: rgba(255, 255, 255, 0.72);
+  --bg-app: #EEF6F8;
+  --bg-glass: rgba(255, 255, 255, 0.74);
   --bg-glass-strong: rgba(255, 255, 255, 0.88);
-  --glass-border: rgba(255, 255, 255, 0.6);
-  --border-soft: rgba(15, 35, 70, 0.10);
+  --surface-glass: rgba(255, 255, 255, 0.74);
+  --glass-border: rgba(255, 255, 255, 0.62);
+  --border-soft: rgba(11, 35, 70, 0.10);
   --shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.05), 0 2px 8px rgba(16, 24, 40, 0.05);
-  --shadow-float: 0 22px 50px rgba(11, 24, 58, 0.22), 0 6px 16px rgba(11, 24, 58, 0.10);
-  --shadow-glow-teal: 0 8px 24px rgba(0, 168, 142, 0.34);
+  --shadow-float: 0 22px 50px rgba(7, 31, 92, 0.20), 0 6px 16px rgba(7, 31, 92, 0.10);
+  --shadow-glow-teal: 0 8px 24px rgba(20, 184, 166, 0.34);
   --blur-glass: blur(18px) saturate(150%);
   --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 22px;
   --ease-out: cubic-bezier(.2, .8, .2, 1);
@@ -5092,3 +5100,134 @@ body.has-bulkbar .page-wrap { padding-bottom: 104px; }
 @media (prefers-reduced-motion: reduce) {
   .sidebar .nav-item:hover, .stat-card:hover, .btn-outline:hover { transform: none; }
 }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   TRAVEL TEAL LAYER (2026-06-13c) — shift the dominant interactive colour
+   from navy to teal/cyan: CTAs, focus rings, links, stat icons. Navy stays
+   the brand base (sidebar, headings). Refined SOFT tinted icon badges
+   (clean SaaS chips, not saturated rainbow gradients).
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* Primary CTA = teal→deep-teal (was navy). */
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent-teal) 0%, var(--brand-teal-2) 100%);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(13, 148, 136, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.20);
+}
+.btn-primary::after { background: rgba(255, 255, 255, 0.10); }
+.btn-primary:hover {
+  background: linear-gradient(135deg, #18C6B3 0%, var(--accent-teal) 100%);
+  box-shadow: 0 6px 18px rgba(20, 184, 166, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  transform: translateY(-1px);
+}
+.btn-primary:active { transform: translateY(0); box-shadow: 0 1px 3px rgba(13, 148, 136, 0.30); }
+.request-cta { box-shadow: 0 8px 20px rgba(20, 184, 166, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+
+/* Secondary glass button variant */
+.btn-glass {
+  background: var(--surface-glass); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border: 1px solid var(--glass-border); color: var(--text-secondary); box-shadow: var(--shadow-soft);
+}
+.btn-glass:hover { background: #fff; border-color: var(--brand-teal); color: var(--brand-teal-2); transform: translateY(-1px); }
+
+/* Teal focus rings on inputs (was navy) */
+.input:focus, .select:focus, .textarea:focus,
+.field input:focus, .field select:focus, .field textarea:focus,
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+  border-color: var(--brand-teal); box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.link-btn, a.link { color: var(--brand-teal-2); }
+.link-btn:hover { color: var(--brand-teal); }
+
+/* Refined stat-card icon badges — soft tinted chips, restrained on-palette set.
+   Overrides the earlier saturated gradients. Better contrast, cleaner SaaS look. */
+.stat-ico {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: var(--brand-accent-soft); color: var(--brand-teal-2);
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.16);
+}
+.stat-ico svg { width: 19px; height: 19px; stroke-width: 2.1; }
+.stats-grid .stat-card:nth-child(5n+1) .stat-ico { background: #D6F3EF; color: #0D9488; box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.20); }
+.stats-grid .stat-card:nth-child(5n+2) .stat-ico { background: #E0F2FE; color: #0369A1; box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.18); }
+.stats-grid .stat-card:nth-child(5n+3) .stat-ico { background: #E7EBFA; color: #27409A; box-shadow: inset 0 0 0 1px rgba(39, 64, 154, 0.16); }
+.stats-grid .stat-card:nth-child(5n+4) .stat-ico { background: #D1FAE5; color: #047857; box-shadow: inset 0 0 0 1px rgba(5, 150, 105, 0.18); }
+.stats-grid .stat-card:nth-child(5n+5) .stat-ico { background: #FEF3C7; color: #B45309; box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.22); }
+
+/* Sidebar active icon tile now reads teal→cyan (tokens updated) + glow */
+.sidebar .nav-item.active > svg, .sidebar .nav-item.active > i {
+  background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan));
+}
+/* Wallet metric "remaining" hero stays teal */
+.wallet-metric--balance { background: linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(56, 189, 248, 0.10)); border-color: rgba(20, 184, 166, 0.32); }
+.wallet-metric--balance .wallet-metric__value { color: var(--brand-teal-2); }
+
+/* ═══ Dashboard hero + service quick-actions ═══ */
+.dash-hero {
+  display: flex; align-items: stretch; justify-content: space-between; gap: 24px; flex-wrap: wrap;
+  margin-bottom: 14px; padding: 22px 24px; border-radius: var(--r-lg); color: #fff;
+  position: relative; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: var(--shadow-float);
+  background:
+    radial-gradient(120% 150% at 100% 0%, rgba(56, 189, 248, 0.34), transparent 55%),
+    radial-gradient(120% 170% at 0% 110%, rgba(20, 184, 166, 0.30), transparent 52%),
+    linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-navy-2) 100%);
+}
+.dash-hero__main { min-width: 260px; flex: 1 1 360px; }
+.dash-hero__eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255, 255, 255, 0.66); }
+html[lang="ar"] .dash-hero__eyebrow { letter-spacing: 0; text-transform: none; }
+.dash-hero__title { margin: 5px 0 5px; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; }
+.dash-hero__sub { margin: 0 0 16px; max-width: 54ch; font-size: 13.5px; line-height: 1.5; color: rgba(255, 255, 255, 0.80); }
+.dash-hero__cta { display: flex; gap: 10px; flex-wrap: wrap; }
+.dash-hero__cta .btn-glass { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.24); color: #fff; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.dash-hero__cta .btn-glass:hover { background: rgba(255, 255, 255, 0.24); color: #fff; border-color: rgba(255, 255, 255, 0.4); }
+.dash-hero__metrics { display: grid; grid-template-columns: 1fr; gap: 10px; align-content: center; min-width: 248px; flex: 0 1 280px; }
+.hero-metric {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.10); border: 1px solid rgba(255, 255, 255, 0.15);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: background 0.16s var(--ease-out);
+}
+.hero-metric:hover { background: rgba(255, 255, 255, 0.16); }
+.hero-metric__ico { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: rgba(255, 255, 255, 0.16); color: #fff; flex: 0 0 34px; }
+.hero-metric__ico svg { width: 17px; height: 17px; }
+.hero-metric__label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255, 255, 255, 0.70); }
+html[lang="ar"] .hero-metric__label { text-transform: none; letter-spacing: 0; }
+.hero-metric__num { font-size: 18px; font-weight: 800; }
+.hero-metric--balance { display: block; background: linear-gradient(135deg, rgba(20, 184, 166, 0.36), rgba(56, 189, 248, 0.22)); border-color: rgba(255, 255, 255, 0.24); }
+.hero-metric--balance .hero-metric__value { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; margin-top: 3px; }
+
+.quick-actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 16px; }
+.qa-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; min-height: 88px; padding: 14px 8px;
+  border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface); box-shadow: var(--shadow-soft);
+  color: var(--text-secondary); font-size: 12px; font-weight: 700;
+  transition: transform 0.16s var(--ease-out), box-shadow 0.16s, border-color 0.16s, color 0.16s;
+}
+.qa-tile:hover { transform: translateY(-3px); border-color: rgba(20, 184, 166, 0.45); box-shadow: var(--shadow-card); color: var(--brand-navy-2); }
+.qa-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; background: var(--brand-accent-soft); color: var(--brand-teal-2); transition: background 0.16s, color 0.16s, box-shadow 0.16s; }
+.qa-ico svg { width: 21px; height: 21px; }
+.qa-tile:hover .qa-ico { background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan)); color: #fff; box-shadow: var(--shadow-glow-teal); }
+.qa-label { text-align: center; line-height: 1.2; }
+
+@media (max-width: 920px) {
+  .quick-actions { grid-template-columns: repeat(3, 1fr); }
+  .dash-hero { padding: 18px; }
+  .dash-hero__metrics { flex: 1 1 100%; min-width: 0; grid-template-columns: 1fr 1fr; }
+  .hero-metric--balance { grid-column: 1 / -1; }
+}
+@media (max-width: 520px) {
+  .quick-actions { grid-template-columns: repeat(2, 1fr); }
+  .dash-hero__title { font-size: 22px; }
+  .dash-hero__metrics { grid-template-columns: 1fr; }
+  .qa-tile { min-height: 80px; }
+}
+
+/* Destination cards — teal-consistent icon chip + accent (match quick-actions) */
+.dest-card-icon { background: var(--brand-accent-soft); border-color: rgba(20, 184, 166, 0.18); color: var(--brand-teal-2); transition: background 0.18s var(--ease-out), color 0.18s, box-shadow 0.18s; }
+.dest-card::before { background: linear-gradient(90deg, var(--accent-teal), var(--accent-cyan)); }
+.dest-card:hover { border-color: rgba(20, 184, 166, 0.45); }
+.dest-card:hover .dest-card-icon { background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan)); color: #fff; box-shadow: var(--shadow-glow-teal); }
+/* Destination cards WITH a background image: darken for legible white text */
+.dest-card.has-bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(7,31,92,0.20), rgba(7,31,92,0.78)); z-index: 0; }
+.dest-card.has-bg > * { position: relative; z-index: 1; }
+.dest-card.has-bg .dest-card-name, .dest-card.has-bg .dest-card-sub, .dest-card.has-bg .dest-card-count { color: #fff; }
+.dest-card.has-bg .dest-card-count { color: rgba(255,255,255,0.85); }

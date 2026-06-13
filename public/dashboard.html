@@ -6,7 +6,7 @@
   <title>Elbakri Overseas - Agency Portal</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/portal.css">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -575,7 +575,7 @@ async function renderDashboard() {
       ${statCard("stat.pending",            d.pendingBookings || 0,      "status.PENDING",      "clock")}
       ${offerCardHtml(activeOffers)}`;
 
-  content(pageHeader() + `
+  content(dashboardHero(ctx) + serviceQuickActions() + `
     <div class="stats-grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">
       ${templateCards || defaultCards}
     </div>
@@ -629,6 +629,59 @@ function offerCardHtml(count) {
     <div class="stat-value">${formatNumber(count)}</div>
     <div class="stat-sub">${has ? t("offers.viewAll","View Offers") : t("offers.noOffer","No active offers")}</div>
   </div>`;
+}
+
+function greetingByHour() {
+  const h = new Date().getHours();
+  if (h < 12) return t("dash.morning", "Good morning");
+  if (h < 18) return t("dash.afternoon", "Good afternoon");
+  return t("dash.evening", "Good evening");
+}
+
+// Premium glass hero — greeting, today's highlights, quick CTAs.
+function dashboardHero(ctx) {
+  const bc = document.getElementById("breadcrumbTitle"); if (bc) bc.textContent = t("nav.dashboard");
+  const company = escapeHtml(ctx.companyName || "Elbakri B2B");
+  return `<section class="dash-hero">
+    <div class="dash-hero__main">
+      <div class="dash-hero__eyebrow">${greetingByHour()}</div>
+      <h1 class="dash-hero__title">${company}</h1>
+      <p class="dash-hero__sub">${t("dash.heroSub", "Here is your operations summary across bookings, balance and requests.")}</p>
+      <div class="dash-hero__cta">
+        <button class="btn btn-primary" onclick="setPage('hotels')">${icon("hotel")}&nbsp;${t("dash.bookHotel", "Book a Hotel")}</button>
+        <button class="btn btn-glass" onclick="setPage('transport')">${icon("bus")}&nbsp;${t("dash.newTransfer", "New Transfer")}</button>
+      </div>
+    </div>
+    <div class="dash-hero__metrics">
+      <div class="hero-metric hero-metric--balance">
+        <div class="hero-metric__label">${t("wallet.remainingBalance", "Remaining Balance")}</div>
+        <div class="hero-metric__value">${formatStoredMoney(ctx.remaining, ctx.cur)}</div>
+      </div>
+      <div class="hero-metric" onclick="setPage('bookings')" style="cursor:pointer">
+        <span class="hero-metric__ico">${icon("clock")}</span>
+        <div><div class="hero-metric__label">${t("stat.pending", "Pending")}</div><div class="hero-metric__num">${formatNumber(ctx.pendingBookings)}</div></div>
+      </div>
+      <div class="hero-metric" onclick="setPage('offers')" style="cursor:pointer">
+        <span class="hero-metric__ico">${icon("tag")}</span>
+        <div><div class="hero-metric__label">${t("offers.dashboardCard", "Active Offers")}</div><div class="hero-metric__num">${formatNumber(ctx.activeOffers)}</div></div>
+      </div>
+    </div>
+  </section>`;
+}
+
+// Service quick-action launcher grid.
+function serviceQuickActions() {
+  const items = [
+    ["hotels", "hotel", "nav.hotels"],
+    ["transport", "bus", "nav.transport"],
+    ["activities", "map-pin", "nav.activities"],
+    ["security-approval", "shield-check", "nav.securityApproval"],
+    ["airport-assist", "plane-landing", "nav.airportAssist"],
+    ["sim-card", "credit-card", "nav.simCard"],
+  ];
+  return `<div class="quick-actions">${items.map(([page, ic, key]) =>
+    `<button class="qa-tile" onclick="setPage('${page}')"><span class="qa-ico">${icon(ic)}</span><span class="qa-label">${t(key)}</span></button>`
+  ).join("")}</div>`;
 }
 
 function statCard(labelKey, value, subKey, iconName) {
