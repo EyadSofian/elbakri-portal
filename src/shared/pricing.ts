@@ -79,7 +79,7 @@ export async function resolvePriceContext(req: Request): Promise<PriceContext> {
   return { market: company?.market ?? null, companyId: caller.companyId };
 }
 
-interface PriceRow {
+export interface PriceRow {
   market: Market | null;
   companyId: string | null;
   currency: string;
@@ -92,7 +92,7 @@ interface PriceRow {
 }
 
 /** Score a candidate row against the context; -1 means "not applicable". */
-function scoreRow(r: PriceRow, ctx: PriceContext): number {
+export function scoreRow(r: PriceRow, ctx: PriceContext): number {
   const now = ctx.date ?? new Date();
   if (r.validFrom && r.validFrom > now) return -1;
   if (r.validTo && r.validTo < now) return -1;
@@ -125,6 +125,28 @@ async function bestRow(entityType: MarketEntityType, entityId: string, ctx: Pric
     if (s > bestScore) { best = r; bestScore = s; }
   }
   return best;
+}
+
+/**
+ * Pure resolution (no DB) — pick the best applicable row and return its explicit
+ * amount + currency VERBATIM (no FX), or the base price when nothing applies.
+ * Shared scoring with the DB path; exported so the rules can be unit-tested.
+ */
+export function resolveExplicitPrice(
+  rows: PriceRow[],
+  ctx: PriceContext,
+  base: Decimal,
+  baseCurrency: string,
+): ResolvedPrice {
+  let best: PriceRow | null = null;
+  let bestScore = 0;
+  for (const r of rows) {
+    const s = scoreRow(r, ctx);
+    if (s > bestScore) { best = r; bestScore = s; }
+  }
+  if (!best) return { amount: base, currency: baseCurrency, overridden: false };
+  const v = rowValue(best, base, baseCurrency);
+  return { amount: v.amount, currency: v.currency, overridden: best.amount != null || best.priceUsd != null };
 }
 
 /** Single-entity resolved money — explicit admin price or base fallback. */

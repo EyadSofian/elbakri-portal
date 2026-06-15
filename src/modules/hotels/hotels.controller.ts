@@ -3,7 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { CompanyTier, Prisma } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
-import { resolveMarketPrices } from '../../shared/pricing';
+import { resolveMarketPriceMap } from '../../shared/pricing';
 import { syncEntityFromSheets } from '../sheets-sync/sheets-sync.service';
 
 const TIER_ORDER: Record<CompanyTier, number> = {
@@ -119,8 +119,9 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
     companyMarket = company?.market ?? null;
   }
 
-  // Explicit per-market price overrides (USD) for this company's market
-  const marketOverrides = await resolveMarketPrices('HOTEL', hotels.map((h) => h.id), companyMarket);
+  // Explicit price overrides for this company's market AND company (verbatim, no FX)
+  const companyId = caller.role !== 'SUPERADMIN' ? (caller.companyId ?? null) : null;
+  const marketOverrides = await resolveMarketPriceMap('HOTEL', hotels.map((h) => h.id), { market: companyMarket, companyId });
 
   const data = hotels.map((hotel) => {
     if (caller.role === 'SUPERADMIN') {
@@ -129,11 +130,12 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
     const visibilityOverride = 'companyVisibility' in hotel ? hotel.companyVisibility[0] : null;
     const showPrice = canSeePrices(hotel, companyTier, visibilityOverride);
     const { companyVisibility: _companyVisibility, ...hotelData } = hotel as typeof hotel & { companyVisibility?: unknown };
-    const marketPrice = marketOverrides.get(hotel.id) ?? hotel.pricePerNight;
+    const ov = marketOverrides.get(hotel.id);
+    const marketPrice = ov?.amount ?? hotel.pricePerNight;
     return {
       ...hotelData,
       pricePerNight: showPrice ? marketPrice : null,
-      currency: marketOverrides.has(hotel.id) ? 'USD' : hotel.currency,
+      currency: ov?.currency ?? hotel.currency,
       priceVisible: showPrice,
       canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,
     };
@@ -198,15 +200,15 @@ export async function getHotel(req: Request, res: Response): Promise<void> {
   const visibilityOverride = 'companyVisibility' in hotel ? hotel.companyVisibility[0] : null;
   const showPrice = canSeePrices(hotel, companyTier, visibilityOverride);
   const { companyVisibility: _companyVisibility, ...hotelData } = hotel as typeof hotel & { companyVisibility?: unknown };
-  const marketOverrides = await resolveMarketPrices('HOTEL', [hotel.id], company?.market ?? null);
-  const marketPrice = marketOverrides.get(hotel.id) ?? hotel.pricePerNight;
+  const ov = (await resolveMarketPriceMap('HOTEL', [hotel.id], { market: company?.market ?? null, companyId: caller.companyId ?? null })).get(hotel.id);
+  const marketPrice = ov?.amount ?? hotel.pricePerNight;
 
   res.json({
     success: true,
     data: {
       ...hotelData,
       pricePerNight: showPrice ? marketPrice : null,
-      currency: marketOverrides.has(hotel.id) ? 'USD' : hotel.currency,
+      currency: ov?.currency ?? hotel.currency,
       pricing: showPrice ? hotel.pricing : [],
       priceVisible: showPrice,
       canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,

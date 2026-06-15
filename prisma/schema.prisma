@@ -130,6 +130,16 @@ enum TransportType {
   INTERCITY
 }
 
+// How a transport product is priced/consumed. Drives which booking fields the
+// UI collects and how the backend validates the journey (see TransportRate /
+// TransportBooking). Independent of the legacy `TransportType`.
+enum TransportServiceMode {
+  POINT_TO_POINT // explicit From → To (e.g. hotel → hotel)
+  AIRPORT_TRANSFER // airport ⇄ hotel/address, flight details
+  HOURLY_CHARTER // car at disposal for N hours (e.g. Cairo 8/12 Hours)
+  DAY_USE // full-day disposal
+}
+
 enum VehicleType {
   SEDAN
   SUV
@@ -836,32 +846,46 @@ model CruiseBooking {
 // ─────────────────────────────────────────────
 
 model TransportBooking {
-  id                     String            @id @default(cuid())
-  refNumber              String            @unique
+  id                     String                @id @default(cuid())
+  refNumber              String                @unique
   companyId              String
-  company                Company           @relation(fields: [companyId], references: [id])
+  company                Company               @relation(fields: [companyId], references: [id])
   createdById            String
-  createdBy              User              @relation("TransportBookingCreatedBy", fields: [createdById], references: [id])
+  createdBy              User                  @relation("TransportBookingCreatedBy", fields: [createdById], references: [id])
   type                   TransportType
-  vehicleType            VehicleType       @default(SEDAN)
+  serviceMode            TransportServiceMode?
+  rateId                 String? // authoritative priced product — never match a booking to a price by display text
+  rate                   TransportRate?        @relation(fields: [rateId], references: [id], onDelete: SetNull)
+  vehicleType            VehicleType           @default(SEDAN)
+  // Denormalized route summary (back-compat). The structured fields below are authoritative.
   fromLocation           String
   toLocation             String
-  fromType               String? // AIRPORT | DESTINATION | HOTEL
-  toType                 String? // AIRPORT | DESTINATION | HOTEL
-  pickupHotelName        String? // required when fromType = HOTEL (or hourly/day-use pickup)
-  dropoffHotelName       String? // required when toType = HOTEL
+  fromType               String? // AIRPORT | DESTINATION | HOTEL (legacy)
+  toType                 String? // AIRPORT | DESTINATION | HOTEL (legacy)
+  // Actual outbound journey — captured independently of the rate's display labels.
+  pickupType             String? // AIRPORT | HOTEL | ADDRESS | LANDMARK
+  pickupLocation         String?
+  pickupAddress          String?
+  pickupHotelName        String? // required when pickupType = HOTEL (or hourly/day-use pickup)
+  dropoffType            String? // AIRPORT | HOTEL | ADDRESS | LANDMARK
+  dropoffLocation        String?
+  dropoffAddress         String?
+  dropoffHotelName       String? // required when dropoffType = HOTEL
   pickupDateTime         DateTime
   returnDateTime         DateTime?
-  isRoundTrip            Boolean           @default(false)
-  // Return leg (only populated when isRoundTrip = true)
+  isRoundTrip            Boolean               @default(false)
+  sameRouteReversed      Boolean               @default(true) // true = return is the outbound reversed (convenience default; unlock to capture a different return)
+  // Return leg (independent — only populated when isRoundTrip = true)
   returnFromLocation     String?
   returnToLocation       String?
   returnFromType         String?
   returnToType           String?
   returnPickupHotelName  String?
+  returnPickupAddress    String?
   returnDropoffHotelName String?
-  passengerCount         Int               @default(1)
-  passengerNames         String[]          @default([])
+  returnDropoffAddress   String?
+  passengerCount         Int                   @default(1)
+  passengerNames         String[]              @default([])
   passengerName          String? // lead passenger name
   flightNumber           String?
   airlineName            String?
@@ -869,55 +893,64 @@ model TransportBooking {
   returnAirlineName      String?
   contactNumber          String?
   groupTypeId            String?
-  groupType              ServiceGroupType? @relation("TransportBookingGroupType", fields: [groupTypeId], references: [id], onDelete: SetNull)
+  groupType              ServiceGroupType?     @relation("TransportBookingGroupType", fields: [groupTypeId], references: [id], onDelete: SetNull)
   groupTypeLabel         String?
-  totalAmount            Decimal           @db.Decimal(12, 2)
-  currency               String            @default("USD")
-  sourceAmount           Decimal?          @db.Decimal(12, 2)
+  totalAmount            Decimal               @db.Decimal(12, 2)
+  currency               String                @default("USD")
+  sourceAmount           Decimal?              @db.Decimal(12, 2)
   sourceCurrency         String?
-  exchangeRate           Decimal?          @db.Decimal(18, 8)
+  exchangeRate           Decimal?              @db.Decimal(18, 8)
   exchangeRateAt         DateTime?
-  status                 BookingStatus     @default(PENDING)
+  status                 BookingStatus         @default(PENDING)
   notes                  String?
   customFields           Json? // dynamic fields captured by the Request Form Builder template
   invoice                Invoice?
-  voucher                Voucher?          @relation("VoucherTransport")
-  requestedAt            DateTime          @default(now())
+  voucher                Voucher?              @relation("VoucherTransport")
+  requestedAt            DateTime              @default(now())
   confirmedAt            DateTime?
   confirmedById          String?
-  confirmedBy            User?             @relation("TransportConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt              DateTime          @default(now())
-  updatedAt              DateTime          @updatedAt
+  confirmedBy            User?                 @relation("TransportConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
   @@index([companyId])
   @@index([status])
   @@index([confirmedById])
   @@index([groupTypeId])
+  @@index([rateId])
 }
 
 model TransportRate {
-  id                String             @id @default(cuid())
+  id                String               @id @default(cuid())
   sheetsRowId       String?
-  type              TransportType      @default(PRIVATE_TRANSFER)
-  vehicleType       VehicleType        @default(SEDAN)
+  type              TransportType        @default(PRIVATE_TRANSFER)
+  // Priced-product descriptor — drives the service-aware UI + backend validation.
+  serviceMode       TransportServiceMode @default(POINT_TO_POINT)
+  serviceNameEn     String?
+  serviceNameAr     String?
+  serviceArea       String? // e.g. "Cairo", "Sharm El Sheikh"
+  durationHours     Int? // hours the car is at disposal (HOURLY_CHARTER / DAY_USE)
+  vehicleType       VehicleType          @default(SEDAN)
   city              String?
   fromLocation      String?
   toLocation        String?
-  rate              Decimal            @db.Decimal(10, 2) // one-way rate
-  roundTripRate     Decimal?           @db.Decimal(10, 2) // explicit round-trip rate (optional)
-  currency          String             @default("USD")
-  minCapacity       Int                @default(1)
+  rate              Decimal              @db.Decimal(10, 2) // one-way rate
+  roundTripRate     Decimal?             @db.Decimal(10, 2) // explicit round-trip rate (optional)
+  currency          String               @default("USD")
+  minCapacity       Int                  @default(1)
   maxCapacity       Int?
   notes             String?
-  isActive          Boolean            @default(true)
+  isActive          Boolean              @default(true)
   destinationId     String?
-  destination       Destination?       @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  destination       Destination?         @relation(fields: [destinationId], references: [id], onDelete: SetNull)
   serviceGroupTypes ServiceGroupType[]
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  bookings          TransportBooking[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
 
   @@index([sheetsRowId])
   @@index([type])
+  @@index([serviceMode])
   @@index([vehicleType])
   @@index([destinationId])
 }
@@ -1314,6 +1347,7 @@ model SimRequest {
   clientName     String
   phone          String
   quantity       Int           @default(1)
+  unitAmount     Decimal?      @db.Decimal(10, 2) // explicit unit price snapshot (no FX); total = unitAmount × quantity
   arrivalDate    DateTime?
   notes          String?
   customFields   Json? // dynamic fields captured by the Request Form Builder template

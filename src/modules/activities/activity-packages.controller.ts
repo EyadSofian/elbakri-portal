@@ -5,7 +5,7 @@ import { prisma } from '../../config/db';
 import { generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { resolveMarketMoney } from '../../shared/pricing';
 import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/group-types.service';
-import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
@@ -159,8 +159,9 @@ export async function createActivityPackage(req: Request, res: Response): Promis
     return;
   }
 
-  // Resolve + price every line server-side
-  const currency = company.currency;
+  // Resolve + price every line server-side. Explicit admin prices are used
+  // verbatim (no FX); all lines must resolve to ONE shared package currency.
+  let packageCurrency: string | null = null;
   const lines: {
     activityId: string; activityName: string; city: string | null;
     activityDate: Date; selectedTime: string | null; endTime: string | null;
@@ -202,16 +203,25 @@ export async function createActivityPackage(req: Request, res: Response): Promis
       ? applicableTypes.find((o) => o.id === it.groupTypeId)
       : applicableTypes[0];
 
+    const linePriceCtx = { market: company.market, companyId, pax: adults + children, date: activityDate };
     const [adultPrice, childPrice] = await Promise.all([
-      resolveMarketMoney('ACTIVITY_ADULT', activity.id, company.market, activity.priceAdult, activity.currency, companyId),
-      resolveMarketMoney('ACTIVITY_CHILD', activity.id, company.market, activity.priceChild, activity.currency, companyId),
+      resolveMarketMoney('ACTIVITY_ADULT', activity.id, linePriceCtx, activity.priceAdult, activity.currency),
+      resolveMarketMoney('ACTIVITY_CHILD', activity.id, linePriceCtx, activity.priceChild, activity.currency),
     ]);
-    const [adultCharge, childCharge] = await Promise.all([
-      convertMoney(adultPrice.amount, adultPrice.currency, currency),
-      convertMoney(childPrice.amount, childPrice.currency, currency),
-    ]);
-    let lineAmount = adultCharge.totalAmount.mul(adults).add(childCharge.totalAmount.mul(children));
+    // No silent FX (Finding 5/§6): every line — and the whole package — must share ONE currency.
+    const lineCurrency = adultPrice.currency;
+    if (children > 0 && childPrice.currency !== lineCurrency) {
+      res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: `Adult and child prices for "${activity.name}" use different currencies. Align them.` });
+      return;
+    }
+    if (packageCurrency === null) packageCurrency = lineCurrency;
+    else if (packageCurrency !== lineCurrency) {
+      res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: `Package activities resolve to different currencies (${packageCurrency} vs ${lineCurrency}). All activities in a package must share one currency.` });
+      return;
+    }
+    let lineAmount = adultPrice.amount.mul(adults).add(childPrice.amount.mul(children));
     if (groupType) lineAmount = applyGroupAdjustment(lineAmount, groupType);
+    lineAmount = lineAmount.toDecimalPlaces(2);
     packageTotal = packageTotal.add(lineAmount);
 
     lines.push({
@@ -234,6 +244,9 @@ export async function createActivityPackage(req: Request, res: Response): Promis
       lineAmount,
     });
   }
+
+  // One shared, explicit currency for the whole package (no FX).
+  const currency = packageCurrency ?? company.currency;
 
   try {
     const refNumber = await genPackageRef();

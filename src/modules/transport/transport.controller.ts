@@ -3,11 +3,11 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { BookingStatus, TransportType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
-import { resolveCallerMarket, resolveMarketPrices, resolveMarketMoney } from '../../shared/pricing';
+import { resolvePriceContext, resolveMarketPriceMap, resolveMarketMoney } from '../../shared/pricing';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/group-types.service';
-import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 
@@ -71,15 +71,12 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
     return;
   }
 
-  // Apply the caller's market price tier (USD)
-  const market = await resolveCallerMarket(req);
-  const company = req.user?.companyId
-    ? await prisma.company.findUnique({ where: { id: req.user.companyId }, select: { currency: true } })
-    : null;
-  const targetCurrency = company?.currency ?? rate.currency;
-  const oneWayMoney = await resolveMarketMoney('TRANSPORT', rate.id, market, rate.rate, rate.currency);
+  // Explicit admin price for the caller's market + company — NO FX (verbatim currency).
+  const { market, companyId } = await resolvePriceContext(req);
+  const priceCtx = { market, companyId, pax, date: req.query.date ? new Date(String(req.query.date)) : undefined };
+  const oneWayMoney = await resolveMarketMoney('TRANSPORT', rate.id, priceCtx, rate.rate, rate.currency);
   const roundTripMoney = rate.roundTripRate
-    ? await resolveMarketMoney('TRANSPORT_RT', rate.id, market, rate.roundTripRate, rate.currency)
+    ? await resolveMarketMoney('TRANSPORT_RT', rate.id, priceCtx, rate.roundTripRate, rate.currency)
     : { amount: oneWayMoney.amount.mul(2), currency: oneWayMoney.currency, overridden: oneWayMoney.overridden };
   const applicableTypes = await findApplicableGroupTypes({
     scope: 'TRANSPORT',
@@ -95,12 +92,9 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
     res.status(400).json({ success: false, error: 'INVALID_GROUP_TYPE', message: 'Selected transport type is not available' });
     return;
   }
-  const [oneWayCharge, roundTripCharge] = await Promise.all([
-    convertMoney(applyGroupAdjustment(oneWayMoney.amount, groupType), oneWayMoney.currency, targetCurrency),
-    convertMoney(applyGroupAdjustment(roundTripMoney.amount, groupType), roundTripMoney.currency, targetCurrency),
-  ]);
-  const oneWayRate = oneWayCharge.totalAmount;
-  const roundTripRate = roundTripCharge.totalAmount;
+  // Prices returned verbatim in the admin-defined currency — never converted.
+  const oneWayRate = applyGroupAdjustment(oneWayMoney.amount, groupType).toDecimalPlaces(2);
+  const roundTripRate = applyGroupAdjustment(roundTripMoney.amount, groupType).toDecimalPlaces(2);
   const totalAmount = roundTrip ? roundTripRate : oneWayRate;
 
   res.json({
@@ -110,8 +104,10 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
       rateId: rate.id,
       oneWayRate,
       roundTripRate,
+      roundTripIsEstimated: !rate.roundTripRate, // true → round trip shown as 2 × one-way (rule shown, not a silent double)
       totalAmount,
-      currency: targetCurrency,
+      currency: oneWayMoney.currency,
+      serviceMode: rate.serviceMode,
       vehicleType: rate.vehicleType,
       rateType: rate.type,
       groupType,
@@ -139,17 +135,22 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   const caller = req.user!;
   const body = req.body as {
     companyId?: string;
+    rateId?: string;           // authoritative priced product (preferred over route match)
+    serviceMode?: string;
     type: 'AIRPORT_TRANSFER' | 'PRIVATE_TRANSFER' | 'DAY_TOUR_TRANSPORT' | 'INTERCITY';
     vehicleType?: 'SEDAN' | 'SUV' | 'VAN_6' | 'VAN_12' | 'MINIBUS_20' | 'BUS_45' | 'LUXURY_LIMO';
-    fromLocation: string; toLocation: string;
+    fromLocation?: string; toLocation?: string;
     fromType?: string; toType?: string;
-    pickupHotelName?: string; dropoffHotelName?: string;
+    // Structured journey (independent of the rate's display labels)
+    pickupType?: string; pickupLocation?: string; pickupAddress?: string; pickupHotelName?: string;
+    dropoffType?: string; dropoffLocation?: string; dropoffAddress?: string; dropoffHotelName?: string;
     pickupDateTime: string; returnDateTime?: string;
-    isRoundTrip?: boolean; passengerCount?: number;
-    // Return leg
+    isRoundTrip?: boolean; sameRouteReversed?: boolean; passengerCount?: number;
+    // Return leg (independent endpoints)
     returnFromLocation?: string; returnToLocation?: string;
     returnFromType?: string; returnToType?: string;
-    returnPickupHotelName?: string; returnDropoffHotelName?: string;
+    returnPickupHotelName?: string; returnPickupAddress?: string;
+    returnDropoffHotelName?: string; returnDropoffAddress?: string;
     passengerNames?: string[];
     passengerName?: string;    // lead passenger
     flightNumber?: string;
@@ -180,63 +181,102 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   }
 
   const passengerCount = Math.max(1, body.passengerCount ?? 1);
-  if (body.isRoundTrip && !body.returnDateTime) {
-    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Return date and time are required for a round trip' });
-    return;
-  }
+  const pickupDateTime = new Date(body.pickupDateTime);
+  const returnDateTime = body.returnDateTime ? new Date(body.returnDateTime) : null;
 
-  // Required hotel / pickup-location validation.
-  const isHotel = (t?: string) => String(t ?? '').toUpperCase() === 'HOTEL';
-  const fail = (message: string) => res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message });
-  if (isHotel(body.fromType) && !body.pickupHotelName?.trim()) { fail('Pickup hotel name is required when the pickup is a hotel'); return; }
-  if (isHotel(body.toType) && !body.dropoffHotelName?.trim()) { fail('Drop-off hotel name is required when the destination is a hotel'); return; }
-  // Hourly / day-use transport must know where the client starts.
-  if (body.type === 'DAY_TOUR_TRANSPORT' && !body.fromLocation?.trim() && !body.pickupHotelName?.trim()) {
-    fail('A pickup location or hotel is required for hourly / day-use transport'); return;
-  }
-  if (body.isRoundTrip) {
-    if (isHotel(body.returnFromType ?? body.toType) && !(body.returnPickupHotelName ?? body.dropoffHotelName)?.toString().trim()) {
-      fail('Return pickup hotel name is required when the return pickup is a hotel'); return;
-    }
-    if (isHotel(body.returnToType ?? body.fromType) && !(body.returnDropoffHotelName ?? body.pickupHotelName)?.toString().trim()) {
-      fail('Return drop-off hotel name is required when the return destination is a hotel'); return;
-    }
-  }
-
-  // Resolve price server-side — client totalAmount is ignored entirely
-  const matchingRate = await prisma.transportRate.findFirst({
-    where: {
-      isActive: true,
-      type: body.type,
-      ...(body.vehicleType && { vehicleType: body.vehicleType }),
-      ...(body.fromLocation && { fromLocation: { equals: body.fromLocation, mode: 'insensitive' as const } }),
-      ...(body.toLocation && { toLocation: { equals: body.toLocation, mode: 'insensitive' as const } }),
-      ...(body.destinationId && { destinationId: body.destinationId }),
-      minCapacity: { lte: passengerCount },
-      OR: [
-        { maxCapacity: null },
-        { maxCapacity: { gte: passengerCount } },
-      ],
-    },
-    orderBy: { rate: 'asc' }, // cheapest matching rate wins
-  });
-
+  // ── Resolve the priced product FIRST. rateId is authoritative — never match a
+  //    booking to a price by ambiguous display text when the rate id is known.
+  const matchingRate = body.rateId
+    ? await prisma.transportRate.findFirst({ where: { id: body.rateId, isActive: true } })
+    : await prisma.transportRate.findFirst({
+        where: {
+          isActive: true,
+          type: body.type,
+          ...(body.vehicleType && { vehicleType: body.vehicleType }),
+          ...(body.fromLocation && { fromLocation: { equals: body.fromLocation, mode: 'insensitive' as const } }),
+          ...(body.toLocation && { toLocation: { equals: body.toLocation, mode: 'insensitive' as const } }),
+          ...(body.destinationId && { destinationId: body.destinationId }),
+          minCapacity: { lte: passengerCount },
+          OR: [{ maxCapacity: null }, { maxCapacity: { gte: passengerCount } }],
+        },
+        orderBy: { rate: 'asc' }, // cheapest matching rate wins
+      });
   if (!matchingRate) {
     res.status(400).json({
       success: false,
       error: 'USE_QUOTE_REQUEST',
-      message: 'No matching transport rate found for the selected route and vehicle. Please submit a quote request via /api/quote-requests.',
+      message: 'No matching transport rate found for the selected service and vehicle. Please submit a quote request via /api/quote-requests.',
     });
     return;
   }
 
-  // Server-authoritative price using the company's market tier (USD)
+  // The rate is the priced product; its service mode drives field validation.
+  const serviceMode = matchingRate.serviceMode;
+  const isDisposal = serviceMode === 'HOURLY_CHARTER' || serviceMode === 'DAY_USE';
+  const T = (t?: string | null) => String(t ?? '').toUpperCase();
+  const isHotel = (t?: string | null) => T(t) === 'HOTEL';
+  const fail = (message: string, error = 'VALIDATION_ERROR') =>
+    res.status(400).json({ success: false, error, message });
+
+  // Effective journey endpoints (structured fields preferred; legacy from/to fallback).
+  const pickupType = body.pickupType ?? body.fromType ?? null;
+  const dropoffType = body.dropoffType ?? body.toType ?? null;
+  const pickupHotelName = body.pickupHotelName?.trim() || null;
+  const pickupAddress = body.pickupAddress?.trim() || null;
+  const pickupLocation = body.pickupLocation?.trim() || body.fromLocation?.trim() || null;
+  const dropoffHotelName = body.dropoffHotelName?.trim() || null;
+  const dropoffAddress = body.dropoffAddress?.trim() || null;
+  const dropoffLocation = body.dropoffLocation?.trim() || body.toLocation?.trim() || null;
+
+  // A real pickup is an actual place — NEVER the rate's service label (Finding 1).
+  // e.g. fromLocation "Cairo (8 hours)" is the priced product, not a pickup point.
+  const rateLabels = new Set(
+    [matchingRate.fromLocation, matchingRate.toLocation, matchingRate.serviceArea, matchingRate.serviceNameEn, matchingRate.serviceNameAr]
+      .filter(Boolean)
+      .map((s) => String(s).trim().toLowerCase()),
+  );
+  const realLoc = pickupLocation && !rateLabels.has(pickupLocation.trim().toLowerCase()) ? pickupLocation : null;
+  const hasRealPickup =
+    isHotel(pickupType) ? !!pickupHotelName
+      : (T(pickupType) === 'ADDRESS' || T(pickupType) === 'LANDMARK') ? !!(pickupAddress || realLoc)
+        : T(pickupType) === 'AIRPORT' ? !!realLoc
+          : !!(pickupHotelName || pickupAddress || realLoc);
+  if (isDisposal && !hasRealPickup) {
+    fail('A real pickup location (hotel, address, airport or landmark) is required for hourly / day-use transport.', 'PICKUP_REQUIRED');
+    return;
+  }
+  if (!isDisposal) {
+    if (!hasRealPickup) { fail('A pickup location is required.', 'PICKUP_REQUIRED'); return; }
+    const hasRealDropoff = isHotel(dropoffType) ? !!dropoffHotelName : !!(dropoffAddress || dropoffLocation);
+    if (!hasRealDropoff) { fail('A drop-off location is required.', 'DROPOFF_REQUIRED'); return; }
+  }
+  if (isHotel(pickupType) && !pickupHotelName) { fail('Pickup hotel name is required when the pickup is a hotel.'); return; }
+  if (isHotel(dropoffType) && !dropoffHotelName) { fail('Drop-off hotel name is required when the destination is a hotel.'); return; }
+
+  // ── Round-trip validation (Finding 2 / §3) — independent return leg.
+  const sameRouteReversed = body.sameRouteReversed !== false; // default true
+  if (body.isRoundTrip) {
+    if (!returnDateTime) { fail('Return date and time are required for a round trip.'); return; }
+    if (returnDateTime <= pickupDateTime) { fail('Return date/time must be later than the outbound pickup date/time.', 'RETURN_BEFORE_OUTBOUND'); return; }
+    if (!sameRouteReversed) {
+      const rFromHotel = body.returnPickupHotelName?.trim() || null;
+      const rToHotel = body.returnDropoffHotelName?.trim() || null;
+      const rFromLoc = body.returnFromLocation?.trim() || body.returnPickupAddress?.trim() || null;
+      const rToLoc = body.returnToLocation?.trim() || body.returnDropoffAddress?.trim() || null;
+      if (!(rFromHotel || rFromLoc)) { fail('Return pickup location is required for a different return route.', 'RETURN_PICKUP_REQUIRED'); return; }
+      if (!(rToHotel || rToLoc)) { fail('Return drop-off location is required for a different return route.', 'RETURN_DROPOFF_REQUIRED'); return; }
+      if (isHotel(body.returnFromType) && !rFromHotel) { fail('Return pickup hotel name is required when the return pickup is a hotel.'); return; }
+      if (isHotel(body.returnToType) && !rToHotel) { fail('Return drop-off hotel name is required when the return destination is a hotel.'); return; }
+    }
+  }
+
+  // ── Group type (service tier)
   const applicableTypes = await findApplicableGroupTypes({
     scope: 'TRANSPORT',
     transportRateId: matchingRate.id,
     destinationId: matchingRate.destinationId ?? undefined,
     pax: passengerCount,
-    date: new Date(body.pickupDateTime),
+    date: pickupDateTime,
   });
   const groupType = body.groupTypeId
     ? applicableTypes.find((option) => option.id === body.groupTypeId)
@@ -246,17 +286,62 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     return;
   }
 
-  const sourceMoney = body.isRoundTrip && matchingRate.roundTripRate
-    ? await resolveMarketMoney('TRANSPORT_RT', matchingRate.id, company.market, matchingRate.roundTripRate, matchingRate.currency)
-    : await resolveMarketMoney('TRANSPORT', matchingRate.id, company.market, matchingRate.rate, matchingRate.currency);
-  if (body.isRoundTrip && !matchingRate.roundTripRate) sourceMoney.amount = sourceMoney.amount.mul(2);
-  const charge = await convertMoney(
-    applyGroupAdjustment(sourceMoney.amount, groupType),
-    sourceMoney.currency,
-    company.currency,
-  );
+  // ── Pricing: explicit admin price, NO FX (Finding 5/6). Round trip = two
+  //    independent legs (§3): explicit round-trip rate ONLY for the exact reverse
+  //    route; a different return route prices both legs and must share a currency.
+  const priceCtx = { market: company.market, companyId, pax: passengerCount, date: pickupDateTime };
+  const outboundOneWay = await resolveMarketMoney('TRANSPORT', matchingRate.id, priceCtx, matchingRate.rate, matchingRate.currency);
+  let sourceAmountRaw = applyGroupAdjustment(outboundOneWay.amount, groupType);
+  let priceCurrency = outboundOneWay.currency;
+  let pricingRule = 'ONE_WAY';
+
+  if (body.isRoundTrip) {
+    if (sameRouteReversed && matchingRate.roundTripRate) {
+      const rt = await resolveMarketMoney('TRANSPORT_RT', matchingRate.id, priceCtx, matchingRate.roundTripRate, matchingRate.currency);
+      sourceAmountRaw = applyGroupAdjustment(rt.amount, groupType);
+      priceCurrency = rt.currency;
+      pricingRule = 'ROUND_TRIP_EXPLICIT';
+    } else if (sameRouteReversed) {
+      sourceAmountRaw = applyGroupAdjustment(outboundOneWay.amount.mul(2), groupType);
+      pricingRule = 'ROUND_TRIP_TWO_ONE_WAY';
+    } else {
+      const returnRate = await prisma.transportRate.findFirst({
+        where: {
+          isActive: true,
+          ...(body.vehicleType && { vehicleType: body.vehicleType }),
+          ...(body.returnFromLocation && { fromLocation: { equals: body.returnFromLocation, mode: 'insensitive' as const } }),
+          ...(body.returnToLocation && { toLocation: { equals: body.returnToLocation, mode: 'insensitive' as const } }),
+          minCapacity: { lte: passengerCount },
+          OR: [{ maxCapacity: null }, { maxCapacity: { gte: passengerCount } }],
+        },
+        orderBy: { rate: 'asc' },
+      });
+      if (!returnRate) {
+        res.status(400).json({ success: false, error: 'RETURN_PRICE_ON_REQUEST', message: 'No price is configured for the different return route. Please submit a quote request for this round trip.' });
+        return;
+      }
+      const returnOneWay = await resolveMarketMoney('TRANSPORT', returnRate.id, priceCtx, returnRate.rate, returnRate.currency);
+      if (returnOneWay.currency !== outboundOneWay.currency) {
+        res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: `Outbound (${outboundOneWay.currency}) and return (${returnOneWay.currency}) legs use different currencies. They must match.` });
+        return;
+      }
+      sourceAmountRaw = applyGroupAdjustment(outboundOneWay.amount, groupType).add(applyGroupAdjustment(returnOneWay.amount, groupType));
+      pricingRule = 'ROUND_TRIP_TWO_LEGS';
+    }
+  }
+
+  const charge = explicitMoney(sourceAmountRaw, priceCurrency);
   const totalAmount = charge.totalAmount;
-  const currency = company.currency;
+  const currency = charge.currency;
+
+  // Stored route summary + return leg (reversed-outbound by default; independent when unlocked).
+  const fromLocationStore = pickupHotelName || pickupLocation || pickupAddress || matchingRate.serviceNameEn || matchingRate.serviceArea || matchingRate.fromLocation || 'Pickup';
+  const toLocationStore = dropoffHotelName || dropoffLocation || dropoffAddress || (isDisposal ? (matchingRate.serviceNameEn || matchingRate.serviceArea || 'At disposal') : (matchingRate.toLocation || 'Drop-off'));
+  const ret = body.isRoundTrip
+    ? (sameRouteReversed
+        ? { fromLocation: toLocationStore, toLocation: fromLocationStore, fromType: dropoffType, toType: pickupType, pickupHotelName: dropoffHotelName, pickupAddress: dropoffAddress, dropoffHotelName: pickupHotelName, dropoffAddress: pickupAddress }
+        : { fromLocation: body.returnFromLocation?.trim() || body.returnPickupAddress?.trim() || toLocationStore, toLocation: body.returnToLocation?.trim() || body.returnDropoffAddress?.trim() || fromLocationStore, fromType: body.returnFromType ?? null, toType: body.returnToType ?? null, pickupHotelName: body.returnPickupHotelName?.trim() || null, pickupAddress: body.returnPickupAddress?.trim() || null, dropoffHotelName: body.returnDropoffHotelName?.trim() || null, dropoffAddress: body.returnDropoffAddress?.trim() || null })
+    : null;
 
   try {
     const refNumber = await generateRef(prisma, 'TRN');
@@ -272,21 +357,32 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           createdById: caller.id,
           type: body.type,
           vehicleType: body.vehicleType ?? 'SEDAN',
-          fromLocation: body.fromLocation,
-          toLocation: body.toLocation,
-          fromType: body.fromType ?? null,
-          toType: body.toType ?? null,
-          pickupHotelName: body.pickupHotelName?.trim() || null,
-          dropoffHotelName: body.dropoffHotelName?.trim() || null,
-          pickupDateTime: new Date(body.pickupDateTime),
-          returnDateTime: body.returnDateTime ? new Date(body.returnDateTime) : null,
+          rateId: matchingRate.id,
+          serviceMode,
+          fromLocation: fromLocationStore,
+          toLocation: toLocationStore,
+          fromType: pickupType,
+          toType: dropoffType,
+          pickupType,
+          pickupLocation,
+          pickupAddress,
+          pickupHotelName,
+          dropoffType,
+          dropoffLocation,
+          dropoffAddress,
+          dropoffHotelName,
+          pickupDateTime,
+          returnDateTime,
           isRoundTrip: body.isRoundTrip ?? false,
-          returnFromLocation: body.isRoundTrip ? (body.returnFromLocation?.trim() || body.toLocation) : null,
-          returnToLocation: body.isRoundTrip ? (body.returnToLocation?.trim() || body.fromLocation) : null,
-          returnFromType: body.isRoundTrip ? (body.returnFromType ?? body.toType ?? null) : null,
-          returnToType: body.isRoundTrip ? (body.returnToType ?? body.fromType ?? null) : null,
-          returnPickupHotelName: body.isRoundTrip ? (body.returnPickupHotelName?.trim() || body.dropoffHotelName?.trim() || null) : null,
-          returnDropoffHotelName: body.isRoundTrip ? (body.returnDropoffHotelName?.trim() || body.pickupHotelName?.trim() || null) : null,
+          sameRouteReversed: body.isRoundTrip ? sameRouteReversed : true,
+          returnFromLocation: ret?.fromLocation ?? null,
+          returnToLocation: ret?.toLocation ?? null,
+          returnFromType: ret?.fromType ?? null,
+          returnToType: ret?.toType ?? null,
+          returnPickupHotelName: ret?.pickupHotelName ?? null,
+          returnPickupAddress: ret?.pickupAddress ?? null,
+          returnDropoffHotelName: ret?.dropoffHotelName ?? null,
+          returnDropoffAddress: ret?.dropoffAddress ?? null,
           passengerCount,
           passengerNames: body.passengerNames ?? [],
           passengerName: body.passengerName ?? null,
@@ -364,7 +460,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
         `🚐 Transport Booking — ${booking.refNumber}`,
         `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Ref</td><td style="padding:6px 12px">${booking.refNumber}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Route</td><td style="padding:6px 12px">${body.fromLocation} → ${body.toLocation}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Route</td><td style="padding:6px 12px">${fromLocationStore} → ${toLocationStore}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Vehicle</td><td style="padding:6px 12px">${body.vehicleType ?? 'SEDAN'}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Service Type</td><td style="padding:6px 12px">${groupType.labelEn}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pickup</td><td style="padding:6px 12px">${body.pickupDateTime}</td></tr>
@@ -379,7 +475,11 @@ export async function createTransportBooking(req: Request, res: Response): Promi
       ).catch(console.error);
     }
 
-    res.status(201).json({ success: true, data: responseBooking ?? booking });
+    res.status(201).json({
+      success: true,
+      data: responseBooking ?? booking,
+      pricing: { rule: pricingRule, total: totalAmount, currency, serviceMode },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
@@ -561,23 +661,23 @@ export async function listTransportRates(req: Request, res: Response): Promise<v
     orderBy: { rate: 'asc' },
     include: { destination: { select: { id: true, name: true, slug: true } } },
   });
-  // Apply explicit per-market price overrides for the caller's market
-  const market = await resolveCallerMarket(req);
+  // Apply explicit price overrides for the caller's market AND company (verbatim, no FX)
+  const { market, companyId } = await resolvePriceContext(req);
   const ids = rates.map(r => r.id);
   const [oneWayOv, rtOv] = await Promise.all([
-    resolveMarketPrices('TRANSPORT', ids, market),
-    resolveMarketPrices('TRANSPORT_RT', ids, market),
+    resolveMarketPriceMap('TRANSPORT', ids, { market, companyId }),
+    resolveMarketPriceMap('TRANSPORT_RT', ids, { market, companyId }),
   ]);
   for (const r of rates) {
     const ow = oneWayOv.get(r.id);
     if (ow != null) {
-      r.rate = ow;
-      r.currency = 'USD';
+      r.rate = ow.amount;
+      r.currency = ow.currency;
     }
     const rt = rtOv.get(r.id);
     if (rt != null) {
-      r.roundTripRate = rt;
-      r.currency = 'USD';
+      r.roundTripRate = rt.amount;
+      r.currency = rt.currency;
     }
   }
   res.json({ success: true, data: rates });

@@ -10,7 +10,7 @@ import {
   paginateMeta,
   sanitizeCustomFields,
 } from '../../shared/helpers';
-import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
@@ -81,7 +81,7 @@ export async function getVisaQuote(req: Request, res: Response): Promise<void> {
           select: { currency: true },
         })
       : null;
-    const charge = await convertMoney(source.amount, source.currency, company?.currency ?? source.currency);
+    const charge = explicitMoney(source.amount, source.currency);
     res.json({
       success: true,
       data: {
@@ -177,7 +177,7 @@ export async function createVisaApplication(req: Request, res: Response): Promis
       processingType,
       paxCount,
     );
-    const charge = await convertMoney(sourcePrice.amount, sourcePrice.currency, company.currency);
+    const charge = explicitMoney(sourcePrice.amount, sourcePrice.currency);
     const [refNumber, invoiceNumber] = await Promise.all([
       generateRef(prisma, 'VIS'),
       generateInvoiceNumber(prisma),

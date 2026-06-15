@@ -11,7 +11,8 @@ export const createHotelSchema = z.object({
   description: z.string().optional(),
   descriptionAr: z.string().optional(),
   amenities: z.array(z.string()).default([]),
-  imageUrl: z.string().url().optional(),
+  // Accept absolute URLs (e.g. proxied Booking images) AND relative upload paths (/uploads/..).
+  imageUrl: z.string().min(1).optional(),
   galleryUrls: z.array(z.string()).default([]),
   pricePerNight: z.number().positive(),
   currency: z.string().default('USD'),

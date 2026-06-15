@@ -52,6 +52,16 @@ export interface TransportVoucherData {
   toLocation: string;
   pickupHotelName?: string | null;
   dropoffHotelName?: string | null;
+  // Structured journey + priced product descriptor
+  serviceName?: string | null;
+  serviceMode?: string | null;
+  durationHours?: number | null;
+  pickupType?: string | null;
+  pickupAddress?: string | null;
+  pickupLocation?: string | null;
+  dropoffType?: string | null;
+  dropoffAddress?: string | null;
+  dropoffLocation?: string | null;
   vehicleType: string;
   passengerCount: number;
   // Return leg (round trip)
@@ -60,7 +70,9 @@ export interface TransportVoucherData {
   returnFromLocation?: string | null;
   returnToLocation?: string | null;
   returnPickupHotelName?: string | null;
+  returnPickupAddress?: string | null;
   returnDropoffHotelName?: string | null;
+  returnDropoffAddress?: string | null;
   returnAirlineName?: string | null;
   returnFlightNumber?: string | null;
   notes?: string | null;
@@ -342,15 +354,30 @@ function drawFooter(doc: Doc): void {
 
 function transportSections(d: TransportVoucherData): { title: string; sections: Section[] } {
   const round = !!d.isRoundTrip;
+  const isDisposal = d.serviceMode === 'HOURLY_CHARTER' || d.serviceMode === 'DAY_USE';
+  const pickupPlace = d.pickupHotelName || d.pickupAddress || d.pickupLocation || d.fromLocation;
+  const dropoffPlace = d.dropoffHotelName || d.dropoffAddress || d.dropoffLocation || d.toLocation;
+  const serviceLabel = d.serviceName
+    ? `${d.serviceName}${d.durationHours ? ` – ${d.durationHours} Hours` : ''}`
+    : d.serviceMode ? titleCase(d.serviceMode) + (d.durationHours ? ` – ${d.durationHours} Hours` : '') : '';
+
   const outbound: Section = {
-    title: round ? 'Outbound Journey' : 'Transfer Details',
+    title: round ? 'Outbound Journey' : isDisposal ? 'Pickup Details' : 'Transfer Details',
     fields: [
       row('Date', fmtDate(d.date)),
       row('Time', d.time || fmtTime(d.date)),
-      row('From', d.fromLocation),
+      row('Pickup Type', titleCase(d.pickupType)),
       row('Pickup Hotel', d.pickupHotelName),
-      row('To', d.toLocation),
-      row('Drop-off Hotel', d.dropoffHotelName),
+      row('Pickup Address', d.pickupAddress),
+      row('From', (d.pickupHotelName || d.pickupAddress) ? '' : (d.pickupLocation || d.fromLocation)),
+      ...(isDisposal ? [
+        row('Final Drop-off', dropoffPlace && dropoffPlace !== pickupPlace ? dropoffPlace : 'Return to pickup location'),
+      ] : [
+        row('Drop-off Type', titleCase(d.dropoffType)),
+        row('Drop-off Hotel', d.dropoffHotelName),
+        row('Drop-off Address', d.dropoffAddress),
+        row('To', (d.dropoffHotelName || d.dropoffAddress) ? '' : (d.dropoffLocation || d.toLocation)),
+      ]),
       row('Airline', d.airlineName),
       row('Flight Number', d.flightNumber),
     ],
@@ -359,6 +386,7 @@ function transportSections(d: TransportVoucherData): { title: string; sections: 
     title: 'Booking Information',
     fields: [
       row('Client Name', d.clientName),
+      row('Service', serviceLabel),
       row('Trip Type', round ? 'Round Trip' : 'One Way'),
       row('Vehicle Type', titleCase(d.vehicleType)),
       row('Passengers', d.passengerCount),
@@ -371,16 +399,18 @@ function transportSections(d: TransportVoucherData): { title: string; sections: 
       fields: [
         row('Date', fmtDate(d.returnDate)),
         row('Time', d.returnTime),
-        row('From', d.returnFromLocation),
         row('Pickup Hotel', d.returnPickupHotelName),
-        row('To', d.returnToLocation),
+        row('Pickup Address', d.returnPickupAddress),
+        row('From', (d.returnPickupHotelName || d.returnPickupAddress) ? '' : d.returnFromLocation),
         row('Drop-off Hotel', d.returnDropoffHotelName),
+        row('Drop-off Address', d.returnDropoffAddress),
+        row('To', (d.returnDropoffHotelName || d.returnDropoffAddress) ? '' : d.returnToLocation),
         row('Airline', d.returnAirlineName),
         row('Flight Number', d.returnFlightNumber),
       ],
     });
   }
-  return { title: round ? 'Transfer Voucher — Round Trip' : 'Transfer Voucher', sections };
+  return { title: round ? 'Transfer Voucher — Round Trip' : isDisposal ? 'Service Voucher' : 'Transfer Voucher', sections };
 }
 
 function activitySections(d: ActivityVoucherData): { title: string; sections: Section[] } {

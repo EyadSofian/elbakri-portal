@@ -4,8 +4,8 @@ import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoiceNumber, generateRef, paginate, paginateMeta } from '../../shared/helpers';
-import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
-import { resolveCallerMarket, resolveMarketPrices } from '../../shared/pricing';
+import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { resolvePriceContext, resolveMarketPriceMap } from '../../shared/pricing';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 
@@ -40,17 +40,19 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const market = await resolveCallerMarket(req);
-  const marketOverrides = await resolveMarketPrices('CRUISE', cruises.map((cruise) => cruise.id), market);
-  const data = cruises.map((cruise) => ({
-    ...cruise,
-    priceFrom: cruise.showPriceToAgents
-      ? (marketOverrides.get(cruise.id) ?? cruise.priceFrom)
-      : null,
-    currency: marketOverrides.has(cruise.id) ? 'USD' : cruise.currency,
-    priceVisible: cruise.showPriceToAgents,
-    canRequestQuote: cruise.allowQuoteRequest,
-  }));
+  const { market, companyId } = await resolvePriceContext(req);
+  const marketOverrides = await resolveMarketPriceMap('CRUISE', cruises.map((cruise) => cruise.id), { market, companyId });
+  const data = cruises.map((cruise) => {
+    const ov = marketOverrides.get(cruise.id);
+    return {
+      ...cruise,
+      // Explicit admin price (verbatim, no FX) when configured, else the base column.
+      priceFrom: cruise.showPriceToAgents ? (ov?.amount ?? cruise.priceFrom) : null,
+      currency: ov?.currency ?? cruise.currency,
+      priceVisible: cruise.showPriceToAgents,
+      canRequestQuote: cruise.allowQuoteRequest,
+    };
+  });
   res.json({ success: true, data });
 }
 
@@ -143,11 +145,8 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     });
     if (!cruise) throw new Error('CRUISE_NOT_AVAILABLE');
 
-    const charge = await convertMoney(
-      new Decimal(body.totalAmount),
-      body.currency ?? 'USD',
-      company.currency,
-    );
+    // Admin enters an explicit total in an explicit currency — used verbatim, no FX.
+    const charge = explicitMoney(new Decimal(body.totalAmount), body.currency ?? 'USD');
     const [refNumber, invoiceNumber] = await Promise.all([
       generateRef(prisma, 'CRZ'),
       generateInvoiceNumber(prisma),

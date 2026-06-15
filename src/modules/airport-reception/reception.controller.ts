@@ -5,7 +5,7 @@ import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
-import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 
@@ -83,7 +83,7 @@ export async function getReceptionQuote(req: Request, res: Response): Promise<vo
   const company = req.user?.companyId
     ? await prisma.company.findUnique({ where: { id: req.user.companyId }, select: { currency: true } })
     : null;
-  const charge = await convertMoney(source.total, source.currency, company?.currency ?? source.currency);
+  const charge = explicitMoney(source.total, source.currency);
   res.json({
     success: true,
     data: {
@@ -131,7 +131,7 @@ export async function createReception(req: Request, res: Response): Promise<void
         where: { id: companyId }, select: { isActive: true, currency: true },
       });
       if (!company.isActive) throw new Error('COMPANY_INACTIVE');
-      const charge = await convertMoney(sourcePrice.total, sourcePrice.currency, company.currency);
+      const charge = explicitMoney(sourcePrice.total, sourcePrice.currency);
       const totalAmount = charge.totalAmount;
       const currency = charge.currency;
       const priced = totalAmount.gt(0);

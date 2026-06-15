@@ -1455,7 +1455,7 @@ function rfControl(f, ctx) {
         opts = RF_MEAL_PLANS.map(mp => ({ value: mp, label: t("mealPlan." + mp, mp.replace(/_/g, " ")) }));
       }
       opts = opts || [];
-      const onch = (f.key === "packageId") ? ` onchange="rfUpdatePrice()"` : "";
+      const onch = (f.key === "packageId" || f.affectsPrice) ? ` onchange="rfFieldChanged('${f.key}')"` : "";
       return `<select id="${id}"${onch}>
         <option value="">${escapeHtml(ph || t("form.select", "Select"))}</option>
         ${opts.map(o => `<option value="${escapeHtml(o.value)}"${o.price != null ? ` data-price="${escapeHtml(o.price)}" data-cur="${escapeHtml(o.currency || "USD")}"` : ""}${String(dv) === String(o.value) ? " selected" : ""}>${escapeHtml(rfOptLabel(o))}</option>`).join("")}
@@ -1483,7 +1483,7 @@ function rfControl(f, ctx) {
       const maxAttr = f.max != null ? ` max="${f.max}"` : "";
       const stepAttr = f.step != null ? ` step="${f.step}"` : "";
       const val = dv != null ? dv : (f.type === "number" ? "" : 1);
-      return `<input id="${id}" type="number"${minAttr}${maxAttr}${stepAttr} value="${escapeHtml(val)}"${phAttr}>`;
+      return `<input id="${id}" type="number"${minAttr}${maxAttr}${stepAttr} value="${escapeHtml(val)}"${phAttr} oninput="rfFieldChanged('${f.key}')">`;
     }
     case "date":     return `<input id="${id}" type="date" value="${escapeHtml(dv || "")}">`;
     case "time":     return `<input id="${id}" type="time" value="${escapeHtml(dv || "")}">`;
@@ -1606,19 +1606,50 @@ function validateRequestForm(tpl) {
   return null;
 }
 
-/** Recompute a readonly-price node from a priced package select (SIM). */
+/**
+ * Find the quantity field for price math without relying solely on a fragile
+ * regex: explicit field role first (role:"quantity" / affectsPrice:"quantity"),
+ * then a known key, then a last-resort name match.
+ */
+function rfQuantityField(tpl) {
+  const fields = rfFields(tpl);
+  return fields.find(f => f.role === "quantity" || f.affectsPrice === "quantity")
+    || fields.find(f => f.key === "quantity" || f.key === "qty")
+    || fields.find(f => (f.type === "number" || f.type === "pax-counter") && /qty|quantity/i.test(f.key))
+    || null;
+}
+
+/**
+ * Supported field-dependency hook: any field that affects price (the priced
+ * select or the quantity input) calls this on change to recompute the live total.
+ */
+function rfFieldChanged(_key) {
+  rfUpdatePrice();
+}
+
+/** Recompute a readonly-price node: unit price (from the priced select) × quantity. NO FX. */
 function rfUpdatePrice() {
-  const priceField = rfFields(rfState.template).find(f => f.type === "readonly-price");
-  const pkgField = rfFields(rfState.template).find(f => f.key === "packageId");
+  const tpl = rfState.template;
+  const priceField = rfFields(tpl).find(f => f.type === "readonly-price");
+  const pkgField = rfFields(tpl).find(f => f.key === "packageId" || f.affectsPrice === "unit");
   if (!priceField || !pkgField) return;
   const sel = document.getElementById("rf_" + pkgField.key);
   const opt = sel && sel.options[sel.selectedIndex];
-  const price = parseFloat((opt && opt.dataset.price) || "0");
+  const unit = parseFloat((opt && opt.dataset.price) || "0");
   const cur = (opt && opt.dataset.cur) || "USD";
-  const qtyField = rfFields(rfState.template).find(f => /qty|quantity/i.test(f.key));
-  const qty = qtyField ? Math.max(1, parseInt(document.getElementById("rf_" + qtyField.key)?.value || "1")) : 1;
+  const qtyField = rfQuantityField(tpl);
+  const qty = qtyField ? Math.max(1, parseInt(document.getElementById("rf_" + qtyField.key)?.value || "1") || 1) : 1;
   const el = document.getElementById("rf_" + priceField.key);
-  if (el) el.textContent = price > 0 ? formatPrice(price * qty, cur) : "—";
+  if (!el) return;
+  if (unit > 0) {
+    // Live summary: unit price × quantity = total, in the explicit currency (no conversion).
+    el.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px">
+      <span style="font-size:12px;color:var(--text-muted)">${t("sim.unitPrice","Unit")}: ${escapeHtml(formatPrice(unit, cur))} × ${qty}</span>
+      <span style="font-weight:800">${escapeHtml(formatPrice(unit * qty, cur))}</span>
+    </div>`;
+  } else {
+    el.textContent = "—";
+  }
 }
 
 /** WhatsApp + toast success handler shared by the 3 quote-request targets. */
@@ -1982,6 +2013,8 @@ function renderTransportForm() {
               <label class="tr-radio-label"><input type="radio" name="fromType" value="AIRPORT" onchange="trTypeChanged()" checked> ${icon("plane")} ${t("transport.airport","Airport")}</label>
               <label class="tr-radio-label"><input type="radio" name="fromType" value="DESTINATION" onchange="trTypeChanged()"> ${icon("map-pin")} ${t("transport.destination","Destination")}</label>
               <label class="tr-radio-label"><input type="radio" name="fromType" value="HOTEL" onchange="trTypeChanged()"> ${icon("building")} ${t("transport.hotel","Hotel")}</label>
+              <label class="tr-radio-label"><input type="radio" name="fromType" value="ADDRESS" onchange="trTypeChanged()"> ${icon("home")} ${t("transport.address","Address")}</label>
+              <label class="tr-radio-label"><input type="radio" name="fromType" value="LANDMARK" onchange="trTypeChanged()"> ${icon("flag")} ${t("transport.landmark","Landmark")}</label>
             </div>
             <select id="trFrom" required onchange="trRouteChanged()" ${fromOpts ? "" : 'style="display:none"'}>
               <option value="">${t("transport.selectLocation","Select location...")}</option>
@@ -1989,6 +2022,7 @@ function renderTransportForm() {
             </select>
             ${!fromOpts ? `<input id="trFromText" placeholder="${t("form.from","e.g. Cairo Airport, Sharm Hotel")}" oninput="trRouteChanged()">` : ""}
             <input id="trPickupHotel" style="display:none;margin-top:6px" placeholder="${t("transport.pickupHotelName","Pickup Hotel Name")}">
+            <input id="trPickupAddress" style="display:none;margin-top:6px" placeholder="${t("transport.pickupAddress","Pickup address / landmark")}">
           </div>
           <div class="form-field">
             <label>${t("form.to","To")} <span class="required">*</span></label>
@@ -1996,6 +2030,8 @@ function renderTransportForm() {
               <label class="tr-radio-label"><input type="radio" name="toType" value="AIRPORT" onchange="trTypeChanged()"> ${icon("plane")} ${t("transport.airport","Airport")}</label>
               <label class="tr-radio-label"><input type="radio" name="toType" value="DESTINATION" onchange="trTypeChanged()" checked> ${icon("map-pin")} ${t("transport.destination","Destination")}</label>
               <label class="tr-radio-label"><input type="radio" name="toType" value="HOTEL" onchange="trTypeChanged()"> ${icon("building")} ${t("transport.hotel","Hotel")}</label>
+              <label class="tr-radio-label"><input type="radio" name="toType" value="ADDRESS" onchange="trTypeChanged()"> ${icon("home")} ${t("transport.address","Address")}</label>
+              <label class="tr-radio-label"><input type="radio" name="toType" value="LANDMARK" onchange="trTypeChanged()"> ${icon("flag")} ${t("transport.landmark","Landmark")}</label>
             </div>
             <select id="trTo" required onchange="trRouteChanged()" ${toOpts ? "" : 'style="display:none"'}>
               <option value="">${t("transport.selectLocation","Select location...")}</option>
@@ -2003,6 +2039,7 @@ function renderTransportForm() {
             </select>
             ${!toOpts ? `<input id="trToText" placeholder="${t("form.to","e.g. Sharm El Sheikh Hotel")}" oninput="trRouteChanged()">` : ""}
             <input id="trDropoffHotel" style="display:none;margin-top:6px" placeholder="${t("transport.dropoffHotelName","Drop-off Hotel Name")}">
+            <input id="trDropoffAddress" style="display:none;margin-top:6px" placeholder="${t("transport.dropoffAddress","Drop-off address / landmark")}">
           </div>
         </div>
       </div>
@@ -2010,6 +2047,10 @@ function renderTransportForm() {
       <!-- ④ Return Trip (shown if round trip) -->
       <div class="tr-section" id="trReturnSection" style="display:none">
         <div class="tr-section-title">${icon("plane-takeoff")}&nbsp;${t("transport.returnDetails","Return Trip Details")}</div>
+        <label class="tr-radio-label" style="margin-bottom:10px;display:inline-flex;align-items:center">
+          <input type="checkbox" id="trSameRouteReversed" checked onchange="trSameRouteToggle()">
+          &nbsp;${t("transport.sameRouteReversed","Same route, reversed (return mirrors the outbound trip)")}
+        </label>
         <div class="form-grid">
           <div class="form-field">
             <label>${t("transport.returnDate","Return Date")} <span class="required">*</span></label>
@@ -2020,16 +2061,6 @@ function renderTransportForm() {
             <input id="trReturnTime" type="time" value="10:00">
           </div>
           <div class="form-field">
-            <label>${t("transport.returnFrom","Return From")}</label>
-            <input id="trReturnFrom" placeholder="${t("transport.returnFromPlaceholder","Defaults to drop-off location")}">
-            <input id="trReturnPickupHotel" style="display:none;margin-top:6px" placeholder="${t("transport.returnPickupHotelName","Return Pickup Hotel Name")}">
-          </div>
-          <div class="form-field">
-            <label>${t("transport.returnTo","Return To")}</label>
-            <input id="trReturnTo" placeholder="${t("transport.returnToPlaceholder","Defaults to pickup location")}">
-            <input id="trReturnDropoffHotel" style="display:none;margin-top:6px" placeholder="${t("transport.returnDropoffHotelName","Return Drop-off Hotel Name")}">
-          </div>
-          <div class="form-field">
             <label>${t("transport.returnAirline","Return Airline")}</label>
             <input id="trReturnAirline" placeholder="e.g. EgyptAir">
           </div>
@@ -2037,6 +2068,32 @@ function renderTransportForm() {
             <label>${t("transport.returnFlight","Return Flight No.")}</label>
             <input id="trReturnFlight" placeholder="e.g. MS808">
           </div>
+        </div>
+        <!-- Independent return endpoints (shown only when "same route reversed" is OFF) -->
+        <div id="trReturnRouteFields" style="display:none;margin-top:12px">
+          <div class="form-grid">
+            <div class="form-field">
+              <label>${t("transport.returnFrom","Return From")} <span class="required">*</span></label>
+              <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+                <label class="tr-radio-label"><input type="radio" name="returnFromType" value="AIRPORT" onchange="trReturnTypeChanged()"> ${t("transport.airport","Airport")}</label>
+                <label class="tr-radio-label"><input type="radio" name="returnFromType" value="HOTEL" onchange="trReturnTypeChanged()"> ${t("transport.hotel","Hotel")}</label>
+                <label class="tr-radio-label"><input type="radio" name="returnFromType" value="ADDRESS" onchange="trReturnTypeChanged()" checked> ${t("transport.address","Address")}</label>
+              </div>
+              <input id="trReturnFrom" placeholder="${t("transport.returnFromPlaceholder","Return pickup location")}" oninput="trUpdateQuote()">
+              <input id="trReturnPickupHotel" style="display:none;margin-top:6px" placeholder="${t("transport.returnPickupHotelName","Return Pickup Hotel Name")}">
+            </div>
+            <div class="form-field">
+              <label>${t("transport.returnTo","Return To")} <span class="required">*</span></label>
+              <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+                <label class="tr-radio-label"><input type="radio" name="returnToType" value="AIRPORT" onchange="trReturnTypeChanged()"> ${t("transport.airport","Airport")}</label>
+                <label class="tr-radio-label"><input type="radio" name="returnToType" value="HOTEL" onchange="trReturnTypeChanged()"> ${t("transport.hotel","Hotel")}</label>
+                <label class="tr-radio-label"><input type="radio" name="returnToType" value="ADDRESS" onchange="trReturnTypeChanged()" checked> ${t("transport.address","Address")}</label>
+              </div>
+              <input id="trReturnTo" placeholder="${t("transport.returnToPlaceholder","Return drop-off location")}" oninput="trUpdateQuote()">
+              <input id="trReturnDropoffHotel" style="display:none;margin-top:6px" placeholder="${t("transport.returnDropoffHotelName","Return Drop-off Hotel Name")}">
+            </div>
+          </div>
+          <p style="font-size:12px;color:var(--text-muted);margin:8px 0 0">${icon("info")} ${t("transport.differentReturnNote","A different return route is priced as two legs. If no return price is configured you'll see Price on request.")}</p>
         </div>
       </div>
 
@@ -2157,18 +2214,33 @@ function setTripType(type) {
   trTypeChanged();
 }
 
-/** Show/hide the hotel-name inputs based on the From/To type, then re-quote. */
+/** Show/hide the hotel-name / address inputs based on the From/To type, then re-quote. */
 function trTypeChanged() {
   const fromType = document.querySelector('input[name="fromType"]:checked')?.value;
   const toType   = document.querySelector('input[name="toType"]:checked')?.value;
-  const isRound  = document.getElementById("trTripType")?.value === "ROUND_TRIP";
   const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? "" : "none"; };
   show("trPickupHotel", fromType === "HOTEL");
+  show("trPickupAddress", fromType === "ADDRESS" || fromType === "LANDMARK");
   show("trDropoffHotel", toType === "HOTEL");
-  // On a round trip the return swaps the legs, so the return pickup hotel maps
-  // to the outbound drop-off hotel and vice-versa.
-  show("trReturnPickupHotel", isRound && toType === "HOTEL");
-  show("trReturnDropoffHotel", isRound && fromType === "HOTEL");
+  show("trDropoffAddress", toType === "ADDRESS" || toType === "LANDMARK");
+  trUpdateQuote();
+}
+
+/** Round-trip "same route reversed" toggle: reveal the independent return route fields when OFF. */
+function trSameRouteToggle() {
+  const same = document.getElementById("trSameRouteReversed")?.checked;
+  const box = document.getElementById("trReturnRouteFields");
+  if (box) box.style.display = same ? "none" : "";
+  trUpdateQuote();
+}
+
+/** Show/hide the return hotel-name inputs based on the independent return From/To type. */
+function trReturnTypeChanged() {
+  const rf = document.querySelector('input[name="returnFromType"]:checked')?.value;
+  const rt = document.querySelector('input[name="returnToType"]:checked')?.value;
+  const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? "" : "none"; };
+  show("trReturnPickupHotel", rf === "HOTEL");
+  show("trReturnDropoffHotel", rt === "HOTEL");
   trUpdateQuote();
 }
 
@@ -2360,45 +2432,73 @@ async function trConfirmBooking() {
   const toType      = document.querySelector('input[name="toType"]:checked')?.value || "DESTINATION";
   const groupTypeId = document.querySelector('input[name="trGroupType"]:checked')?.value || undefined;
   const pickupHotel  = document.getElementById("trPickupHotel")?.value.trim();
+  const pickupAddr   = document.getElementById("trPickupAddress")?.value.trim();
   const dropoffHotel = document.getElementById("trDropoffHotel")?.value.trim();
+  const dropoffAddr  = document.getElementById("trDropoffAddress")?.value.trim();
+  const sameRouteReversed = document.getElementById("trSameRouteReversed")?.checked !== false;
+  const retFromType  = document.querySelector('input[name="returnFromType"]:checked')?.value;
+  const retToType    = document.querySelector('input[name="returnToType"]:checked')?.value;
   const retFrom      = document.getElementById("trReturnFrom")?.value.trim();
   const retTo        = document.getElementById("trReturnTo")?.value.trim();
   const retPickupHotel  = document.getElementById("trReturnPickupHotel")?.value.trim();
   const retDropoffHotel = document.getElementById("trReturnDropoffHotel")?.value.trim();
+  const serviceMode  = state.transportQuote?.serviceMode;
+  const isDisposal   = serviceMode === "HOURLY_CHARTER" || serviceMode === "DAY_USE";
+  const isAddr = (ty) => ty === "ADDRESS" || ty === "LANDMARK";
 
-  if (!from || !to || !date || !paxName || !contact || !vehicle || (isRoundTrip && !retDate)) {
-    toast(t("transport.requiredFields","Please fill all required fields: route, date, lead name, contact, vehicle"), "error");
+  if (!from || !date || !paxName || !contact || !vehicle || (!isDisposal && !to) || (isRoundTrip && !retDate)) {
+    toast(t("transport.requiredFields","Please fill all required fields: service, date, lead name, contact, vehicle"), "error");
     return;
   }
-  // Required hotel-name validation (matches server-side rules)
-  if (fromType === "HOTEL" && !pickupHotel) {
-    toast(t("transport.pickupHotelRequired","Pickup hotel name is required"), "error");
-    document.getElementById("trPickupHotel")?.focus(); return;
+  // Hotel / address validation (matches server-side rules)
+  if (fromType === "HOTEL" && !pickupHotel) { toast(t("transport.pickupHotelRequired","Pickup hotel name is required"), "error"); document.getElementById("trPickupHotel")?.focus(); return; }
+  if (isAddr(fromType) && !pickupAddr) { toast(t("transport.pickupAddrRequired","Pickup address is required"), "error"); document.getElementById("trPickupAddress")?.focus(); return; }
+  if (!isDisposal && toType === "HOTEL" && !dropoffHotel) { toast(t("transport.dropoffHotelRequired","Drop-off hotel name is required"), "error"); document.getElementById("trDropoffHotel")?.focus(); return; }
+  if (!isDisposal && isAddr(toType) && !dropoffAddr) { toast(t("transport.dropoffAddrRequired","Drop-off address is required"), "error"); document.getElementById("trDropoffAddress")?.focus(); return; }
+  // Hourly / day-use: a REAL pickup (hotel or address) is mandatory — the service label is not a pickup.
+  if (isDisposal && !((fromType === "HOTEL" && pickupHotel) || (isAddr(fromType) && pickupAddr))) {
+    toast(t("transport.pickupRequiredDisposal","Choose Hotel or Address and enter where the driver should pick you up"), "error");
+    return;
   }
-  if (toType === "HOTEL" && !dropoffHotel) {
-    toast(t("transport.dropoffHotelRequired","Drop-off hotel name is required"), "error");
-    document.getElementById("trDropoffHotel")?.focus(); return;
-  }
-
+  // Round trip: return must be after outbound; a different return route needs its endpoints.
   const pickupDateTime = `${date}T${time}:00`;
   const returnDateTime = (isRoundTrip && retDate) ? `${retDate}T${(retTime||"10:00")}:00` : undefined;
+  if (isRoundTrip && returnDateTime && returnDateTime <= pickupDateTime) {
+    toast(t("transport.returnAfterOutbound","Return date/time must be later than the outbound pickup"), "error"); return;
+  }
+  if (isRoundTrip && !sameRouteReversed) {
+    const rFromOk = retFromType === "HOTEL" ? !!retPickupHotel : !!retFrom;
+    const rToOk   = retToType === "HOTEL" ? !!retDropoffHotel : !!retTo;
+    if (!rFromOk || !rToOk) { toast(t("transport.returnEndpointsRequired","Enter the return pickup and drop-off for the different return route"), "error"); return; }
+  }
 
+  const pickupLocationVal = isDisposal ? (pickupHotel || pickupAddr || undefined) : (from || undefined);
   const payload = {
+    rateId: state.transportQuote?.rateId || undefined,
+    serviceMode,
     type: state.transportQuote?.rateType || (fromType === "AIRPORT" ? "AIRPORT_TRANSFER" : "PRIVATE_TRANSFER"),
     vehicleType: vehicle,
-    fromLocation: from, toLocation: to,
+    fromLocation: from, toLocation: isDisposal ? (to || from) : to,
     fromType, toType,
+    pickupType: fromType, dropoffType: toType,
+    pickupLocation: pickupLocationVal,
+    pickupAddress: pickupAddr || undefined,
     pickupHotelName: pickupHotel || undefined,
+    dropoffLocation: isDisposal ? undefined : (to || undefined),
+    dropoffAddress: dropoffAddr || undefined,
     dropoffHotelName: dropoffHotel || undefined,
     pickupDateTime,
     returnDateTime,
     isRoundTrip,
-    returnFromLocation: isRoundTrip ? (retFrom || to) : undefined,
-    returnToLocation: isRoundTrip ? (retTo || from) : undefined,
-    returnFromType: isRoundTrip ? toType : undefined,
-    returnToType: isRoundTrip ? fromType : undefined,
-    returnPickupHotelName: isRoundTrip ? (retPickupHotel || dropoffHotel || undefined) : undefined,
-    returnDropoffHotelName: isRoundTrip ? (retDropoffHotel || pickupHotel || undefined) : undefined,
+    sameRouteReversed,
+    returnFromType: (isRoundTrip && !sameRouteReversed) ? retFromType : undefined,
+    returnToType:   (isRoundTrip && !sameRouteReversed) ? retToType : undefined,
+    returnFromLocation: (isRoundTrip && !sameRouteReversed) ? (retFrom || undefined) : undefined,
+    returnToLocation:   (isRoundTrip && !sameRouteReversed) ? (retTo || undefined) : undefined,
+    returnPickupHotelName: (isRoundTrip && !sameRouteReversed) ? (retPickupHotel || undefined) : undefined,
+    returnDropoffHotelName:(isRoundTrip && !sameRouteReversed) ? (retDropoffHotel || undefined) : undefined,
+    returnPickupAddress:  (isRoundTrip && !sameRouteReversed && isAddr(retFromType)) ? (retFrom || undefined) : undefined,
+    returnDropoffAddress: (isRoundTrip && !sameRouteReversed && isAddr(retToType)) ? (retTo || undefined) : undefined,
     passengerCount: pax,
     groupTypeId,
     passengerName: paxName,

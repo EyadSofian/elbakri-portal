@@ -3,11 +3,11 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { ActivityCategory, BookingStatus } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta } from '../../shared/helpers';
-import { resolveCallerMarket, applyMarketPrice, resolveMarketMoney } from '../../shared/pricing';
+import { resolvePriceContext, applyMarketPrice, resolveMarketMoney } from '../../shared/pricing';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/group-types.service';
-import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 
@@ -37,13 +37,13 @@ export async function listActivities(req: Request, res: Response): Promise<void>
       destination: { select: { id: true, name: true, nameAr: true, slug: true } },
     },
   });
-  // Apply explicit per-market price overrides (adult + child) for the caller's market
-  const market = await resolveCallerMarket(req);
+  // Apply explicit price overrides (adult + child) for the caller's market AND company
+  const { market, companyId } = await resolvePriceContext(req);
   await applyMarketPrice(activities, {
-    entityType: 'ACTIVITY_ADULT', market, priceField: 'priceAdult', currencyField: 'currency',
+    entityType: 'ACTIVITY_ADULT', market, companyId, priceField: 'priceAdult', currencyField: 'currency',
   });
   await applyMarketPrice(activities, {
-    entityType: 'ACTIVITY_CHILD', market, priceField: 'priceChild', currencyField: 'currency',
+    entityType: 'ACTIVITY_CHILD', market, companyId, priceField: 'priceChild', currencyField: 'currency',
   });
   res.json({ success: true, data: activities });
 }
@@ -171,40 +171,23 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     return;
   }
 
+  const pax = adultsCount + childrenCount;
+  // Full pricing context — company override beats market row beats default (Finding 6)
+  const priceCtx = { market: company.market, companyId, pax, date: activityDate };
   const [adultPrice, childPrice] = await Promise.all([
-    resolveMarketMoney('ACTIVITY_ADULT', body.activityId, company.market, activity.priceAdult, activity.currency),
-    resolveMarketMoney('ACTIVITY_CHILD', body.activityId, company.market, activity.priceChild, activity.currency),
+    resolveMarketMoney('ACTIVITY_ADULT', body.activityId, priceCtx, activity.priceAdult, activity.currency),
+    resolveMarketMoney('ACTIVITY_CHILD', body.activityId, priceCtx, activity.priceChild, activity.currency),
   ]);
-  const currency = company.currency;
-  let sourceCurrency: string;
-  let sourceAmount: Decimal;
-  let totalAmount: Decimal;
-  let exchangeRate: Decimal;
-  let exchangeRateAt: Date;
-  if (adultPrice.currency === childPrice.currency) {
-    sourceCurrency = adultPrice.currency;
-    sourceAmount = applyGroupAdjustment(
-      adultPrice.amount.mul(adultsCount).add(childPrice.amount.mul(childrenCount)),
-      groupType,
-    );
-    const charge = await convertMoney(sourceAmount, sourceCurrency, currency);
-    totalAmount = charge.totalAmount;
-    exchangeRate = charge.exchangeRate;
-    exchangeRateAt = charge.exchangeRateAt;
-  } else {
-    const [adultCharge, childCharge] = await Promise.all([
-      convertMoney(adultPrice.amount, adultPrice.currency, currency),
-      convertMoney(childPrice.amount, childPrice.currency, currency),
-    ]);
-    sourceCurrency = currency;
-    sourceAmount = applyGroupAdjustment(
-      adultCharge.totalAmount.mul(adultsCount).add(childCharge.totalAmount.mul(childrenCount)),
-      groupType,
-    );
-    totalAmount = sourceAmount;
-    exchangeRate = new Decimal(1);
-    exchangeRateAt = adultCharge.exchangeRateAt;
+  // Explicit admin prices are used verbatim — the sale price is NEVER FX-converted (Finding 5).
+  if (childrenCount > 0 && adultPrice.currency !== childPrice.currency) {
+    res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: 'Adult and child prices are configured in different currencies for this activity. Align them or use a quote request.' });
+    return;
   }
+  const snap = explicitMoney(
+    applyGroupAdjustment(adultPrice.amount.mul(adultsCount).add(childPrice.amount.mul(childrenCount)), groupType),
+    adultPrice.currency,
+  );
+  const { currency, sourceCurrency, sourceAmount, totalAmount, exchangeRate, exchangeRateAt } = snap;
 
   try {
     const refNumber = await generateRef(prisma, 'ACT');

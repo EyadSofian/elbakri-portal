@@ -1165,10 +1165,10 @@ async function showMasterModal(entity, id = "") {
   // Prefetch existing per-market price overrides when editing
   const mpData = {};
   if (cfg.marketPrices && id) {
+    window._mpCompanies = await mpLoadCompanies();
     for (const mp of cfg.marketPrices) {
       const res = await apiFetch(`/admin/price-rows?entityType=${mp.entityType}&entityId=${encodeURIComponent(id)}`).catch(() => null);
-      const eg = (res?.data || []).find(r => r.market === "EGYPTIAN" && !r.companyId);
-      mpData[mp.entityType] = eg ? { amount: Number(eg.amount ?? eg.priceUsd ?? ""), currency: eg.currency || "EGP" } : {};
+      mpData[mp.entityType] = res?.data || [];
     }
   }
 
@@ -1182,25 +1182,103 @@ async function showMasterModal(entity, id = "") {
   `);
 }
 
-/** Egyptian explicit price input. International customers use the base price. */
+// Explicit price-matrix editor. Each row is an admin-defined selling price
+// returned verbatim (no FX). Resolution: company override → market → all → base.
 const PRICE_CURRENCIES = ["EGP", "USD", "SAR", "AED", "EUR", "GBP"];
+const MP_MARKETS = [["", "All markets"], ["EGYPTIAN", "Egyptian"], ["FOREIGN", "Foreign"], ["GULF", "Gulf"], ["INTERNATIONAL", "International"]];
+
+function mpLoadCompanies() {
+  return apiFetch("/admin/companies?includeInactive=true&limit=1000")
+    .then(r => (r?.data || []).map(c => ({ id: c.id, name: c.name })))
+    .catch(() => []);
+}
+
+/** HTML for one price-matrix row (market / company override / currency / amount / pax / validity / active). */
+function mpRowHtml(companies, row) {
+  row = row || {};
+  const mkSel = MP_MARKETS.map(([v, l]) => `<option value="${v}" ${String(row.market || "") === v ? "selected" : ""}>${t("market." + (v || "ALL"), l)}</option>`).join("");
+  const compSel = `<option value="">${t("market.allCompanies", "All companies")}</option>` +
+    (companies || []).map(c => `<option value="${c.id}" ${row.companyId === c.id ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("");
+  const curSel = PRICE_CURRENCIES.map(c => `<option value="${c}" ${(row.currency || "EGP") === c ? "selected" : ""}>${c}</option>`).join("");
+  const amount = row.amount != null ? row.amount : (row.priceUsd != null ? row.priceUsd : "");
+  const vf = row.validFrom ? String(row.validFrom).slice(0, 10) : "";
+  const vt = row.validTo ? String(row.validTo).slice(0, 10) : "";
+  const active = row.isActive !== false;
+  return `<div class="mp-row" style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
+    <div class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:8px">
+      <div class="form-field"><label>${t("market.label", "Market")}</label><select class="mp-market">${mkSel}</select></div>
+      <div class="form-field"><label>${t("market.companyOverride", "Company override")}</label><select class="mp-company">${compSel}</select></div>
+      <div class="form-field"><label>${t("form.currency", "Currency")}</label><select class="mp-cur">${curSel}</select></div>
+      <div class="form-field"><label>${t("form.amount", "Amount")}</label><input class="mp-amount" type="number" step="0.01" min="0" value="${escapeHtml(amount)}"></div>
+      <div class="form-field"><label>${t("form.minPax", "Min pax")}</label><input class="mp-minpax" type="number" min="0" value="${row.minPax != null ? escapeHtml(row.minPax) : ""}"></div>
+      <div class="form-field"><label>${t("form.maxPax", "Max pax")}</label><input class="mp-maxpax" type="number" min="0" value="${row.maxPax != null ? escapeHtml(row.maxPax) : ""}"></div>
+      <div class="form-field"><label>${t("form.validFrom", "Valid from")}</label><input class="mp-from" type="date" value="${vf}"></div>
+      <div class="form-field"><label>${t("form.validTo", "Valid to")}</label><input class="mp-to" type="date" value="${vt}"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+      <label style="font-size:13px;display:inline-flex;align-items:center;gap:6px"><input type="checkbox" class="mp-active" ${active ? "checked" : ""}> ${t("form.active", "Active")}</label>
+      <button type="button" class="btn btn-outline btn-sm" onclick="mpRemoveRow(this)">${t("btn.remove", "Remove")}</button>
+    </div>
+  </div>`;
+}
+
+function mpAddRow(containerId, row) {
+  const box = document.getElementById(containerId);
+  if (!box) return;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = mpRowHtml(window._mpCompanies || [], row || {});
+  box.appendChild(tmp.firstElementChild);
+}
+function mpRemoveRow(btn) {
+  const row = btn.closest(".mp-row");
+  if (row) row.remove();
+}
+
+/** Collect every price row in a container into MarketPriceRowInput[] (rows with no amount are dropped). */
+function mpCollectRows(containerId) {
+  const box = document.getElementById(containerId);
+  if (!box) return [];
+  return [...box.querySelectorAll(".mp-row")].map(row => {
+    const g = sel => row.querySelector(sel);
+    const amount = g(".mp-amount")?.value;
+    if (amount === "" || amount == null) return null;
+    const num = el => (el && el.value !== "" ? Number(el.value) : null);
+    return {
+      market: g(".mp-market")?.value || null,
+      companyId: g(".mp-company")?.value || null,
+      currency: g(".mp-cur")?.value || "USD",
+      amount: Number(amount),
+      minPax: num(g(".mp-minpax")),
+      maxPax: num(g(".mp-maxpax")),
+      validFrom: g(".mp-from")?.value || null,
+      validTo: g(".mp-to")?.value || null,
+      isActive: g(".mp-active")?.checked !== false,
+    };
+  }).filter(Boolean);
+}
+
 function marketPriceSection(entity, cfg, mpData, id) {
   const safe = entity.replace(/[^a-z0-9]/gi, "_");
-  const note = id
-    ? t("market.pricingHelp", "The price field above is the international/default price. Set the Egyptian-market price in its own currency (e.g. EGP) — it is shown to Egyptian companies exactly as entered, with no conversion. Leave blank to use the default.")
-    : t("market.pricingHelpNew", "Save first, then re-open this record to set an Egyptian market price.");
-  const rows = (mpData ? cfg.marketPrices : []).map(mp => {
-    const data = mpData[mp.entityType] || {};
-    const amount = data.amount ?? "";
-    const cur = data.currency || "EGP";
-    return `<div class="form-grid">
-      <div class="form-field"><label>${escapeHtml(mp.label)} — ${t("market.EGYPTIAN", "Egyptian")} ${t("form.price","Price")}</label><input id="mp_${safe}_${mp.entityType}_amount" type="number" step="0.01" min="0" value="${escapeHtml(amount)}" ${id ? "" : "disabled"}></div>
-      <div class="form-field"><label>${t("form.currency","Currency")}</label><select id="mp_${safe}_${mp.entityType}_cur" ${id ? "" : "disabled"}>${PRICE_CURRENCIES.map(c => `<option value="${c}" ${c === cur ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+  if (!id) {
+    return `<div class="form-section"><div class="form-section-title">${t("market.pricingTitle", "Explicit Price Matrix")}</div>
+      <div class="secondary-text">${t("market.pricingHelpNew", "Save first, then re-open this record to define explicit market / company prices.")}</div></div>`;
+  }
+  const companies = window._mpCompanies || [];
+  const blocks = cfg.marketPrices.map(mp => {
+    const rows = mpData[mp.entityType] || [];
+    const cid = `mpRows_${safe}_${mp.entityType}`;
+    const rowsHtml = rows.map(r => mpRowHtml(companies, r)).join("");
+    return `<div class="mp-block" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <strong>${escapeHtml(mp.label)}</strong>
+        <button type="button" class="btn btn-outline btn-sm" onclick="mpAddRow('${cid}')">+ ${t("market.addRow", "Add price row")}</button>
+      </div>
+      <div id="${cid}" class="mp-rows">${rowsHtml}</div>
     </div>`;
   }).join("");
-  return `<div class="form-section"><div class="form-section-title">${t("market.pricingTitle", "Egyptian Market Price")}</div>
-    <div class="secondary-text" style="margin-bottom:8px">${note}</div>
-    ${rows}</div>`;
+  return `<div class="form-section"><div class="form-section-title">${t("market.pricingTitle", "Explicit Price Matrix")}</div>
+    <div class="secondary-text" style="margin-bottom:10px">${t("market.pricingHelp2", "Each row is an explicit selling price — returned verbatim with NO FX conversion. Priority: company override → market row → all-markets row → base price. Leave empty to use the base price field above.")}</div>
+    ${blocks}</div>`;
 }
 
 function collectMasterPayload(entity) {
@@ -1240,15 +1318,11 @@ async function saveMasterRecord(entity, id = "") {
     if (cfg.marketPrices && savedId) {
       const safe = entity.replace(/[^a-z0-9]/gi, "_");
       for (const mp of cfg.marketPrices) {
-        const amtEl = document.getElementById(`mp_${safe}_${mp.entityType}_amount`);
-        const curEl = document.getElementById(`mp_${safe}_${mp.entityType}_cur`);
-        if (!amtEl || amtEl.disabled) continue;
-        const prices = {
-          EGYPTIAN: amtEl.value !== "" ? { amount: Number(amtEl.value), currency: curEl?.value || "EGP" } : null,
-        };
-        await apiFetch("/admin/market-prices", {
+        const cid = `mpRows_${safe}_${mp.entityType}`;
+        if (!document.getElementById(cid)) continue;
+        await apiFetch("/admin/price-rows", {
           method: "PUT",
-          body: JSON.stringify({ entityType: mp.entityType, entityId: savedId, prices }),
+          body: JSON.stringify({ entityType: mp.entityType, entityId: savedId, rows: mpCollectRows(cid) }),
         }).catch(() => null);
       }
     }

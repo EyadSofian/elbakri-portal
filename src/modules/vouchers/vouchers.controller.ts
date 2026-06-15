@@ -21,7 +21,10 @@ export async function generateVoucherNumber(): Promise<string> {
 async function buildTransportVoucherData(bookingId: string): Promise<VoucherData | null> {
   const b = await prisma.transportBooking.findUnique({
     where: { id: bookingId },
-    include: { company: { select: { name: true, logoUrl: true } } },
+    include: {
+      company: { select: { name: true, logoUrl: true } },
+      rate: { select: { serviceNameEn: true, serviceMode: true, durationHours: true } },
+    },
   });
   if (!b) return null;
   const t = (d: Date | null) => (d ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
@@ -39,6 +42,15 @@ async function buildTransportVoucherData(bookingId: string): Promise<VoucherData
     toLocation: b.toLocation,
     pickupHotelName: b.pickupHotelName,
     dropoffHotelName: b.dropoffHotelName,
+    serviceName: b.rate?.serviceNameEn ?? null,
+    serviceMode: b.serviceMode ?? b.rate?.serviceMode ?? null,
+    durationHours: b.rate?.durationHours ?? null,
+    pickupType: b.pickupType,
+    pickupAddress: b.pickupAddress,
+    pickupLocation: b.pickupLocation,
+    dropoffType: b.dropoffType,
+    dropoffAddress: b.dropoffAddress,
+    dropoffLocation: b.dropoffLocation,
     vehicleType: b.vehicleType,
     passengerCount: b.passengerCount,
     returnDate: b.returnDateTime,
@@ -46,7 +58,9 @@ async function buildTransportVoucherData(bookingId: string): Promise<VoucherData
     returnFromLocation: b.returnFromLocation ?? (b.isRoundTrip ? b.toLocation : null),
     returnToLocation: b.returnToLocation ?? (b.isRoundTrip ? b.fromLocation : null),
     returnPickupHotelName: b.returnPickupHotelName,
+    returnPickupAddress: b.returnPickupAddress,
     returnDropoffHotelName: b.returnDropoffHotelName,
+    returnDropoffAddress: b.returnDropoffAddress,
     returnAirlineName: b.returnAirlineName,
     returnFlightNumber: b.returnFlightNumber,
     notes: b.notes,

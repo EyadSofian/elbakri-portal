@@ -4,7 +4,7 @@ import { prisma } from '../../config/db';
 import { generateBookingRef, generateInvoiceNumber, paginate, paginateMeta } from '../../shared/helpers';
 import { sendEmail, bookingConfirmationEmail, bookingRequestEmail, bookingStatusEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
-import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { resolveMarketMoney } from '../../shared/pricing';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 
@@ -148,7 +148,7 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
       const marketMoney = await resolveMarketMoney(
         'HOTEL',
         hotel.id,
-        company.market,
+        { market: company.market, companyId, pax: adultsCount + childrenCount, date: checkIn },
         datedPrice?.pricePerNight ?? hotel.pricePerNight,
         datedPrice?.currency ?? hotel.currency ?? 'USD',
       );
@@ -165,7 +165,8 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
     const sourceDiscount = new Decimal(body.discount ?? 0);
     const sourceTotal = sourceBaseAmount.add(sourceCommission).sub(sourceDiscount);
     if (sourceTotal.lte(0)) throw new Error('INVALID_TOTAL');
-    const charge = await convertMoney(sourceTotal, sourceCurrency, company.currency);
+    // Explicit admin price — used verbatim, NO FX (sourceCurrency is authoritative).
+    const charge = explicitMoney(sourceTotal, sourceCurrency);
     const baseAmount = sourceBaseAmount.mul(charge.exchangeRate).toDecimalPlaces(2);
     const commissionAmount = sourceCommission.mul(charge.exchangeRate).toDecimalPlaces(2);
     const discount = sourceDiscount.mul(charge.exchangeRate).toDecimalPlaces(2);

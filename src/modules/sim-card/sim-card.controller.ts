@@ -2,8 +2,8 @@ import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
 import { Decimal } from '@prisma/client/runtime/library';
 import { generateInvoiceNumber, sanitizeCustomFields } from '../../shared/helpers';
-import { resolveCallerMarket, applyMarketPrice, resolveMarketMoney } from '../../shared/pricing';
-import { convertMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { resolvePriceContext, applyMarketPrice, resolveMarketMoney } from '../../shared/pricing';
+import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
@@ -23,10 +23,10 @@ export async function listPackages(req: Request, res: Response) {
       prisma.simPackage.count({ where }),
     ]);
 
-    // Apply explicit per-market price overrides for the caller's market
-    const market = await resolveCallerMarket(req);
+    // Apply explicit price overrides for the caller's market AND company
+    const { market, companyId } = await resolvePriceContext(req);
     await applyMarketPrice(packages, {
-      entityType: 'SIM', market, priceField: 'price', currencyField: 'currency',
+      entityType: 'SIM', market, companyId, priceField: 'price', currencyField: 'currency',
     });
 
     res.json({
@@ -171,8 +171,14 @@ export async function createRequest(req: Request, res: Response) {
     if (packageId && !pkg) {
       return res.status(404).json({ success: false, error: 'PACKAGE_NOT_AVAILABLE' });
     }
-    const qty = Math.max(1, parseInt(quantity) || 1);
-    // Server-authoritative unit price using the company's market tier
+    // Validate quantity — must be a whole number within sane bounds (Finding 4)
+    const MAX_SIM_QTY = 100;
+    const qtyNum = quantity === undefined || quantity === null || quantity === '' ? 1 : Number(quantity);
+    if (!Number.isInteger(qtyNum) || qtyNum < 1 || qtyNum > MAX_SIM_QTY) {
+      return res.status(400).json({ success: false, error: 'INVALID_QUANTITY', message: `Quantity must be a whole number between 1 and ${MAX_SIM_QTY}` });
+    }
+    const qty = qtyNum;
+    // Server-authoritative unit price using the company's market + company tier
     const company = await prisma.company.findUnique({
       where: { id: user.companyId },
       select: { market: true, currency: true, isActive: true },
@@ -180,14 +186,12 @@ export async function createRequest(req: Request, res: Response) {
     if (!company?.isActive) {
       return res.status(400).json({ success: false, error: 'COMPANY_INACTIVE' });
     }
-    const sourceMoney = pkg
-      ? await resolveMarketMoney('SIM', pkg.id, company?.market ?? null, pkg.price, pkg.currency)
-      : { amount: new Decimal(0), currency: company?.currency ?? 'USD' };
-    const charge = await convertMoney(
-      sourceMoney.amount.mul(qty),
-      sourceMoney.currency,
-      company?.currency ?? sourceMoney.currency,
-    );
+    // Explicit unit price — used verbatim, NO FX. total = unit × qty in the unit's own currency.
+    const unit = pkg
+      ? await resolveMarketMoney('SIM', pkg.id, { market: company.market, companyId: user.companyId, pax: qty }, pkg.price, pkg.currency)
+      : { amount: new Decimal(0), currency: company.currency ?? 'USD' };
+    const unitAmount = unit.amount.toDecimalPlaces(2);
+    const charge = explicitMoney(unitAmount.mul(qty), unit.currency);
     const totalAmount = charge.totalAmount;
     const currency = charge.currency;
 
@@ -205,6 +209,7 @@ export async function createRequest(req: Request, res: Response) {
           clientName,
           phone,
           quantity: qty,
+          unitAmount,
           arrivalDate: arrivalDate ? new Date(arrivalDate) : null,
           notes: notes || null,
           customFields: sanitizeCustomFields(customFields) ?? undefined,
@@ -271,7 +276,11 @@ export async function createRequest(req: Request, res: Response) {
         })
       : simReq;
 
-    res.status(201).json({ success: true, data: responseSim ?? simReq });
+    res.status(201).json({
+      success: true,
+      data: responseSim ?? simReq,
+      pricing: { unitPrice: unitAmount, quantity: qty, total: totalAmount, currency },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: (err as Error).message });
   }

@@ -56,6 +56,25 @@ export async function convertMoney(
   };
 }
 
+/**
+ * Build a money snapshot for an explicit, admin-defined sale price that must
+ * NOT be FX-converted (the price matrix is authoritative). source === total and
+ * exchangeRate = 1. Use this instead of convertMoney() for any customer-facing
+ * sale price resolved from MarketPrice / a service base column.
+ */
+export function explicitMoney(amount: Decimal | number | string, currency: string): MoneySnapshot {
+  const a = money(amount).toDecimalPlaces(2);
+  const cur = normalizeCurrency(currency);
+  return {
+    sourceAmount: a,
+    sourceCurrency: cur,
+    totalAmount: a,
+    currency: cur,
+    exchangeRate: new Decimal(1),
+    exchangeRateAt: new Date(),
+  };
+}
+
 export function moneySnapshotData(snapshot: MoneySnapshot) {
   return {
     totalAmount: snapshot.totalAmount,
