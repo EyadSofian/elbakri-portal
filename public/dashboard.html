@@ -3696,13 +3696,13 @@ function renderInvoices() {
         <div><strong>${t("nav.invoices","Invoices")}</strong><div class="secondary-text">${t("invoice.individualHelp","Individual booking invoices")}</div></div>
         <div class="toolbar-actions"><button class="btn btn-outline" onclick="renderInvoices()">${icon("refresh-cw")}${t("btn.refresh")}</button></div>
       </div>
-      <div id="companyInvoiceList"></div>
+      <div id="companyInvoiceList"><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(7, 5)}</tbody></table></div></div>
     </section>
     <section class="table-card" style="margin-top:16px">
       <div class="table-toolbar">
         <div><strong>${t("invoice.consolidated","Consolidated Statements")}</strong><div class="secondary-text">${t("invoice.consolidatedCompanyHelp","Download a combined PDF or Excel statement prepared by the admin.")}</div></div>
       </div>
-      <div id="companyConsolidatedList"></div>
+      <div id="companyConsolidatedList"><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(6, 3)}</tbody></table></div></div>
     </section>
     <!-- Floating bulk-action bar: rendered OUTSIDE the table cards so its
          position:fixed resolves against the viewport (a .table-card's entrance

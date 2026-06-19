@@ -141,6 +141,18 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: err.message });
 });
 
+// Process-level safety net. A single fire-and-forget DB call (e.g. a Prisma
+// error such as a missing column after a not-yet-applied migration) rejects
+// without an awaiter — Node's default is to terminate the whole process,
+// taking the portal down for every user. Log and keep serving instead; the
+// failing request already gets a 500 from the route/global error handler.
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️  UNHANDLED_REJECTION:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('⚠️  UNCAUGHT_EXCEPTION:', err);
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Elbakri Portal running at http://localhost:${PORT}`);
 });
