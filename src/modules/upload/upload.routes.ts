@@ -25,12 +25,31 @@ const upload = multer({
   },
 });
 
+// Images-only uploader (jpg/png/webp) for hotel main + gallery images.
+const imageUpload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = /jpe?g|png|webp/i;
+    if (allowed.test(path.extname(file.originalname))) return cb(null, true);
+    cb(new Error('Only JPG, PNG and WEBP images are allowed'));
+  },
+});
+
 const router = Router();
 
 router.post('/', upload.single('file'), (req: Request, res: Response) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
   const url = `/uploads/${req.file.filename}`;
   res.json({ success: true, data: { url, filename: req.file.filename, size: req.file.size } });
+});
+
+// Multi-file image upload (gallery) — accepts up to 30 images in one request.
+router.post('/images', imageUpload.array('files', 30), (req: Request, res: Response) => {
+  const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+  if (files.length === 0) return res.status(400).json({ success: false, message: 'No files uploaded' });
+  const data = files.map((f) => ({ url: `/uploads/${f.filename}`, filename: f.filename, size: f.size }));
+  res.json({ success: true, data });
 });
 
 export default router;

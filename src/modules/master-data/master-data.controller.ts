@@ -7,6 +7,8 @@ type ModelKey = 'transportRate' | 'visaFee' | 'receptionServiceRate';
 
 const transportTypes = ['AIRPORT_TRANSFER', 'PRIVATE_TRANSFER', 'DAY_TOUR_TRANSPORT', 'INTERCITY'] as const;
 const vehicleTypes = ['SEDAN', 'SUV', 'VAN_6', 'VAN_12', 'MINIBUS_20', 'BUS_45', 'LUXURY_LIMO'] as const;
+const serviceModes = ['POINT_TO_POINT', 'AIRPORT_TRANSFER', 'HOURLY_CHARTER', 'DAY_USE'] as const;
+const endpointTypes = ['AIRPORT', 'HOTEL', 'DESTINATION'] as const;
 const visaTypes = ['TOURIST', 'BUSINESS', 'TRANSIT', 'STUDENT', 'MEDICAL', 'UMRAH', 'HAJJ'] as const;
 const processingTypes = ['NORMAL', 'EXPRESS', 'URGENT'] as const;
 const receptionTypes = ['MEET_AND_GREET', 'AHLAN_SERVICE', 'VIP_LOUNGE', 'FULL_ASSISTANCE'] as const;
@@ -30,6 +32,23 @@ function boolValue(value: unknown, fallback = true): boolean {
 
 function decimalValue(value: unknown, fallback = 0): Decimal {
   return new Decimal(String((value ?? fallback) || 0));
+}
+
+function decimalOrNull(value: unknown): Decimal | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? new Decimal(n) : null;
+}
+
+function intOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const n = parseInt(String(value), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function endpointTypeOrNull(value: unknown): (typeof endpointTypes)[number] | null {
+  const s = String(value ?? '').trim().toUpperCase();
+  return (endpointTypes as readonly string[]).includes(s) ? (s as (typeof endpointTypes)[number]) : null;
 }
 
 async function listMaster(req: Request, res: Response, model: ModelKey, filters: Record<string, unknown> = {}): Promise<void> {
@@ -56,37 +75,87 @@ export async function listTransportRates(req: Request, res: Response): Promise<v
   });
 }
 
+// Build the typed-endpoint + dual-currency payload shared by create/update.
+// Legacy `rate`/`currency`/`roundTripRate` are kept in sync from the explicit
+// EGP/USD fields so old resolvers and the NOT-NULL `rate` column keep working.
+function transportEndpointAndPriceData(body: Record<string, unknown>, mode: 'create' | 'update'): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  const set = (key: string, value: unknown) => {
+    if (mode === 'create' || body[key] !== undefined) data[key] = value;
+  };
+
+  if (mode === 'create' || body.serviceMode !== undefined) data.serviceMode = enumValue(body.serviceMode, serviceModes, 'POINT_TO_POINT');
+  set('serviceNameEn', stringValue(body.serviceNameEn) ?? null);
+  set('serviceNameAr', stringValue(body.serviceNameAr) ?? null);
+  set('serviceArea', stringValue(body.serviceArea) ?? null);
+  if (mode === 'create' || body.durationHours !== undefined) data.durationHours = intOrNull(body.durationHours);
+
+  // Typed endpoints (authoritative). Mirror the display names into the legacy
+  // free-text columns so existing list/search keeps working.
+  if (mode === 'create' || body.fromType !== undefined) data.fromType = endpointTypeOrNull(body.fromType);
+  set('fromId', stringValue(body.fromId) ?? null);
+  if (mode === 'create' || body.toType !== undefined) data.toType = endpointTypeOrNull(body.toType);
+  set('toId', stringValue(body.toId) ?? null);
+  if (mode === 'create' || body.fromName !== undefined || body.fromLocation !== undefined) {
+    const fromName = stringValue(body.fromName) ?? stringValue(body.fromLocation) ?? null;
+    data.fromName = fromName;
+    data.fromLocation = fromName;
+  }
+  if (mode === 'create' || body.toName !== undefined || body.toLocation !== undefined) {
+    const toName = stringValue(body.toName) ?? stringValue(body.toLocation) ?? null;
+    data.toName = toName;
+    data.toLocation = toName;
+  }
+
+  if (mode === 'create' || body.isBidirectional !== undefined) data.isBidirectional = boolValue(body.isBidirectional, false);
+  if (mode === 'create' || body.minCapacity !== undefined) data.minCapacity = intOrNull(body.minCapacity) ?? 1;
+  if (mode === 'create' || body.maxCapacity !== undefined) data.maxCapacity = intOrNull(body.maxCapacity);
+  set('city', stringValue(body.city) ?? null);
+  set('destinationId', stringValue(body.destinationId) ?? null);
+
+  // Explicit dual-currency sale prices (NO FX).
+  const priceEgp = decimalOrNull(body.priceEgp);
+  const priceUsd = decimalOrNull(body.priceUsd);
+  const rtEgp = decimalOrNull(body.roundTripPriceEgp);
+  const rtUsd = decimalOrNull(body.roundTripPriceUsd);
+  if (mode === 'create' || body.priceEgp !== undefined) data.priceEgp = priceEgp;
+  if (mode === 'create' || body.priceUsd !== undefined) data.priceUsd = priceUsd;
+  if (mode === 'create' || body.roundTripPriceEgp !== undefined) data.roundTripPriceEgp = rtEgp;
+  if (mode === 'create' || body.roundTripPriceUsd !== undefined) data.roundTripPriceUsd = rtUsd;
+
+  // Keep the legacy columns in lockstep with the dual prices when any are given.
+  const anyDual = priceEgp != null || priceUsd != null;
+  if (anyDual) {
+    data.rate = priceUsd ?? priceEgp ?? new Decimal(0);
+    data.currency = priceUsd != null ? 'USD' : 'EGP';
+    if (rtUsd != null || rtEgp != null) data.roundTripRate = priceUsd != null ? (rtUsd ?? null) : (rtEgp ?? null);
+  } else {
+    if (mode === 'create' || body.rate !== undefined) data.rate = decimalValue(body.rate);
+    if (mode === 'create' || body.currency !== undefined) data.currency = stringValue(body.currency)?.toUpperCase() ?? 'USD';
+    if (body.roundTripRate !== undefined) data.roundTripRate = decimalOrNull(body.roundTripRate);
+  }
+
+  set('notes', stringValue(body.notes) ?? null);
+  if (mode === 'create' || body.isActive !== undefined) data.isActive = boolValue(body.isActive);
+  if (mode === 'create' || body.type !== undefined) data.type = enumValue(body.type, transportTypes, 'PRIVATE_TRANSFER');
+  if (mode === 'create' || body.vehicleType !== undefined) data.vehicleType = enumValue(body.vehicleType, vehicleTypes, 'SEDAN');
+  return data;
+}
+
 export async function createTransportRate(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const rate = await prisma.transportRate.create({
-    data: {
-      type: enumValue(body.type, transportTypes, 'PRIVATE_TRANSFER') as any,
-      vehicleType: enumValue(body.vehicleType, vehicleTypes, 'SEDAN') as any,
-      city: stringValue(body.city),
-      fromLocation: stringValue(body.fromLocation),
-      toLocation: stringValue(body.toLocation),
-      rate: decimalValue(body.rate),
-      currency: stringValue(body.currency)?.toUpperCase() ?? 'USD',
-      notes: stringValue(body.notes),
-      isActive: boolValue(body.isActive),
-    },
+    data: transportEndpointAndPriceData(body, 'create') as any,
   });
   res.status(201).json({ success: true, data: rate });
 }
 
 export async function updateTransportRate(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
-  const data: Record<string, unknown> = {};
-  if (body.type !== undefined) data.type = enumValue(body.type, transportTypes, 'PRIVATE_TRANSFER');
-  if (body.vehicleType !== undefined) data.vehicleType = enumValue(body.vehicleType, vehicleTypes, 'SEDAN');
-  if (body.city !== undefined) data.city = stringValue(body.city) ?? null;
-  if (body.fromLocation !== undefined) data.fromLocation = stringValue(body.fromLocation) ?? null;
-  if (body.toLocation !== undefined) data.toLocation = stringValue(body.toLocation) ?? null;
-  if (body.rate !== undefined) data.rate = decimalValue(body.rate);
-  if (body.currency !== undefined) data.currency = stringValue(body.currency)?.toUpperCase() ?? 'USD';
-  if (body.notes !== undefined) data.notes = stringValue(body.notes) ?? null;
-  if (body.isActive !== undefined) data.isActive = boolValue(body.isActive);
-  const rate = await prisma.transportRate.update({ where: { id: req.params.id }, data: data as any });
+  const rate = await prisma.transportRate.update({
+    where: { id: req.params.id },
+    data: transportEndpointAndPriceData(body, 'update') as any,
+  });
   res.json({ success: true, data: rate });
 }
 

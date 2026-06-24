@@ -4,6 +4,7 @@ import { BookingStatus, TransportType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { resolvePriceContext, resolveMarketPriceMap, resolveMarketMoney } from '../../shared/pricing';
+import { resolveTransportRate, pickDualPrice, usesDualPricing } from './transport.resolve';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/group-types.service';
@@ -45,56 +46,78 @@ export async function listTransportBookings(req: Request, res: Response): Promis
 
 /** GET /api/transport-rates/quote — client-side price preview (server-authoritative) */
 export async function getTransportQuote(req: Request, res: Response): Promise<void> {
-  const from        = String(req.query.from       ?? '').trim();
-  const to          = String(req.query.to         ?? '').trim();
-  const vehicleType = String(req.query.vehicleType ?? '').trim();
-  const pax         = Math.max(1, parseInt(String(req.query.pax ?? '1'), 10));
-  const roundTrip   = req.query.roundTrip === 'true';
-  const groupTypeId = String(req.query.groupTypeId ?? '').trim();
+  const q = req.query;
+  const vehicleType = String(q.vehicleType ?? '').trim();
+  const pax         = Math.max(1, parseInt(String(q.pax ?? '1'), 10));
+  const roundTrip   = q.roundTrip === 'true';
+  const groupTypeId = String(q.groupTypeId ?? '').trim();
+  const date        = q.date ? new Date(String(q.date)) : undefined;
 
-  const where: Record<string, unknown> = {
-    isActive: true,
-    minCapacity: { lte: pax },
-    OR: [{ maxCapacity: null }, { maxCapacity: { gte: pax } }],
-  };
-  if (from)        (where as any).fromLocation = { equals: from, mode: 'insensitive' };
-  if (to)          (where as any).toLocation   = { equals: to,   mode: 'insensitive' };
-  if (vehicleType) (where as any).vehicleType  = vehicleType;
+  // Typed endpoints (preferred) with legacy free-text fallback (from/to → name).
+  const fromRef = { type: str(q.fromType), id: str(q.fromId), name: str(q.fromName) || str(q.from) };
+  const toRef   = { type: str(q.toType),   id: str(q.toId),   name: str(q.toName)   || str(q.to) };
 
-  const rate = await prisma.transportRate.findFirst({
-    where: where as any,
-    orderBy: { rate: 'asc' },
+  const match = await resolveTransportRate({
+    rateId: str(q.rateId),
+    from: fromRef,
+    to: toRef,
+    vehicleType: vehicleType || null,
+    pax,
+    transportType: str(q.type),
+    destinationId: str(q.destinationId),
   });
 
-  if (!rate) {
+  if (!match) {
     res.json({ success: true, data: { found: false, message: 'PRICE_ON_REQUEST' } });
     return;
   }
+  const { rate, matchedDirection } = match;
 
-  // Explicit admin price for the caller's market + company — NO FX (verbatim currency).
   const { market, companyId } = await resolvePriceContext(req);
-  const priceCtx = { market, companyId, pax, date: req.query.date ? new Date(String(req.query.date)) : undefined };
-  const oneWayMoney = await resolveMarketMoney('TRANSPORT', rate.id, priceCtx, rate.rate, rate.currency);
-  const roundTripMoney = rate.roundTripRate
-    ? await resolveMarketMoney('TRANSPORT_RT', rate.id, priceCtx, rate.roundTripRate, rate.currency)
-    : { amount: oneWayMoney.amount.mul(2), currency: oneWayMoney.currency, overridden: oneWayMoney.overridden };
+  const priceCtx = { market, companyId, pax, date };
+
+  // Group-type adjustment (optional — no error when none applies).
   const applicableTypes = await findApplicableGroupTypes({
     scope: 'TRANSPORT',
     transportRateId: rate.id,
     destinationId: rate.destinationId ?? undefined,
     pax,
-    date: req.query.date ? new Date(String(req.query.date)) : undefined,
+    date,
   });
   const groupType = groupTypeId
     ? applicableTypes.find((option) => option.id === groupTypeId)
     : applicableTypes[0];
-  if (!groupType) {
-    res.status(400).json({ success: false, error: 'INVALID_GROUP_TYPE', message: 'Selected transport type is not available' });
-    return;
+  const adjust = (amount: Decimal) => (groupType ? applyGroupAdjustment(amount, groupType) : amount);
+
+  // Sale price: dual-currency model when the rate opts in (NO FX, missing →
+  // price on request); otherwise the legacy MarketPrice/base resolution.
+  let oneWayBase: Decimal;
+  let roundTripBase: Decimal;
+  let currency: string;
+  let roundTripIsEstimated: boolean;
+  if (usesDualPricing(rate)) {
+    const p = pickDualPrice(rate, market);
+    if (!p.found || p.oneWay == null) {
+      res.json({ success: true, data: { found: false, message: 'PRICE_ON_REQUEST', currency: p.currency, rateId: rate.id, matchedDirection } });
+      return;
+    }
+    oneWayBase = p.oneWay;
+    roundTripBase = p.roundTrip ?? p.oneWay.mul(2);
+    currency = p.currency;
+    roundTripIsEstimated = p.roundTripIsEstimated;
+  } else {
+    const oneWayMoney = await resolveMarketMoney('TRANSPORT', rate.id, priceCtx, rate.rate, rate.currency);
+    const rtMoney = rate.roundTripRate
+      ? await resolveMarketMoney('TRANSPORT_RT', rate.id, priceCtx, rate.roundTripRate, rate.currency)
+      : { amount: oneWayMoney.amount.mul(2), currency: oneWayMoney.currency };
+    oneWayBase = oneWayMoney.amount;
+    roundTripBase = rtMoney.amount;
+    currency = oneWayMoney.currency;
+    roundTripIsEstimated = !rate.roundTripRate;
   }
-  // Prices returned verbatim in the admin-defined currency — never converted.
-  const oneWayRate = applyGroupAdjustment(oneWayMoney.amount, groupType).toDecimalPlaces(2);
-  const roundTripRate = applyGroupAdjustment(roundTripMoney.amount, groupType).toDecimalPlaces(2);
+
+  const oneWayRate = adjust(oneWayBase).toDecimalPlaces(2);
+  const roundTripRate = adjust(roundTripBase).toDecimalPlaces(2);
   const totalAmount = roundTrip ? roundTripRate : oneWayRate;
 
   res.json({
@@ -102,18 +125,23 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
     data: {
       found: true,
       rateId: rate.id,
+      matchedDirection,
       oneWayRate,
       roundTripRate,
-      roundTripIsEstimated: !rate.roundTripRate, // true → round trip shown as 2 × one-way (rule shown, not a silent double)
+      roundTripIsEstimated,
       totalAmount,
-      currency: oneWayMoney.currency,
+      currency,
       serviceMode: rate.serviceMode,
       vehicleType: rate.vehicleType,
       rateType: rate.type,
-      groupType,
+      groupType: groupType ?? null,
       notes: rate.notes,
     },
   });
+}
+
+function str(v: unknown): string {
+  return String(v ?? '').trim();
 }
 
 /** GET /api/transport-rates/locations — unique from/to values for dropdowns */
@@ -141,6 +169,9 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     vehicleType?: 'SEDAN' | 'SUV' | 'VAN_6' | 'VAN_12' | 'MINIBUS_20' | 'BUS_45' | 'LUXURY_LIMO';
     fromLocation?: string; toLocation?: string;
     fromType?: string; toType?: string;
+    // Typed endpoint soft refs + display names (AIRPORT | HOTEL | DESTINATION)
+    fromId?: string; fromName?: string; toId?: string; toName?: string;
+    returnFromId?: string; returnToId?: string;
     // Structured journey (independent of the rate's display labels)
     pickupType?: string; pickupLocation?: string; pickupAddress?: string; pickupHotelName?: string;
     dropoffType?: string; dropoffLocation?: string; dropoffAddress?: string; dropoffHotelName?: string;
@@ -184,24 +215,19 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   const pickupDateTime = new Date(body.pickupDateTime);
   const returnDateTime = body.returnDateTime ? new Date(body.returnDateTime) : null;
 
-  // ── Resolve the priced product FIRST. rateId is authoritative — never match a
-  //    booking to a price by ambiguous display text when the rate id is known.
-  const matchingRate = body.rateId
-    ? await prisma.transportRate.findFirst({ where: { id: body.rateId, isActive: true } })
-    : await prisma.transportRate.findFirst({
-        where: {
-          isActive: true,
-          type: body.type,
-          ...(body.vehicleType && { vehicleType: body.vehicleType }),
-          ...(body.fromLocation && { fromLocation: { equals: body.fromLocation, mode: 'insensitive' as const } }),
-          ...(body.toLocation && { toLocation: { equals: body.toLocation, mode: 'insensitive' as const } }),
-          ...(body.destinationId && { destinationId: body.destinationId }),
-          minCapacity: { lte: passengerCount },
-          OR: [{ maxCapacity: null }, { maxCapacity: { gte: passengerCount } }],
-        },
-        orderBy: { rate: 'asc' }, // cheapest matching rate wins
-      });
-  if (!matchingRate) {
+  // ── Resolve the priced product FIRST. rateId is authoritative; otherwise the
+  //    typed-endpoint resolver matches EXACT then REVERSED (bidirectional) — so
+  //    "Airport → Cairo" also prices "Cairo → Airport".
+  const match = await resolveTransportRate({
+    rateId: body.rateId ?? null,
+    from: { type: body.fromType, id: body.fromId, name: body.fromName || body.fromLocation },
+    to: { type: body.toType, id: body.toId, name: body.toName || body.toLocation },
+    vehicleType: body.vehicleType ?? null,
+    pax: passengerCount,
+    transportType: body.rateId ? null : body.type,
+    destinationId: body.rateId ? null : body.destinationId,
+  });
+  if (!match) {
     res.status(400).json({
       success: false,
       error: 'USE_QUOTE_REQUEST',
@@ -209,6 +235,8 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     });
     return;
   }
+  const matchingRate = match.rate;
+  const matchedDirection = match.matchedDirection;
 
   // The rate is the priced product; its service mode drives field validation.
   const serviceMode = matchingRate.serviceMode;
@@ -218,29 +246,28 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   const fail = (message: string, error = 'VALIDATION_ERROR') =>
     res.status(400).json({ success: false, error, message });
 
-  // Effective journey endpoints (structured fields preferred; legacy from/to fallback).
+  // Effective journey endpoints (structured fields preferred; typed-endpoint
+  // names + legacy from/to as fallbacks).
   const pickupType = body.pickupType ?? body.fromType ?? null;
   const dropoffType = body.dropoffType ?? body.toType ?? null;
   const pickupHotelName = body.pickupHotelName?.trim() || null;
   const pickupAddress = body.pickupAddress?.trim() || null;
-  const pickupLocation = body.pickupLocation?.trim() || body.fromLocation?.trim() || null;
+  const pickupLocation = body.pickupLocation?.trim() || body.fromName?.trim() || body.fromLocation?.trim() || null;
   const dropoffHotelName = body.dropoffHotelName?.trim() || null;
   const dropoffAddress = body.dropoffAddress?.trim() || null;
-  const dropoffLocation = body.dropoffLocation?.trim() || body.toLocation?.trim() || null;
+  const dropoffLocation = body.dropoffLocation?.trim() || body.toName?.trim() || body.toLocation?.trim() || null;
 
-  // A real pickup is an actual place — NEVER the rate's service label (Finding 1).
-  // e.g. fromLocation "Cairo (8 hours)" is the priced product, not a pickup point.
+  // For hourly / day-use disposal, the rate's "from" is just the service label
+  // (e.g. "Cairo (8 hours)") — a REAL, different pickup point is required. For a
+  // normal transfer the typed endpoint IS the pickup, so no exclusion applies.
   const rateLabels = new Set(
     [matchingRate.fromLocation, matchingRate.toLocation, matchingRate.serviceArea, matchingRate.serviceNameEn, matchingRate.serviceNameAr]
       .filter(Boolean)
       .map((s) => String(s).trim().toLowerCase()),
   );
-  const realLoc = pickupLocation && !rateLabels.has(pickupLocation.trim().toLowerCase()) ? pickupLocation : null;
-  const hasRealPickup =
-    isHotel(pickupType) ? !!pickupHotelName
-      : (T(pickupType) === 'ADDRESS' || T(pickupType) === 'LANDMARK') ? !!(pickupAddress || realLoc)
-        : T(pickupType) === 'AIRPORT' ? !!realLoc
-          : !!(pickupHotelName || pickupAddress || realLoc);
+  const pickupIsJustLabel = !!pickupLocation && rateLabels.has(pickupLocation.trim().toLowerCase());
+  const effectivePickupLoc = isDisposal ? (pickupIsJustLabel ? null : pickupLocation) : pickupLocation;
+  const hasRealPickup = isHotel(pickupType) ? !!pickupHotelName : !!(pickupAddress || effectivePickupLoc);
   if (isDisposal && !hasRealPickup) {
     fail('A real pickup location (hotel, address, airport or landmark) is required for hourly / day-use transport.', 'PICKUP_REQUIRED');
     return;
@@ -270,7 +297,8 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     }
   }
 
-  // ── Group type (service tier)
+  // ── Group type (service tier) — optional. When the route has no configured
+  //    group types we price without any tier adjustment.
   const applicableTypes = await findApplicableGroupTypes({
     scope: 'TRANSPORT',
     transportRateId: matchingRate.id,
@@ -281,51 +309,84 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   const groupType = body.groupTypeId
     ? applicableTypes.find((option) => option.id === body.groupTypeId)
     : applicableTypes[0];
-  if (!groupType) {
+  if (body.groupTypeId && !groupType) {
     res.status(400).json({ success: false, error: 'INVALID_GROUP_TYPE', message: 'Selected transport type is not available' });
     return;
   }
+  const adjust = (amount: Decimal) => (groupType ? applyGroupAdjustment(amount, groupType) : amount);
 
-  // ── Pricing: explicit admin price, NO FX (Finding 5/6). Round trip = two
-  //    independent legs (§3): explicit round-trip rate ONLY for the exact reverse
-  //    route; a different return route prices both legs and must share a currency.
+  // ── Pricing: explicit admin price, NO FX. Dual-currency rates resolve EGP for
+  //    Egyptian companies / USD otherwise (missing → quote request). Legacy rates
+  //    keep MarketPrice/base resolution. Round trip = explicit RT price or two legs.
   const priceCtx = { market: company.market, companyId, pax: passengerCount, date: pickupDateTime };
-  const outboundOneWay = await resolveMarketMoney('TRANSPORT', matchingRate.id, priceCtx, matchingRate.rate, matchingRate.currency);
-  let sourceAmountRaw = applyGroupAdjustment(outboundOneWay.amount, groupType);
-  let priceCurrency = outboundOneWay.currency;
+  const dual = usesDualPricing(matchingRate);
+
+  let outboundOneWayAmt: Decimal;
+  let priceCurrency: string;
+  if (dual) {
+    const p = pickDualPrice(matchingRate, company.market);
+    if (!p.found || p.oneWay == null) {
+      res.status(400).json({ success: false, error: 'PRICE_ON_REQUEST', message: `No ${p.currency} price is configured for this route. Please submit a quote request.` });
+      return;
+    }
+    outboundOneWayAmt = p.oneWay;
+    priceCurrency = p.currency;
+  } else {
+    const m = await resolveMarketMoney('TRANSPORT', matchingRate.id, priceCtx, matchingRate.rate, matchingRate.currency);
+    outboundOneWayAmt = m.amount;
+    priceCurrency = m.currency;
+  }
+
+  let sourceAmountRaw = adjust(outboundOneWayAmt);
   let pricingRule = 'ONE_WAY';
 
   if (body.isRoundTrip) {
-    if (sameRouteReversed && matchingRate.roundTripRate) {
-      const rt = await resolveMarketMoney('TRANSPORT_RT', matchingRate.id, priceCtx, matchingRate.roundTripRate, matchingRate.currency);
-      sourceAmountRaw = applyGroupAdjustment(rt.amount, groupType);
-      priceCurrency = rt.currency;
-      pricingRule = 'ROUND_TRIP_EXPLICIT';
-    } else if (sameRouteReversed) {
-      sourceAmountRaw = applyGroupAdjustment(outboundOneWay.amount.mul(2), groupType);
-      pricingRule = 'ROUND_TRIP_TWO_ONE_WAY';
+    if (sameRouteReversed) {
+      if (dual) {
+        const p = pickDualPrice(matchingRate, company.market);
+        const rt = p.roundTrip ?? outboundOneWayAmt.mul(2);
+        sourceAmountRaw = adjust(rt);
+        pricingRule = p.roundTripIsEstimated ? 'ROUND_TRIP_TWO_ONE_WAY' : 'ROUND_TRIP_EXPLICIT';
+      } else if (matchingRate.roundTripRate) {
+        const rt = await resolveMarketMoney('TRANSPORT_RT', matchingRate.id, priceCtx, matchingRate.roundTripRate, matchingRate.currency);
+        sourceAmountRaw = adjust(rt.amount);
+        priceCurrency = rt.currency;
+        pricingRule = 'ROUND_TRIP_EXPLICIT';
+      } else {
+        sourceAmountRaw = adjust(outboundOneWayAmt.mul(2));
+        pricingRule = 'ROUND_TRIP_TWO_ONE_WAY';
+      }
     } else {
-      const returnRate = await prisma.transportRate.findFirst({
-        where: {
-          isActive: true,
-          ...(body.vehicleType && { vehicleType: body.vehicleType }),
-          ...(body.returnFromLocation && { fromLocation: { equals: body.returnFromLocation, mode: 'insensitive' as const } }),
-          ...(body.returnToLocation && { toLocation: { equals: body.returnToLocation, mode: 'insensitive' as const } }),
-          minCapacity: { lte: passengerCount },
-          OR: [{ maxCapacity: null }, { maxCapacity: { gte: passengerCount } }],
-        },
-        orderBy: { rate: 'asc' },
+      const returnMatch = await resolveTransportRate({
+        from: { type: body.returnFromType, id: body.returnFromId, name: body.returnPickupHotelName || body.returnFromLocation },
+        to: { type: body.returnToType, id: body.returnToId, name: body.returnDropoffHotelName || body.returnToLocation },
+        vehicleType: body.vehicleType ?? null,
+        pax: passengerCount,
       });
-      if (!returnRate) {
+      if (!returnMatch) {
         res.status(400).json({ success: false, error: 'RETURN_PRICE_ON_REQUEST', message: 'No price is configured for the different return route. Please submit a quote request for this round trip.' });
         return;
       }
-      const returnOneWay = await resolveMarketMoney('TRANSPORT', returnRate.id, priceCtx, returnRate.rate, returnRate.currency);
-      if (returnOneWay.currency !== outboundOneWay.currency) {
-        res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: `Outbound (${outboundOneWay.currency}) and return (${returnOneWay.currency}) legs use different currencies. They must match.` });
+      let returnOneWayAmt: Decimal;
+      let returnCurrency: string;
+      if (usesDualPricing(returnMatch.rate)) {
+        const rp = pickDualPrice(returnMatch.rate, company.market);
+        if (!rp.found || rp.oneWay == null) {
+          res.status(400).json({ success: false, error: 'RETURN_PRICE_ON_REQUEST', message: 'No price is configured for the return route in your currency. Please submit a quote request.' });
+          return;
+        }
+        returnOneWayAmt = rp.oneWay;
+        returnCurrency = rp.currency;
+      } else {
+        const rm = await resolveMarketMoney('TRANSPORT', returnMatch.rate.id, priceCtx, returnMatch.rate.rate, returnMatch.rate.currency);
+        returnOneWayAmt = rm.amount;
+        returnCurrency = rm.currency;
+      }
+      if (returnCurrency !== priceCurrency) {
+        res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: `Outbound (${priceCurrency}) and return (${returnCurrency}) legs use different currencies. They must match.` });
         return;
       }
-      sourceAmountRaw = applyGroupAdjustment(outboundOneWay.amount, groupType).add(applyGroupAdjustment(returnOneWay.amount, groupType));
+      sourceAmountRaw = adjust(outboundOneWayAmt).add(adjust(returnOneWayAmt));
       pricingRule = 'ROUND_TRIP_TWO_LEGS';
     }
   }
@@ -358,6 +419,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           type: body.type,
           vehicleType: body.vehicleType ?? 'SEDAN',
           rateId: matchingRate.id,
+          matchedDirection,
           serviceMode,
           fromLocation: fromLocationStore,
           toLocation: toLocationStore,
@@ -391,8 +453,8 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           returnFlightNumber: body.returnFlightNumber ?? null,
           returnAirlineName: body.returnAirlineName ?? null,
           contactNumber: body.contactNumber ?? null,
-          groupTypeId: groupType.id,
-          groupTypeLabel: groupType.labelEn,
+          groupTypeId: groupType?.id ?? null,
+          groupTypeLabel: groupType?.labelEn ?? null,
           totalAmount,  // server-calculated from TransportRate
           currency,
           sourceAmount: charge.sourceAmount,
@@ -462,7 +524,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Ref</td><td style="padding:6px 12px">${booking.refNumber}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Route</td><td style="padding:6px 12px">${fromLocationStore} → ${toLocationStore}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Vehicle</td><td style="padding:6px 12px">${body.vehicleType ?? 'SEDAN'}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Service Type</td><td style="padding:6px 12px">${groupType.labelEn}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Service Type</td><td style="padding:6px 12px">${groupType?.labelEn ?? '—'}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pickup</td><td style="padding:6px 12px">${body.pickupDateTime}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pax</td><td style="padding:6px 12px">${passengerCount}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Lead Pax</td><td style="padding:6px 12px">${body.passengerName ?? '—'}</td></tr>

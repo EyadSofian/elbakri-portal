@@ -4,7 +4,19 @@ import { CompanyTier, Prisma } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
 import { resolveMarketPriceMap } from '../../shared/pricing';
+import { resolveHotelRateMap } from './rates.controller';
 import { syncEntityFromSheets } from '../sheets-sync/sheets-sync.service';
+
+// Structured hotel policy fields — plain optional strings shown in the company
+// hotel detail modal. Kept in one list so create/update stay in sync.
+const POLICY_FIELDS = [
+  'checkInTime', 'checkOutTime',
+  'cancellationPolicy', 'cancellationPolicyAr',
+  'childrenPolicy', 'childrenPolicyAr',
+  'extraBedPolicy', 'extraBedPolicyAr',
+  'mealPolicy', 'mealPolicyAr',
+  'importantNotes', 'importantNotesAr',
+] as const;
 
 const TIER_ORDER: Record<CompanyTier, number> = {
   STANDARD: 0,
@@ -121,7 +133,11 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
 
   // Explicit price overrides for this company's market AND company (verbatim, no FX)
   const companyId = caller.role !== 'SUPERADMIN' ? (caller.companyId ?? null) : null;
-  const marketOverrides = await resolveMarketPriceMap('HOTEL', hotels.map((h) => h.id), { market: companyMarket, companyId });
+  const ids = hotels.map((h) => h.id);
+  const [marketOverrides, rateMap] = await Promise.all([
+    resolveMarketPriceMap('HOTEL', ids, { market: companyMarket, companyId }),
+    caller.role !== 'SUPERADMIN' ? resolveHotelRateMap(ids, companyMarket) : Promise.resolve(new Map()),
+  ]);
 
   const data = hotels.map((hotel) => {
     if (caller.role === 'SUPERADMIN') {
@@ -131,11 +147,14 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
     const showPrice = canSeePrices(hotel, companyTier, visibilityOverride);
     const { companyVisibility: _companyVisibility, ...hotelData } = hotel as typeof hotel & { companyVisibility?: unknown };
     const ov = marketOverrides.get(hotel.id);
-    const marketPrice = ov?.amount ?? hotel.pricePerNight;
+    const rateInfo = rateMap.get(hotel.id) as { fromPrice: Decimal | null; currency: string | null } | undefined;
+    const hasRates = !!rateInfo && rateInfo.fromPrice != null;
+    const displayPrice = hasRates ? rateInfo!.fromPrice : (ov?.amount ?? hotel.pricePerNight);
     return {
       ...hotelData,
-      pricePerNight: showPrice ? marketPrice : null,
-      currency: ov?.currency ?? hotel.currency,
+      pricePerNight: showPrice ? displayPrice : null,
+      currency: hasRates ? (rateInfo!.currency ?? hotel.currency) : (ov?.currency ?? hotel.currency),
+      hasRateMatrix: hasRates,
       priceVisible: showPrice,
       canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,
     };
@@ -203,12 +222,24 @@ export async function getHotel(req: Request, res: Response): Promise<void> {
   const ov = (await resolveMarketPriceMap('HOTEL', [hotel.id], { market: company?.market ?? null, companyId: caller.companyId ?? null })).get(hotel.id);
   const marketPrice = ov?.amount ?? hotel.pricePerNight;
 
+  // Structured rate matrix for this company's market (explicit, no FX). When a
+  // hotel has applicable rates we surface them and base the display price on the
+  // cheapest rate — never the stale pricePerNight.
+  const rateInfo = showPrice
+    ? (await resolveHotelRateMap([hotel.id], company?.market ?? null)).get(hotel.id)
+    : undefined;
+  const hasRates = !!rateInfo && rateInfo.rates.length > 0;
+
   res.json({
     success: true,
     data: {
       ...hotelData,
-      pricePerNight: showPrice ? marketPrice : null,
-      currency: ov?.currency ?? hotel.currency,
+      // When rate rows exist, the display price comes from them; otherwise fall
+      // back to the explicit market override or the legacy base price.
+      pricePerNight: showPrice ? (hasRates ? rateInfo!.fromPrice : marketPrice) : null,
+      currency: hasRates ? (rateInfo!.currency ?? hotel.currency) : (ov?.currency ?? hotel.currency),
+      rates: showPrice ? (rateInfo?.rates ?? []) : [],
+      hasRateMatrix: hasRates,
       pricing: showPrice ? hotel.pricing : [],
       priceVisible: showPrice,
       canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,
@@ -226,9 +257,14 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
     commissionPercent?: number; availableRooms?: number; maxGuestsPerRoom?: number;
     showPriceToAgents?: boolean; allowQuoteRequest?: boolean; minVisibleTier?: CompanyTier;
     destinationId?: string;
-  };
+  } & Partial<Record<(typeof POLICY_FIELDS)[number], string>>;
 
   const imageUrl = (req.file ? `/uploads/${req.file.filename}` : body.imageUrl) ?? undefined;
+
+  const policyData: Record<string, string | null> = {};
+  for (const f of POLICY_FIELDS) {
+    if (body[f] !== undefined) policyData[f] = body[f] ? String(body[f]) : null;
+  }
 
   const hotel = await prisma.hotel.create({
     data: {
@@ -253,6 +289,7 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
       allowQuoteRequest: body.allowQuoteRequest ?? true,
       minVisibleTier: body.minVisibleTier ?? null,
       destinationId: body.destinationId ?? null,
+      ...policyData,
       source: 'MANUAL',
     },
   });
@@ -286,6 +323,9 @@ export async function updateHotel(req: Request, res: Response): Promise<void> {
   if (body.minVisibleTier !== undefined) data.minVisibleTier = body.minVisibleTier as CompanyTier | null;
   if (body.destinationId !== undefined) data.destinationId = body.destinationId ? String(body.destinationId) : null;
   if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
+  for (const f of POLICY_FIELDS) {
+    if (body[f] !== undefined) data[f] = body[f] ? String(body[f]) : null;
+  }
   if (req.file) data.imageUrl = `/uploads/${req.file.filename}`;
 
   const hotel = await prisma.hotel.update({

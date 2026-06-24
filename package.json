@@ -17,6 +17,7 @@
     "db:import:mea": "ts-node prisma/import-mea-workbook.ts",
     "db:apply:images": "ts-node prisma/apply-hotel-images.ts",
     "db:seed:destinations": "ts-node prisma/seed-destination-images.ts",
+    "db:seed:airports": "ts-node prisma/seed-airports.ts",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate"
   },

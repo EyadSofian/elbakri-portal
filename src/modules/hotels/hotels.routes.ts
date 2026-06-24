@@ -24,6 +24,7 @@ import {
   listAllHotelPricing,
   updateHotelPricing,
 } from './pricing.controller';
+import { listHotelRatesAdmin, saveHotelRates } from './rates.controller';
 import { requireRole } from '../../middleware/role';
 import { validate } from '../../middleware/validate';
 import { createHotelSchema, updateHotelSchema } from './hotels.schema';
@@ -58,5 +59,8 @@ router.delete('/:id', requireRole('SUPERADMIN'), deleteHotel);
 router.post('/sync-sheets', requireRole('SUPERADMIN'), syncSheets);
 router.get('/:id/pricing', getHotelPricing);
 router.post('/:id/pricing', requireRole('SUPERADMIN'), addHotelPricing);
+// Structured hotel rate matrix (rooms × markets × occupancy) + supplements
+router.get('/:id/rates', requireRole('SUPERADMIN'), listHotelRatesAdmin);
+router.put('/:id/rates', requireRole('SUPERADMIN'), saveHotelRates);
 
 export default router;

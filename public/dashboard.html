@@ -8,6 +8,23 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/portal.css">
+  <style>
+    /* Hotel detail — rates, price preview, policies */
+    .hd-section { margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
+    .hd-title { font-size:14px; font-weight:700; color:var(--text,#0b1736); margin-bottom:10px; }
+    .hd-preview-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    .hd-preview-out { margin-top:10px; }
+    .hd-total { font-size:22px; font-weight:800; color:var(--brand-teal,#14B8A6); }
+    .hd-policies { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+    .hd-policy { background:var(--bg-glass,rgba(20,184,166,.05)); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+    .hd-policy-k { font-size:12px; font-weight:700; color:var(--brand-teal,#14B8A6); margin-bottom:4px; }
+    .hd-policy-v { font-size:13px; color:var(--text-secondary,#516179); white-space:pre-wrap; line-height:1.45; }
+    /* Typed transport From/To */
+    .tf-ep-types { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+    .tf-ep-type { flex:1; min-width:90px; text-align:center; padding:9px 10px; border:1px solid var(--border); border-radius:10px; cursor:pointer; font-size:13px; font-weight:600; user-select:none; transition:all .12s; }
+    .tf-ep-type.on { background:var(--brand-teal,#14B8A6); color:#fff; border-color:var(--brand-teal,#14B8A6); }
+    @media (max-width:640px){ .hd-preview-grid{ grid-template-columns:1fr; } }
+  </style>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="/assets/i18n.js"></script>
@@ -955,6 +972,93 @@ function hotelActionCell(h) {
   return `<div style="display:flex;gap:6px;align-items:center">${view}${quote}</div>`;
 }
 
+// Structured room-rate matrix shown to the company (already filtered by market
+// server-side). Prices are explicit per currency — formatStoredMoney never FX-converts.
+function hotelRatesSection(h) {
+  if (h.priceVisible === false) {
+    return `<div class="hd-section"><div class="hd-title">${t("hotel.rates", "Room Rates")}</div>
+      <span class="badge badge-info">${t("hotel.priceOnRequest", "Price on request")}</span></div>`;
+  }
+  const rates = Array.isArray(h.rates) ? h.rates : [];
+  if (!rates.length) return "";
+  const occ = { single: t("hotel.single", "Single"), double: t("hotel.double", "Double"), triple: t("hotel.triple", "Triple") };
+  const cell = (v, cur) => (v != null ? formatStoredMoney(v, cur) : "—");
+  const tableRows = rates.map(r => {
+    const supp = (r.supplements || []).map(s => {
+      if (s.type === "FIXED_AMOUNT" && s.amount != null) return `${escapeHtml(s.name)} (+${formatStoredMoney(s.amount, s.currency || r.currency)})`;
+      if (s.type === "PERCENTAGE" && s.amount != null) return `${escapeHtml(s.name)} (+${Number(s.amount)}%)`;
+      return escapeHtml(s.name);
+    }).join(" · ");
+    return `<tr>
+      <td><strong>${escapeHtml(r.roomName)}</strong>${r.mealPlan ? `<div class="secondary-text">${escapeHtml(String(r.mealPlan).replace(/_/g, " "))}</div>` : ""}</td>
+      <td class="numeric">${cell(r.singlePrice, r.currency)}</td>
+      <td class="numeric">${cell(r.doublePrice, r.currency)}</td>
+      <td class="numeric">${cell(r.triplePrice, r.currency)}</td>
+      <td class="secondary-text">${supp || "—"}</td>
+    </tr>`;
+  }).join("");
+  window._hpvRates = rates;
+  const roomOpts = rates.map((r, i) => `<option value="${i}">${escapeHtml(r.roomName)}${r.mealPlan ? " · " + String(r.mealPlan).replace(/_/g, " ") : ""}</option>`).join("");
+  return `<div class="hd-section"><div class="hd-title">${t("hotel.rates", "Room Rates")}</div>
+    <div class="table-scroll"><table class="data-table"><thead><tr>
+      <th>${t("hotel.roomName", "Room")}</th><th>${occ.single}</th><th>${occ.double}</th><th>${occ.triple}</th><th>${t("hotel.supplements", "Supplements")}</th>
+    </tr></thead><tbody>${tableRows}</tbody></table></div>
+    <div class="hd-title" style="margin-top:14px">${t("hotel.pricePreview", "Price preview")}</div>
+    <div class="hd-preview-grid">
+      <div class="form-field"><label>${t("hotel.roomName", "Room")}</label><select id="hpvRoom" onchange="hpvUpdate()">${roomOpts}</select></div>
+      <div class="form-field"><label>${t("hotel.occupancy", "Occupancy")}</label><select id="hpvOcc" onchange="hpvUpdate()"><option value="single">${occ.single}</option><option value="double" selected>${occ.double}</option><option value="triple">${occ.triple}</option></select></div>
+      <div class="form-field"><label>${t("hotel.supplement", "Supplement")}</label><select id="hpvSupp" onchange="hpvUpdate()"></select></div>
+    </div>
+    <div class="hd-preview-out" id="hpvOut"></div></div>`;
+}
+
+function hpvUpdate() {
+  const rates = window._hpvRates || [];
+  const ri = Number(document.getElementById("hpvRoom")?.value || 0);
+  const r = rates[ri];
+  if (!r) return;
+  const suppSel = document.getElementById("hpvSupp");
+  const supps = r.supplements || [];
+  if (suppSel && suppSel.dataset.room !== String(ri)) {
+    suppSel.dataset.room = String(ri);
+    suppSel.innerHTML = `<option value="-1">${t("hotel.noSupplement", "None")}</option>` + supps.map((s, j) => `<option value="${j}">${escapeHtml(s.name)}</option>`).join("");
+  }
+  const occ = document.getElementById("hpvOcc")?.value || "double";
+  const base = occ === "single" ? r.singlePrice : occ === "triple" ? r.triplePrice : r.doublePrice;
+  const out = document.getElementById("hpvOut");
+  if (!out) return;
+  if (base == null) { out.innerHTML = `<span class="badge badge-info">${t("hotel.occNotAvailable", "Not available for this occupancy")}</span>`; return; }
+  let total = Number(base);
+  let note = "";
+  const si = Number(suppSel?.value ?? -1);
+  if (si >= 0 && supps[si]) {
+    const s = supps[si];
+    if (s.type === "FIXED_AMOUNT" && s.amount != null) {
+      if (!s.currency || s.currency === r.currency) total += Number(s.amount);
+      else note = `+${formatStoredMoney(s.amount, s.currency)} (${s.name})`;
+    } else if (s.type === "PERCENTAGE" && s.amount != null) {
+      total += Number(base) * Number(s.amount) / 100;
+    } else { note = s.name; }
+  }
+  out.innerHTML = `<div class="hd-total">${formatStoredMoney(total, r.currency)} <span class="secondary-text">/ ${t("form.nights", "night")}</span></div>${note ? `<div class="secondary-text">${escapeHtml(note)}</div>` : ""}`;
+}
+
+function hotelPoliciesSection(h) {
+  const rows = [];
+  const time = (labelKey, label, v) => { if (v) rows.push([t(labelKey, label), String(v)]); };
+  const add = (labelKey, label, en, ar) => { const v = locName(en, ar); if (v) rows.push([t(labelKey, label), v]); };
+  time("hotel.checkInTime", "Check-in", h.checkInTime);
+  time("hotel.checkOutTime", "Check-out", h.checkOutTime);
+  add("hotel.cancellationPolicy", "Cancellation policy", h.cancellationPolicy, h.cancellationPolicyAr);
+  add("hotel.childrenPolicy", "Children policy", h.childrenPolicy, h.childrenPolicyAr);
+  add("hotel.extraBedPolicy", "Extra bed policy", h.extraBedPolicy, h.extraBedPolicyAr);
+  add("hotel.mealPolicy", "Meal policy", h.mealPolicy, h.mealPolicyAr);
+  add("hotel.importantNotes", "Important notes", h.importantNotes, h.importantNotesAr);
+  if (!rows.length) return "";
+  return `<div class="hd-section"><div class="hd-title">${t("hotel.policies", "Hotel policies")}</div>
+    <div class="hd-policies">${rows.map(([k, v]) => `<div class="hd-policy"><div class="hd-policy-k">${escapeHtml(k)}</div><div class="hd-policy-v">${escapeHtml(v)}</div></div>`).join("")}</div></div>`;
+}
+
 async function showAgentHotelDetails(id) {
   const res = await apiFetch(`/hotels/${id}`);
   if (!res?.data) return;
@@ -984,12 +1088,15 @@ async function showAgentHotelDetails(id) {
     ${attrBadges ? `<div style="margin:10px 0;display:flex;flex-wrap:wrap;gap:6px">${attrBadges}</div>` : ""}
     ${descLoc ? `<p style="white-space:pre-wrap;color:var(--text-secondary);line-height:1.5;margin:8px 0">${escapeHtml(descLoc)}</p>` : ""}
     ${h.amenities?.length ? `<div class="hotel-amenity-cloud" style="margin-top:8px">${amenityChips}</div>` : ""}
+    ${hotelRatesSection(h)}
+    ${hotelPoliciesSection(h)}
     </div>`;
 
   openModal(`${escapeHtml(hotelName(h))}`, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.close")}</button>
     ${(h.canRequestQuote === false || h.allowQuoteRequest === false) ? "" : `<button class="btn btn-primary" onclick="closeModal();openQuoteRequestModal('HOTEL','${h.id}',${inlineJsonArg(h.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`}
   `);
+  if (document.getElementById("hpvRoom")) hpvUpdate();
 }
 
 // ─── Destination-first hotel flow ────────────────────────────────────────────
@@ -1942,14 +2049,74 @@ async function renderTransport() {
   content(pageHeader(`<button class="btn btn-outline" onclick="renderTransportHistory()">${icon("list")}&nbsp;${t("nav.bookings","My Bookings")}</button>`) + `
     <div id="transportFormArea">${trFormSkeleton()}</div>`);
 
-  // Fetch from/to locations and existing bookings in parallel
-  const [locRes] = await Promise.all([
+  // Fetch typed endpoint reference data (airports, destinations, hotels) + legacy locations.
+  const [locRes, airRes, destRes, hotRes] = await Promise.all([
     apiFetch("/transport-rates/locations"),
+    apiFetch("/airports"),
+    apiFetch("/destinations?limit=300"),
+    apiFetch("/hotels?limit=300"),
   ]);
   if (state.renderToken !== capturedToken) return;
 
   state.transportData = locRes?.data || { fromLocations: [], toLocations: [], vehicleTypes: [] };
+  state.transportRefs = {
+    airports: airRes?.data || [],
+    destinations: (destRes?.data || []).filter(d => d && d.id),
+    hotels: hotRes?.data || [],
+  };
   renderTransportForm();
+}
+
+// Typed From/To picker — Airport (admin list), Hotel (list or free text) or
+// Destination (admin list). Replaces the old single free-text dropdown.
+function trEpField(side, defaultType) {
+  const cap = side === "from" ? "From" : "To";
+  const refs = state.transportRefs || { airports: [], destinations: [], hotels: [] };
+  const lbl = (en, ar) => (state.lang === "ar" && ar ? ar : en);
+  const airOpts = `<option value="">${t("transport.selectAirport", "Select airport...")}</option>` +
+    refs.airports.map(a => `<option value="${a.id}" data-name="${escapeHtml(a.code + " · " + a.nameEn)}">${escapeHtml(a.code + " · " + lbl(a.nameEn, a.nameAr))}</option>`).join("");
+  const destOpts = `<option value="">${t("transport.selectDestination", "Select destination...")}</option>` +
+    refs.destinations.map(d => `<option value="${d.id}" data-name="${escapeHtml(d.name)}">${escapeHtml(lbl(d.name, d.nameAr))}</option>`).join("");
+  const hotOpts = `<option value="">${t("transport.selectHotel", "Select hotel...")}</option>` +
+    refs.hotels.map(h => `<option value="${h.id}" data-name="${escapeHtml(h.name)}">${escapeHtml(h.name)}${h.city ? " (" + escapeHtml(h.city) + ")" : ""}</option>`).join("");
+  const typeBtn = (type, ic, label) => `<div class="tf-ep-type ${defaultType === type ? "on" : ""}" data-type="${type}" onclick="trEpType('${side}','${type}')">${icon(ic)} ${label}</div>`;
+  return `
+    <div class="tf-ep-types" data-side="${side}">
+      ${typeBtn("AIRPORT", "plane", t("transport.airport", "Airport"))}
+      ${typeBtn("HOTEL", "building", t("transport.hotel", "Hotel"))}
+      ${typeBtn("DESTINATION", "map-pin", t("transport.destination", "Destination"))}
+    </div>
+    <input type="hidden" id="tr${cap}Type" value="${defaultType}">
+    <select id="tr${cap}Airport" class="tr-ep-ctrl" data-kind="AIRPORT" onchange="trRouteChanged()">${airOpts}</select>
+    <select id="tr${cap}Dest" class="tr-ep-ctrl" data-kind="DESTINATION" onchange="trRouteChanged()" style="display:none">${destOpts}</select>
+    <select id="tr${cap}Hotel" class="tr-ep-ctrl" data-kind="HOTEL" onchange="trRouteChanged()" style="display:none">${hotOpts}</select>
+    <input id="tr${cap}HotelText" class="tr-ep-ctrl" data-kind="HOTEL" placeholder="${t("transport.orTypeHotel", "…or type hotel / location name")}" oninput="trRouteChanged()" style="display:none;margin-top:6px">`;
+}
+
+function trEpType(side, type) {
+  const cap = side === "from" ? "From" : "To";
+  const hidden = document.getElementById(`tr${cap}Type`);
+  if (hidden) hidden.value = type;
+  document.querySelectorAll(`.tf-ep-types[data-side="${side}"] .tf-ep-type`).forEach(b => b.classList.toggle("on", b.dataset.type === type));
+  const map = { AIRPORT: [`tr${cap}Airport`], DESTINATION: [`tr${cap}Dest`], HOTEL: [`tr${cap}Hotel`, `tr${cap}HotelText`] };
+  ["AIRPORT", "DESTINATION", "HOTEL"].forEach(k => map[k].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = k === type ? "" : "none"; }));
+  trRouteChanged();
+}
+
+// Read the typed endpoint for one side → { type, id, name }.
+function trReadEndpoint(side) {
+  const cap = side === "from" ? "From" : "To";
+  const type = document.getElementById(`tr${cap}Type`)?.value || "";
+  let id = null, name = null;
+  if (type === "AIRPORT") { const s = document.getElementById(`tr${cap}Airport`); id = s?.value || null; name = s?.selectedOptions[0]?.dataset.name || null; }
+  else if (type === "DESTINATION") { const s = document.getElementById(`tr${cap}Dest`); id = s?.value || null; name = s?.selectedOptions[0]?.dataset.name || null; }
+  else if (type === "HOTEL") {
+    const s = document.getElementById(`tr${cap}Hotel`);
+    const txt = (document.getElementById(`tr${cap}HotelText`)?.value || "").trim();
+    if (s && s.value) { id = s.value; name = s.selectedOptions[0]?.dataset.name || null; }
+    if (txt) { name = txt; if (!s?.value) id = null; }
+  }
+  return { type, id, name };
 }
 
 function trFormSkeleton() {
@@ -1959,10 +2126,6 @@ function trFormSkeleton() {
 }
 
 function renderTransportForm() {
-  const d = state.transportData;
-  const fromOpts = d.fromLocations.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join("");
-  const toOpts   = d.toLocations.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join("");
-
   const vehicleOpts = VEHICLE_OPTIONS.map(v =>
     `<option value="${v.value}">${v.label} — ${v.hint}</option>`
   ).join("");
@@ -2009,37 +2172,11 @@ function renderTransportForm() {
         <div class="form-grid">
           <div class="form-field">
             <label>${t("form.from","From")} <span class="required">*</span></label>
-            <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-              <label class="tr-radio-label"><input type="radio" name="fromType" value="AIRPORT" onchange="trTypeChanged()" checked> ${icon("plane")} ${t("transport.airport","Airport")}</label>
-              <label class="tr-radio-label"><input type="radio" name="fromType" value="DESTINATION" onchange="trTypeChanged()"> ${icon("map-pin")} ${t("transport.destination","Destination")}</label>
-              <label class="tr-radio-label"><input type="radio" name="fromType" value="HOTEL" onchange="trTypeChanged()"> ${icon("building")} ${t("transport.hotel","Hotel")}</label>
-              <label class="tr-radio-label"><input type="radio" name="fromType" value="ADDRESS" onchange="trTypeChanged()"> ${icon("home")} ${t("transport.address","Address")}</label>
-              <label class="tr-radio-label"><input type="radio" name="fromType" value="LANDMARK" onchange="trTypeChanged()"> ${icon("flag")} ${t("transport.landmark","Landmark")}</label>
-            </div>
-            <select id="trFrom" required onchange="trRouteChanged()" ${fromOpts ? "" : 'style="display:none"'}>
-              <option value="">${t("transport.selectLocation","Select location...")}</option>
-              ${fromOpts}
-            </select>
-            ${!fromOpts ? `<input id="trFromText" placeholder="${t("form.from","e.g. Cairo Airport, Sharm Hotel")}" oninput="trRouteChanged()">` : ""}
-            <input id="trPickupHotel" style="display:none;margin-top:6px" placeholder="${t("transport.pickupHotelName","Pickup Hotel Name")}">
-            <input id="trPickupAddress" style="display:none;margin-top:6px" placeholder="${t("transport.pickupAddress","Pickup address / landmark")}">
+            ${trEpField("from", "AIRPORT")}
           </div>
           <div class="form-field">
             <label>${t("form.to","To")} <span class="required">*</span></label>
-            <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-              <label class="tr-radio-label"><input type="radio" name="toType" value="AIRPORT" onchange="trTypeChanged()"> ${icon("plane")} ${t("transport.airport","Airport")}</label>
-              <label class="tr-radio-label"><input type="radio" name="toType" value="DESTINATION" onchange="trTypeChanged()" checked> ${icon("map-pin")} ${t("transport.destination","Destination")}</label>
-              <label class="tr-radio-label"><input type="radio" name="toType" value="HOTEL" onchange="trTypeChanged()"> ${icon("building")} ${t("transport.hotel","Hotel")}</label>
-              <label class="tr-radio-label"><input type="radio" name="toType" value="ADDRESS" onchange="trTypeChanged()"> ${icon("home")} ${t("transport.address","Address")}</label>
-              <label class="tr-radio-label"><input type="radio" name="toType" value="LANDMARK" onchange="trTypeChanged()"> ${icon("flag")} ${t("transport.landmark","Landmark")}</label>
-            </div>
-            <select id="trTo" required onchange="trRouteChanged()" ${toOpts ? "" : 'style="display:none"'}>
-              <option value="">${t("transport.selectLocation","Select location...")}</option>
-              ${toOpts}
-            </select>
-            ${!toOpts ? `<input id="trToText" placeholder="${t("form.to","e.g. Sharm El Sheikh Hotel")}" oninput="trRouteChanged()">` : ""}
-            <input id="trDropoffHotel" style="display:none;margin-top:6px" placeholder="${t("transport.dropoffHotelName","Drop-off Hotel Name")}">
-            <input id="trDropoffAddress" style="display:none;margin-top:6px" placeholder="${t("transport.dropoffAddress","Drop-off address / landmark")}">
+            ${trEpField("to", "DESTINATION")}
           </div>
         </div>
       </div>
@@ -2214,15 +2351,8 @@ function setTripType(type) {
   trTypeChanged();
 }
 
-/** Show/hide the hotel-name / address inputs based on the From/To type, then re-quote. */
+/** Endpoint visibility is handled by trEpType; this only re-quotes. */
 function trTypeChanged() {
-  const fromType = document.querySelector('input[name="fromType"]:checked')?.value;
-  const toType   = document.querySelector('input[name="toType"]:checked')?.value;
-  const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? "" : "none"; };
-  show("trPickupHotel", fromType === "HOTEL");
-  show("trPickupAddress", fromType === "ADDRESS" || fromType === "LANDMARK");
-  show("trDropoffHotel", toType === "HOTEL");
-  show("trDropoffAddress", toType === "ADDRESS" || toType === "LANDMARK");
   trUpdateQuote();
 }
 
@@ -2250,12 +2380,8 @@ function trUpdateQuote() {
   _trQuoteTimer = setTimeout(_doTransportQuote, 420);
 }
 
-function trGetFrom() {
-  return (document.getElementById("trFrom")?.value || document.getElementById("trFromText")?.value || "").trim();
-}
-function trGetTo() {
-  return (document.getElementById("trTo")?.value || document.getElementById("trToText")?.value || "").trim();
-}
+function trGetFrom() { return (trReadEndpoint("from").name || "").trim(); }
+function trGetTo() { return (trReadEndpoint("to").name || "").trim(); }
 
 // Build the full vehicle catalogue options (fallback when no route-specific rates exist).
 function trAllVehicleOptions() {
@@ -2364,9 +2490,17 @@ async function _doTransportQuote() {
   if (bodyEl) bodyEl.innerHTML = `<div class="skeleton" style="height:14px;width:60%"></div><div class="skeleton" style="height:28px;width:40%;margin-top:10px"></div>`;
   if (actionsEl) actionsEl.innerHTML = "";
 
+  const fromEp = trReadEndpoint("from");
+  const toEp = trReadEndpoint("to");
   const selectedGroupTypeId = document.querySelector('input[name="trGroupType"]:checked')?.value || "";
   const date = document.getElementById("trDate")?.value || "";
-  const params = new URLSearchParams({ from, to, vehicleType: vehicle, pax: String(pax), roundTrip: String(isRoundTrip) });
+  const params = new URLSearchParams({ vehicleType: vehicle, pax: String(pax), roundTrip: String(isRoundTrip) });
+  if (fromEp.type) params.set("fromType", fromEp.type);
+  if (fromEp.id) params.set("fromId", fromEp.id);
+  if (fromEp.name) params.set("fromName", fromEp.name);
+  if (toEp.type) params.set("toType", toEp.type);
+  if (toEp.id) params.set("toId", toEp.id);
+  if (toEp.name) params.set("toName", toEp.name);
   if (selectedGroupTypeId) params.set("groupTypeId", selectedGroupTypeId);
   if (date) params.set("date", date);
   const res = await apiFetch(`/transport-rates/quote?${params}`);
@@ -2428,13 +2562,13 @@ async function trConfirmBooking() {
   const retTime     = document.getElementById("trReturnTime")?.value;
   const retAirline  = document.getElementById("trReturnAirline")?.value.trim();
   const retFlight   = document.getElementById("trReturnFlight")?.value.trim();
-  const fromType    = document.querySelector('input[name="fromType"]:checked')?.value || "AIRPORT";
-  const toType      = document.querySelector('input[name="toType"]:checked')?.value || "DESTINATION";
+  const fromEp      = trReadEndpoint("from");
+  const toEp        = trReadEndpoint("to");
+  const fromType    = fromEp.type || "AIRPORT";
+  const toType      = toEp.type || "DESTINATION";
   const groupTypeId = document.querySelector('input[name="trGroupType"]:checked')?.value || undefined;
-  const pickupHotel  = document.getElementById("trPickupHotel")?.value.trim();
-  const pickupAddr   = document.getElementById("trPickupAddress")?.value.trim();
-  const dropoffHotel = document.getElementById("trDropoffHotel")?.value.trim();
-  const dropoffAddr  = document.getElementById("trDropoffAddress")?.value.trim();
+  const pickupHotel  = fromType === "HOTEL" ? (fromEp.name || "") : "";
+  const dropoffHotel = toType === "HOTEL" ? (toEp.name || "") : "";
   const sameRouteReversed = document.getElementById("trSameRouteReversed")?.checked !== false;
   const retFromType  = document.querySelector('input[name="returnFromType"]:checked')?.value;
   const retToType    = document.querySelector('input[name="returnToType"]:checked')?.value;
@@ -2447,17 +2581,14 @@ async function trConfirmBooking() {
   const isAddr = (ty) => ty === "ADDRESS" || ty === "LANDMARK";
 
   if (!from || !date || !paxName || !contact || !vehicle || (!isDisposal && !to) || (isRoundTrip && !retDate)) {
-    toast(t("transport.requiredFields","Please fill all required fields: service, date, lead name, contact, vehicle"), "error");
+    toast(t("transport.requiredFields","Please fill all required fields: route, date, lead name, contact, vehicle"), "error");
     return;
   }
-  // Hotel / address validation (matches server-side rules)
-  if (fromType === "HOTEL" && !pickupHotel) { toast(t("transport.pickupHotelRequired","Pickup hotel name is required"), "error"); document.getElementById("trPickupHotel")?.focus(); return; }
-  if (isAddr(fromType) && !pickupAddr) { toast(t("transport.pickupAddrRequired","Pickup address is required"), "error"); document.getElementById("trPickupAddress")?.focus(); return; }
-  if (!isDisposal && toType === "HOTEL" && !dropoffHotel) { toast(t("transport.dropoffHotelRequired","Drop-off hotel name is required"), "error"); document.getElementById("trDropoffHotel")?.focus(); return; }
-  if (!isDisposal && isAddr(toType) && !dropoffAddr) { toast(t("transport.dropoffAddrRequired","Drop-off address is required"), "error"); document.getElementById("trDropoffAddress")?.focus(); return; }
-  // Hourly / day-use: a REAL pickup (hotel or address) is mandatory — the service label is not a pickup.
-  if (isDisposal && !((fromType === "HOTEL" && pickupHotel) || (isAddr(fromType) && pickupAddr))) {
-    toast(t("transport.pickupRequiredDisposal","Choose Hotel or Address and enter where the driver should pick you up"), "error");
+  if (fromType === "HOTEL" && !pickupHotel) { toast(t("transport.pickupHotelRequired","Choose a hotel or type the pickup hotel name"), "error"); return; }
+  if (!isDisposal && toType === "HOTEL" && !dropoffHotel) { toast(t("transport.dropoffHotelRequired","Choose a hotel or type the drop-off hotel name"), "error"); return; }
+  // Hourly / day-use: a REAL pickup (the chosen hotel / destination) is required.
+  if (isDisposal && !from) {
+    toast(t("transport.pickupRequiredDisposal","Choose where the driver should pick you up"), "error");
     return;
   }
   // Round trip: return must be after outbound; a different return route needs its endpoints.
@@ -2472,21 +2603,19 @@ async function trConfirmBooking() {
     if (!rFromOk || !rToOk) { toast(t("transport.returnEndpointsRequired","Enter the return pickup and drop-off for the different return route"), "error"); return; }
   }
 
-  const pickupLocationVal = isDisposal ? (pickupHotel || pickupAddr || undefined) : (from || undefined);
   const payload = {
     rateId: state.transportQuote?.rateId || undefined,
     serviceMode,
     type: state.transportQuote?.rateType || (fromType === "AIRPORT" ? "AIRPORT_TRANSFER" : "PRIVATE_TRANSFER"),
     vehicleType: vehicle,
     fromLocation: from, toLocation: isDisposal ? (to || from) : to,
-    fromType, toType,
+    fromType, fromId: fromEp.id || undefined, fromName: from,
+    toType, toId: toEp.id || undefined, toName: isDisposal ? (to || from) : to,
     pickupType: fromType, dropoffType: toType,
-    pickupLocation: pickupLocationVal,
-    pickupAddress: pickupAddr || undefined,
-    pickupHotelName: pickupHotel || undefined,
+    pickupLocation: from || undefined,
+    pickupHotelName: fromType === "HOTEL" ? (pickupHotel || undefined) : undefined,
     dropoffLocation: isDisposal ? undefined : (to || undefined),
-    dropoffAddress: dropoffAddr || undefined,
-    dropoffHotelName: dropoffHotel || undefined,
+    dropoffHotelName: toType === "HOTEL" ? (dropoffHotel || undefined) : undefined,
     pickupDateTime,
     returnDateTime,
     isRoundTrip,

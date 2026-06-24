@@ -241,6 +241,22 @@ enum QuoteServiceType {
   MULTI_SERVICE
 }
 
+// Typed transport endpoint — replaces the old free-text "everything in one
+// dropdown". A route leg is one of these kinds, with a soft id + display name.
+enum TransportEndpointType {
+  AIRPORT
+  HOTEL
+  DESTINATION
+}
+
+// How a hotel rate supplement behaves. TEXT_ONLY = informational (e.g. "Nile
+// View"), FIXED_AMOUNT / PERCENTAGE = an actual surcharge.
+enum HotelSupplementType {
+  FIXED_AMOUNT
+  PERCENTAGE
+  TEXT_ONLY
+}
+
 // ─────────────────────────────────────────────
 // AUTH
 // ─────────────────────────────────────────────
@@ -427,6 +443,19 @@ model Hotel {
   showPriceToAgents      Boolean                  @default(false)
   allowQuoteRequest      Boolean                  @default(true)
   minVisibleTier         CompanyTier?
+  // Structured hotel policies (shown in the company hotel detail modal)
+  checkInTime            String?
+  checkOutTime           String?
+  cancellationPolicy     String?
+  cancellationPolicyAr   String?
+  childrenPolicy         String?
+  childrenPolicyAr       String?
+  extraBedPolicy         String?
+  extraBedPolicyAr       String?
+  mealPolicy             String?
+  mealPolicyAr           String?
+  importantNotes         String?
+  importantNotesAr       String?
   source                 HotelSource              @default(MANUAL)
   sheetsRowId            String?
   isActive               Boolean                  @default(true)
@@ -435,6 +464,7 @@ model Hotel {
   rooms                  Room[]
   bookings               Booking[]
   pricing                HotelPricing[]
+  rates                  HotelRate[]
   quoteRequests          QuoteRequest[]
   companyVisibility      HotelCompanyVisibility[]
   createdAt              DateTime                 @default(now())
@@ -479,6 +509,53 @@ model HotelPricing {
 
   @@index([hotelId])
   @@index([sheetsRowId])
+}
+
+// ─────────────────────────────────────────────
+// HOTEL RATE MATRIX (structured, per-room, per-market, per-occupancy)
+// ─────────────────────────────────────────────
+// Replaces the simple single pricePerNight for hotels that have a proper rate
+// table. Each row is one room type for one market with single/double/triple
+// occupancy prices in an explicit currency (NO FX conversion). `market = null`
+// means the row applies to ALL markets (fallback). Supplements hang off a row.
+model HotelRate {
+  id           String                @id @default(cuid())
+  hotelId      String
+  hotel        Hotel                 @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  roomName     String // free text — e.g. "Standard Room", "Deluxe Sea View"
+  market       Market? // null = applies to ALL markets
+  currency     String                @default("USD")
+  singlePrice  Decimal?              @db.Decimal(10, 2)
+  doublePrice  Decimal?              @db.Decimal(10, 2)
+  triplePrice  Decimal?              @db.Decimal(10, 2)
+  mealPlan     MealPlan?
+  validFrom    DateTime?
+  validTo      DateTime?
+  isActive     Boolean               @default(true)
+  notes        String?
+  displayOrder Int                   @default(0)
+  supplements  HotelRateSupplement[]
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@index([hotelId])
+  @@index([hotelId, isActive])
+}
+
+model HotelRateSupplement {
+  id           String              @id @default(cuid())
+  rateId       String
+  rate         HotelRate           @relation(fields: [rateId], references: [id], onDelete: Cascade)
+  name         String // free text — e.g. "Sea View", "Extra Bed", "High Floor"
+  type         HotelSupplementType @default(TEXT_ONLY)
+  amount       Decimal?            @db.Decimal(10, 2)
+  currency     String?
+  notes        String?
+  displayOrder Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([rateId])
 }
 
 model HotelCompanyVisibility {
@@ -856,6 +933,7 @@ model TransportBooking {
   serviceMode            TransportServiceMode?
   rateId                 String? // authoritative priced product — never match a booking to a price by display text
   rate                   TransportRate?        @relation(fields: [rateId], references: [id], onDelete: SetNull)
+  matchedDirection       String? // EXACT | REVERSED — how the rate matched the requested route
   vehicleType            VehicleType           @default(SEDAN)
   // Denormalized route summary (back-compat). The structured fields below are authoritative.
   fromLocation           String
@@ -932,10 +1010,27 @@ model TransportRate {
   durationHours     Int? // hours the car is at disposal (HOURLY_CHARTER / DAY_USE)
   vehicleType       VehicleType          @default(SEDAN)
   city              String?
+  // Legacy free-text endpoints (kept for back-compat reads).
   fromLocation      String?
   toLocation        String?
-  rate              Decimal              @db.Decimal(10, 2) // one-way rate
-  roundTripRate     Decimal?             @db.Decimal(10, 2) // explicit round-trip rate (optional)
+  // Typed endpoints — authoritative. fromId/toId are soft refs (airportId,
+  // hotelId or destinationId depending on the type); from/toName denormalize
+  // the display label so a route resolves without extra joins.
+  fromType          TransportEndpointType?
+  fromId            String?
+  fromName          String?
+  toType            TransportEndpointType?
+  toId              String?
+  toName            String?
+  // If true, this rate also prices the reverse direction (B → A) at the same price.
+  isBidirectional   Boolean              @default(false)
+  rate              Decimal              @db.Decimal(10, 2) // legacy one-way rate (back-compat)
+  roundTripRate     Decimal?             @db.Decimal(10, 2) // legacy round-trip rate
+  // Explicit dual-currency sale prices (NO FX). Egyptian market → EGP, others → USD.
+  priceEgp          Decimal?             @db.Decimal(10, 2)
+  priceUsd          Decimal?             @db.Decimal(10, 2)
+  roundTripPriceEgp Decimal?             @db.Decimal(10, 2)
+  roundTripPriceUsd Decimal?             @db.Decimal(10, 2)
   currency          String               @default("USD")
   minCapacity       Int                  @default(1)
   maxCapacity       Int?
@@ -953,6 +1048,25 @@ model TransportRate {
   @@index([serviceMode])
   @@index([vehicleType])
   @@index([destinationId])
+  @@index([fromType, fromId])
+  @@index([toType, toId])
+}
+
+// ─────────────────────────────────────────────
+// AIRPORTS (admin-managed — replaces the fixed EgyptAirport enum for transport)
+// ─────────────────────────────────────────────
+model Airport {
+  id        String   @id @default(cuid())
+  code      String   @unique // IATA-style code, e.g. CAI, HRG, SSH
+  nameEn    String
+  nameAr    String?
+  city      String?
+  cityAr    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
 }
 
 // ─────────────────────────────────────────────

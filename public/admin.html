@@ -8,6 +8,36 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/portal.css">
+  <style>
+    /* Dedicated hotel + transport tabbed editors */
+    .he-tabs { display:flex; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--border); margin:-4px 0 16px; }
+    .he-tabbtn { background:transparent; border:none; padding:10px 14px; font-size:13px; font-weight:600; color:var(--text-secondary,#516179); cursor:pointer; border-bottom:2px solid transparent; border-radius:8px 8px 0 0; }
+    .he-tabbtn:hover { color:var(--brand-teal,#14B8A6); background:var(--bg-glass,rgba(20,184,166,.06)); }
+    .he-tabbtn.active { color:var(--brand-teal,#14B8A6); border-bottom-color:var(--brand-teal,#14B8A6); }
+    .he-main-preview { position:relative; width:200px; height:140px; border-radius:12px; overflow:hidden; border:1px solid var(--border); background:var(--bg-app,#eef6f8); display:flex; align-items:center; justify-content:center; }
+    .he-main-preview img { width:100%; height:100%; object-fit:cover; }
+    .he-noimg { display:flex; flex-direction:column; align-items:center; gap:6px; color:var(--text-secondary,#94a3b8); font-size:12px; }
+    .he-noimg svg { width:28px; height:28px; }
+    .he-img-x, .he-thumb-actions button { cursor:pointer; }
+    .he-img-x { position:absolute; top:6px; right:6px; width:26px; height:26px; border-radius:50%; border:none; background:rgba(15,23,42,.7); color:#fff; display:flex; align-items:center; justify-content:center; }
+    .he-img-x svg { width:14px; height:14px; }
+    .he-gallery-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+    .he-thumb { position:relative; border-radius:10px; overflow:hidden; border:1px solid var(--border); aspect-ratio:4/3; background:var(--bg-app,#eef6f8); }
+    .he-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+    .he-thumb-actions { position:absolute; inset:auto 0 0 0; display:flex; justify-content:center; gap:2px; padding:4px; background:linear-gradient(transparent,rgba(15,23,42,.78)); opacity:0; transition:opacity .15s; }
+    .he-thumb:hover .he-thumb-actions { opacity:1; }
+    .he-thumb-actions button { width:26px; height:26px; border-radius:6px; border:none; background:rgba(255,255,255,.92); color:#0b1736; display:flex; align-items:center; justify-content:center; }
+    .he-thumb-actions button:disabled { opacity:.4; cursor:default; }
+    .he-thumb-actions button svg { width:14px; height:14px; }
+    .he-amenity { display:inline-flex; align-items:center; gap:4px; padding:7px 13px; border:1px solid var(--border); border-radius:999px; cursor:pointer; font-size:13px; user-select:none; transition:all .12s; }
+    .he-amenity:hover { border-color:var(--brand-teal,#14B8A6); }
+    .he-amenity.on { background:var(--brand-teal,#14B8A6); color:#fff; border-color:var(--brand-teal,#14B8A6); }
+    .btn-sm { padding:5px 10px; font-size:12px; }
+    /* Typed transport endpoint editor */
+    .tr-ep { border:1px solid var(--border); border-radius:10px; padding:12px; }
+    .tr-ep-grid { display:grid; grid-template-columns:1fr 1.4fr; gap:8px; }
+    @media (max-width:640px){ .he-tabbtn{ padding:8px 10px; font-size:12px; } .he-main-preview{ width:100%; } .he-supp{ grid-template-columns:1fr 1fr !important; } .tr-ep-grid{ grid-template-columns:1fr; } }
+  </style>
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="/assets/i18n.js"></script>
@@ -1156,6 +1186,10 @@ async function ensureHotelOptions() {
 }
 
 async function showMasterModal(entity, id = "") {
+  // Hotels and transport use dedicated tabbed editors (rich images / policies /
+  // rate matrix; typed endpoints + dual EGP/USD pricing).
+  if (entity === "hotels") return openHotelEditor(id);
+  if (entity === "transport") return openTransportRateEditor(id);
   const cfg = masterConfigs[entity];
   if (!cfg) return;
   const rows = state.cache[entity + "Rows"] || [];
@@ -1803,6 +1837,416 @@ function refreshHotelsTableOnly() {
 function handleHotelsSearchInput(el) {
   hotelFilters.search = el.value;
   refreshHotelsTableOnly();
+}
+
+// ─────────────────────────────────────────────
+// DEDICATED TABBED HOTEL EDITOR (Basic / Images / Amenities / Policies / Pricing)
+// ─────────────────────────────────────────────
+let hotelEditor = { id: "", mainImage: "", gallery: [], amenities: [] };
+const HE_MARKETS = [["", "All markets"], ["EGYPTIAN", "Egyptian"], ["GULF", "Gulf"], ["FOREIGN", "Foreign"]];
+const HE_MEALS = ["", "ROOM_ONLY", "BREAKFAST", "HALF_BOARD", "FULL_BOARD", "ALL_INCLUSIVE", "ULTRA_ALL_INCLUSIVE"];
+const HE_CURRENCIES = ["EGP", "USD", "EUR", "SAR", "AED", "GBP"];
+const HE_SUPP_TYPES = ["TEXT_ONLY", "FIXED_AMOUNT", "PERCENTAGE"];
+
+async function openHotelEditor(id = "") {
+  let h = {};
+  let rates = [];
+  let destinations = [];
+  if (id) {
+    const [hr, rr] = await Promise.all([
+      apiFetch(`/hotels/${id}`),
+      apiFetch(`/hotels/${id}/rates`),
+    ]);
+    h = hr?.data || {};
+    rates = rr?.data || [];
+  }
+  const dr = await apiFetch("/destinations?limit=300").catch(() => null);
+  destinations = (dr?.data || []).filter(d => d && d.id);
+
+  hotelEditor = {
+    id,
+    mainImage: h.imageUrl || "",
+    gallery: Array.isArray(h.galleryUrls) ? [...h.galleryUrls] : [],
+    amenities: Array.isArray(h.amenities) ? [...h.amenities] : [],
+  };
+
+  const tabBtn = (key, label) => `<button type="button" class="he-tabbtn" data-tab="${key}" onclick="heTab('${key}')">${label}</button>`;
+  const inp = (id2, val, type = "text", extra = "") => `<input id="${id2}" type="${type}" value="${escapeHtml(val ?? "")}" ${extra}>`;
+  const ta = (id2, val, ph = "") => `<textarea id="${id2}" rows="3" placeholder="${escapeHtml(ph)}">${escapeHtml(val ?? "")}</textarea>`;
+  const fld = (label, inner) => `<div class="form-field"><label>${label}</label>${inner}</div>`;
+  const fullFld = (label, inner) => `<div class="form-field full"><label>${label}</label>${inner}</div>`;
+
+  const destOpts = `<option value="">${t("hotel.noDestination", "— No linked destination —")}</option>` +
+    destinations.map(d => `<option value="${d.id}" ${h.destinationId === d.id ? "selected" : ""}>${escapeHtml(d.name)}${d.nameAr ? " · " + escapeHtml(d.nameAr) : ""}</option>`).join("");
+
+  // ── Basic
+  const basic = `<div class="he-panel" data-panel="basic">
+    <div class="form-grid">
+      ${fld(t("form.name", "Name") + ' <span class="required">*</span>', inp("heName", h.name))}
+      ${fld(t("form.nameAr", "Arabic Name"), inp("heNameAr", h.nameAr) )}
+      ${fld(t("form.destination", "Destination / City") + ' <span class="required">*</span>', inp("heCity", h.city))}
+      ${fld(t("form.cityAr", "Arabic City"), inp("heCityAr", h.cityAr))}
+      ${fld(t("hotel.area", "Area / Sub-area"), inp("heArea", h.area))}
+      ${fld(t("hotel.linkedDestination", "Linked destination"), `<select id="heDestinationId">${destOpts}</select>`)}
+      ${fullFld(t("form.address", "Address") + ' <span class="required">*</span>', inp("heAddress", h.address))}
+      ${fld(t("th.stars", "Stars"), `<select id="heStars">${[1,2,3,4,5,6,7].map(s => `<option value="${s}" ${(h.stars||3)===s?"selected":""}>${s}★</option>`).join("")}</select>`)}
+      ${fld(t("hotel.rating", "Rating (0-5)"), inp("heRating", h.googleRating, "number", 'step="0.1" min="0" max="5"'))}
+      ${fld(t("th.amount", "Base Price / Night (fallback)"), inp("hePrice", h.pricePerNight, "number", 'step="0.01" min="0"'))}
+      ${fld(t("form.currency", "Base currency"), `<select id="heCurrency">${["USD","EGP","EUR","SAR","AED"].map(c => `<option value="${c}" ${(h.currency||"USD")===c?"selected":""}>${c}</option>`).join("")}</select>`)}
+      ${fld(t("form.commissionPercent", "Commission %"), inp("heCommission", h.commissionPercent ?? 0, "number", 'step="0.01" min="0"'))}
+      ${fld(t("form.availableRooms", "Available rooms"), inp("heRooms", h.availableRooms ?? 0, "number", 'min="0"'))}
+      ${fld(t("form.maxGuestsPerRoom", "Guests per room"), inp("heMaxGuests", h.maxGuestsPerRoom ?? 2, "number", 'min="1"'))}
+      ${fld(t("hotel.minVisibleTier", "Min visible tier"), `<select id="heMinTier"><option value="">— None —</option>${["STANDARD","SILVER","GOLD","PLATINUM"].map(x => `<option value="${x}" ${h.minVisibleTier===x?"selected":""}>${x}</option>`).join("")}</select>`)}
+      ${fullFld(t("form.description", "Description (EN)"), ta("heDesc", h.description))}
+      ${fullFld(t("form.descriptionAr", "Description (AR)"), ta("heDescAr", h.descriptionAr))}
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px">
+      <label class="check-row"><input id="heActive" type="checkbox" ${h.id ? (h.isActive ? "checked" : "") : "checked"}> ${t("status.ACTIVE", "Active")}</label>
+      <label class="check-row"><input id="heShowPrice" type="checkbox" ${h.showPriceToAgents ? "checked" : ""}> ${t("hotel.showPriceToAgents", "Show prices to agents")}</label>
+      <label class="check-row"><input id="heAllowQuote" type="checkbox" ${h.id ? (h.allowQuoteRequest ? "checked" : "") : "checked"}> ${t("hotel.allowQuoteRequest", "Allow quote request")}</label>
+    </div>
+  </div>`;
+
+  // ── Images
+  const images = `<div class="he-panel" data-panel="images" style="display:none">
+    <div class="form-section-title">${t("hotel.mainImage", "Main image")}</div>
+    <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
+      <div id="heMainPreview" class="he-main-preview">${heMainPreviewInner()}</div>
+      <div>
+        <input type="file" id="heMainFile" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="heUploadMain(this)">
+        <button type="button" class="btn btn-outline" id="heMainBtn" onclick="document.getElementById('heMainFile').click()">${icon("upload")}${t("hotel.uploadMain", "Upload main image")}</button>
+        <div class="secondary-text" style="margin-top:6px">${t("upload.imageHint", "JPG, PNG or WEBP · up to 10 MB")}</div>
+      </div>
+    </div>
+    <div class="form-section-title" style="margin-top:18px">${t("hotel.gallery", "Gallery")} <span class="secondary-text" id="heGalleryCount"></span></div>
+    <input type="file" id="heGalleryFile" accept="image/png,image/jpeg,image/webp" multiple style="display:none" onchange="heUploadGallery(this)">
+    <button type="button" class="btn btn-outline" id="heGalleryBtn" onclick="document.getElementById('heGalleryFile').click()">${icon("images")}${t("hotel.uploadGallery", "Upload gallery images")}</button>
+    <div class="secondary-text" style="margin:6px 0 12px">${t("hotel.galleryHint", "Select multiple files at once. Drag-free reorder with the arrows. Click ★ to make an image the main image.")}</div>
+    <div id="heGalleryGrid" class="he-gallery-grid">${heGalleryInner()}</div>
+  </div>`;
+
+  // ── Amenities
+  const amenities = `<div class="he-panel" data-panel="amenities" style="display:none">
+    <div class="form-section-title">${t("form.amenities", "Amenities")}</div>
+    <div id="heAmenityChips" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">${heAmenityChipsInner()}</div>
+    <div style="display:flex;gap:8px;max-width:420px">
+      <input id="heCustomAmenity" placeholder="${t("hotel.customAmenity", "Add a custom amenity")}" onkeydown="if(event.key==='Enter'){event.preventDefault();heAddCustomAmenity();}">
+      <button type="button" class="btn btn-outline" onclick="heAddCustomAmenity()">${icon("plus")}${t("btn.add", "Add")}</button>
+    </div>
+  </div>`;
+
+  // ── Policies
+  const policies = `<div class="he-panel" data-panel="policies" style="display:none">
+    <div class="form-grid">
+      ${fld(t("hotel.checkInTime", "Check-in time"), inp("heCheckIn", h.checkInTime, "text", 'placeholder="e.g. 14:00"'))}
+      ${fld(t("hotel.checkOutTime", "Check-out time"), inp("heCheckOut", h.checkOutTime, "text", 'placeholder="e.g. 12:00"'))}
+      ${fullFld(t("hotel.cancellationPolicy", "Cancellation policy (EN)"), ta("heCancel", h.cancellationPolicy))}
+      ${fullFld(t("hotel.cancellationPolicyAr", "Cancellation policy (AR)"), ta("heCancelAr", h.cancellationPolicyAr))}
+      ${fullFld(t("hotel.childrenPolicy", "Children policy (EN)"), ta("heChildren", h.childrenPolicy))}
+      ${fullFld(t("hotel.childrenPolicyAr", "Children policy (AR)"), ta("heChildrenAr", h.childrenPolicyAr))}
+      ${fullFld(t("hotel.extraBedPolicy", "Extra bed policy (EN)"), ta("heExtraBed", h.extraBedPolicy))}
+      ${fullFld(t("hotel.extraBedPolicyAr", "Extra bed policy (AR)"), ta("heExtraBedAr", h.extraBedPolicyAr))}
+      ${fullFld(t("hotel.mealPolicy", "Meal policy (EN)"), ta("heMeal", h.mealPolicy))}
+      ${fullFld(t("hotel.mealPolicyAr", "Meal policy (AR)"), ta("heMealAr", h.mealPolicyAr))}
+      ${fullFld(t("hotel.importantNotes", "Important notes (EN)"), ta("heNotes", h.importantNotes))}
+      ${fullFld(t("hotel.importantNotesAr", "Important notes (AR)"), ta("heNotesAr", h.importantNotesAr))}
+    </div>
+  </div>`;
+
+  // ── Pricing (rate matrix)
+  const pricing = `<div class="he-panel" data-panel="pricing" style="display:none">
+    <div class="secondary-text" style="margin-bottom:10px">${t("hotel.rateMatrixHelp", "Each row is a room rate for one market with single / double / triple prices in an explicit currency (no FX). Market = ALL applies when no market-specific row exists. Add supplements (Sea View, Extra Bed, …) per row.")}</div>
+    <div id="heRatesBox">${rates.map(r => heRateCardHtml(r)).join("")}</div>
+    <button type="button" class="btn btn-outline" onclick="heAddRate()">${icon("plus")}${t("hotel.addRate", "Add rate row")}</button>
+  </div>`;
+
+  const body = `<div class="he-tabs">
+      ${tabBtn("basic", t("hotel.tabBasic", "Basic Info"))}
+      ${tabBtn("images", t("hotel.tabImages", "Images"))}
+      ${tabBtn("amenities", t("hotel.tabAmenities", "Amenities"))}
+      ${tabBtn("policies", t("hotel.tabPolicies", "Policies"))}
+      ${tabBtn("pricing", t("hotel.tabPricing", "Pricing"))}
+    </div>
+    <div class="he-body">${basic}${images}${amenities}${policies}${pricing}</div>`;
+
+  openModal(`${id ? t("btn.edit", "Edit") : t("btn.addNew", "Add")} ${t("nav.hotels", "Hotel")}${h.name ? " — " + escapeHtml(h.name) : ""}`, body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel", "Cancel")}</button>
+    <button class="btn btn-primary" id="heSaveBtn" onclick="heSave()">${icon("save")}${t("btn.save", "Save")}</button>
+  `);
+  heTab("basic");
+}
+
+function heTab(key) {
+  document.querySelectorAll(".he-tabbtn").forEach(b => b.classList.toggle("active", b.dataset.tab === key));
+  document.querySelectorAll(".he-panel").forEach(p => p.style.display = p.dataset.panel === key ? "" : "none");
+}
+
+function heMainPreviewInner() {
+  return hotelEditor.mainImage
+    ? `<img src="${escapeHtml(hotelImageSrc(hotelEditor.mainImage))}" alt="main"><button type="button" class="he-img-x" title="${t("btn.remove","Remove")}" onclick="heRemoveMain()">${icon("x")}</button>`
+    : `<div class="he-noimg">${icon("image")}<span>${t("hotel.noImage", "No main image")}</span></div>`;
+}
+function heGalleryInner() {
+  const count = document.getElementById("heGalleryCount");
+  if (count) count.textContent = hotelEditor.gallery.length ? `(${hotelEditor.gallery.length})` : "";
+  if (!hotelEditor.gallery.length) return `<div class="secondary-text">${t("hotel.noGallery", "No gallery images yet.")}</div>`;
+  return hotelEditor.gallery.map((url, i) => `<div class="he-thumb">
+    <img src="${escapeHtml(hotelImageSrc(url))}" alt="">
+    <div class="he-thumb-actions">
+      <button type="button" title="${t("hotel.setMain","Set as main")}" onclick="heSetMain(${i})">${icon("star")}</button>
+      <button type="button" title="${t("hotel.moveLeft","Move left")}" onclick="heMoveImage(${i},-1)" ${i===0?"disabled":""}>${icon("chevron-left")}</button>
+      <button type="button" title="${t("hotel.moveRight","Move right")}" onclick="heMoveImage(${i},1)" ${i===hotelEditor.gallery.length-1?"disabled":""}>${icon("chevron-right")}</button>
+      <button type="button" title="${t("btn.delete","Delete")}" onclick="heRemoveImage(${i})">${icon("trash-2")}</button>
+    </div>
+  </div>`).join("");
+}
+function heRefreshImages() {
+  const mp = document.getElementById("heMainPreview");
+  const gg = document.getElementById("heGalleryGrid");
+  if (mp) { mp.innerHTML = heMainPreviewInner(); refreshIcons(mp); }
+  if (gg) { gg.innerHTML = heGalleryInner(); refreshIcons(gg); }
+}
+async function heUploadMain(input) {
+  const file = input?.files?.[0];
+  input.value = "";
+  if (!file) return;
+  const btn = document.getElementById("heMainBtn");
+  setBtnLoading(btn, true, "btn.uploading");
+  const url = await uploadImageToServer(file);
+  setBtnLoading(btn, false);
+  if (url) { hotelEditor.mainImage = url; heRefreshImages(); }
+}
+async function heUploadGallery(input) {
+  const files = [...(input?.files || [])];
+  input.value = "";
+  if (!files.length) return;
+  const btn = document.getElementById("heGalleryBtn");
+  setBtnLoading(btn, true, "btn.uploading");
+  // Multi-file endpoint in one request.
+  const fd = new FormData();
+  files.forEach(f => fd.append("files", f));
+  const token = localStorage.getItem("accessToken");
+  try {
+    const res = await fetch("/api/upload/images", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd, credentials: "include" });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) throw new Error(json?.message || "Upload failed");
+    (json.data || []).forEach(d => { if (d.url) hotelEditor.gallery.push(d.url); });
+    heRefreshImages();
+  } catch (err) {
+    toast(err.message || t("upload.failed", "Upload failed"), "error");
+  } finally {
+    setBtnLoading(btn, false);
+  }
+}
+function heRemoveMain() { hotelEditor.mainImage = ""; heRefreshImages(); }
+function heSetMain(i) {
+  const url = hotelEditor.gallery[i];
+  if (!url) return;
+  if (hotelEditor.mainImage) hotelEditor.gallery[i] = hotelEditor.mainImage;
+  else hotelEditor.gallery.splice(i, 1);
+  hotelEditor.mainImage = url;
+  heRefreshImages();
+}
+function heRemoveImage(i) { hotelEditor.gallery.splice(i, 1); heRefreshImages(); }
+function heMoveImage(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= hotelEditor.gallery.length) return;
+  const tmp = hotelEditor.gallery[i];
+  hotelEditor.gallery[i] = hotelEditor.gallery[j];
+  hotelEditor.gallery[j] = tmp;
+  heRefreshImages();
+}
+
+function heAmenityChipsInner() {
+  const presets = AMENITY_PRESETS.slice();
+  const set = new Set(hotelEditor.amenities);
+  const customs = hotelEditor.amenities.filter(a => !presets.includes(a));
+  const all = presets.concat(customs);
+  return all.map(a => {
+    const on = set.has(a);
+    return `<label class="he-amenity ${on ? "on" : ""}"><input type="checkbox" ${on ? "checked" : ""} onchange="heToggleAmenity('${escapeHtml(a).replace(/'/g, "\\'")}')" style="display:none">${escapeHtml(a)}</label>`;
+  }).join("");
+}
+function heToggleAmenity(name) {
+  const i = hotelEditor.amenities.indexOf(name);
+  if (i >= 0) hotelEditor.amenities.splice(i, 1);
+  else hotelEditor.amenities.push(name);
+  const box = document.getElementById("heAmenityChips");
+  if (box) box.innerHTML = heAmenityChipsInner();
+}
+function heAddCustomAmenity() {
+  const el = document.getElementById("heCustomAmenity");
+  const v = (el?.value || "").trim();
+  if (!v) return;
+  if (!hotelEditor.amenities.includes(v)) hotelEditor.amenities.push(v);
+  el.value = "";
+  const box = document.getElementById("heAmenityChips");
+  if (box) box.innerHTML = heAmenityChipsInner();
+}
+
+function heRateCardHtml(r) {
+  r = r || {};
+  const mkSel = HE_MARKETS.map(([v, l]) => `<option value="${v}" ${String(r.market || "") === v ? "selected" : ""}>${t("market." + (v || "ALL"), l)}</option>`).join("");
+  const curSel = HE_CURRENCIES.map(c => `<option value="${c}" ${(r.currency || "USD") === c ? "selected" : ""}>${c}</option>`).join("");
+  const mealSel = HE_MEALS.map(m => `<option value="${m}" ${(r.mealPlan || "") === m ? "selected" : ""}>${m ? m.replace(/_/g, " ") : "—"}</option>`).join("");
+  const vf = r.validFrom ? String(r.validFrom).slice(0, 10) : "";
+  const vt = r.validTo ? String(r.validTo).slice(0, 10) : "";
+  const supps = (r.supplements || []).map(s => heSuppHtml(s)).join("");
+  return `<div class="he-rate" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">
+    <div class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:8px">
+      <div class="form-field full"><label>${t("hotel.roomName", "Room name")} <span class="required">*</span></label><input class="he-room" value="${escapeHtml(r.roomName || "")}" placeholder="e.g. Standard Room"></div>
+      <div class="form-field"><label>${t("market.label", "Market")}</label><select class="he-market">${mkSel}</select></div>
+      <div class="form-field"><label>${t("form.currency", "Currency")}</label><select class="he-cur">${curSel}</select></div>
+      <div class="form-field"><label>${t("hotel.mealPlan", "Meal plan")}</label><select class="he-meal">${mealSel}</select></div>
+      <div class="form-field"><label>${t("hotel.single", "Single")}</label><input class="he-single" type="number" step="0.01" min="0" value="${r.singlePrice != null ? escapeHtml(r.singlePrice) : ""}"></div>
+      <div class="form-field"><label>${t("hotel.double", "Double")}</label><input class="he-double" type="number" step="0.01" min="0" value="${r.doublePrice != null ? escapeHtml(r.doublePrice) : ""}"></div>
+      <div class="form-field"><label>${t("hotel.triple", "Triple")}</label><input class="he-triple" type="number" step="0.01" min="0" value="${r.triplePrice != null ? escapeHtml(r.triplePrice) : ""}"></div>
+      <div class="form-field"><label>${t("form.validFrom", "Valid from")}</label><input class="he-vf" type="date" value="${vf}"></div>
+      <div class="form-field"><label>${t("form.validTo", "Valid to")}</label><input class="he-vt" type="date" value="${vt}"></div>
+      <div class="form-field full"><label>${t("placeholder.notes", "Notes")}</label><input class="he-rnotes" value="${escapeHtml(r.notes || "")}"></div>
+    </div>
+    <div style="margin-top:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <strong style="font-size:13px">${t("hotel.supplements", "Supplements")}</strong>
+        <button type="button" class="btn btn-outline btn-sm" onclick="heAddSupp(this)">+ ${t("hotel.addSupplement", "Add supplement")}</button>
+      </div>
+      <div class="he-supps">${supps}</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+      <label class="check-row" style="font-size:13px"><input type="checkbox" class="he-ractive" ${r.isActive !== false ? "checked" : ""}> ${t("form.active", "Active")}</label>
+      <button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.he-rate').remove()">${icon("trash-2")}${t("btn.remove", "Remove row")}</button>
+    </div>
+  </div>`;
+}
+function heSuppHtml(s) {
+  s = s || {};
+  const typeSel = HE_SUPP_TYPES.map(x => `<option value="${x}" ${(s.type || "TEXT_ONLY") === x ? "selected" : ""}>${x.replace(/_/g, " ")}</option>`).join("");
+  const curSel = `<option value="">—</option>` + HE_CURRENCIES.map(c => `<option value="${c}" ${(s.currency || "") === c ? "selected" : ""}>${c}</option>`).join("");
+  return `<div class="he-supp" style="display:grid;grid-template-columns:1.4fr 1fr 0.9fr 0.8fr 1.4fr auto;gap:6px;align-items:end;margin-bottom:6px">
+    <div class="form-field"><label>${t("hotel.suppName", "Name")}</label><input class="hs-name" value="${escapeHtml(s.name || "")}" placeholder="e.g. Sea View"></div>
+    <div class="form-field"><label>${t("hotel.suppType", "Type")}</label><select class="hs-type">${typeSel}</select></div>
+    <div class="form-field"><label>${t("form.amount", "Amount")}</label><input class="hs-amount" type="number" step="0.01" min="0" value="${s.amount != null ? escapeHtml(s.amount) : ""}"></div>
+    <div class="form-field"><label>${t("form.currency", "Cur")}</label><select class="hs-cur">${curSel}</select></div>
+    <div class="form-field"><label>${t("placeholder.notes", "Notes")}</label><input class="hs-notes" value="${escapeHtml(s.notes || "")}"></div>
+    <button type="button" class="icon-button btn-icon" title="${t("btn.remove", "Remove")}" onclick="this.closest('.he-supp').remove()">${icon("x")}</button>
+  </div>`;
+}
+function heAddRate() {
+  const box = document.getElementById("heRatesBox");
+  if (!box) return;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = heRateCardHtml({});
+  box.appendChild(tmp.firstElementChild);
+  refreshIcons(box);
+}
+function heAddSupp(btn) {
+  const box = btn.closest(".he-rate").querySelector(".he-supps");
+  const tmp = document.createElement("div");
+  tmp.innerHTML = heSuppHtml({});
+  box.appendChild(tmp.firstElementChild);
+  refreshIcons(box);
+}
+function heCollectRates() {
+  const out = [];
+  document.querySelectorAll("#heRatesBox .he-rate").forEach(card => {
+    const g = sel => card.querySelector(sel);
+    const roomName = (g(".he-room")?.value || "").trim();
+    if (!roomName) return;
+    const numOrNull = el => (el && el.value !== "" ? Number(el.value) : null);
+    const supplements = [...card.querySelectorAll(".he-supp")].map(sr => {
+      const sg = sel => sr.querySelector(sel);
+      const name = (sg(".hs-name")?.value || "").trim();
+      if (!name) return null;
+      return {
+        name,
+        type: sg(".hs-type")?.value || "TEXT_ONLY",
+        amount: sg(".hs-amount")?.value !== "" ? Number(sg(".hs-amount").value) : null,
+        currency: sg(".hs-cur")?.value || null,
+        notes: (sg(".hs-notes")?.value || "").trim() || null,
+      };
+    }).filter(Boolean);
+    out.push({
+      roomName,
+      market: g(".he-market")?.value || null,
+      currency: g(".he-cur")?.value || "USD",
+      singlePrice: numOrNull(g(".he-single")),
+      doublePrice: numOrNull(g(".he-double")),
+      triplePrice: numOrNull(g(".he-triple")),
+      mealPlan: g(".he-meal")?.value || null,
+      validFrom: g(".he-vf")?.value || null,
+      validTo: g(".he-vt")?.value || null,
+      isActive: g(".he-ractive")?.checked !== false,
+      notes: (g(".he-rnotes")?.value || "").trim() || null,
+      supplements,
+    });
+  });
+  return out;
+}
+
+async function heSave() {
+  const val = id2 => (document.getElementById(id2)?.value ?? "").trim();
+  const name = val("heName"), city = val("heCity"), address = val("heAddress");
+  if (!name || !city || !address) {
+    heTab("basic");
+    toast(t("toast.validationError", "Please fill required fields"), "error");
+    return;
+  }
+  const ratingRaw = val("heRating");
+  const payload = {
+    name, nameAr: val("heNameAr") || null,
+    city, cityAr: val("heCityAr") || null,
+    area: val("heArea") || null,
+    country: "EG",
+    destinationId: val("heDestinationId") || null,
+    address,
+    stars: Number(document.getElementById("heStars")?.value || 3),
+    googleRating: ratingRaw === "" ? null : Number(ratingRaw),
+    pricePerNight: Number(val("hePrice") || 0) || 1,
+    currency: document.getElementById("heCurrency")?.value || "USD",
+    commissionPercent: Number(val("heCommission") || 0),
+    availableRooms: Number(val("heRooms") || 0),
+    maxGuestsPerRoom: Number(val("heMaxGuests") || 2),
+    minVisibleTier: document.getElementById("heMinTier")?.value || null,
+    description: val("heDesc") || null,
+    descriptionAr: val("heDescAr") || null,
+    isActive: document.getElementById("heActive")?.checked !== false,
+    showPriceToAgents: !!document.getElementById("heShowPrice")?.checked,
+    allowQuoteRequest: !!document.getElementById("heAllowQuote")?.checked,
+    imageUrl: hotelEditor.mainImage || null,
+    galleryUrls: hotelEditor.gallery,
+    amenities: hotelEditor.amenities,
+    // policies
+    checkInTime: val("heCheckIn") || null,
+    checkOutTime: val("heCheckOut") || null,
+    cancellationPolicy: val("heCancel") || null,
+    cancellationPolicyAr: val("heCancelAr") || null,
+    childrenPolicy: val("heChildren") || null,
+    childrenPolicyAr: val("heChildrenAr") || null,
+    extraBedPolicy: val("heExtraBed") || null,
+    extraBedPolicyAr: val("heExtraBedAr") || null,
+    mealPolicy: val("heMeal") || null,
+    mealPolicyAr: val("heMealAr") || null,
+    importantNotes: val("heNotes") || null,
+    importantNotesAr: val("heNotesAr") || null,
+  };
+  const btn = document.getElementById("heSaveBtn");
+  setBtnLoading(btn, true, "btn.saving");
+  const editing = !!hotelEditor.id;
+  const res = await apiFetch(editing ? `/hotels/${hotelEditor.id}` : "/hotels", {
+    method: editing ? "PATCH" : "POST",
+    body: JSON.stringify(payload),
+  });
+  if (!res?.success) { setBtnLoading(btn, false); return; }
+  const hotelId = hotelEditor.id || res.data?.id;
+  // Save the rate matrix.
+  if (hotelId) {
+    await apiFetch(`/hotels/${hotelId}/rates`, { method: "PUT", body: JSON.stringify({ rates: heCollectRates() }) }).catch(() => null);
+  }
+  setBtnLoading(btn, false);
+  closeModal();
+  toast(editing ? t("toast.updated", "Updated") : t("toast.created", "Created"), "success");
+  state.cache.hotelsRows = null;
+  renderHotels();
 }
 
 async function renderHotels() {
@@ -2913,6 +3357,210 @@ async function adminCancelActivity(id) {
   if (res?.success) { toast("Cancelled", "success"); loadAdminActivityBookings(); }
 }
 
+// ─────────────────────────────────────────────
+// TYPED TRANSPORT RATE EDITOR (endpoints + dual EGP/USD + bidirectional)
+// ─────────────────────────────────────────────
+const TR_SERVICE_MODES = ["POINT_TO_POINT", "AIRPORT_TRANSFER", "HOURLY_CHARTER", "DAY_USE"];
+const TR_TYPES = ["AIRPORT_TRANSFER", "PRIVATE_TRANSFER", "DAY_TOUR_TRANSPORT", "INTERCITY"];
+const TR_VEHICLES = ["SEDAN", "SUV", "VAN_6", "VAN_12", "MINIBUS_20", "BUS_45", "LUXURY_LIMO"];
+
+async function openTransportRateEditor(id = "") {
+  const rows = state.cache.transportRows || [];
+  const r = id ? (rows.find(x => x.id === id) || {}) : {};
+  const [airRes, destRes] = await Promise.all([
+    apiFetch("/airports?includeInactive=true"),
+    apiFetch("/destinations?limit=300"),
+  ]);
+  await ensureHotelOptions();
+  const airports = airRes?.data || [];
+  const destinations = (destRes?.data || []).filter(d => d && d.id);
+  const hotels = state.cache.hotelOptions || [];
+
+  const sel = (id2, opts, val, label) => `<div class="form-field"><label>${label}</label><select id="${id2}">${opts.map(o => `<option value="${o}" ${o === val ? "selected" : ""}>${escapeHtml(String(o).replace(/_/g, " "))}</option>`).join("")}</select></div>`;
+  const num = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" type="number" step="0.01" min="0" value="${val != null ? escapeHtml(val) : ""}" placeholder="${escapeHtml(ph)}"></div>`;
+  const txt = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" value="${escapeHtml(val ?? "")}" placeholder="${escapeHtml(ph)}"></div>`;
+
+  const body = `
+    <div class="form-section">
+      <div class="form-section-title">${t("transport.service", "Service")}</div>
+      <div class="form-grid">
+        ${sel("trType", TR_TYPES, r.type || "PRIVATE_TRANSFER", t("th.type", "Type"))}
+        ${sel("trMode", TR_SERVICE_MODES, r.serviceMode || "POINT_TO_POINT", t("transport.mode", "Service mode"))}
+        ${sel("trVehicle", TR_VEHICLES, r.vehicleType || "SEDAN", t("form.vehicleType", "Vehicle"))}
+        ${txt("trServiceArea", r.serviceArea, t("transport.serviceArea", "Service area (e.g. Cairo)"))}
+        ${num("trDuration", r.durationHours, t("transport.durationHours", "Duration hours (disposal)"))}
+        ${txt("trCity", r.city, t("th.city", "City"))}
+        ${txt("trServiceNameEn", r.serviceNameEn, t("transport.serviceNameEn", "Service name (EN)"))}
+        ${txt("trServiceNameAr", r.serviceNameAr, t("transport.serviceNameAr", "Service name (AR)"))}
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">${t("transport.route", "Route (typed endpoints)")}</div>
+      <div class="tr-ep-grid" style="gap:14px">
+        ${trEpBlock("from", r, airports, destinations, hotels, t("form.from", "From"))}
+        ${trEpBlock("to", r, airports, destinations, hotels, t("form.to", "To"))}
+      </div>
+      <label class="check-row" style="margin-top:12px"><input id="trBidir" type="checkbox" ${r.isBidirectional ? "checked" : ""}> ${t("transport.bidirectional", "Bidirectional — also prices the reverse route (B → A) at the same price")}</label>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">${t("transport.pricingDual", "Pricing (explicit, no FX — Egyptian sees EGP, others USD)")}</div>
+      <div class="form-grid" style="grid-template-columns:repeat(4,1fr)">
+        ${num("trPriceEgp", r.priceEgp, t("transport.priceEgp", "One-way EGP"))}
+        ${num("trPriceUsd", r.priceUsd, t("transport.priceUsd", "One-way USD"))}
+        ${num("trRtEgp", r.roundTripPriceEgp, t("transport.rtEgp", "Round-trip EGP"))}
+        ${num("trRtUsd", r.roundTripPriceUsd, t("transport.rtUsd", "Round-trip USD"))}
+        ${num("trMinCap", r.minCapacity ?? 1, t("form.minPax", "Min pax"))}
+        ${num("trMaxCap", r.maxCapacity, t("form.maxPax", "Max pax (blank = no limit)"))}
+      </div>
+      <div class="secondary-text" style="margin-top:6px">${t("transport.priceHint", "Leave a currency blank to show 'Price on request' for that market. Round-trip blank = 2 × one-way.")}</div>
+    </div>
+    <div class="form-section">
+      <div class="form-grid"><div class="form-field full"><label>${t("placeholder.notes", "Notes")}</label><textarea id="trNotes" rows="2">${escapeHtml(r.notes || "")}</textarea></div></div>
+      <label class="check-row"><input id="trActive" type="checkbox" ${r.id ? (r.isActive ? "checked" : "") : "checked"}> ${t("form.active", "Active")}</label>
+    </div>`;
+
+  openModal(`${id ? t("btn.edit", "Edit") : t("btn.addNew", "Add")} ${t("nav.transport", "Transport Rate")}`, body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel", "Cancel")}</button>
+    <button class="btn btn-primary" id="trSaveBtn" onclick="saveTransportRateEditor('${id}')">${icon("save")}${t("btn.save", "Save")}</button>
+  `);
+  trEpInit("from");
+  trEpInit("to");
+}
+
+function trEpBlock(side, r, airports, destinations, hotels, label) {
+  const curType = r[`${side}Type`] || "";
+  const curId = r[`${side}Id`] || "";
+  const opt = (arr, getName) => arr.map(a => `<option value="${a.id}" data-name="${escapeHtml(getName(a))}" ${curId === a.id ? "selected" : ""}>${escapeHtml(getName(a))}</option>`).join("");
+  const airOpts = `<option value="">—</option>` + opt(airports, a => `${a.code} · ${a.nameEn}`);
+  const destOpts = `<option value="">—</option>` + opt(destinations, d => d.name);
+  const hotOpts = `<option value="">—</option>` + opt(hotels, h => `${h.name}${h.city ? " (" + h.city + ")" : ""}`);
+  return `<div class="tr-ep" data-side="${side}">
+    <label style="font-weight:600;font-size:13px">${label}</label>
+    <div class="form-field" style="margin-top:6px"><label>${t("transport.endpointType", "Type")}</label>
+      <select class="tr-ep-type" onchange="trEpTypeChange('${side}')">
+        <option value="" ${!curType ? "selected" : ""}>— ${t("transport.endpointType", "Type")} —</option>
+        <option value="AIRPORT" ${curType === "AIRPORT" ? "selected" : ""}>${t("transport.airport", "Airport")}</option>
+        <option value="HOTEL" ${curType === "HOTEL" ? "selected" : ""}>${t("transport.hotel", "Hotel")}</option>
+        <option value="DESTINATION" ${curType === "DESTINATION" ? "selected" : ""}>${t("transport.destination", "Destination")}</option>
+      </select>
+    </div>
+    <div class="form-field tr-ep-pick" data-kind="AIRPORT" style="display:none"><label>${t("transport.airport", "Airport")}</label><select class="tr-ep-airport">${airOpts}</select></div>
+    <div class="form-field tr-ep-pick" data-kind="DESTINATION" style="display:none"><label>${t("transport.destination", "Destination")}</label><select class="tr-ep-dest">${destOpts}</select></div>
+    <div class="form-field tr-ep-pick" data-kind="HOTEL" style="display:none"><label>${t("transport.hotel", "Hotel")}</label><select class="tr-ep-hotel">${hotOpts}</select></div>
+    <div class="form-field"><label>${t("transport.endpointName", "Display name (optional override)")}</label><input class="tr-ep-name" value="${escapeHtml(r[`${side}Name`] || "")}" placeholder="${escapeHtml(t("transport.endpointNamePh", "Auto from selection, or type a name"))}"></div>
+  </div>`;
+}
+function trEpTypeChange(side) {
+  const ep = document.querySelector(`.tr-ep[data-side="${side}"]`);
+  if (!ep) return;
+  const type = ep.querySelector(".tr-ep-type").value;
+  ep.querySelectorAll(".tr-ep-pick").forEach(p => p.style.display = p.dataset.kind === type ? "" : "none");
+}
+function trEpInit(side) { trEpTypeChange(side); }
+function trCollectEp(side) {
+  const ep = document.querySelector(`.tr-ep[data-side="${side}"]`);
+  if (!ep) return { type: null, id: null, name: null };
+  const type = ep.querySelector(".tr-ep-type").value || null;
+  let id = null, name = null;
+  if (type === "AIRPORT") { const s = ep.querySelector(".tr-ep-airport"); id = s.value || null; name = s.selectedOptions[0]?.dataset.name || null; }
+  else if (type === "DESTINATION") { const s = ep.querySelector(".tr-ep-dest"); id = s.value || null; name = s.selectedOptions[0]?.dataset.name || null; }
+  else if (type === "HOTEL") { const s = ep.querySelector(".tr-ep-hotel"); id = s.value || null; name = s.selectedOptions[0]?.dataset.name || null; }
+  const typed = (ep.querySelector(".tr-ep-name")?.value || "").trim();
+  if (typed) name = typed;
+  return { type, id: id || null, name: name || null };
+}
+async function saveTransportRateEditor(id = "") {
+  const from = trCollectEp("from");
+  const to = trCollectEp("to");
+  const v = id2 => document.getElementById(id2)?.value;
+  const numOrNull = id2 => { const x = v(id2); return x === "" || x == null ? null : Number(x); };
+  const payload = {
+    type: v("trType"), serviceMode: v("trMode"), vehicleType: v("trVehicle"),
+    serviceArea: v("trServiceArea") || null, durationHours: numOrNull("trDuration"),
+    city: v("trCity") || null, serviceNameEn: v("trServiceNameEn") || null, serviceNameAr: v("trServiceNameAr") || null,
+    fromType: from.type, fromId: from.id, fromName: from.name,
+    toType: to.type, toId: to.id, toName: to.name,
+    isBidirectional: !!document.getElementById("trBidir")?.checked,
+    priceEgp: numOrNull("trPriceEgp"), priceUsd: numOrNull("trPriceUsd"),
+    roundTripPriceEgp: numOrNull("trRtEgp"), roundTripPriceUsd: numOrNull("trRtUsd"),
+    minCapacity: numOrNull("trMinCap") ?? 1, maxCapacity: numOrNull("trMaxCap"),
+    notes: v("trNotes") || null, isActive: document.getElementById("trActive")?.checked !== false,
+  };
+  if (payload.priceEgp == null && payload.priceUsd == null) {
+    toast(t("transport.needPrice", "Enter at least an EGP or USD price."), "error");
+    return;
+  }
+  const btn = document.getElementById("trSaveBtn");
+  setBtnLoading(btn, true, "btn.saving");
+  const res = await apiFetch(id ? `/transport-rates/${id}` : "/transport-rates", {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify(payload),
+  });
+  setBtnLoading(btn, false);
+  if (res?.success) {
+    closeModal();
+    toast(id ? t("toast.updated", "Updated") : t("toast.created", "Created"), "success");
+    renderTransport();
+  }
+}
+
+// ── Airports management (admin)
+async function loadAirportsAdmin() {
+  const tbody = document.getElementById("trAirportsTbody");
+  if (!tbody) return;
+  const res = await apiFetch("/airports?includeInactive=true");
+  const rows = res?.data || [];
+  const meta = document.getElementById("trAirportsMeta");
+  if (meta) meta.textContent = `${formatNumber(rows.length)} ${t("transport.airports", "airports")}`;
+  tbody.innerHTML = rows.length ? rows.map(a => `<tr>
+    <td><strong>${escapeHtml(a.code)}</strong></td>
+    <td>${escapeHtml(a.nameEn)}${a.nameAr ? `<div class="secondary-text" dir="rtl">${escapeHtml(a.nameAr)}</div>` : ""}</td>
+    <td>${escapeHtml(a.city || "—")}</td>
+    <td>${statusBadge(a.isActive ? "ACTIVE" : "INACTIVE")}</td>
+    <td><div class="row-actions">
+      <button class="icon-button btn-icon" title="${t("btn.edit", "Edit")}" onclick="openAirportModal('${a.id}')">${icon("pencil")}</button>
+      <button class="icon-button btn-icon" title="${t("btn.delete", "Delete")}" onclick="deleteAirport('${a.id}')">${icon("trash-2")}</button>
+    </div></td>
+  </tr>`).join("") : `<tr><td colspan="5">${emptyBlock("empty.noData")}</td></tr>`;
+  refreshIcons(tbody);
+  window._airportsCache = rows;
+}
+function openAirportModal(id = "") {
+  const a = id ? (window._airportsCache || []).find(x => x.id === id) || {} : {};
+  const body = `<div class="form-grid">
+    <div class="form-field"><label>${t("transport.airportCode", "Code")} <span class="required">*</span></label><input id="apCode" value="${escapeHtml(a.code || "")}" placeholder="e.g. CAI" maxlength="6"></div>
+    <div class="form-field"><label>${t("transport.airportNameEn", "Name (EN)")} <span class="required">*</span></label><input id="apNameEn" value="${escapeHtml(a.nameEn || "")}"></div>
+    <div class="form-field"><label>${t("transport.airportNameAr", "Name (AR)")}</label><input id="apNameAr" value="${escapeHtml(a.nameAr || "")}" dir="rtl"></div>
+    <div class="form-field"><label>${t("th.city", "City")}</label><input id="apCity" value="${escapeHtml(a.city || "")}"></div>
+    <div class="form-field"><label>${t("hotel.area", "City (AR)")}</label><input id="apCityAr" value="${escapeHtml(a.cityAr || "")}" dir="rtl"></div>
+    <div class="form-field"><label>&nbsp;</label><label class="check-row"><input id="apActive" type="checkbox" ${a.id ? (a.isActive ? "checked" : "") : "checked"}> ${t("form.active", "Active")}</label></div>
+  </div>`;
+  openModal(`${id ? t("btn.edit", "Edit") : t("btn.addNew", "Add")} ${t("transport.airport", "Airport")}`, body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel", "Cancel")}</button>
+    <button class="btn btn-primary" onclick="saveAirport('${id}')">${t("btn.save", "Save")}</button>
+  `);
+}
+async function saveAirport(id = "") {
+  const code = (document.getElementById("apCode")?.value || "").trim();
+  const nameEn = (document.getElementById("apNameEn")?.value || "").trim();
+  if (!code || !nameEn) { toast(t("toast.validationError", "Code and name are required"), "error"); return; }
+  const payload = {
+    code, nameEn,
+    nameAr: (document.getElementById("apNameAr")?.value || "").trim() || null,
+    city: (document.getElementById("apCity")?.value || "").trim() || null,
+    cityAr: (document.getElementById("apCityAr")?.value || "").trim() || null,
+    isActive: document.getElementById("apActive")?.checked !== false,
+  };
+  const res = await apiFetch(id ? `/airports/${id}` : "/airports", { method: id ? "PATCH" : "POST", body: JSON.stringify(payload) });
+  if (res?.success) { closeModal(); toast(id ? t("toast.updated", "Updated") : t("toast.created", "Created"), "success"); loadAirportsAdmin(); }
+}
+async function deleteAirport(id) {
+  confirmAction(t("modal.confirmDelete", "Delete this airport?"), async () => {
+    const res = await apiFetch(`/airports/${id}`, { method: "DELETE" });
+    if (res?.success) { toast(t("toast.deleted", "Deleted"), "success"); loadAirportsAdmin(); }
+  });
+}
+
 async function renderTransport() {
   state.page = "transport";
   const capturedToken = state.renderToken;
@@ -2922,6 +3570,7 @@ async function renderTransport() {
       <button class="btn btn-primary" id="trTabRates" onclick="trShowTab('rates')">${icon("sliders-horizontal")}&nbsp;Transport Rates</button>
       <button class="btn btn-outline" id="trTabBookings" onclick="trShowTab('bookings')">${icon("list")}&nbsp;Bookings</button>
       <button class="btn btn-outline" id="trTabTypes" onclick="trShowTab('types')">${icon("users")}&nbsp;Service Types</button>
+      <button class="btn btn-outline" id="trTabAirports" onclick="trShowTab('airports')">${icon("plane")}&nbsp;Airports</button>
     </div>
     <div id="trRatesSection">
       <section class="table-card">
@@ -2952,6 +3601,20 @@ async function renderTransport() {
           <th>Type</th><th>Applies To</th><th>Price Adjustment</th><th>Pax</th><th>Validity</th><th>Status</th><th>Actions</th>
         </tr></thead><tbody id="trTypesTbody">${skeletonRows(7, 6)}</tbody></table></div>
       </section>
+    </div>
+    <div id="trAirportsSection" style="display:none">
+      <section class="table-card">
+        <div class="table-toolbar">
+          <div><strong>${t("transport.airports", "Airports")}</strong><div class="secondary-text" id="trAirportsMeta">${t("transport.airportsHelp", "Admin-managed airport list used by transport routes and the customer form.")}</div></div>
+          <div class="toolbar-actions">
+            <button class="btn btn-outline" onclick="loadAirportsAdmin()">${icon("refresh-cw")}${t("btn.refresh")}</button>
+            <button class="btn btn-primary" onclick="openAirportModal()">${icon("plus")}${t("btn.addNew")}</button>
+          </div>
+        </div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>${t("transport.airportCode", "Code")}</th><th>${t("th.name", "Name")}</th><th>${t("th.city", "City")}</th><th>${t("th.status", "Status")}</th><th>${t("th.actions", "Actions")}</th>
+        </tr></thead><tbody id="trAirportsTbody">${skeletonRows(5, 5)}</tbody></table></div>
+      </section>
     </div>`);
 
   // Load rates
@@ -2963,12 +3626,26 @@ async function renderTransport() {
   const rMeta = document.getElementById("trRatesMeta");
   if (rMeta) rMeta.textContent = `${formatNumber(rates.length)} rates`;
   if (rTbody) {
+    const dualOneWay = r => {
+      const parts = [];
+      if (r.priceEgp != null) parts.push(`${formatNumber(r.priceEgp)} EGP`);
+      if (r.priceUsd != null) parts.push(`${formatNumber(r.priceUsd)} USD`);
+      return parts.length ? parts.join("<div></div>") : formatMoney(r.rate, r.currency);
+    };
+    const dualRt = r => {
+      const parts = [];
+      if (r.roundTripPriceEgp != null) parts.push(`${formatNumber(r.roundTripPriceEgp)} EGP`);
+      if (r.roundTripPriceUsd != null) parts.push(`${formatNumber(r.roundTripPriceUsd)} USD`);
+      if (parts.length) return parts.join("<div></div>");
+      return r.roundTripRate ? formatMoney(r.roundTripRate, r.currency) : "<span style='color:var(--text-muted)'>2×</span>";
+    };
+    const arrow = r => r.isBidirectional ? "⇄" : "→";
     rTbody.innerHTML = rates.length ? rates.map(r => `<tr>
-      <td>${escapeHtml(r.type?.replace(/_/g," ")||"—")}</td>
+      <td>${escapeHtml(r.type?.replace(/_/g," ")||"—")}${r.isBidirectional ? `<div class="secondary-text">${t("transport.bidirShort","bidirectional")}</div>` : ""}</td>
       <td><strong>${escapeHtml(r.vehicleType?.replace(/_/g," ")||"—")}</strong></td>
-      <td>${escapeHtml(r.fromLocation||"—")} → ${escapeHtml(r.toLocation||"—")}${r.city ? `<div class="secondary-text">${escapeHtml(r.city)}</div>` : ""}</td>
-      <td class="numeric">${formatMoney(r.rate, r.currency)}</td>
-      <td class="numeric">${r.roundTripRate ? formatMoney(r.roundTripRate, r.currency) : "<span style='color:var(--text-muted)'>2×</span>"}</td>
+      <td>${escapeHtml(r.fromName||r.fromLocation||"—")} ${arrow(r)} ${escapeHtml(r.toName||r.toLocation||"—")}${r.city ? `<div class="secondary-text">${escapeHtml(r.city)}</div>` : ""}</td>
+      <td class="numeric">${dualOneWay(r)}</td>
+      <td class="numeric">${dualRt(r)}</td>
       <td>${r.minCapacity||1}${r.maxCapacity ? "–"+r.maxCapacity : "+"}</td>
       <td>${statusBadge(r.isActive ? "ACTIVE" : "INACTIVE")}</td>
       <td>${masterRowActions("transport", r)}</td>
@@ -2978,7 +3655,7 @@ async function renderTransport() {
 }
 
 function trShowTab(tab) {
-  ["rates", "bookings", "types"].forEach(name => {
+  ["rates", "bookings", "types", "airports"].forEach(name => {
     const title = name[0].toUpperCase() + name.slice(1);
     const section = document.getElementById(`tr${title}Section`);
     const button = document.getElementById(`trTab${title}`);
@@ -2987,6 +3664,7 @@ function trShowTab(tab) {
   });
   if (tab === "bookings") loadAdminTransportBookings();
   if (tab === "types") loadAdminGroupTypes("TRANSPORT");
+  if (tab === "airports") loadAirportsAdmin();
 }
 
 async function loadAdminTransportBookings() {
