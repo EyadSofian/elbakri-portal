@@ -3201,7 +3201,7 @@ async function renderActivities() {
   const capturedToken = state.renderToken;
 
   content(pageHeader(masterActions("activities")) + `
-    <div style="display:flex;gap:10px;margin-bottom:16px">
+    <div class="admin-tab-bar">
       <button class="btn btn-primary" id="actTabCatalog" onclick="actShowTab('catalog')">${icon("list")}&nbsp;Activity Catalog</button>
       <button class="btn btn-outline" id="actTabBookings" onclick="actShowTab('bookings')">${icon("calendar-check")}&nbsp;Bookings</button>
       <button class="btn btn-outline" id="actTabPackages" onclick="actShowTab('packages')">${icon("shopping-cart")}&nbsp;Packages</button>
@@ -3574,7 +3574,7 @@ async function renderTransport() {
   const capturedToken = state.renderToken;
 
   content(pageHeader(masterActions("transport")) + `
-    <div style="display:flex;gap:10px;margin-bottom:16px">
+    <div class="admin-tab-bar">
       <button class="btn btn-primary" id="trTabRates" onclick="trShowTab('rates')">${icon("sliders-horizontal")}&nbsp;Transport Rates</button>
       <button class="btn btn-outline" id="trTabBookings" onclick="trShowTab('bookings')">${icon("list")}&nbsp;Bookings</button>
       <button class="btn btn-outline" id="trTabTypes" onclick="trShowTab('types')">${icon("users")}&nbsp;Service Types</button>

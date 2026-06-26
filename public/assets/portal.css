@@ -5431,3 +5431,65 @@ html[dir="rtl"] .modal-body .form-section-title::before { order: 2; }
 @media (min-width: 1024px) {
   .filter-rail { max-width: 248px; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   MOBILE ADMIN FIXES (2026-06-27) — sub-tab bars + dense tables on phones.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Admin sub-tab bars (Transport / Activities: Rates · Bookings · Service Types
+   · Airports). Was an inline `display:flex` row that shrank the buttons until
+   the active pill clipped to just its icon. Desktop layout is unchanged. */
+.admin-tab-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.admin-tab-bar .btn { white-space: nowrap; }
+
+@media (max-width: 860px) {
+  .admin-tab-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .admin-tab-bar .btn {
+    /* two equal tabs per row — never shrink a tab down to its icon */
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+    padding-inline: 10px;
+    font-size: 13px;
+  }
+}
+
+/* Dense admin tables on mobile keep their identifying first column pinned while
+   the rest scrolls horizontally, so the row is never lost off-screen. */
+@media (max-width: 860px) {
+  .table-scroll { position: relative; }
+  .data-table thead th:first-child,
+  .data-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+  }
+  .data-table tbody td:first-child {
+    z-index: 1;
+    background: var(--surface);
+    box-shadow: 1px 0 0 var(--border);
+  }
+  .data-table thead th:first-child {
+    z-index: 3; /* corner cell: above both the sticky header row and body column */
+    box-shadow: 1px 0 0 var(--border);
+  }
+  .data-table tbody tr:hover td:first-child { background: var(--brand-accent-soft); }
+  .data-table tbody tr.selected td:first-child,
+  .data-table tbody tr:has(.inv-check:checked) td:first-child { background: var(--brand-accent-soft); }
+}
+
+/* Multi-column form grids (e.g. the 4-up dual-currency price inputs in the
+   transport-rate, hotel-rate and market-price editors) collapse to 2 columns on
+   phones so number inputs stay tappable instead of ~70px slivers. Targets the
+   inline grid-template so it overrides the element's style attribute. */
+@media (max-width: 860px) {
+  .form-grid[style*="repeat(4"],
+  .form-grid[style*="repeat(3"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
