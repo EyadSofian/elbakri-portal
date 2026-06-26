@@ -376,7 +376,6 @@ async function upsertDestinations(rows: SheetRow[], errors: string[]): Promise<{
 
   for (const row of rows) {
     try {
-      const sheetsRowId = rowId(row, 'destinations');
       const name = pick(row, 'name');
       const slug = pick(row, 'slug') || name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
       if (!name || !slug) {

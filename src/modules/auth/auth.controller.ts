@@ -80,9 +80,10 @@ export async function refresh(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  let payload: { id: string };
   try {
-    payload = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET!) as { id: string };
+    // Verify the refresh token's signature (the looked-up token row below is the
+    // source of truth for identity); a bad signature throws → 401.
+    jwt.verify(token, process.env.REFRESH_TOKEN_SECRET!);
   } catch {
     res.status(401).json({ success: false, error: 'UNAUTHORIZED' });
     return;

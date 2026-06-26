@@ -137,10 +137,11 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
 });
 
-// Global error handler
+// Global error handler. Log the real error server-side; never leak its message
+// (stack/Prisma/SQL details) to the client — return a stable generic response.
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
-  res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: err.message });
+  res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: 'Something went wrong. Please try again.' });
 });
 
 // Process-level safety net. A single fire-and-forget DB call (e.g. a Prisma

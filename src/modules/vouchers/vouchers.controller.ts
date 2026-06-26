@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import fs from 'fs';
-import path from 'path';
 import { prisma } from '../../config/db';
 import { generateVoucherPdf } from './voucher.generator';
 import type { VoucherData } from './voucher.generator';

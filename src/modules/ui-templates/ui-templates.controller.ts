@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
+import { sendError } from '../../shared/http';
 import {
   createTemplateSchema,
   updateTemplateSchema,
@@ -27,7 +28,7 @@ export async function listTemplates(req: Request, res: Response) {
     });
     res.json({ success: true, data: templates });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -37,7 +38,7 @@ export async function getTemplate(req: Request, res: Response) {
     if (!tpl) return res.status(404).json({ success: false, message: 'Template not found' });
     res.json({ success: true, data: tpl });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -73,7 +74,7 @@ export async function createTemplate(req: Request, res: Response) {
     });
     res.status(201).json({ success: true, data: tpl });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -118,7 +119,7 @@ export async function updateTemplate(req: Request, res: Response) {
     });
     res.json({ success: true, data: tpl });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -137,7 +138,7 @@ export async function activateTemplate(req: Request, res: Response) {
     const updated = await prisma.uiTemplate.update({ where: { id }, data: { isActive: true } });
     res.json({ success: true, data: updated });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -160,7 +161,7 @@ export async function duplicateTemplate(req: Request, res: Response) {
     });
     res.status(201).json({ success: true, data: copy });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -178,7 +179,7 @@ export async function deleteTemplate(req: Request, res: Response) {
     await prisma.uiTemplate.delete({ where: { id: req.params.id } });
     res.json({ success: true, message: 'Deleted' });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -202,6 +203,6 @@ export async function getActiveTemplate(req: Request, res: Response) {
     // Returns null data when no template — frontend falls back to its built-in default
     res.json({ success: true, data: tpl ?? null });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }

@@ -3,6 +3,29 @@ import fs from 'fs';
 import path from 'path';
 import { registerPdfFonts, hasArabic } from '../../shared/pdf';
 
+// Company contact + bank details for invoice footers. Sourced from env so
+// production never ships placeholder values. When bank details are not
+// configured we print a neutral "on request" line rather than fake account
+// numbers (a wrong-but-real-looking IBAN is worse than none).
+const COMPANY_CONTACT_LINE =
+  process.env.COMPANY_CONTACT_LINE?.trim() ||
+  ['Cairo, Egypt', process.env.COMPANY_PHONE?.trim(), process.env.COMPANY_EMAIL?.trim() || 'bookings@elbakri.com']
+    .filter(Boolean)
+    .join('  |  ');
+
+function bankInfoLines(): string[] {
+  const name = process.env.INVOICE_BANK_NAME?.trim();
+  const account = process.env.INVOICE_BANK_ACCOUNT?.trim();
+  const iban = process.env.INVOICE_BANK_IBAN?.trim();
+  const swift = process.env.INVOICE_BANK_SWIFT?.trim();
+  if (!name && !account && !iban && !swift) {
+    return ['Bank transfer details are available on request.'];
+  }
+  const l1 = [name && `Bank: ${name}`, account && `Account: ${account}`].filter(Boolean).join('  |  ');
+  const l2 = [iban && `IBAN: ${iban}`, swift && `SWIFT: ${swift}`].filter(Boolean).join('  |  ');
+  return [l1, l2].filter(Boolean);
+}
+
 interface CompanyInfo {
   name: string;
   address?: string | null;
@@ -364,7 +387,7 @@ export async function generateConsolidatedInvoicePdf(data: ConsolidatedData): Pr
       doc.fontSize(10).font('body').text('EST. 1982', pageW - 120, 35, { width: 70, align: 'right' });
       doc.rect(0, 80, pageW, 4).fill(ACCENT);
       doc.fillColor(GRAY).fontSize(9).font('body')
-        .text('Cairo, Egypt  |  +20 2 XXXX XXXX  |  bookings@elbakri.com', 50, 94);
+        .text(COMPANY_CONTACT_LINE, 50, 94);
     };
 
     const colX = [50, 150, 250, 430, 490];
@@ -486,7 +509,7 @@ function drawInvoiceContent(doc: InstanceType<typeof PDFDocument>, invoice: Invo
 
     // Sub-header
     doc.fillColor(GRAY).fontSize(9).font('body')
-      .text('Cairo, Egypt  |  +20 2 XXXX XXXX  |  bookings@elbakri.com', 50, 94);
+      .text(COMPANY_CONTACT_LINE, 50, 94);
 
     // Invoice title
     doc.fillColor(NAVY).fontSize(18).font('body-bold').text('TAX INVOICE', 50, 130);
@@ -581,9 +604,8 @@ function drawInvoiceContent(doc: InstanceType<typeof PDFDocument>, invoice: Invo
     if (y < doc.page.height - 120) {
       doc.rect(50, y, pageW - 100, 60).fill('#ECFEFF').stroke(ACCENT);
       doc.fillColor(NAVY).fontSize(10).font('body-bold').text('PAYMENT INFORMATION', 62, y + 10);
-      doc.fillColor(GRAY).fontSize(8).font('body')
-        .text('Bank: Elbakri Overseas Bank Account  |  Account: XXXX-XXXX-XXXX', 62, y + 28)
-        .text('IBAN: EG00 0000 0000 0000 0000 0000 0000 0  |  SWIFT: XXXXXXXX', 62, y + 42);
+      doc.fillColor(GRAY).fontSize(8).font('body');
+      bankInfoLines().forEach((line, i) => doc.text(line, 62, y + 28 + i * 14));
     }
 
     // Notes

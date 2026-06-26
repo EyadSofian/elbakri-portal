@@ -11,6 +11,7 @@ import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/g
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
+import { debitWallet, refundWallet } from '../../shared/wallet';
 
 const transportInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -145,7 +146,7 @@ function str(v: unknown): string {
 }
 
 /** GET /api/transport-rates/locations — unique from/to values for dropdowns */
-export async function getTransportLocations(req: Request, res: Response): Promise<void> {
+export async function getTransportLocations(_req: Request, res: Response): Promise<void> {
   const rates = await prisma.transportRate.findMany({
     where: { isActive: true },
     select: { fromLocation: true, toLocation: true, vehicleType: true, type: true },
@@ -562,31 +563,16 @@ export async function confirmTransportBooking(req: Request, res: Response): Prom
       if (booking.status !== 'PENDING') throw new Error('INVALID_STATUS');
       if (!booking.company.isActive) throw new Error('COMPANY_INACTIVE');
 
-      // Debit the wallet once. A proforma invoice is created at booking time,
-      // so we key idempotency on the DEBIT transaction, not on invoice absence.
-      const alreadyDebited = await tx.walletTransaction.findFirst({
-        where: { reference: booking.refNumber, type: 'DEBIT' },
+      // Debit the wallet once (idempotent on the DEBIT transaction; a proforma
+      // invoice already exists from booking time). Throws INSUFFICIENT_BALANCE,
+      // mapped to a 400 in the catch below.
+      await debitWallet(tx, {
+        companyId: booking.companyId,
+        amount: booking.totalAmount,
+        reference: booking.refNumber,
+        description: `Confirmed transport booking ${booking.refNumber}`,
+        createdById: req.user!.id,
       });
-      if (!alreadyDebited) {
-        if (booking.company.balance.lt(booking.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
-
-        const balanceBefore = booking.company.balance;
-        const balanceAfter = balanceBefore.sub(booking.totalAmount);
-
-        await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
-        await tx.walletTransaction.create({
-          data: {
-            companyId: booking.companyId,
-            type: 'DEBIT',
-            amount: booking.totalAmount,
-            balanceBefore,
-            balanceAfter,
-            reference: booking.refNumber,
-            description: `Confirmed transport booking ${booking.refNumber}`,
-            createdById: req.user!.id,
-          },
-        });
-      }
 
       // Create the invoice only if one wasn't already generated at booking time.
       if (!booking.invoice) {
@@ -669,30 +655,16 @@ export async function cancelTransportBooking(req: Request, res: Response): Promi
     return;
   }
 
-  const [debit, priorRefund] = await Promise.all([
-    prisma.walletTransaction.findFirst({ where: { reference: booking.refNumber, type: 'DEBIT' }, select: { id: true } }),
-    prisma.walletTransaction.findFirst({ where: { reference: booking.refNumber, type: 'REFUND' }, select: { id: true } }),
-  ]);
-  if (debit && !priorRefund) {
-    await prisma.$transaction(async (tx) => {
-      const company = await tx.company.findUniqueOrThrow({ where: { id: booking.companyId } });
-      const balanceBefore = company.balance;
-      const balanceAfter = balanceBefore.add(booking.totalAmount);
-      await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
-      await tx.walletTransaction.create({
-        data: {
-          companyId: booking.companyId,
-          type: 'REFUND',
-          amount: booking.totalAmount,
-          balanceBefore,
-          balanceAfter,
-          reference: booking.refNumber,
-          description: `Refund cancelled transport ${booking.refNumber}`,
-          createdById: caller.id,
-        },
-      });
-    });
-  }
+  // Refund once (idempotent — only when a DEBIT exists and no REFUND yet).
+  await prisma.$transaction((tx) =>
+    refundWallet(tx, {
+      companyId: booking.companyId,
+      amount: booking.totalAmount,
+      reference: booking.refNumber,
+      description: `Refund cancelled transport ${booking.refNumber}`,
+      createdById: caller.id,
+    }),
+  );
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.invoice.updateMany({

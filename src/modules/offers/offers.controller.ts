@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
+import { sendError } from '../../shared/http';
 
 function today() {
   return new Date();
@@ -49,7 +50,7 @@ export async function listOffers(req: Request, res: Response) {
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -59,7 +60,7 @@ export async function getOffer(req: Request, res: Response) {
     if (!offer) return res.status(404).json({ success: false, message: 'Offer not found' });
     res.json({ success: true, data: offer });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -93,7 +94,7 @@ export async function createOffer(req: Request, res: Response) {
 
     res.status(201).json({ success: true, data: offer });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -130,7 +131,7 @@ export async function updateOffer(req: Request, res: Response) {
 
     res.json({ success: true, data: offer });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -142,11 +143,11 @@ export async function deleteOffer(req: Request, res: Response) {
     await prisma.offer.delete({ where: { id } });
     res.json({ success: true, message: 'Deleted' });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
-export async function getActiveOffer(req: Request, res: Response) {
+export async function getActiveOffer(_req: Request, res: Response) {
   try {
     const now = today();
     const offer = await prisma.offer.findFirst({
@@ -159,6 +160,6 @@ export async function getActiveOffer(req: Request, res: Response) {
     });
     res.json({ success: true, data: offer || null });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }

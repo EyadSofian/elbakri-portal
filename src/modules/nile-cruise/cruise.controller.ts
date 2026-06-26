@@ -8,6 +8,7 @@ import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { resolvePriceContext, resolveMarketPriceMap } from '../../shared/pricing';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
+import { debitWallet, refundWallet } from '../../shared/wallet';
 
 const cruiseInclude = {
   cruise: { select: { id: true, name: true, route: true, shipType: true } },
@@ -222,27 +223,13 @@ export async function confirmCruiseBooking(req: Request, res: Response): Promise
       if (booking.status !== 'PENDING') throw new Error('INVALID_STATUS');
       if (!booking.company.isActive) throw new Error('COMPANY_INACTIVE');
 
-      const alreadyDebited = await tx.walletTransaction.findFirst({
-        where: { reference: booking.refNumber, type: 'DEBIT' },
+      await debitWallet(tx, {
+        companyId: booking.companyId,
+        amount: booking.totalAmount,
+        reference: booking.refNumber,
+        description: `Confirmed cruise booking ${booking.refNumber}`,
+        createdById: req.user!.id,
       });
-      if (!alreadyDebited) {
-        if (booking.company.balance.lt(booking.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
-        const balanceBefore = booking.company.balance;
-        const balanceAfter = balanceBefore.sub(booking.totalAmount);
-        await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
-        await tx.walletTransaction.create({
-          data: {
-            companyId: booking.companyId,
-            type: 'DEBIT',
-            amount: booking.totalAmount,
-            balanceBefore,
-            balanceAfter,
-            reference: booking.refNumber,
-            description: `Confirmed cruise booking ${booking.refNumber}`,
-            createdById: req.user!.id,
-          },
-        });
-      }
 
       if (!booking.invoice) {
         const invoiceNumber = await generateInvoiceNumber(prisma);
@@ -309,30 +296,16 @@ export async function cancelCruiseBooking(req: Request, res: Response): Promise<
     return;
   }
 
-  const [debit, priorRefund] = await Promise.all([
-    prisma.walletTransaction.findFirst({ where: { reference: booking.refNumber, type: 'DEBIT' }, select: { id: true } }),
-    prisma.walletTransaction.findFirst({ where: { reference: booking.refNumber, type: 'REFUND' }, select: { id: true } }),
-  ]);
-  if (debit && !priorRefund) {
-    await prisma.$transaction(async (tx) => {
-      const company = await tx.company.findUniqueOrThrow({ where: { id: booking.companyId } });
-      const balanceBefore = company.balance;
-      const balanceAfter = balanceBefore.add(booking.totalAmount);
-      await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
-      await tx.walletTransaction.create({
-        data: {
-          companyId: booking.companyId,
-          type: 'REFUND',
-          amount: booking.totalAmount,
-          balanceBefore,
-          balanceAfter,
-          reference: booking.refNumber,
-          description: `Refund for cancelled cruise booking ${booking.refNumber}`,
-          createdById: caller.id,
-        },
-      });
-    });
-  }
+  // Refund once (idempotent — only when a DEBIT exists and no REFUND yet).
+  await prisma.$transaction((tx) =>
+    refundWallet(tx, {
+      companyId: booking.companyId,
+      amount: booking.totalAmount,
+      reference: booking.refNumber,
+      description: `Refund for cancelled cruise booking ${booking.refNumber}`,
+      createdById: caller.id,
+    }),
+  );
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.invoice.updateMany({

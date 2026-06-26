@@ -138,7 +138,7 @@ export async function importHotelsExcel(req: Request, res: Response): Promise<vo
   res.json({ success: true, data: { created, updated, total: rows.length } });
 }
 
-export async function exportHotelsExcel(req: Request, res: Response): Promise<void> {
+export async function exportHotelsExcel(_req: Request, res: Response): Promise<void> {
   const hotels = await prisma.hotel.findMany({
     where: { isActive: true },
     include: { pricing: { where: { isActive: true } } },

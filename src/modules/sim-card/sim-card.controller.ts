@@ -1,12 +1,14 @@
 import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
 import { Decimal } from '@prisma/client/runtime/library';
+import { sendError } from '../../shared/http';
 import { generateInvoiceNumber, sanitizeCustomFields } from '../../shared/helpers';
 import { resolvePriceContext, applyMarketPrice, resolveMarketMoney } from '../../shared/pricing';
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
+import { debitWallet, refundWallet } from '../../shared/wallet';
 
 // ─── Packages (admin managed) ────────────────────────────────────────────────
 
@@ -35,7 +37,7 @@ export async function listPackages(req: Request, res: Response) {
       meta: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -59,7 +61,7 @@ export async function createPackage(req: Request, res: Response) {
     });
     res.status(201).json({ success: true, data: pkg });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -82,7 +84,7 @@ export async function updatePackage(req: Request, res: Response) {
     });
     res.json({ success: true, data: pkg });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -91,15 +93,11 @@ export async function deletePackage(req: Request, res: Response) {
     await prisma.simPackage.delete({ where: { id: req.params.id } });
     res.json({ success: true, message: 'Deleted' });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
 // ─── Requests (company users) ────────────────────────────────────────────────
-
-function genRef(year: number, seq: number) {
-  return `SIM-${year}-${String(seq).padStart(4, '0')}`;
-}
 
 async function generateSimRef(): Promise<string> {
   const year = new Date().getFullYear();
@@ -151,7 +149,7 @@ export async function listRequests(req: Request, res: Response) {
       meta: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -282,7 +280,7 @@ export async function createRequest(req: Request, res: Response) {
       pricing: { unitPrice: unitAmount, quantity: qty, total: totalAmount, currency },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: (err as Error).message });
+    sendError(res, 500, 'INTERNAL_ERROR', undefined, err);
   }
 }
 
@@ -303,27 +301,13 @@ export async function updateRequestStatus(req: Request, res: Response) {
       if (status === 'CONFIRMED') {
         if (existing.status !== 'PENDING') throw new Error('INVALID_STATUS');
         if (!existing.company.isActive) throw new Error('COMPANY_INACTIVE');
-        const debit = await tx.walletTransaction.findFirst({
-          where: { reference: existing.refNumber, type: 'DEBIT' },
+        await debitWallet(tx, {
+          companyId: existing.companyId,
+          amount: existing.totalAmount,
+          reference: existing.refNumber,
+          description: `Confirmed SIM request ${existing.refNumber}`,
+          createdById: req.user!.id,
         });
-        if (!debit && existing.totalAmount.gt(0)) {
-          if (existing.company.balance.lt(existing.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
-          const balanceBefore = existing.company.balance;
-          const balanceAfter = balanceBefore.sub(existing.totalAmount);
-          await tx.company.update({ where: { id: existing.companyId }, data: { balance: balanceAfter } });
-          await tx.walletTransaction.create({
-            data: {
-              companyId: existing.companyId,
-              type: 'DEBIT',
-              amount: existing.totalAmount,
-              balanceBefore,
-              balanceAfter,
-              reference: existing.refNumber,
-              description: `Confirmed SIM request ${existing.refNumber}`,
-              createdById: req.user!.id,
-            },
-          });
-        }
         if (!existing.invoice && existing.totalAmount.gt(0)) {
           const invoiceNumber = await generateInvoiceNumber(prisma);
           const invoiceTotals = buildInvoiceTotals(existing.totalAmount);
@@ -357,24 +341,13 @@ export async function updateRequestStatus(req: Request, res: Response) {
         return;
       }
 
-      const debit = await tx.walletTransaction.findFirst({
-        where: { reference: existing.refNumber, type: 'DEBIT' },
-      });
-      if (existing.status === 'CONFIRMED' && debit) {
-        const balanceBefore = existing.company.balance;
-        const balanceAfter = balanceBefore.add(existing.totalAmount);
-        await tx.company.update({ where: { id: existing.companyId }, data: { balance: balanceAfter } });
-        await tx.walletTransaction.create({
-          data: {
-            companyId: existing.companyId,
-            type: 'REFUND',
-            amount: existing.totalAmount,
-            balanceBefore,
-            balanceAfter,
-            reference: existing.refNumber,
-            description: `Refund SIM request ${existing.refNumber}`,
-            createdById: req.user!.id,
-          },
+      if (existing.status === 'CONFIRMED') {
+        await refundWallet(tx, {
+          companyId: existing.companyId,
+          amount: existing.totalAmount,
+          reference: existing.refNumber,
+          description: `Refund SIM request ${existing.refNumber}`,
+          createdById: req.user!.id,
         });
       }
       if (existing.invoice) {

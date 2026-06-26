@@ -10,6 +10,7 @@ import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/g
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
+import { debitWallet, refundWallet } from '../../shared/wallet';
 
 const activityInclude = {
   activity: { select: { id: true, name: true, city: true, category: true } },
@@ -277,26 +278,15 @@ export async function confirmActivityBooking(req: Request, res: Response): Promi
       if (!booking.company.isActive) throw new Error('COMPANY_INACTIVE');
 
       if (!booking.invoice) {
-        if (booking.company.balance.lt(booking.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
-
-        const balanceBefore = booking.company.balance;
-        const balanceAfter = balanceBefore.sub(booking.totalAmount);
-        const invoiceNumber = await generateInvoiceNumber(prisma);
-
-        await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
-        await tx.walletTransaction.create({
-          data: {
-            companyId: booking.companyId,
-            type: 'DEBIT',
-            amount: booking.totalAmount,
-            balanceBefore,
-            balanceAfter,
-            reference: booking.refNumber,
-            description: `Confirmed activity booking ${booking.refNumber}`,
-            createdById: req.user!.id,
-          },
+        await debitWallet(tx, {
+          companyId: booking.companyId,
+          amount: booking.totalAmount,
+          reference: booking.refNumber,
+          description: `Confirmed activity booking ${booking.refNumber}`,
+          createdById: req.user!.id,
         });
 
+        const invoiceNumber = await generateInvoiceNumber(prisma);
         const invoiceTotals = buildInvoiceTotals(booking.totalAmount);
 
         await tx.invoice.create({
@@ -375,30 +365,16 @@ export async function cancelActivityBooking(req: Request, res: Response): Promis
     return;
   }
 
-  const [debit, priorRefund] = await Promise.all([
-    prisma.walletTransaction.findFirst({ where: { reference: booking.refNumber, type: 'DEBIT' }, select: { id: true } }),
-    prisma.walletTransaction.findFirst({ where: { reference: booking.refNumber, type: 'REFUND' }, select: { id: true } }),
-  ]);
-  if (debit && !priorRefund) {
-    await prisma.$transaction(async (tx) => {
-      const company = await tx.company.findUniqueOrThrow({ where: { id: booking.companyId } });
-      const balanceBefore = company.balance;
-      const balanceAfter = balanceBefore.add(booking.totalAmount);
-      await tx.company.update({ where: { id: booking.companyId }, data: { balance: balanceAfter } });
-      await tx.walletTransaction.create({
-        data: {
-          companyId: booking.companyId,
-          type: 'REFUND',
-          amount: booking.totalAmount,
-          balanceBefore,
-          balanceAfter,
-          reference: booking.refNumber,
-          description: `Refund activity ${booking.refNumber}`,
-          createdById: caller.id,
-        },
-      });
-    });
-  }
+  // Refund once (idempotent — only when a DEBIT exists and no REFUND yet).
+  await prisma.$transaction((tx) =>
+    refundWallet(tx, {
+      companyId: booking.companyId,
+      amount: booking.totalAmount,
+      reference: booking.refNumber,
+      description: `Refund activity ${booking.refNumber}`,
+      createdById: caller.id,
+    }),
+  );
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.invoice.updateMany({

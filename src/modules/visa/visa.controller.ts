@@ -75,12 +75,6 @@ export async function getVisaQuote(req: Request, res: Response): Promise<void> {
   }
   try {
     const source = await resolveVisaFee(visaType, destinationCountry, processingType, paxCount);
-    const company = req.user?.companyId
-      ? await prisma.company.findUnique({
-          where: { id: req.user.companyId },
-          select: { currency: true },
-        })
-      : null;
     const charge = explicitMoney(source.amount, source.currency);
     res.json({
       success: true,

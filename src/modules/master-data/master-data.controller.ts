@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
@@ -145,7 +146,7 @@ function transportEndpointAndPriceData(body: Record<string, unknown>, mode: 'cre
 export async function createTransportRate(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const rate = await prisma.transportRate.create({
-    data: transportEndpointAndPriceData(body, 'create') as any,
+    data: transportEndpointAndPriceData(body, 'create') as Prisma.TransportRateUncheckedCreateInput,
   });
   res.status(201).json({ success: true, data: rate });
 }
@@ -154,7 +155,7 @@ export async function updateTransportRate(req: Request, res: Response): Promise<
   const body = req.body as Record<string, unknown>;
   const rate = await prisma.transportRate.update({
     where: { id: req.params.id },
-    data: transportEndpointAndPriceData(body, 'update') as any,
+    data: transportEndpointAndPriceData(body, 'update') as Prisma.TransportRateUncheckedUpdateInput,
   });
   res.json({ success: true, data: rate });
 }
@@ -175,9 +176,9 @@ export async function createVisaFee(req: Request, res: Response): Promise<void> 
   const body = req.body as Record<string, unknown>;
   const fee = await prisma.visaFee.create({
     data: {
-      visaType: enumValue(body.visaType, visaTypes, 'TOURIST') as any,
+      visaType: enumValue(body.visaType, visaTypes, 'TOURIST'),
       destinationCountry: stringValue(body.destinationCountry) ?? 'Egypt',
-      processingType: enumValue(body.processingType, processingTypes, 'NORMAL') as any,
+      processingType: enumValue(body.processingType, processingTypes, 'NORMAL'),
       fee: decimalValue(body.fee),
       currency: stringValue(body.currency)?.toUpperCase() ?? 'USD',
       notes: stringValue(body.notes),
@@ -197,7 +198,7 @@ export async function updateVisaFee(req: Request, res: Response): Promise<void> 
   if (body.currency !== undefined) data.currency = stringValue(body.currency)?.toUpperCase() ?? 'USD';
   if (body.notes !== undefined) data.notes = stringValue(body.notes) ?? null;
   if (body.isActive !== undefined) data.isActive = boolValue(body.isActive);
-  const fee = await prisma.visaFee.update({ where: { id: req.params.id }, data: data as any });
+  const fee = await prisma.visaFee.update({ where: { id: req.params.id }, data: data as Prisma.VisaFeeUncheckedUpdateInput });
   res.json({ success: true, data: fee });
 }
 
@@ -217,8 +218,8 @@ export async function createReceptionServiceRate(req: Request, res: Response): P
   const body = req.body as Record<string, unknown>;
   const rate = await prisma.receptionServiceRate.create({
     data: {
-      serviceType: enumValue(body.serviceType, receptionTypes, 'MEET_AND_GREET') as any,
-      airport: body.airport ? enumValue(body.airport, airports, 'CAI') as any : undefined,
+      serviceType: enumValue(body.serviceType, receptionTypes, 'MEET_AND_GREET'),
+      airport: body.airport ? enumValue(body.airport, airports, 'CAI') : undefined,
       rate: decimalValue(body.rate),
       currency: stringValue(body.currency)?.toUpperCase() ?? 'USD',
       notes: stringValue(body.notes),
@@ -237,7 +238,7 @@ export async function updateReceptionServiceRate(req: Request, res: Response): P
   if (body.currency !== undefined) data.currency = stringValue(body.currency)?.toUpperCase() ?? 'USD';
   if (body.notes !== undefined) data.notes = stringValue(body.notes) ?? null;
   if (body.isActive !== undefined) data.isActive = boolValue(body.isActive);
-  const rate = await prisma.receptionServiceRate.update({ where: { id: req.params.id }, data: data as any });
+  const rate = await prisma.receptionServiceRate.update({ where: { id: req.params.id }, data: data as Prisma.ReceptionServiceRateUncheckedUpdateInput });
   res.json({ success: true, data: rate });
 }
 

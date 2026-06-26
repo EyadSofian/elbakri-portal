@@ -9,6 +9,7 @@ import { invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
+import { debitWallet, refundWallet } from '../../shared/wallet';
 
 const packageInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -363,20 +364,13 @@ export async function confirmActivityPackage(req: Request, res: Response): Promi
       if (pkg.status !== 'PENDING') throw new Error('INVALID_STATUS');
       if (!pkg.company.isActive) throw new Error('COMPANY_INACTIVE');
 
-      const alreadyDebited = await tx.walletTransaction.findFirst({ where: { reference: pkg.refNumber, type: 'DEBIT' } });
-      if (!alreadyDebited && pkg.totalAmount.gt(0)) {
-        if (pkg.company.balance.lt(pkg.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
-        const balanceBefore = pkg.company.balance;
-        const balanceAfter = balanceBefore.sub(pkg.totalAmount);
-        await tx.company.update({ where: { id: pkg.companyId }, data: { balance: balanceAfter } });
-        await tx.walletTransaction.create({
-          data: {
-            companyId: pkg.companyId, type: 'DEBIT', amount: pkg.totalAmount,
-            balanceBefore, balanceAfter, reference: pkg.refNumber,
-            description: `Confirmed activity package ${pkg.refNumber}`, createdById: req.user!.id,
-          },
-        });
-      }
+      await debitWallet(tx, {
+        companyId: pkg.companyId,
+        amount: pkg.totalAmount,
+        reference: pkg.refNumber,
+        description: `Confirmed activity package ${pkg.refNumber}`,
+        createdById: req.user!.id,
+      });
       if (!pkg.invoice && pkg.totalAmount.gt(0)) {
         const invoiceNumber = await generateInvoiceNumber(prisma);
         await tx.invoice.create({
@@ -425,25 +419,16 @@ export async function cancelActivityPackage(req: Request, res: Response): Promis
   }
   const newStatus = status === 'REJECTED' ? 'REJECTED' : 'CANCELLED';
 
-  const [debit, priorRefund] = await Promise.all([
-    prisma.walletTransaction.findFirst({ where: { reference: pkg.refNumber, type: 'DEBIT' }, select: { id: true } }),
-    prisma.walletTransaction.findFirst({ where: { reference: pkg.refNumber, type: 'REFUND' }, select: { id: true } }),
-  ]);
-  if (debit && !priorRefund) {
-    await prisma.$transaction(async (tx) => {
-      const company = await tx.company.findUniqueOrThrow({ where: { id: pkg.companyId } });
-      const balanceBefore = company.balance;
-      const balanceAfter = balanceBefore.add(pkg.totalAmount);
-      await tx.company.update({ where: { id: pkg.companyId }, data: { balance: balanceAfter } });
-      await tx.walletTransaction.create({
-        data: {
-          companyId: pkg.companyId, type: 'REFUND', amount: pkg.totalAmount,
-          balanceBefore, balanceAfter, reference: pkg.refNumber,
-          description: `Refund ${newStatus.toLowerCase()} package ${pkg.refNumber}`, createdById: caller.id,
-        },
-      });
-    });
-  }
+  // Refund once (idempotent — only when a DEBIT exists and no REFUND yet).
+  await prisma.$transaction((tx) =>
+    refundWallet(tx, {
+      companyId: pkg.companyId,
+      amount: pkg.totalAmount,
+      reference: pkg.refNumber,
+      description: `Refund ${newStatus.toLowerCase()} package ${pkg.refNumber}`,
+      createdById: caller.id,
+    }),
+  );
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.invoice.updateMany({ where: { activityPackageId: pkg.id }, data: { status: 'CANCELLED' } });

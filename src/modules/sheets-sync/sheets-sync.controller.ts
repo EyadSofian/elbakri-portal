@@ -10,7 +10,7 @@ import {
   SyncEntity,
 } from './sheets-sync.service';
 
-export async function getConfig(req: Request, res: Response): Promise<void> {
+export async function getConfig(_req: Request, res: Response): Promise<void> {
   const config = await getSheetsConfig();
   res.json({ success: true, data: config });
 }

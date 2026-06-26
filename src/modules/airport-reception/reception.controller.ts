@@ -8,6 +8,7 @@ import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
+import { debitWallet, refundWallet } from '../../shared/wallet';
 
 const receptionInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -80,9 +81,6 @@ export async function getReceptionQuote(req: Request, res: Response): Promise<vo
   }
 
   const source = await resolveReceptionRate(serviceType, airport, pax);
-  const company = req.user?.companyId
-    ? await prisma.company.findUnique({ where: { id: req.user.companyId }, select: { currency: true } })
-    : null;
   const charge = explicitMoney(source.total, source.currency);
   res.json({
     success: true,
@@ -242,27 +240,13 @@ export async function confirmReception(req: Request, res: Response): Promise<voi
       });
       if (existing.status !== 'PENDING') throw new Error('INVALID_STATUS');
       if (!existing.company.isActive) throw new Error('COMPANY_INACTIVE');
-      const alreadyDebited = await tx.walletTransaction.findFirst({
-        where: { reference: existing.refNumber, type: 'DEBIT' },
+      await debitWallet(tx, {
+        companyId: existing.companyId,
+        amount: existing.totalAmount,
+        reference: existing.refNumber,
+        description: `Confirmed airport assist ${existing.refNumber}`,
+        createdById: req.user!.id,
       });
-      if (!alreadyDebited && existing.totalAmount.gt(0)) {
-        if (existing.company.balance.lt(existing.totalAmount)) throw new Error('INSUFFICIENT_BALANCE');
-        const balanceBefore = existing.company.balance;
-        const balanceAfter = balanceBefore.sub(existing.totalAmount);
-        await tx.company.update({ where: { id: existing.companyId }, data: { balance: balanceAfter } });
-        await tx.walletTransaction.create({
-          data: {
-            companyId: existing.companyId,
-            type: 'DEBIT',
-            amount: existing.totalAmount,
-            balanceBefore,
-            balanceAfter,
-            reference: existing.refNumber,
-            description: `Confirmed airport assist ${existing.refNumber}`,
-            createdById: req.user!.id,
-          },
-        });
-      }
       await tx.airportReception.update({
         where: { id: existing.id },
         data: {
@@ -303,26 +287,17 @@ export async function cancelReception(req: Request, res: Response): Promise<void
     return;
   }
 
-  const [debit, priorRefund] = await Promise.all([
-    prisma.walletTransaction.findFirst({ where: { reference: reception.refNumber, type: 'DEBIT' }, select: { id: true } }),
-    prisma.walletTransaction.findFirst({ where: { reference: reception.refNumber, type: 'REFUND' }, select: { id: true } }),
-  ]);
-  // Refund only a confirmed charge. Pending requests never move wallet money.
-  if (debit && !priorRefund && reception.totalAmount.gt(0)) {
-    await prisma.$transaction(async (tx) => {
-      const company = await tx.company.findUniqueOrThrow({ where: { id: reception.companyId } });
-      const balanceBefore = company.balance;
-      const balanceAfter = balanceBefore.add(reception.totalAmount);
-      await tx.company.update({ where: { id: reception.companyId }, data: { balance: balanceAfter } });
-      await tx.walletTransaction.create({
-        data: {
-          companyId: reception.companyId, type: 'REFUND',
-          amount: reception.totalAmount, balanceBefore, balanceAfter,
-          reference: reception.refNumber, description: `Refund reception ${reception.refNumber}`, createdById: caller.id,
-        },
-      });
-    });
-  }
+  // Refund only a confirmed charge (idempotent — no-op if never debited or
+  // already refunded; pending requests never moved wallet money).
+  await prisma.$transaction((tx) =>
+    refundWallet(tx, {
+      companyId: reception.companyId,
+      amount: reception.totalAmount,
+      reference: reception.refNumber,
+      description: `Refund reception ${reception.refNumber}`,
+      createdById: caller.id,
+    }),
+  );
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.invoice.updateMany({
