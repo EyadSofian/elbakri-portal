@@ -1445,15 +1445,15 @@ async function showCompanyDetails(id) {
     </div>
     <div id="pane-overview" class="detail-pane active">
       <div class="info-grid">
-        ${info("form.companyName", c.name)}
-        ${info("form.email", c.email)}
-        ${info("form.phone", c.phone)}
-        ${info("form.country", c.country)}
+        ${info("form.companyName", escapeHtml(c.name))}
+        ${info("form.email", escapeHtml(c.email))}
+        ${info("form.phone", escapeHtml(c.phone))}
+        ${info("form.country", escapeHtml(c.country))}
         ${info("form.tier", tierBadge(c.tier))}
         ${info("th.status", statusBadge(c.isActive ? "ACTIVE" : "INACTIVE"))}
         ${info("th.balance", formatMoney(c.balance, c.currency || "USD"))}
         ${info("th.creditLimit", formatMoney(c.creditLimit, c.currency || "USD"))}
-        ${info("form.taxId", c.taxId || "—")}
+        ${info("form.taxId", escapeHtml(c.taxId || "—"))}
       </div>
     </div>
     <div id="pane-users" class="detail-pane">${detailTable(c.users || [], ["name","email","role","isActive"])}</div>
@@ -1887,6 +1887,7 @@ async function openHotelEditor(id = "") {
       ${fld(t("form.destination", "Destination / City") + ' <span class="required">*</span>', inp("heCity", h.city))}
       ${fld(t("form.cityAr", "Arabic City"), inp("heCityAr", h.cityAr))}
       ${fld(t("hotel.area", "Area / Sub-area"), inp("heArea", h.area))}
+      ${fld(t("form.country", "Country"), inp("heCountry", h.country || "EG"))}
       ${fld(t("hotel.linkedDestination", "Linked destination"), `<select id="heDestinationId">${destOpts}</select>`)}
       ${fullFld(t("form.address", "Address") + ' <span class="required">*</span>', inp("heAddress", h.address))}
       ${fld(t("th.stars", "Stars"), `<select id="heStars">${[1,2,3,4,5,6,7].map(s => `<option value="${s}" ${(h.stars||3)===s?"selected":""}>${s}★</option>`).join("")}</select>`)}
@@ -2196,7 +2197,7 @@ async function heSave() {
     name, nameAr: val("heNameAr") || null,
     city, cityAr: val("heCityAr") || null,
     area: val("heArea") || null,
-    country: "EG",
+    country: val("heCountry") || "EG",
     destinationId: val("heDestinationId") || null,
     address,
     stars: Number(document.getElementById("heStars")?.value || 3),
@@ -3375,6 +3376,13 @@ async function openTransportRateEditor(id = "") {
   const airports = airRes?.data || [];
   const destinations = (destRes?.data || []).filter(d => d && d.id);
   const hotels = state.cache.hotelOptions || [];
+  // Legacy rates carry a single `rate`/`currency`; surface it in the matching
+  // dual-price field so editing preserves the price (and the Save guard passes).
+  const legacyCur = String(r.currency || "USD").toUpperCase();
+  const egpVal = r.priceEgp != null ? r.priceEgp : (legacyCur === "EGP" ? r.rate : null);
+  const usdVal = r.priceUsd != null ? r.priceUsd : (legacyCur === "USD" ? r.rate : null);
+  const rtEgpVal = r.roundTripPriceEgp != null ? r.roundTripPriceEgp : (legacyCur === "EGP" ? r.roundTripRate : null);
+  const rtUsdVal = r.roundTripPriceUsd != null ? r.roundTripPriceUsd : (legacyCur === "USD" ? r.roundTripRate : null);
 
   const sel = (id2, opts, val, label) => `<div class="form-field"><label>${label}</label><select id="${id2}">${opts.map(o => `<option value="${o}" ${o === val ? "selected" : ""}>${escapeHtml(String(o).replace(/_/g, " "))}</option>`).join("")}</select></div>`;
   const num = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" type="number" step="0.01" min="0" value="${val != null ? escapeHtml(val) : ""}" placeholder="${escapeHtml(ph)}"></div>`;
@@ -3405,10 +3413,10 @@ async function openTransportRateEditor(id = "") {
     <div class="form-section">
       <div class="form-section-title">${t("transport.pricingDual", "Pricing (explicit, no FX — Egyptian sees EGP, others USD)")}</div>
       <div class="form-grid" style="grid-template-columns:repeat(4,1fr)">
-        ${num("trPriceEgp", r.priceEgp, t("transport.priceEgp", "One-way EGP"))}
-        ${num("trPriceUsd", r.priceUsd, t("transport.priceUsd", "One-way USD"))}
-        ${num("trRtEgp", r.roundTripPriceEgp, t("transport.rtEgp", "Round-trip EGP"))}
-        ${num("trRtUsd", r.roundTripPriceUsd, t("transport.rtUsd", "Round-trip USD"))}
+        ${num("trPriceEgp", egpVal, t("transport.priceEgp", "One-way EGP"))}
+        ${num("trPriceUsd", usdVal, t("transport.priceUsd", "One-way USD"))}
+        ${num("trRtEgp", rtEgpVal, t("transport.rtEgp", "Round-trip EGP"))}
+        ${num("trRtUsd", rtUsdVal, t("transport.rtUsd", "Round-trip USD"))}
         ${num("trMinCap", r.minCapacity ?? 1, t("form.minPax", "Min pax"))}
         ${num("trMaxCap", r.maxCapacity, t("form.maxPax", "Max pax (blank = no limit)"))}
       </div>
@@ -3447,7 +3455,7 @@ function trEpBlock(side, r, airports, destinations, hotels, label) {
     <div class="form-field tr-ep-pick" data-kind="AIRPORT" style="display:none"><label>${t("transport.airport", "Airport")}</label><select class="tr-ep-airport">${airOpts}</select></div>
     <div class="form-field tr-ep-pick" data-kind="DESTINATION" style="display:none"><label>${t("transport.destination", "Destination")}</label><select class="tr-ep-dest">${destOpts}</select></div>
     <div class="form-field tr-ep-pick" data-kind="HOTEL" style="display:none"><label>${t("transport.hotel", "Hotel")}</label><select class="tr-ep-hotel">${hotOpts}</select></div>
-    <div class="form-field"><label>${t("transport.endpointName", "Display name (optional override)")}</label><input class="tr-ep-name" value="${escapeHtml(r[`${side}Name`] || "")}" placeholder="${escapeHtml(t("transport.endpointNamePh", "Auto from selection, or type a name"))}"></div>
+    <div class="form-field"><label>${t("transport.endpointName", "Display name (optional override)")}</label><input class="tr-ep-name" value="${escapeHtml(r[`${side}Name`] || r[`${side}Location`] || "")}" placeholder="${escapeHtml(t("transport.endpointNamePh", "Auto from selection, or type a name"))}"></div>
   </div>`;
 }
 function trEpTypeChange(side) {

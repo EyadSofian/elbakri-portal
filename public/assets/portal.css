@@ -5346,3 +5346,88 @@ html[lang="ar"] .hero-metric__label { text-transform: none; letter-spacing: 0; }
   .filter-head { justify-content: space-between; }
   .hotel-active-chips:not(:empty) { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 2px; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   UX POLISH PASS (2026-06-24) — readability + grouping for data-dense screens.
+   Background/border/color/shadow only; NO transforms on fixed-element ancestors
+   (would re-trap the floating bulk bar / drawers — see earlier notes).
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Data tables: larger, higher-contrast, brand-consistent row feedback ── */
+.data-table { font-size: 13px; }
+.data-table thead th {
+  height: 40px;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border-strong);
+  background: linear-gradient(var(--surface-raised), #fff);
+}
+.data-table tbody td { height: 48px; color: var(--text-secondary); }
+.data-table tbody tr:hover td { background: var(--brand-accent-soft); }
+.data-table tbody tr.selected td,
+.data-table tbody tr:has(.inv-check:checked) td { background: var(--brand-accent-soft); }
+.data-table .primary-text { color: var(--text-primary); font-weight: 700; font-size: 13.5px; line-height: 1.3; }
+.data-table .secondary-text { color: var(--text-muted); font-size: 11.5px; }
+.data-table .numeric { color: var(--text-primary); }
+/* Keep number columns aligned across rows (prices, balances) */
+.data-table td.numeric, .data-table th.numeric { font-variant-numeric: tabular-nums; }
+
+/* ── Table cards: a touch more presence so data sits on a clear surface ── */
+.table-card { box-shadow: var(--shadow-card); border: 1px solid var(--border); }
+.table-toolbar { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+
+/* ── Modal form sections: group fields into labelled cards (no flat walls) ── */
+.modal-body .form-section {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-12);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.modal-body .form-section-title {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--brand-navy);
+  font-size: 14px;
+}
+.modal-body .form-section-title::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--brand-teal);
+}
+html[dir="rtl"] .modal-body .form-section-title::before { order: 2; }
+
+/* ── Tabbed editor panels (hotel) + endpoint blocks (transport) ── */
+.he-body { min-height: 320px; }
+.he-panel { padding: 2px; }
+.he-rate, .he-supp, .tr-ep, .mp-row, .mp-block {
+  transition: border-color .15s, box-shadow .15s;
+}
+.he-rate:hover, .tr-ep:hover { border-color: var(--border-strong); }
+.he-rate { background: var(--surface-raised); }
+.he-supp { background: #fff; border: 1px solid var(--border); border-radius: var(--r-8); padding: 8px 10px; }
+
+/* ── Form fields: clearer labels + comfortable inputs ── */
+.form-field label { font-weight: 600; color: var(--text-secondary); }
+.form-field input, .form-field select, .form-field textarea {
+  min-height: 40px;
+}
+
+/* ── Stat cards: subtle lift + clearer value hierarchy ── */
+.stat-card { border: 1px solid var(--border); box-shadow: var(--shadow-subtle); }
+.stat-card .stat-value, .stat-value { color: var(--text-primary); font-weight: 800; letter-spacing: -0.01em; }
+
+/* ── Empty states: friendlier, less "broken/lost" feeling ── */
+.empty-state { min-height: 180px; color: var(--text-secondary); }
+.empty-state strong { color: var(--text-primary); }
+
+/* ── Desktop: give data tables more room by trimming the filter rail ── */
+@media (min-width: 1024px) {
+  .filter-rail { max-width: 248px; }
+}

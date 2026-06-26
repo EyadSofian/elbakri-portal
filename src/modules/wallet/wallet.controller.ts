@@ -23,12 +23,12 @@ export async function getBalance(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const [company, debitAgg, creditAgg] = await Promise.all([
+  const [company, debitAgg, creditAgg, refundAgg] = await Promise.all([
     prisma.company.findUnique({
       where: { id: caller.companyId },
       select: { balance: true, currency: true, name: true, creditLimit: true },
     }),
-    // Total amount deducted (debits & refunds reversed)
+    // Gross amount debited (service confirmations)
     prisma.walletTransaction.aggregate({
       where: { companyId: caller.companyId, type: 'DEBIT' },
       _sum: { amount: true },
@@ -38,6 +38,11 @@ export async function getBalance(req: Request, res: Response): Promise<void> {
       where: { companyId: caller.companyId, type: 'CREDIT' },
       _sum: { amount: true },
     }),
+    // Amount returned to the wallet (cancellations)
+    prisma.walletTransaction.aggregate({
+      where: { companyId: caller.companyId, type: 'REFUND' },
+      _sum: { amount: true },
+    }),
   ]);
 
   if (!company) {
@@ -45,10 +50,18 @@ export async function getBalance(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const totalDeposited = creditAgg._sum.amount ?? new Decimal(0);
-  const totalUsed      = debitAgg._sum.amount  ?? new Decimal(0);
-  // The company.balance field IS the current remaining balance (maintained by each transaction)
+  const debitSum  = debitAgg._sum.amount  ?? new Decimal(0);
+  const creditSum = creditAgg._sum.amount ?? new Decimal(0);
+  const refundSum = refundAgg._sum.amount ?? new Decimal(0);
+  // The company.balance field IS the authoritative remaining balance (maintained
+  // by every transaction); the aggregates below are reconciled against it.
   const remainingBalance = company.balance;
+  // Net amount actually consumed (debits offset by refunds), never negative.
+  const totalUsed = Decimal.max(new Decimal(0), debitSum.sub(refundSum));
+  // Deposits consistent with the authoritative balance. For a clean ledger this
+  // equals the sum of CREDIT top-ups; for seed/legacy balances set directly with
+  // no CREDIT row it avoids the misleading "$0 deposited / $5,000 balance".
+  const totalDeposited = Decimal.max(creditSum, remainingBalance.add(totalUsed));
 
   res.json({
     success: true,
