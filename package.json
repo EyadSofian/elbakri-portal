@@ -3,9 +3,12 @@
   "version": "1.0.0",
   "description": "Elbakri Overseas B2B Travel Portal",
   "main": "dist/app.js",
+  "engines": {
+    "node": ">=18 <=20"
+  },
   "scripts": {
     "dev": "nodemon --exec ts-node src/app.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "prisma generate && tsc -p tsconfig.json",
     "test": "node -r ts-node/register/transpile-only -r ./tests/setup.ts --test tests/pricing.test.ts tests/wallet.test.ts",
     "test:integration": "node -r ts-node/register/transpile-only -r ./tests/setup.ts --test tests/integration.test.ts",
     "start": "node dist/app.js",
@@ -28,10 +31,12 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.5.2",
     "googleapis": "^173.0.0",
+    "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.2.0",
-    "nodemailer": "^8.0.11",
+    "nodemailer": "^9.0.3",
     "pdfkit": "^0.15.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^3.23.8"

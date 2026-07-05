@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { BookingStatus, ReceptionType, EgyptAirport } from '@prisma/client';
 import { prisma } from '../../config/db';
-import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
+import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields, escapeHtml } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
@@ -213,12 +213,12 @@ export async function createReception(req: Request, res: Response): Promise<void
         recipients,
         `🛬 Airport Assist — ${reception.refNumber}`,
         `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Ref</td><td style="padding:6px 12px">${reception.refNumber}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Service</td><td style="padding:6px 12px">${body.serviceType.replace(/_/g, ' ')}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Airport</td><td style="padding:6px 12px">${body.airport}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Guest</td><td style="padding:6px 12px">${body.guestName} (${guestCount})</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Flight</td><td style="padding:6px 12px">${body.flightNumber} — ${body.flightDateTime}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${reception.totalAmount.gt(0) ? `${reception.totalAmount} ${reception.currency}` : 'Price on request'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Ref</td><td style="padding:6px 12px">${escapeHtml(reception.refNumber)}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Service</td><td style="padding:6px 12px">${escapeHtml(body.serviceType.replace(/_/g, ' '))}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Airport</td><td style="padding:6px 12px">${escapeHtml(body.airport)}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Guest</td><td style="padding:6px 12px">${escapeHtml(body.guestName)} (${guestCount})</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Flight</td><td style="padding:6px 12px">${escapeHtml(body.flightNumber)} — ${escapeHtml(body.flightDateTime)}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${reception.totalAmount.gt(0) ? `${reception.totalAmount} ${escapeHtml(reception.currency)}` : 'Price on request'}</td></tr>
         </table>`,
       ).catch(console.error);
     }

@@ -5,6 +5,7 @@ dist/
 generated/
 uploads/*
 !uploads/.gitkeep
+uploads-private/
 *.js.map
 *.log
 outputs/

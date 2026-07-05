@@ -358,6 +358,30 @@ async function downloadAuthenticatedFile(path, fallbackName) {
   }
 }
 
+// Open a private customer document (passport / flight ticket). Protected uploads
+// (/api/files/private/...) are fetched with the bearer token and shown as a blob;
+// legacy public /uploads paths or externally-pasted URLs open directly.
+async function openPrivateDoc(url, fallbackName) {
+  if (!url) return;
+  if (/^\/api\/files\//.test(url)) {
+    const token = localStorage.getItem("accessToken");
+    try {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, credentials: "include" });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.message || json?.error || "File access failed");
+      }
+      const blobUrl = URL.createObjectURL(await res.blob());
+      window.open(blobUrl, "_blank");
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (err) {
+      toast(err.message || "File access failed", "error");
+    }
+  } else {
+    window.open(url, "_blank");
+  }
+}
+
 function toast(message, type = "") {
   const el = document.getElementById("toast");
   el.textContent = message;
@@ -4158,8 +4182,8 @@ async function renderSecurityApproval() {
     ["th.amount", v => formatMoney(v.totalAmount, v.currency)],
     ["th.status", v => statusBadge(v.status)],
     ["th.actions",v => `<div style="display:flex;gap:4px;flex-wrap:wrap">
-      ${v.passportUrl ? `<a href="${escapeHtml(v.passportUrl)}" target="_blank" class="btn btn-outline btn-sm">${icon("file-text")} Passport</a>` : ""}
-      ${v.flightTicketUrl ? `<a href="${escapeHtml(v.flightTicketUrl)}" target="_blank" class="btn btn-outline btn-sm">${icon("ticket")} Ticket</a>` : ""}
+      ${v.passportUrl ? `<button type="button" onclick="openPrivateDoc(${inlineJsonArg(v.passportUrl)},'passport')" class="btn btn-outline btn-sm">${icon("file-text")} Passport</button>` : ""}
+      ${v.flightTicketUrl ? `<button type="button" onclick="openPrivateDoc(${inlineJsonArg(v.flightTicketUrl)},'ticket')" class="btn btn-outline btn-sm">${icon("ticket")} Ticket</button>` : ""}
       ${["PENDING","SUBMITTED"].includes(v.status) ? `<button class="btn btn-success btn-sm" onclick="adminApproveVisa('${v.id}')">${icon("check")} Approve</button>` : ""}
       ${["PENDING","SUBMITTED"].includes(v.status) ? `<button class="btn btn-danger btn-sm" onclick="adminRejectVisa('${v.id}')">${icon("x")} Reject</button>` : ""}
       ${v.invoice?.id ? `<button class="btn btn-outline btn-sm" title="Invoice" onclick="downloadInvoicePdf('${v.invoice.id}')">${icon("file-down")}</button>` : ""}
@@ -4196,7 +4220,7 @@ async function renderAirportAssist() {
     ["th.amount", r => formatMoney(r.totalAmount, r.currency)],
     ["th.status", r => statusBadge(r.status)],
     ["th.actions",r => `<div style="display:flex;gap:4px;flex-wrap:wrap">
-      ${r.ticketUrl ? `<a href="${escapeHtml(r.ticketUrl)}" target="_blank" class="btn btn-outline btn-sm">${icon("ticket")} Ticket</a>` : ""}
+      ${r.ticketUrl ? `<button type="button" onclick="openPrivateDoc(${inlineJsonArg(r.ticketUrl)},'ticket')" class="btn btn-outline btn-sm">${icon("ticket")} Ticket</button>` : ""}
       ${r.status === "PENDING" ? `<button class="btn btn-success btn-sm" onclick="adminConfirmReception('${r.id}')">${icon("check")} Confirm</button>` : ""}
       ${["PENDING","CONFIRMED"].includes(r.status) ? `<button class="btn btn-danger btn-sm" onclick="adminCancelReception('${r.id}')">${icon("x")} Cancel</button>` : ""}
       ${r.invoice?.id ? `<button class="btn btn-outline btn-sm" title="Invoice" onclick="downloadInvoicePdf('${r.invoice.id}')">${icon("file-down")}</button>` : ""}

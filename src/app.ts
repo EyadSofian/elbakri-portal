@@ -2,9 +2,12 @@ import 'dotenv/config';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import helmet from 'helmet';
 import path from 'path';
 import { Readable } from 'stream';
 
+import { validateEnvOrExit } from './config/env';
+import { PUBLIC_UPLOADS_DIR, GENERATED_DIR, ensureStorageDirs } from './config/paths';
 import { authenticate } from './middleware/auth';
 
 import authRouter from './modules/auth/auth.routes';
@@ -34,18 +37,41 @@ import { enrichRouter } from './modules/enrichment/enrichment.routes';
 import fxRouter from './modules/fx/fx.routes';
 import groupTypesRouter from './modules/group-types/group-types.routes';
 import vouchersRouter from './modules/vouchers/vouchers.routes';
+import filesRouter from './modules/files/files.routes';
+
+// Validate configuration before anything else — aborts a misconfigured
+// production boot (missing/placeholder secrets, localhost BASE_URL, …).
+validateEnvOrExit();
+// Create upload/generated directories up-front so the first write never fails.
+ensureStorageDirs();
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3000');
+
+// Behind cPanel/Passenger (and most managed hosts) the app sits behind a reverse
+// proxy; trust the first hop so req.ip / rate-limiting see the real client IP.
+app.set('trust proxy', 1);
+// Do not advertise the framework.
+app.disable('x-powered-by');
+// Security headers. CSP is intentionally disabled for now because the static
+// HTML app uses inline scripts/styles; a strict CSP is a separate hardening task.
+// COEP is disabled so cross-origin images (e.g. the Booking.com proxy) still load.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 
 app.use(cors({ origin: process.env.BASE_URL, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
-// Static files
+// Static files. NOTE: only PUBLIC uploads are served here; private documents
+// live in a separate, non-served directory and are only reachable via the
+// authenticated route /api/files/private/:filename.
 app.use(express.static(path.join(__dirname, '..', 'public')));
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
-app.use('/generated', express.static(path.join(__dirname, '..', 'generated')));
+app.use('/uploads', express.static(PUBLIC_UPLOADS_DIR));
+app.use('/generated', express.static(GENERATED_DIR));
 
 app.get('/media/hotel-image', async (req, res) => {
   try {
@@ -99,6 +125,7 @@ app.get('/media/hotel-image', async (req, res) => {
 app.use('/api/auth', authRouter);
 
 // Protected routes
+app.use('/api/files', authenticate, filesRouter);
 app.use('/api/users', authenticate, usersRouter);
 app.use('/api/hotels', authenticate, hotelsRouter);
 app.use('/api/bookings', authenticate, bookingsRouter);

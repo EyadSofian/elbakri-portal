@@ -1580,7 +1580,7 @@ function rfControl(f, ctx) {
       return `<label class="check-row"><input type="checkbox" id="${id}"${dv ? " checked" : ""}> ${escapeHtml(rfLabel(f))}</label>`;
     case "file-upload":
     case "image-upload":
-      return `<input type="file" accept="${f.type === "image-upload" ? "image/*" : "image/*,.pdf"}" onchange="uploadAndFill(this,'${id}')">
+      return `<input type="file" accept="${f.type === "image-upload" ? "image/*" : "image/*,.pdf"}" onchange="uploadAndFill(this,'${id}',${f.type !== "image-upload"})">
               <input id="${id}" placeholder="${escapeHtml(ph || t("form.orPasteUrl", "or paste URL"))}" style="margin-top:6px">`;
     case "number":
     case "pax-counter":
@@ -3406,10 +3406,10 @@ async function openSecurityApprovalForm() {
       <div class="form-field"><label>${t("securityApproval.paxCount","Number of Passengers")}</label>
         <input id="saPax" type="number" min="1" value="1"></div>
       <div class="form-field full"><label>${t("securityApproval.passportUpload","Passport")} <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
-        <input type="file" id="saPassportFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'saPassportUrl')">
+        <input type="file" id="saPassportFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'saPassportUrl',true)">
         <input id="saPassportUrl" placeholder="or paste URL" style="margin-top:6px"></div>
       <div class="form-field full"><label>${t("securityApproval.flightTicketUpload","Flight Ticket")} <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
-        <input type="file" id="saTicketFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'saTicketUrl')">
+        <input type="file" id="saTicketFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'saTicketUrl',true)">
         <input id="saTicketUrl" placeholder="or paste URL" style="margin-top:6px"></div>
       <div class="form-field full"><label>${t("form.notes","Notes")}</label>
         <textarea id="saNotes" rows="2"></textarea></div>
@@ -3542,7 +3542,7 @@ async function openAirportAssistForm() {
       <div class="form-field full"><label>${t("airportAssist.arrivalDeparture","Arrival / Departure Details")}</label>
         <textarea id="aaTravelDetails" rows="2" placeholder="e.g. Arriving from Dubai, connecting to Sharm"></textarea></div>
       <div class="form-field full"><label>${t("airportAssist.ticketUpload","Flight Ticket")} <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
-        <input type="file" id="aaTicketFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'aaTicketUrl')">
+        <input type="file" id="aaTicketFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'aaTicketUrl',true)">
         <input id="aaTicketUrl" placeholder="or paste URL" style="margin-top:6px"></div>
       <div class="form-field full"><label>${t("form.notes","Notes")}</label>
         <textarea id="aaNotes" rows="2"></textarea></div>
@@ -3793,14 +3793,17 @@ function dismissOfferToday(key) {
 }
 
 // ─── File upload helper ───────────────────────────────────────────────────────
-async function uploadAndFill(input, targetId) {
+// isPrivate=true routes passports/tickets/private docs to /api/upload/private,
+// which stores them outside the public /uploads dir and returns a protected URL
+// (/api/files/private/...) only downloadable by the owning company or an admin.
+async function uploadAndFill(input, targetId, isPrivate) {
   const file = input.files?.[0];
   if (!file) return;
   const formData = new FormData();
   formData.append("file", file);
   const token = localStorage.getItem("accessToken");
   try {
-    const res = await fetch("/api/upload", {
+    const res = await fetch(isPrivate ? "/api/upload/private" : "/api/upload", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
@@ -3811,6 +3814,8 @@ async function uploadAndFill(input, targetId) {
       const target = document.getElementById(targetId);
       if (target) target.value = json.data.url;
       toast("✅ Uploaded", "success");
+    } else {
+      toast(json?.message || "Upload failed", "error");
     }
   } catch {
     toast("Upload failed", "error");

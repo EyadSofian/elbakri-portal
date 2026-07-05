@@ -28,9 +28,10 @@ import { listHotelRatesAdmin, saveHotelRates } from './rates.controller';
 import { requireRole } from '../../middleware/role';
 import { validate } from '../../middleware/validate';
 import { createHotelSchema, updateHotelSchema } from './hotels.schema';
+import { PUBLIC_UPLOADS_DIR } from '../../config/paths';
 
 const storage = multer.diskStorage({
-  destination: process.env.UPLOAD_DIR ?? './uploads',
+  destination: (_req, _file, cb) => cb(null, PUBLIC_UPLOADS_DIR),
   filename: (_req, file, cb) => {
     cb(null, `${Date.now()}-${path.basename(file.originalname)}`);
   },

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { ActivityCategory, BookingStatus } from '@prisma/client';
 import { prisma } from '../../config/db';
-import { generateRef, generateInvoiceNumber, paginate, paginateMeta } from '../../shared/helpers';
+import { generateRef, generateInvoiceNumber, paginate, paginateMeta, escapeHtml } from '../../shared/helpers';
 import { resolvePriceContext, applyMarketPrice, resolveMarketMoney } from '../../shared/pricing';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
@@ -241,17 +241,17 @@ export async function createActivityBooking(req: Request, res: Response): Promis
         [company.email, process.env.INTERNAL_TEAM_EMAIL],
         `🎯 Activity Booking — ${booking.refNumber}`,
         `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Activity</td><td style="padding:6px 12px">${booking.activity?.name ?? body.activityId}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Date</td><td style="padding:6px 12px">${body.activityDate}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Time</td><td style="padding:6px 12px">${body.selectedTime ?? '—'}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Type</td><td style="padding:6px 12px">${groupType.labelEn}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Client</td><td style="padding:6px 12px">${body.clientName ?? '—'}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Phone</td><td style="padding:6px 12px">${body.clientPhone ?? '—'}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Hotel</td><td style="padding:6px 12px">${body.hotelName ?? '—'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Activity</td><td style="padding:6px 12px">${escapeHtml(booking.activity?.name ?? body.activityId)}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Date</td><td style="padding:6px 12px">${escapeHtml(body.activityDate)}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Time</td><td style="padding:6px 12px">${escapeHtml(body.selectedTime ?? '—')}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Type</td><td style="padding:6px 12px">${escapeHtml(groupType.labelEn)}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Client</td><td style="padding:6px 12px">${escapeHtml(body.clientName ?? '—')}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Phone</td><td style="padding:6px 12px">${escapeHtml(body.clientPhone ?? '—')}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Hotel</td><td style="padding:6px 12px">${escapeHtml(body.hotelName ?? '—')}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Adults</td><td style="padding:6px 12px">${adultsCount}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Children</td><td style="padding:6px 12px">${childrenCount}${body.childAges?.length ? ' (ages: ' + body.childAges.join(', ') + ')' : ''}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${totalAmount} ${currency}</td></tr>
-          ${body.notes ? `<tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Notes</td><td style="padding:6px 12px">${body.notes}</td></tr>` : ''}
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Children</td><td style="padding:6px 12px">${childrenCount}${body.childAges?.length ? ' (ages: ' + escapeHtml(body.childAges.join(', ')) + ')' : ''}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${totalAmount} ${escapeHtml(currency)}</td></tr>
+          ${body.notes ? `<tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Notes</td><td style="padding:6px 12px">${escapeHtml(body.notes)}</td></tr>` : ''}
         </table>`,
       ).catch(console.error);
     }

@@ -9,6 +9,7 @@ import {
   paginate,
   paginateMeta,
   sanitizeCustomFields,
+  escapeHtml,
 } from '../../shared/helpers';
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
@@ -243,7 +244,7 @@ export async function createVisaApplication(req: Request, res: Response): Promis
       sendEmail(
         recipients,
         `Security Approval - ${application.refNumber}`,
-        `<p>Security approval <strong>${application.refNumber}</strong> was submitted for ${body.applicantName}.</p>`,
+        `<p>Security approval <strong>${escapeHtml(application.refNumber)}</strong> was submitted for ${escapeHtml(body.applicantName)}.</p>`,
       ).catch(console.error);
     }
     res.status(201).json({ success: true, data: responseApplication ?? application });

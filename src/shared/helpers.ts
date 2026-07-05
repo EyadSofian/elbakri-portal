@@ -37,6 +37,18 @@ export function generatePassword(length = 12): string {
   return password;
 }
 
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+};
+
+/**
+ * Escape user-controlled text before interpolating it into an HTML string
+ * (notification emails). Prevents HTML/markup injection into the message body.
+ */
+export function escapeHtml(value: unknown): string {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
 export function paginate(page: number, limit: number) {
   const p = Math.max(1, page);
   const l = Math.min(100, Math.max(1, limit));

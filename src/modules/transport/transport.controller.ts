@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { BookingStatus, TransportType } from '@prisma/client';
 import { prisma } from '../../config/db';
-import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
+import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields, escapeHtml } from '../../shared/helpers';
 import { resolvePriceContext, resolveMarketPriceMap, resolveMarketMoney } from '../../shared/pricing';
 import { resolveTransportRate, pickDualPrice, usesDualPricing } from './transport.resolve';
 import { sendEmail } from '../../shared/email.templates';
@@ -522,18 +522,18 @@ export async function createTransportBooking(req: Request, res: Response): Promi
         recipients,
         `🚐 Transport Booking — ${booking.refNumber}`,
         `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Ref</td><td style="padding:6px 12px">${booking.refNumber}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Route</td><td style="padding:6px 12px">${fromLocationStore} → ${toLocationStore}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Vehicle</td><td style="padding:6px 12px">${body.vehicleType ?? 'SEDAN'}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Service Type</td><td style="padding:6px 12px">${groupType?.labelEn ?? '—'}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pickup</td><td style="padding:6px 12px">${body.pickupDateTime}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Ref</td><td style="padding:6px 12px">${escapeHtml(booking.refNumber)}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Route</td><td style="padding:6px 12px">${escapeHtml(fromLocationStore)} → ${escapeHtml(toLocationStore)}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Vehicle</td><td style="padding:6px 12px">${escapeHtml(body.vehicleType ?? 'SEDAN')}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Service Type</td><td style="padding:6px 12px">${escapeHtml(groupType?.labelEn ?? '—')}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pickup</td><td style="padding:6px 12px">${escapeHtml(body.pickupDateTime)}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pax</td><td style="padding:6px 12px">${passengerCount}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Lead Pax</td><td style="padding:6px 12px">${body.passengerName ?? '—'}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Contact</td><td style="padding:6px 12px">${body.contactNumber ?? '—'}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Flight</td><td style="padding:6px 12px">${body.airlineName ?? ''} ${body.flightNumber ?? '—'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Lead Pax</td><td style="padding:6px 12px">${escapeHtml(body.passengerName ?? '—')}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Contact</td><td style="padding:6px 12px">${escapeHtml(body.contactNumber ?? '—')}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Flight</td><td style="padding:6px 12px">${escapeHtml(body.airlineName ?? '')} ${escapeHtml(body.flightNumber ?? '—')}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Round Trip</td><td style="padding:6px 12px">${body.isRoundTrip ? 'Yes' : 'No'}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${totalAmount} ${currency}</td></tr>
-          ${body.notes ? `<tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Notes</td><td style="padding:6px 12px">${body.notes}</td></tr>` : ''}
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${totalAmount} ${escapeHtml(currency)}</td></tr>
+          ${body.notes ? `<tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Notes</td><td style="padding:6px 12px">${escapeHtml(body.notes)}</td></tr>` : ''}
         </table>`,
       ).catch(console.error);
     }
