@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { BookingStatus, ReceptionType, EgyptAirport } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields, escapeHtml } from '../../shared/helpers';
+import { setJsonStringArray } from '../../shared/json-array';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
@@ -142,7 +143,7 @@ export async function createReception(req: Request, res: Response): Promise<void
           flightDateTime: new Date(body.flightDateTime),
           guestName: body.guestName,
           guestCount,
-          passengerNames: body.passengerNames ?? [],
+          passengerNames: setJsonStringArray(body.passengerNames),
           signboardName: body.signboardName,
           hotelName: body.hotelName,
           specialRequests: body.specialRequests,

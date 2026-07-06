@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { DestinationType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
+import { setJsonStringArray } from '../../shared/json-array';
 
 export async function listDestinations(req: Request, res: Response): Promise<void> {
   const page = parseInt(String(req.query.page ?? '1'));
@@ -14,9 +15,9 @@ export async function listDestinations(req: Request, res: Response): Promise<voi
     ...(req.query.type && { type: req.query.type as DestinationType }),
     ...(req.query.q && {
       OR: [
-        { name: { contains: String(req.query.q), mode: 'insensitive' as const } },
-        { nameAr: { contains: String(req.query.q), mode: 'insensitive' as const } },
-        { slug: { contains: String(req.query.q), mode: 'insensitive' as const } },
+        { name: { contains: String(req.query.q) } },
+        { nameAr: { contains: String(req.query.q) } },
+        { slug: { contains: String(req.query.q) } },
       ],
     }),
   };
@@ -81,7 +82,7 @@ export async function createDestination(req: Request, res: Response): Promise<vo
       imageUrl: body.imageUrl ?? null,
       imageAltEn: body.imageAltEn ?? null,
       imageAltAr: body.imageAltAr ?? null,
-      galleryUrls: Array.isArray(body.galleryUrls) ? body.galleryUrls.filter((u) => typeof u === 'string') : [],
+      galleryUrls: setJsonStringArray(body.galleryUrls),
     },
   });
 
@@ -102,11 +103,7 @@ export async function updateDestination(req: Request, res: Response): Promise<vo
   if (body.imageUrl !== undefined) data.imageUrl = body.imageUrl ? String(body.imageUrl) : null;
   if (body.imageAltEn !== undefined) data.imageAltEn = body.imageAltEn ? String(body.imageAltEn) : null;
   if (body.imageAltAr !== undefined) data.imageAltAr = body.imageAltAr ? String(body.imageAltAr) : null;
-  if (body.galleryUrls !== undefined) {
-    data.galleryUrls = Array.isArray(body.galleryUrls)
-      ? (body.galleryUrls as unknown[]).filter((u): u is string => typeof u === 'string')
-      : [];
-  }
+  if (body.galleryUrls !== undefined) data.galleryUrls = setJsonStringArray(body.galleryUrls);
 
   const dest = await prisma.destination.update({
     where: { id: req.params.id },

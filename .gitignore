@@ -9,3 +9,12 @@ uploads-private/
 *.js.map
 *.log
 outputs/
+
+# Local audit/QA artifacts (throwaway — Playwright screenshots & scratch scripts)
+scripts/*.png
+scripts/audit.js
+scripts/datacheck.js
+
+# PostgreSQL schema backup (superseded by MySQL; retained locally only —
+# old Postgres migrations are preserved under prisma/migrations_postgres_backup/)
+prisma/schema.prisma.postgres.bak

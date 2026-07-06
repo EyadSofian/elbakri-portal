@@ -1,28 +1,29 @@
-# Deploying Elbakri Portal on GoDaddy (cPanel Node.js App)
+# Deploying Elbakri Portal on GoDaddy (cPanel Node.js App + MySQL/MariaDB)
 
-This guide covers deploying the Node/Express/Prisma backend + static portal to
-GoDaddy shared/business hosting using the **Setup Node.js App** tool in cPanel
-(Phusion Passenger). VPS notes are at the end.
+This guide deploys the Node/Express/Prisma backend + static portal to GoDaddy
+shared/business hosting using **Setup Node.js App** (Phusion Passenger) with a
+**cPanel MySQL/MariaDB** database. The schema is imported once through
+**phpMyAdmin** (GoDaddy shared hosting has no reliable SSH/terminal), and code is
+shipped by **GitHub Actions over FTP**. VPS notes are at the end.
 
-> The app also still runs on Railway unchanged — nothing here breaks that.
+> The database is now **MySQL/MariaDB** (previously PostgreSQL). There is no data
+> to migrate — the old DB is retired and master data is re-imported from Excel/Sheets.
 
 ---
 
 ## 0. Can this plan run Node?
 
 GoDaddy can run this app **only** if cPanel shows **"Setup Node.js App"** (a.k.a.
-*Application Manager*) under the **Software** section. This is available on most
-**Business / Deluxe / Ultimate Linux cPanel** plans, **not** on the cheapest
-"Web Hosting Starter" or on Managed WordPress.
+*Application Manager*) under **Software**. This is on most **Business / Deluxe /
+Ultimate Linux cPanel** plans — **not** the cheapest "Web Hosting Starter" or
+Managed WordPress.
 
-- ✅ If you see **Setup Node.js App** → follow this guide.
-- ❌ If you do **not** see it → this Express backend cannot run on that plan.
-  Use a **GoDaddy VPS** (see the end) or keep the backend on Railway/a VPS and
-  point your GoDaddy domain's DNS at it.
+- ✅ See **Setup Node.js App** → follow this guide.
+- ❌ Not there → the Express backend can't run on that plan. Use a **GoDaddy VPS**
+  (see the end) or host the backend elsewhere and point DNS at it.
 
-You also need outbound access from the host to:
-- your **PostgreSQL** database (port 5432), and
-- your **SMTP** server (port 587) for emails.
+The host also needs local access to **MySQL/MariaDB** (port **3306**, usually
+`localhost`) and outbound **SMTP** (port 587) for email.
 
 ---
 
@@ -34,25 +35,71 @@ You also need outbound access from the host to:
 | Startup file | `dist/app.js` |
 | Application root | the folder you upload the project into, e.g. `elbakri-portal` |
 | Application URL | your domain or subdomain, e.g. `portal.yourdomain.com` |
-| Database | PostgreSQL reachable from GoDaddy (Neon/Railway public URL, or a DB you host) |
+| Database | **MySQL 5.7+ / MariaDB 10.2+** created in cPanel (utf8mb4, JSON support) |
 
 ---
 
-## 2. Required environment variables
+## 2. Create the MySQL database (cPanel → MySQL® Databases)
 
-Set these in the Node.js App screen ("Environment variables"). **Never commit real values.**
+1. cPanel → **MySQL® Databases**.
+2. **Create New Database** — e.g. `elbakri_b2b`. cPanel prefixes it with your
+   account id, so the real name becomes e.g. `iqdo9r8tk5qu_elbakri_b2b`.
+3. **Add New User** — e.g. `elbakri_user` → real name `iqdo9r8tk5qu_elbakri_user`.
+   Use a strong password.
+4. **Add User To Database** → grant **ALL PRIVILEGES**.
+5. Note the final `DB_NAME`, `DB_USER`, `DB_PASSWORD`, host (usually `localhost`).
+
+---
+
+## 3. Import the schema via phpMyAdmin (once)
+
+The full schema ships as [`database/mysql/init.sql`](database/mysql/init.sql)
+(generated from `prisma/schema.prisma`).
+
+1. cPanel → **phpMyAdmin**.
+2. Select your new database in the left sidebar (must be **empty**).
+3. Open the **Import** tab → **Choose File** → `database/mysql/init.sql` → **Go**.
+4. You should see ~48 tables created with no errors.
+
+> Requires MySQL **5.7+** or MariaDB **10.2+** (utf8mb4, `JSON` columns, large
+> index prefix). Every modern GoDaddy cPanel plan meets this. Do **not** import
+> into a database that already has data.
+
+**Later schema changes** (no terminal on cPanel): update `prisma/schema.prisma`
+locally, regenerate the SQL, and import the change through phpMyAdmin:
+
+```bash
+# locally — generate SQL for the delta between the live DB and the new schema
+npx prisma migrate diff \
+  --from-url "mysql://USER:PASS@HOST:3306/DBNAME" \
+  --to-schema-datamodel prisma/schema.prisma \
+  --script > database/mysql/change.sql
+# review change.sql, then import it via phpMyAdmin → Import
+```
+
+Never run `prisma migrate reset`/`deploy` against the production DB from CI unless
+**Remote MySQL** is deliberately configured — prefer reviewed SQL through phpMyAdmin.
+
+---
+
+## 4. Environment variables (Node.js App screen → Environment variables)
+
+**Never commit real values.**
 
 **Required (the app refuses to boot in production without them):**
 
 | Variable | Example / Notes |
 |---|---|
 | `NODE_ENV` | `production` |
-| `DATABASE_URL` | `postgresql://user:pass@host:5432/db?sslmode=require` (must be reachable from GoDaddy) |
+| `DATABASE_URL` | `mysql://iqdo9r8tk5qu_elbakri_user:PASSWORD@localhost:3306/iqdo9r8tk5qu_elbakri_b2b` |
 | `JWT_SECRET` | long random string (≥32 chars) — **not** the `.env.example` placeholder |
 | `REFRESH_TOKEN_SECRET` | a *different* long random string |
 | `BASE_URL` | `https://portal.yourdomain.com` (final domain, https, **not** localhost) |
 
 Generate secrets with: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
+
+> If the DB password contains URL-special characters (`@ : / ? # %`), URL-encode
+> them in `DATABASE_URL` (e.g. `@` → `%40`).
 
 **Email (recommended — notifications are skipped/fail without them):**
 
@@ -84,103 +131,100 @@ Generate secrets with: `node -e "console.log(require('crypto').randomBytes(48).t
 
 ---
 
-## 3. Build & migrate commands
+## 5. Ship the code
 
-Run these from the app's **Terminal** (cPanel → Terminal, or the "Run NPM install" /
-"Run JS script" buttons in the Node app screen), from the application root:
+The build (`npm run build`) runs `prisma generate` **then** `tsc`, so a clean
+`npm ci && npm run build` produces `dist/` with a MySQL Prisma client.
 
-```bash
-npm ci
-npm run build            # runs `prisma generate` THEN `tsc` — one step is enough
-npx prisma migrate deploy   # applies pending migrations ONCE (safe, additive)
-```
+### Option A — GitHub Actions over FTP (recommended, no terminal needed)
 
-- `npm run build` already generates the Prisma client before compiling — you do
-  **not** need to run `prisma generate` separately.
-- `prisma migrate deploy` only applies committed migrations. **Never** run
-  `prisma migrate reset` or a seed script against production data.
+The repo ships [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). It
+builds on Node 20, prunes dev dependencies, and FTP-uploads `dist/`, `public/`,
+`prisma/`, `package.json`, `package-lock.json`, and `node_modules/` to the app
+root, then touches `tmp/restart.txt` to restart Passenger.
 
----
+Add these **GitHub repo secrets** (Settings → Secrets and variables → Actions):
 
-## 4. Step-by-step in cPanel
+| Secret | Value |
+|---|---|
+| `FTP_SERVER` | your FTP host, e.g. `ftp.yourdomain.com` |
+| `FTP_USERNAME` | cPanel/FTP user |
+| `FTP_PASSWORD` | FTP password |
+| `FTP_REMOTE_DIR` | app root path, e.g. `/home/USER/elbakri-portal/` |
 
-1. Log in to **GoDaddy** → your hosting → **cPanel Admin**.
-2. Under **Software**, open **Setup Node.js App** (Application Manager).
-3. Click **Create Application**.
-4. **Node.js version:** `20`.
-5. **Application mode:** `Production`.
-6. **Application root:** e.g. `elbakri-portal` (a folder under your home dir).
-7. **Application URL:** your domain/subdomain.
-8. **Application startup file:** `dist/app.js`.
-9. Add all **Environment variables** from section 2.
-10. Upload the project into the application root — either:
-    - **Git:** if the plan has Git Version Control, clone the repo; or
-    - **ZIP:** zip the project **without** `node_modules/`, `dist/`, `.env`,
-      `uploads/`, `uploads-private/`, `generated/`; upload via File Manager and extract.
-11. Open **Terminal** (or the app's NPM button) and run the commands in section 3
-    (`npm ci` → `npm run build` → `npx prisma migrate deploy`).
-12. Back in the Node app screen, click **Restart**.
-13. Visit `https://portal.yourdomain.com` — the login page should load.
-14. Log in as super admin, then as a company user.
-15. Smoke-test: create a booking, download an invoice PDF and a voucher, upload a
-    hotel image (should display), upload a passport on a Security Approval and
-    confirm the admin can open it via the **Passport** button (private download).
+Push to `main` (or run the workflow manually) → it deploys. The database is
+managed separately via phpMyAdmin (section 3) — CI never touches it.
+
+### Option B — Manual ZIP upload
+
+1. Locally: `npm ci && npm run build && npm prune --omit=dev`.
+2. Zip `dist/`, `public/`, `prisma/`, `package.json`, `package-lock.json`,
+   `node_modules/`. Exclude `.env`, `uploads/`, `uploads-private/`, `generated/`.
+3. cPanel File Manager → upload into the app root → extract.
+4. Node.js App screen → **Restart**.
 
 ---
 
-## 5. Database
+## 6. Bring it up
 
-- **Keep Neon/Railway Postgres:** use the **public/pooled** connection string with
-  `?sslmode=require`, and confirm the host allows connections from GoDaddy's IPs.
-- **Move the DB (e.g. to a GoDaddy VPS Postgres):**
-  1. Back up: `pg_dump "<OLD_DATABASE_URL>" -Fc -f elbakri.dump`
-  2. Restore: `pg_restore --clean --if-exists -d "<NEW_DATABASE_URL>" elbakri.dump`
-  3. Point `DATABASE_URL` at the new DB and run `npx prisma migrate deploy`.
-- Run migrations **once** per release, before/at first start. Migrations here are
-  **additive**. **Never** `prisma migrate reset` in production.
-
----
-
-## 6. File persistence
-
-- `uploads/` (public images), `uploads-private/` (passports/tickets) and
-  `generated/` (PDFs) are written at runtime and are **not** in Git.
-- On cPanel the home directory disk **is persistent** across restarts, so these
-  survive — but they are **not** in your DB backup. Include them in periodic
-  backups (cPanel Backup, or `tar czf uploads-backup.tgz uploads uploads-private generated`).
-- Do not rely on ephemeral/tmp storage for these folders.
+1. Node.js App: Node 20, mode **Production**, app root set, startup `dist/app.js`,
+   env vars from section 4 → **Create / Restart**.
+2. Visit `https://portal.yourdomain.com` — the login page should load.
+3. Seed the first super admin + master data (one of):
+   - Locally point `DATABASE_URL` at the cPanel DB (if **Remote MySQL** whitelists
+     your IP) and run `npm run db:seed` then the Excel/Sheets import; **or**
+   - Export a seeded DB locally with `mysqldump` and import the data via phpMyAdmin.
+4. Smoke-test: super-admin login, company login, create hotel/transport/activity,
+   confirm the company user sees them, download an invoice PDF + voucher, upload a
+   hotel image (displays) and a passport (admin opens it via the Passport button).
 
 ---
 
-## 7. Rollback
+## 7. Backups & persistence
 
-- Keep the **previous working ZIP/build** (or the last-good Git commit SHA).
-- **Before** running `prisma migrate deploy`, take a `pg_dump` backup.
-- To roll back code: redeploy the previous ZIP/commit and **Restart** the app.
-- Only if a migration must be undone: restore the pre-deploy `pg_dump`.
-
----
-
-## 8. GoDaddy VPS (alternative, if "Setup Node.js App" is unavailable)
-
-1. Install Node 20 (`nvm install 20`) and PostgreSQL (or use an external DB).
-2. Clone the repo; create `.env` with the section-2 variables (`NODE_ENV=production`).
-3. `npm ci && npm run build && npx prisma migrate deploy`
-4. Run under **PM2**: `pm2 start dist/app.js --name elbakri-portal && pm2 save && pm2 startup`
-5. Put **Nginx** in front as a reverse proxy to `http://127.0.0.1:$PORT`, add
-   **Let's Encrypt** SSL, and open only 80/443 in the firewall.
-6. Persist `uploads/`, `uploads-private/`, `generated/`; schedule nightly `pg_dump`.
+- **Database:** cPanel → phpMyAdmin → **Export** (or `mysqldump`) on a schedule.
+  Take an export **before** importing any schema change.
+- **Files:** `uploads/` (public images), `uploads-private/` (passports/tickets),
+  `generated/` (PDFs) are written at runtime and are **not** in Git. The cPanel
+  home disk is persistent, but include these in periodic backups
+  (`tar czf files-backup.tgz uploads uploads-private generated`).
 
 ---
 
-## 9. Post-deploy security checklist
+## 8. Rollback
 
+- Keep the **previous working build** (GitHub Actions keeps history; or a ZIP).
+- **Before** importing a schema change, export the DB (phpMyAdmin/`mysqldump`).
+- Roll back code: re-run the previous successful Actions run (or re-upload the old
+  ZIP) and **Restart** the app.
+- Roll back schema only if required: import the pre-change SQL export.
+
+---
+
+## 9. GoDaddy VPS (alternative, if "Setup Node.js App" is unavailable)
+
+1. Install Node 20 (`nvm install 20`) and **MariaDB** (`apt install mariadb-server`).
+2. `mysql -u root -p` → `CREATE DATABASE elbakri_b2b; CREATE USER ...; GRANT ALL ...;`
+   then import: `mysql elbakri_b2b < database/mysql/init.sql`.
+3. Clone the repo; create `.env` (section 4, `NODE_ENV=production`, `mysql://` URL).
+4. `npm ci && npm run build`
+5. Run under **PM2**: `pm2 start dist/app.js --name elbakri-portal && pm2 save && pm2 startup`
+6. **Nginx** reverse proxy → `http://127.0.0.1:$PORT`, **Let's Encrypt** SSL,
+   firewall 80/443 only. Persist `uploads/`, `uploads-private/`, `generated/`;
+   schedule nightly `mysqldump`.
+
+---
+
+## 10. Post-deploy checklist
+
+- [ ] `init.sql` imported in phpMyAdmin with no errors (~48 tables).
 - [ ] `NODE_ENV=production` and the app booted (env validation passed).
-- [ ] `BASE_URL` is the real `https://` domain; `JWT_SECRET` ≠ `REFRESH_TOKEN_SECRET`, neither is a placeholder.
+- [ ] `DATABASE_URL` uses the cPanel-prefixed DB/user; `JWT_SECRET` ≠ `REFRESH_TOKEN_SECRET`, neither a placeholder; `BASE_URL` is the real `https://` domain.
 - [ ] Login works; wrong-password 10× returns HTTP 429 (rate limit).
 - [ ] Response headers include `X-Content-Type-Options`, `X-Frame-Options`; **no** `X-Powered-By`.
-- [ ] A hotel image uploads and displays (public).
-- [ ] A passport uploaded on a Security Approval is **not** reachable at a public
-      `/uploads/...` URL, but the admin can open it via the Passport button.
+- [ ] Admin creates hotel/transport/activity; company user sees them (amenities & galleries render).
+- [ ] A passport uploaded on a Security Approval is **not** at a public `/uploads/...` URL, but the admin opens it via the Passport button.
 - [ ] Invoice + voucher PDFs download.
+- [ ] Excel/Sheets master-data import populates hotels/activities/transport.
+- [ ] Mobile + Arabic/RTL render correctly.
 - [ ] Set the invoice bank/contact env vars so PDFs show real details.

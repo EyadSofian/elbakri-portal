@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { CompanyTier, Prisma } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
+import { setJsonStringArray } from '../../shared/json-array';
 import { resolveMarketPriceMap } from '../../shared/pricing';
 import { resolveHotelRateMap } from './rates.controller';
 import { syncEntityFromSheets } from '../sheets-sync/sheets-sync.service';
@@ -55,8 +56,8 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
 
   const where: Prisma.HotelWhereInput = {
     ...(caller.role !== 'SUPERADMIN' && { isActive: true }),
-    ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' } }),
-    ...(req.query.area && { area: { contains: String(req.query.area), mode: 'insensitive' } }),
+    ...(req.query.city && { city: { contains: String(req.query.city) } }),
+    ...(req.query.area && { area: { contains: String(req.query.area) } }),
     ...(req.query.stars && { stars: parseInt(String(req.query.stars)) }),
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
     ...(priceFilter && { pricePerNight: priceFilter }),
@@ -74,21 +75,21 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
     ...boolFilter('allInclusive'),
     ...(search && {
       OR: [
-        { name: { contains: search, mode: 'insensitive' } },
-        { nameAr: { contains: search, mode: 'insensitive' } },
-        { city: { contains: search, mode: 'insensitive' } },
-        { cityAr: { contains: search, mode: 'insensitive' } },
-        { country: { contains: search, mode: 'insensitive' } },
-        { address: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { descriptionAr: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search } },
+        { nameAr: { contains: search } },
+        { city: { contains: search } },
+        { cityAr: { contains: search } },
+        { country: { contains: search } },
+        { address: { contains: search } },
+        { description: { contains: search } },
+        { descriptionAr: { contains: search } },
         {
           destination: {
             is: {
               OR: [
-                { name: { contains: search, mode: 'insensitive' } },
-                { nameAr: { contains: search, mode: 'insensitive' } },
-                { slug: { contains: search, mode: 'insensitive' } },
+                { name: { contains: search } },
+                { nameAr: { contains: search } },
+                { slug: { contains: search } },
               ],
             },
           },
@@ -170,7 +171,7 @@ export async function listHotelAreas(req: Request, res: Response): Promise<void>
     ...(caller.role !== 'SUPERADMIN' && { isActive: true }),
     area: { not: null },
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
-    ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' } }),
+    ...(req.query.city && { city: { contains: String(req.query.city) } }),
   };
   const rows = await prisma.hotel.findMany({
     where,
@@ -277,9 +278,9 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
       address: body.address,
       description: body.description,
       descriptionAr: body.descriptionAr,
-      amenities: body.amenities ?? [],
+      amenities: setJsonStringArray(body.amenities),
       imageUrl,
-      galleryUrls: body.galleryUrls ?? [],
+      galleryUrls: setJsonStringArray(body.galleryUrls),
       pricePerNight: new Decimal(body.pricePerNight),
       currency: body.currency ?? 'USD',
       commissionPercent: new Decimal(body.commissionPercent ?? 0),
@@ -310,8 +311,8 @@ export async function updateHotel(req: Request, res: Response): Promise<void> {
   if (body.address) data.address = String(body.address);
   if (body.description !== undefined) data.description = body.description ? String(body.description) : null;
   if (body.descriptionAr !== undefined) data.descriptionAr = body.descriptionAr ? String(body.descriptionAr) : null;
-  if (body.amenities) data.amenities = body.amenities as string[];
-  if (body.galleryUrls !== undefined) data.galleryUrls = Array.isArray(body.galleryUrls) ? (body.galleryUrls as string[]) : [];
+  if (body.amenities !== undefined) data.amenities = setJsonStringArray(body.amenities);
+  if (body.galleryUrls !== undefined) data.galleryUrls = setJsonStringArray(body.galleryUrls);
   if (body.imageUrl !== undefined) data.imageUrl = body.imageUrl ? String(body.imageUrl) : null;
   if (body.pricePerNight !== undefined) data.pricePerNight = new Decimal(Number(body.pricePerNight));
   if (body.currency) data.currency = String(body.currency);

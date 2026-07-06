@@ -4,6 +4,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoiceNumber, generateRef, paginate, paginateMeta } from '../../shared/helpers';
+import { setJsonStringArray } from '../../shared/json-array';
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { resolvePriceContext, resolveMarketPriceMap } from '../../shared/pricing';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
@@ -162,7 +163,7 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
           checkIn: new Date(body.checkIn),
           checkOut: new Date(body.checkOut),
           cabinType: (body.cabinType as 'STANDARD' | 'DELUXE' | 'SUITE' | 'PRESIDENTIAL') ?? 'STANDARD',
-          passengerNames: body.passengerNames ?? [],
+          passengerNames: setJsonStringArray(body.passengerNames),
           adultsCount: Math.max(1, body.adultsCount ?? 1),
           childrenCount: Math.max(0, body.childrenCount ?? 0),
           totalAmount: charge.totalAmount,

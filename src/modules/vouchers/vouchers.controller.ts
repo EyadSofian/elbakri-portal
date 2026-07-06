@@ -3,6 +3,7 @@ import fs from 'fs';
 import { prisma } from '../../config/db';
 import { generateVoucherPdf } from './voucher.generator';
 import type { VoucherData } from './voucher.generator';
+import { jsonStringArray } from '../../shared/json-array';
 
 // ── Number generator ──────────────────────────────────────────────────────────
 export async function generateVoucherNumber(): Promise<string> {
@@ -31,7 +32,7 @@ async function buildTransportVoucherData(bookingId: string): Promise<VoucherData
     serviceType: 'TRANSPORT',
     voucherNumber: '',
     company: b.company,
-    clientName: b.passengerName ?? b.passengerNames[0] ?? 'Guest',
+    clientName: b.passengerName ?? jsonStringArray(b.passengerNames)[0] ?? 'Guest',
     isRoundTrip: b.isRoundTrip,
     date: b.pickupDateTime,
     time: t(b.pickupDateTime),
@@ -113,7 +114,7 @@ async function buildActivityVoucherData(bookingId: string): Promise<VoucherData 
     serviceType: 'ACTIVITY',
     voucherNumber: '',
     company: b.company,
-    clientName: b.clientName ?? b.passengerNames[0] ?? 'Guest',
+    clientName: b.clientName ?? jsonStringArray(b.passengerNames)[0] ?? 'Guest',
     clientPhone: b.clientPhone,
     hotelName: b.hotelName,
     date: b.activityDate,

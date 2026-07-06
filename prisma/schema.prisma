@@ -1,9 +1,13 @@
 generator client {
   provider = "prisma-client-js"
+  // Ship engines for both the CI build host (Debian/Ubuntu) and typical GoDaddy
+  // cPanel hosts (CloudLinux/CentOS = rhel). `node_modules` is built in CI and
+  // FTP-uploaded, so the runtime engine must match the *server* OS, not the CI OS.
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -305,7 +309,7 @@ model User {
 
 model RefreshToken {
   id        String   @id @default(cuid())
-  token     String   @unique
+  token     String   @unique @db.VarChar(500)
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
@@ -326,8 +330,8 @@ model Company {
   email                String                      @unique
   contactEmail         String? // Separate contact email from admin user login email
   phone                String
-  address              String?
-  billingAddress       String?
+  address              String?                     @db.Text
+  billingAddress       String?                     @db.Text
   country              String                      @default("EG")
   taxId                String?
   website              String?
@@ -337,7 +341,7 @@ model Company {
   // Client market — picks the explicit per-market price tier (see MarketPrice)
   market               Market                      @default(INTERNATIONAL)
   tier                 CompanyTier                 @default(STANDARD)
-  logoUrl              String?
+  logoUrl              String?                     @db.Text
   themeColor           String?
   isActive             Boolean                     @default(true)
   lastActivityAt       DateTime?
@@ -376,10 +380,10 @@ model Destination {
   country           String             @default("EG")
   region            String?
   type              DestinationType    @default(CITY)
-  imageUrl          String?
+  imageUrl          String?            @db.Text
   imageAltEn        String?
   imageAltAr        String?
-  galleryUrls       String[]           @default([])
+  galleryUrls       Json?
   isActive          Boolean            @default(true)
   hotels            Hotel[]
   activities        Activity[]
@@ -406,10 +410,10 @@ model Hotel {
   cityAr                 String?
   country                String
   stars                  Int                      @default(3)
-  address                String
-  description            String?
-  descriptionAr          String?
-  amenities              String[]                 @default([])
+  address                String                   @db.Text
+  description            String?                  @db.Text
+  descriptionAr          String?                  @db.Text
+  amenities              Json?
   // Sub-area within the city (e.g. Naama Bay, Nabq, Sahl Hasheesh)
   area                   String?
   // Structured attributes (synced from Verified_Hotels sheet) — drive agent filters
@@ -425,11 +429,11 @@ model Hotel {
   allInclusive           Boolean                  @default(false)
   totalPools             Int?
   googleRating           Decimal?                 @db.Decimal(3, 2)
-  imageUrl               String?
-  galleryUrls            String[]                 @default([])
+  imageUrl               String?                  @db.Text
+  galleryUrls            Json?
   // Booking.com media enrichment (Apify) — see HotelMediaSyncLog
   bookingHotelId         String?
-  bookingUrl             String?
+  bookingUrl             String?                  @db.Text
   bookingMatchedName     String?
   bookingMatchScore      Decimal?                 @db.Decimal(4, 3)
   mediaNeedsManualReview Boolean                  @default(false)
@@ -446,16 +450,16 @@ model Hotel {
   // Structured hotel policies (shown in the company hotel detail modal)
   checkInTime            String?
   checkOutTime           String?
-  cancellationPolicy     String?
-  cancellationPolicyAr   String?
-  childrenPolicy         String?
-  childrenPolicyAr       String?
-  extraBedPolicy         String?
-  extraBedPolicyAr       String?
-  mealPolicy             String?
-  mealPolicyAr           String?
-  importantNotes         String?
-  importantNotesAr       String?
+  cancellationPolicy     String?                  @db.Text
+  cancellationPolicyAr   String?                  @db.Text
+  childrenPolicy         String?                  @db.Text
+  childrenPolicyAr       String?                  @db.Text
+  extraBedPolicy         String?                  @db.Text
+  extraBedPolicyAr       String?                  @db.Text
+  mealPolicy             String?                  @db.Text
+  mealPolicyAr           String?                  @db.Text
+  importantNotes         String?                  @db.Text
+  importantNotesAr       String?                  @db.Text
   source                 HotelSource              @default(MANUAL)
   sheetsRowId            String?
   isActive               Boolean                  @default(true)
@@ -532,7 +536,7 @@ model HotelRate {
   validFrom    DateTime?
   validTo      DateTime?
   isActive     Boolean               @default(true)
-  notes        String?
+  notes        String?               @db.Text
   displayOrder Int                   @default(0)
   supplements  HotelRateSupplement[]
   createdAt    DateTime              @default(now())
@@ -550,7 +554,7 @@ model HotelRateSupplement {
   type         HotelSupplementType @default(TEXT_ONLY)
   amount       Decimal?            @db.Decimal(10, 2)
   currency     String?
-  notes        String?
+  notes        String?             @db.Text
   displayOrder Int                 @default(0)
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
@@ -566,7 +570,7 @@ model HotelCompanyVisibility {
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   canViewPrice    Boolean  @default(true)
   canRequestQuote Boolean?
-  note            String?
+  note            String?  @db.Text
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -602,7 +606,7 @@ model Booking {
   airline            String?
   flightNumber       String?
   cabinClass         CabinClass?
-  passengerNames     String[]      @default([])
+  passengerNames     Json?
   adultsCount        Int           @default(1)
   childrenCount      Int           @default(0)
   infantsCount       Int           @default(0)
@@ -617,15 +621,15 @@ model Booking {
   sourceCurrency     String?
   exchangeRate       Decimal?      @db.Decimal(18, 8)
   exchangeRateAt     DateTime?
-  notes              String?
-  internalNotes      String?
+  notes              String?       @db.Text
+  internalNotes      String?       @db.Text
   invoice            Invoice?
   requestedAt        DateTime      @default(now())
   confirmedAt        DateTime?
   confirmedById      String?
   confirmedBy        User?         @relation("BookingConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
   cancelledAt        DateTime?
-  cancellationReason String?
+  cancellationReason String?       @db.Text
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
@@ -678,8 +682,8 @@ model QuoteRequest {
   budget            Decimal?           @db.Decimal(12, 2)
   quotedAmount      Decimal?           @db.Decimal(12, 2)
   currency          String             @default("USD")
-  customerNotes     String?
-  internalNotes     String?
+  customerNotes     String?            @db.Text
+  internalNotes     String?            @db.Text
   contactPreference String?
   customFields      Json? // dynamic fields captured by the Request Form Builder template
   assignedToId      String?
@@ -743,10 +747,10 @@ model Invoice {
   exchangeRate       Decimal?                 @db.Decimal(18, 8)
   exchangeRateAt     DateTime?
   status             InvoiceStatus            @default(UNPAID)
-  pdfPath            String?
+  pdfPath            String?                  @db.Text
   dueDate            DateTime
   paidAt             DateTime?
-  notes              String?
+  notes              String?                  @db.Text
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
   consolidatedLine   ConsolidatedInvoiceLine?
@@ -768,8 +772,8 @@ model ConsolidatedInvoice {
   total           Decimal                   @db.Decimal(12, 2)
   currency        String
   status          InvoiceStatus             @default(UNPAID)
-  pdfPath         String?
-  notes           String?
+  pdfPath         String?                   @db.Text
+  notes           String?                   @db.Text
   lines           ConsolidatedInvoiceLine[]
   createdAt       DateTime                  @default(now())
   updatedAt       DateTime                  @updatedAt
@@ -815,7 +819,7 @@ model WalletTransaction {
   balanceBefore Decimal         @db.Decimal(12, 2)
   balanceAfter  Decimal         @db.Decimal(12, 2)
   reference     String?
-  description   String
+  description   String          @db.Text
   createdById   String
   createdBy     User            @relation("TransactionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   createdAt     DateTime        @default(now())
@@ -839,7 +843,7 @@ model PlatformWalletTransaction {
   balanceAfter  Decimal         @db.Decimal(12, 2)
   currency      String          @default("USD")
   reference     String?
-  description   String
+  description   String          @db.Text
   companyId     String?
   company       Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
   createdById   String?
@@ -864,11 +868,11 @@ model NileCruise {
   operator          String?
   cabins            Int             @default(0)
   route             CruiseRoute     @default(LUXOR_ASWAN)
-  departureDays     String[]        @default([])
+  departureDays     Json?
   duration          Int             @default(4)
-  description       String?
-  descriptionAr     String?
-  imageUrl          String?
+  description       String?         @db.Text
+  descriptionAr     String?         @db.Text
+  imageUrl          String?         @db.Text
   priceFrom         Decimal         @db.Decimal(10, 2)
   currency          String          @default("USD")
   showPriceToAgents Boolean         @default(false)
@@ -894,7 +898,7 @@ model CruiseBooking {
   checkIn        DateTime
   checkOut       DateTime
   cabinType      CabinType     @default(STANDARD)
-  passengerNames String[]      @default([])
+  passengerNames Json?
   adultsCount    Int           @default(1)
   childrenCount  Int           @default(0)
   totalAmount    Decimal       @db.Decimal(12, 2)
@@ -904,7 +908,7 @@ model CruiseBooking {
   exchangeRate   Decimal?      @db.Decimal(18, 8)
   exchangeRateAt DateTime?
   status         BookingStatus @default(PENDING)
-  notes          String?
+  notes          String?       @db.Text
   invoice        Invoice?
   requestedAt    DateTime      @default(now())
   confirmedAt    DateTime?
@@ -943,11 +947,11 @@ model TransportBooking {
   // Actual outbound journey — captured independently of the rate's display labels.
   pickupType             String? // AIRPORT | HOTEL | ADDRESS | LANDMARK
   pickupLocation         String?
-  pickupAddress          String?
+  pickupAddress          String?               @db.Text
   pickupHotelName        String? // required when pickupType = HOTEL (or hourly/day-use pickup)
   dropoffType            String? // AIRPORT | HOTEL | ADDRESS | LANDMARK
   dropoffLocation        String?
-  dropoffAddress         String?
+  dropoffAddress         String?               @db.Text
   dropoffHotelName       String? // required when dropoffType = HOTEL
   pickupDateTime         DateTime
   returnDateTime         DateTime?
@@ -959,11 +963,11 @@ model TransportBooking {
   returnFromType         String?
   returnToType           String?
   returnPickupHotelName  String?
-  returnPickupAddress    String?
+  returnPickupAddress    String?               @db.Text
   returnDropoffHotelName String?
-  returnDropoffAddress   String?
+  returnDropoffAddress   String?               @db.Text
   passengerCount         Int                   @default(1)
-  passengerNames         String[]              @default([])
+  passengerNames         Json?
   passengerName          String? // lead passenger name
   flightNumber           String?
   airlineName            String?
@@ -980,7 +984,7 @@ model TransportBooking {
   exchangeRate           Decimal?              @db.Decimal(18, 8)
   exchangeRateAt         DateTime?
   status                 BookingStatus         @default(PENDING)
-  notes                  String?
+  notes                  String?               @db.Text
   customFields           Json? // dynamic fields captured by the Request Form Builder template
   invoice                Invoice?
   voucher                Voucher?              @relation("VoucherTransport")
@@ -999,16 +1003,16 @@ model TransportBooking {
 }
 
 model TransportRate {
-  id                String               @id @default(cuid())
+  id                String                 @id @default(cuid())
   sheetsRowId       String?
-  type              TransportType        @default(PRIVATE_TRANSFER)
+  type              TransportType          @default(PRIVATE_TRANSFER)
   // Priced-product descriptor — drives the service-aware UI + backend validation.
-  serviceMode       TransportServiceMode @default(POINT_TO_POINT)
+  serviceMode       TransportServiceMode   @default(POINT_TO_POINT)
   serviceNameEn     String?
   serviceNameAr     String?
   serviceArea       String? // e.g. "Cairo", "Sharm El Sheikh"
   durationHours     Int? // hours the car is at disposal (HOURLY_CHARTER / DAY_USE)
-  vehicleType       VehicleType          @default(SEDAN)
+  vehicleType       VehicleType            @default(SEDAN)
   city              String?
   // Legacy free-text endpoints (kept for back-compat reads).
   fromLocation      String?
@@ -1023,25 +1027,25 @@ model TransportRate {
   toId              String?
   toName            String?
   // If true, this rate also prices the reverse direction (B → A) at the same price.
-  isBidirectional   Boolean              @default(false)
-  rate              Decimal              @db.Decimal(10, 2) // legacy one-way rate (back-compat)
-  roundTripRate     Decimal?             @db.Decimal(10, 2) // legacy round-trip rate
+  isBidirectional   Boolean                @default(false)
+  rate              Decimal                @db.Decimal(10, 2) // legacy one-way rate (back-compat)
+  roundTripRate     Decimal?               @db.Decimal(10, 2) // legacy round-trip rate
   // Explicit dual-currency sale prices (NO FX). Egyptian market → EGP, others → USD.
-  priceEgp          Decimal?             @db.Decimal(10, 2)
-  priceUsd          Decimal?             @db.Decimal(10, 2)
-  roundTripPriceEgp Decimal?             @db.Decimal(10, 2)
-  roundTripPriceUsd Decimal?             @db.Decimal(10, 2)
-  currency          String               @default("USD")
-  minCapacity       Int                  @default(1)
+  priceEgp          Decimal?               @db.Decimal(10, 2)
+  priceUsd          Decimal?               @db.Decimal(10, 2)
+  roundTripPriceEgp Decimal?               @db.Decimal(10, 2)
+  roundTripPriceUsd Decimal?               @db.Decimal(10, 2)
+  currency          String                 @default("USD")
+  minCapacity       Int                    @default(1)
   maxCapacity       Int?
-  notes             String?
-  isActive          Boolean              @default(true)
+  notes             String?                @db.Text
+  isActive          Boolean                @default(true)
   destinationId     String?
-  destination       Destination?         @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  destination       Destination?           @relation(fields: [destinationId], references: [id], onDelete: SetNull)
   serviceGroupTypes ServiceGroupType[]
   bookings          TransportBooking[]
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
 
   @@index([sheetsRowId])
   @@index([type])
@@ -1081,12 +1085,12 @@ model Activity {
   city               String
   category           ActivityCategory      @default(SIGHTSEEING)
   duration           String?
-  timeSlots          String[]              @default([]) // e.g. ["09:00 AM","02:00 PM"]
-  description        String?
-  descriptionAr      String?
-  includes           String[]              @default([])
-  excludes           String[]              @default([])
-  imageUrl           String?
+  timeSlots          Json? // e.g. ["09:00 AM","02:00 PM"]
+  description        String?               @db.Text
+  descriptionAr      String?               @db.Text
+  includes           Json?
+  excludes           Json?
+  imageUrl           String?               @db.Text
   priceAdult         Decimal               @db.Decimal(10, 2)
   priceChild         Decimal               @db.Decimal(10, 2)
   currency           String                @default("USD")
@@ -1126,7 +1130,7 @@ model ActivityPackage {
   adultsCount    Int                   @default(1)
   childrenCount  Int                   @default(0)
   childAges      Json?
-  notes          String? // general package notes
+  notes          String?               @db.Text // general package notes
   totalAmount    Decimal               @db.Decimal(12, 2)
   currency       String                @default("USD")
   sourceAmount   Decimal?              @db.Decimal(12, 2)
@@ -1170,7 +1174,7 @@ model ActivityPackageItem {
   groupTypeId      String?
   groupTypeLabel   String?
   transferIncluded Boolean?
-  notes            String?
+  notes            String?         @db.Text
   lineAmount       Decimal?        @db.Decimal(12, 2) // internal — never shown on voucher
   currency         String          @default("USD")
   displayOrder     Int             @default(0)
@@ -1207,7 +1211,7 @@ model ActivityBooking {
   clientName     String? // lead client name
   clientPhone    String?
   hotelName      String?
-  passengerNames String[]          @default([])
+  passengerNames Json?
   totalAmount    Decimal           @db.Decimal(12, 2)
   currency       String            @default("USD")
   sourceAmount   Decimal?          @db.Decimal(12, 2)
@@ -1215,7 +1219,7 @@ model ActivityBooking {
   exchangeRate   Decimal?          @db.Decimal(18, 8)
   exchangeRateAt DateTime?
   status         BookingStatus     @default(PENDING)
-  notes          String?
+  notes          String?           @db.Text
   invoice        Invoice?
   voucher        Voucher?          @relation("VoucherActivity")
   requestedAt    DateTime          @default(now())
@@ -1237,8 +1241,8 @@ model ServiceGroupType {
   code              String
   labelEn           String
   labelAr           String?
-  descriptionEn     String?
-  descriptionAr     String?
+  descriptionEn     String?               @db.Text
+  descriptionAr     String?               @db.Text
   destinationId     String?
   destination       Destination?          @relation(fields: [destinationId], references: [id], onDelete: Cascade)
   activityId        String?
@@ -1291,21 +1295,21 @@ model VisaApplication {
   sourceCurrency     String?
   exchangeRate       Decimal?       @db.Decimal(18, 8)
   exchangeRateAt     DateTime?
-  notes              String?
+  notes              String?        @db.Text
   phone              String?
   hotelName          String?
   comingFrom         String? // origin country/city — printed on the security voucher
   flightNumber       String? // arrival flight number — printed on the security voucher
   arrivalTime        DateTime? // arrival date/time — printed on the security voucher
   paxCount           Int            @default(1)
-  passportUrl        String?
-  flightTicketUrl    String?
+  passportUrl        String?        @db.Text
+  flightTicketUrl    String?        @db.Text
   customFields       Json? // dynamic fields captured by the Request Form Builder template
   invoice            Invoice?
   submittedAt        DateTime?
   approvedAt         DateTime?
   rejectedAt         DateTime?
-  rejectionReason    String?
+  rejectionReason    String?        @db.Text
   requestedAt        DateTime       @default(now())
   confirmedAt        DateTime?
   confirmedById      String?
@@ -1327,7 +1331,7 @@ model VisaFee {
   processingType     ProcessingType @default(NORMAL)
   fee                Decimal        @db.Decimal(10, 2)
   currency           String         @default("USD")
-  notes              String?
+  notes              String?        @db.Text
   isActive           Boolean        @default(true)
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
@@ -1354,13 +1358,13 @@ model AirportReception {
   flightDateTime  DateTime
   guestName       String
   guestCount      Int           @default(1)
-  passengerNames  String[]      @default([])
+  passengerNames  Json?
   signboardName   String?
   hotelName       String?
-  specialRequests String?
+  specialRequests String?       @db.Text
   phone           String?
-  ticketUrl       String?
-  travelDetails   String?
+  ticketUrl       String?       @db.Text
+  travelDetails   String?       @db.Text
   comingFrom      String? // origin city/country — printed on the airport-assist voucher
   totalAmount     Decimal       @db.Decimal(12, 2)
   currency        String        @default("USD")
@@ -1369,7 +1373,7 @@ model AirportReception {
   exchangeRate    Decimal?      @db.Decimal(18, 8)
   exchangeRateAt  DateTime?
   status          BookingStatus @default(PENDING)
-  notes           String?
+  notes           String?       @db.Text
   customFields    Json? // dynamic fields captured by the Request Form Builder template
   invoice         Invoice?
   requestedAt     DateTime      @default(now())
@@ -1392,7 +1396,7 @@ model ReceptionServiceRate {
   airport     EgyptAirport?
   rate        Decimal       @db.Decimal(10, 2)
   currency    String        @default("USD")
-  notes       String?
+  notes       String?       @db.Text
   isActive    Boolean       @default(true)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -1410,9 +1414,9 @@ model Offer {
   id            String    @id @default(cuid())
   title         String
   titleAr       String?
-  description   String?
-  descriptionAr String?
-  imageUrl      String?
+  description   String?   @db.Text
+  descriptionAr String?   @db.Text
+  imageUrl      String?   @db.Text
   serviceType   String?
   ctaLabel      String?
   ctaLabelAr    String?
@@ -1463,7 +1467,7 @@ model SimRequest {
   quantity       Int           @default(1)
   unitAmount     Decimal?      @db.Decimal(10, 2) // explicit unit price snapshot (no FX); total = unitAmount × quantity
   arrivalDate    DateTime?
-  notes          String?
+  notes          String?       @db.Text
   customFields   Json? // dynamic fields captured by the Request Form Builder template
   invoice        Invoice?
   status         BookingStatus @default(PENDING)
@@ -1635,8 +1639,8 @@ model Voucher {
   companyId          String
   company            Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
   clientName         String?
-  pdfPath            String?
-  notes              String?
+  pdfPath            String?           @db.Text
+  notes              String?           @db.Text
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
@@ -1665,7 +1669,7 @@ model HotelMediaSyncLog {
   errors        Int        @default(0)
   photoRows     Int        @default(0)
   triggeredById String?
-  notes         String?
+  notes         String?    @db.Text
   startedAt     DateTime   @default(now())
   finishedAt    DateTime?
   durationMs    Int?

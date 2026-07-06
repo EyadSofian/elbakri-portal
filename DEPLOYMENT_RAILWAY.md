@@ -1,3 +1,12 @@
+> ⚠️ **DEPRECATED / HISTORICAL.** The portal has migrated from PostgreSQL to
+> **MySQL/MariaDB** and now targets **GoDaddy cPanel**. This Railway + PostgreSQL
+> guide is retained for history only and is **not** the current deployment path.
+> Use **[DEPLOYMENT_GODADDY_CPANEL.md](DEPLOYMENT_GODADDY_CPANEL.md)** instead.
+> (`prisma migrate dev/deploy` and the PostgreSQL steps below no longer apply — the
+> MySQL schema is imported via phpMyAdmin from `database/mysql/init.sql`.)
+
+---
+
 # Deployment on Railway
 
 ## Service Setup

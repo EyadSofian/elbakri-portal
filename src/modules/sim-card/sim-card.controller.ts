@@ -120,9 +120,9 @@ export async function listRequests(req: Request, res: Response) {
     if (status) where.status = status;
     if (search) {
       where.OR = [
-        { refNumber: { contains: search, mode: 'insensitive' } },
-        { clientName: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search, mode: 'insensitive' } },
+        { refNumber: { contains: search } },
+        { clientName: { contains: search } },
+        { phone: { contains: search } },
       ];
     }
 

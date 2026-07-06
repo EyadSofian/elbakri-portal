@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { ActivityCategory, BookingStatus } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, escapeHtml } from '../../shared/helpers';
+import { setJsonStringArray } from '../../shared/json-array';
 import { resolvePriceContext, applyMarketPrice, resolveMarketMoney } from '../../shared/pricing';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
@@ -26,7 +27,7 @@ export async function listActivities(req: Request, res: Response): Promise<void>
   const where = {
     isActive: true,
     // city is now a free-text field (case-insensitive contains)
-    ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' as const } }),
+    ...(req.query.city && { city: { contains: String(req.query.city) } }),
     ...(req.query.category && { category: req.query.category as ActivityCategory }),
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
     ...(req.query.confirmableOnly && { isConfirmableInApp: true }),
@@ -210,7 +211,7 @@ export async function createActivityBooking(req: Request, res: Response): Promis
         clientName: body.clientName ?? null,
         clientPhone: body.clientPhone ?? null,
         hotelName: body.hotelName ?? null,
-        passengerNames: body.passengerNames ?? [],
+        passengerNames: setJsonStringArray(body.passengerNames),
         totalAmount,   // server-calculated
         currency,
         sourceAmount,

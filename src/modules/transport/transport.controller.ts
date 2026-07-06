@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { BookingStatus, TransportType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields, escapeHtml } from '../../shared/helpers';
+import { setJsonStringArray } from '../../shared/json-array';
 import { resolvePriceContext, resolveMarketPriceMap, resolveMarketMoney } from '../../shared/pricing';
 import { resolveTransportRate, pickDualPrice, usesDualPricing } from './transport.resolve';
 import { sendEmail } from '../../shared/email.templates';
@@ -447,7 +448,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           returnDropoffHotelName: ret?.dropoffHotelName ?? null,
           returnDropoffAddress: ret?.dropoffAddress ?? null,
           passengerCount,
-          passengerNames: body.passengerNames ?? [],
+          passengerNames: setJsonStringArray(body.passengerNames),
           passengerName: body.passengerName ?? null,
           flightNumber: body.flightNumber ?? null,
           airlineName: body.airlineName ?? null,
@@ -685,8 +686,8 @@ export async function listTransportRates(req: Request, res: Response): Promise<v
   const where = {
     isActive: true,
     ...(req.query.type && { type: req.query.type as TransportType }),
-    ...(req.query.from && { fromLocation: { contains: String(req.query.from), mode: 'insensitive' as const } }),
-    ...(req.query.to && { toLocation: { contains: String(req.query.to), mode: 'insensitive' as const } }),
+    ...(req.query.from && { fromLocation: { contains: String(req.query.from) } }),
+    ...(req.query.to && { toLocation: { contains: String(req.query.to) } }),
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
   };
 

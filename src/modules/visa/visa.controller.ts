@@ -43,7 +43,7 @@ async function resolveVisaFee(
       processingType,
       isActive: true,
       OR: aliases.map((value) => ({
-        destinationCountry: { equals: value, mode: 'insensitive' as const },
+        destinationCountry: { equals: value },
       })),
     },
     orderBy: { updatedAt: 'desc' },

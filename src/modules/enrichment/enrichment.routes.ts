@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import { requireRole } from '../../middleware/role';
 import { prisma } from '../../config/db';
 import { Prisma } from '@prisma/client';
+import { jsonStringArray, setJsonStringArray } from '../../shared/json-array';
 import {
   runApifyActorSync,
   extractBookingHotelId,
@@ -37,19 +38,19 @@ const DEFAULT_MAX_PHOTOS = 10; // intentionally 10, not 20 (cost control)
 
 // ─── City configs ─────────────────────────────────────────────────────────────
 const CITY_MAP: Record<string, { en: string; ar: string; where: Prisma.HotelWhereInput; strip: string[] }> = {
-  sharm:         { en: 'Sharm El Sheikh', ar: 'شرم الشيخ',     where: { OR: [{ city: { contains: 'Sharm', mode: 'insensitive' } }, { cityAr: { contains: 'شرم' } }, { name: { contains: 'Sharm', mode: 'insensitive' } }] }, strip: ['sharm','el','sheikh'] },
-  hurghada:      { en: 'Hurghada',        ar: 'الغردقة',        where: { OR: [{ city: { contains: 'Hurghada', mode: 'insensitive' } }, { cityAr: { contains: 'الغردقة' } }] }, strip: ['hurghada'] },
-  'marsa-alam':  { en: 'Marsa Alam',      ar: 'مرسى علم',       where: { OR: [{ city: { contains: 'Marsa', mode: 'insensitive' } }, { cityAr: { contains: 'مرسى' } }] }, strip: ['marsa','alam'] },
-  dahab:         { en: 'Dahab',           ar: 'دهب',            where: { OR: [{ city: { contains: 'Dahab', mode: 'insensitive' } }, { cityAr: { contains: 'دهب' } }] }, strip: ['dahab'] },
-  'ain-sokhna':  { en: 'Ain Sokhna',      ar: 'العين السخنة',   where: { OR: [{ city: { contains: 'Sokhna', mode: 'insensitive' } }, { cityAr: { contains: 'السخنة' } }] }, strip: ['ain','sokhna'] },
-  'sahl-hasheesh':{ en: 'Sahl Hasheesh',  ar: 'سهل حشيش',      where: { OR: [{ city: { contains: 'Sahl', mode: 'insensitive' } }, { cityAr: { contains: 'سهل' } }] }, strip: ['sahl','hasheesh','hashish'] },
-  safaga:        { en: 'Safaga',          ar: 'سفاجا',          where: { OR: [{ city: { contains: 'Safaga', mode: 'insensitive' } }, { cityAr: { contains: 'سفاجا' } }] }, strip: ['safaga'] },
-  'north-coast': { en: 'North Coast',     ar: 'الساحل الشمالي', where: { OR: [{ city: { contains: 'North', mode: 'insensitive' } }, { cityAr: { contains: 'الساحل' } }] }, strip: ['north','coast'] },
-  'el-gouna':    { en: 'El Gouna',        ar: 'الجونة',         where: { OR: [{ city: { contains: 'Gouna', mode: 'insensitive' } }, { cityAr: { contains: 'الجونة' } }] }, strip: ['el','gouna'] },
-  cairo:         { en: 'Cairo',           ar: 'القاهرة',        where: { OR: [{ city: { contains: 'Cairo', mode: 'insensitive' } }, { cityAr: { contains: 'القاهرة' } }] }, strip: ['cairo'] },
-  nuweiba:       { en: 'Nuweiba',         ar: 'نويبع',          where: { OR: [{ city: { contains: 'Nuweiba', mode: 'insensitive' } }, { cityAr: { contains: 'نويبع' } }] }, strip: ['nuweiba'] },
-  luxor:         { en: 'Luxor',           ar: 'الأقصر',         where: { OR: [{ city: { contains: 'Luxor', mode: 'insensitive' } }, { cityAr: { contains: 'الأقصر' } }] }, strip: ['luxor'] },
-  aswan:         { en: 'Aswan',           ar: 'أسوان',          where: { OR: [{ city: { contains: 'Aswan', mode: 'insensitive' } }, { cityAr: { contains: 'أسوان' } }] }, strip: ['aswan'] },
+  sharm:         { en: 'Sharm El Sheikh', ar: 'شرم الشيخ',     where: { OR: [{ city: { contains: 'Sharm' } }, { cityAr: { contains: 'شرم' } }, { name: { contains: 'Sharm' } }] }, strip: ['sharm','el','sheikh'] },
+  hurghada:      { en: 'Hurghada',        ar: 'الغردقة',        where: { OR: [{ city: { contains: 'Hurghada' } }, { cityAr: { contains: 'الغردقة' } }] }, strip: ['hurghada'] },
+  'marsa-alam':  { en: 'Marsa Alam',      ar: 'مرسى علم',       where: { OR: [{ city: { contains: 'Marsa' } }, { cityAr: { contains: 'مرسى' } }] }, strip: ['marsa','alam'] },
+  dahab:         { en: 'Dahab',           ar: 'دهب',            where: { OR: [{ city: { contains: 'Dahab' } }, { cityAr: { contains: 'دهب' } }] }, strip: ['dahab'] },
+  'ain-sokhna':  { en: 'Ain Sokhna',      ar: 'العين السخنة',   where: { OR: [{ city: { contains: 'Sokhna' } }, { cityAr: { contains: 'السخنة' } }] }, strip: ['ain','sokhna'] },
+  'sahl-hasheesh':{ en: 'Sahl Hasheesh',  ar: 'سهل حشيش',      where: { OR: [{ city: { contains: 'Sahl' } }, { cityAr: { contains: 'سهل' } }] }, strip: ['sahl','hasheesh','hashish'] },
+  safaga:        { en: 'Safaga',          ar: 'سفاجا',          where: { OR: [{ city: { contains: 'Safaga' } }, { cityAr: { contains: 'سفاجا' } }] }, strip: ['safaga'] },
+  'north-coast': { en: 'North Coast',     ar: 'الساحل الشمالي', where: { OR: [{ city: { contains: 'North' } }, { cityAr: { contains: 'الساحل' } }] }, strip: ['north','coast'] },
+  'el-gouna':    { en: 'El Gouna',        ar: 'الجونة',         where: { OR: [{ city: { contains: 'Gouna' } }, { cityAr: { contains: 'الجونة' } }] }, strip: ['el','gouna'] },
+  cairo:         { en: 'Cairo',           ar: 'القاهرة',        where: { OR: [{ city: { contains: 'Cairo' } }, { cityAr: { contains: 'القاهرة' } }] }, strip: ['cairo'] },
+  nuweiba:       { en: 'Nuweiba',         ar: 'نويبع',          where: { OR: [{ city: { contains: 'Nuweiba' } }, { cityAr: { contains: 'نويبع' } }] }, strip: ['nuweiba'] },
+  luxor:         { en: 'Luxor',           ar: 'الأقصر',         where: { OR: [{ city: { contains: 'Luxor' } }, { cityAr: { contains: 'الأقصر' } }] }, strip: ['luxor'] },
+  aswan:         { en: 'Aswan',           ar: 'أسوان',          where: { OR: [{ city: { contains: 'Aswan' } }, { cityAr: { contains: 'أسوان' } }] }, strip: ['aswan'] },
 };
 
 // ─── Known Apify actors ───────────────────────────────────────────────────────
@@ -213,8 +214,8 @@ enrichRouter.post('/run', requireRole('SUPERADMIN'), async (req: Request, res: R
       orderBy: { name: 'asc' },
     });
 
-    const enriched   = allHotels.filter(h => (h.galleryUrls || []).length > 2);
-    const needsWork  = allHotels.filter(h => (h.galleryUrls || []).length <= 2).slice(start, start + limit);
+    const enriched   = allHotels.filter(h => jsonStringArray(h.galleryUrls).length > 2);
+    const needsWork  = allHotels.filter(h => jsonStringArray(h.galleryUrls).length <= 2).slice(start, start + limit);
 
     emit('init', { city: cfg.en, cityAr: cfg.ar, total: needsWork.length, alreadyEnriched: enriched.length, apply, mode: apply ? 'APPLY' : 'DRY_RUN' });
 
@@ -229,17 +230,17 @@ enrichRouter.post('/run', requireRole('SUPERADMIN'), async (req: Request, res: R
         .map(src => ({ src, score: Math.max(similarity(hotel.name, src.name, cfg.strip), hotel.nameAr && src.nameAr ? similarity(hotel.nameAr, src.nameAr) : 0) }))
         .sort((a, b) => b.score - a.score)[0];
 
-      if (bestCross && bestCross.score >= 0.65 && (bestCross.src.galleryUrls || []).length > 0) {
-        const imgs = (bestCross.src.galleryUrls || []).length;
+      if (bestCross && bestCross.score >= 0.65 && jsonStringArray(bestCross.src.galleryUrls).length > 0) {
+        const imgs = jsonStringArray(bestCross.src.galleryUrls).length;
         emit('hotel', { i: i + 1, total: needsWork.length, name: hotel.name, status: 'cross', matched: bestCross.src.name, score: bestCross.score.toFixed(2), imgs, apply });
         if (apply) {
           const data: Prisma.HotelUpdateInput = { city: cfg.en, cityAr: cfg.ar };
           if (!hotel.imageUrl && bestCross.src.imageUrl) data.imageUrl = bestCross.src.imageUrl;
-          if ((bestCross.src.galleryUrls || []).length > (hotel.galleryUrls || []).length) data.galleryUrls = bestCross.src.galleryUrls;
+          if (jsonStringArray(bestCross.src.galleryUrls).length > jsonStringArray(hotel.galleryUrls).length) data.galleryUrls = setJsonStringArray(bestCross.src.galleryUrls);
           if (!hotel.stars && bestCross.src.stars) data.stars = bestCross.src.stars;
           if (!hotel.googleRating && bestCross.src.googleRating) data.googleRating = bestCross.src.googleRating;
           if (!hotel.description && bestCross.src.description) data.description = bestCross.src.description;
-          if (!(hotel.amenities || []).length && (bestCross.src.amenities || []).length) data.amenities = bestCross.src.amenities;
+          if (!jsonStringArray(hotel.amenities).length && jsonStringArray(bestCross.src.amenities).length) data.amenities = setJsonStringArray(bestCross.src.amenities);
           if (!hotel.area && bestCross.src.area) data.area = bestCross.src.area;
           await prisma.hotel.update({ where: { id: hotel.id }, data });
         }

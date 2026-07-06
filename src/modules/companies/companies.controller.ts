@@ -44,10 +44,10 @@ export async function listCompanies(req: Request, res: Response): Promise<void> 
   const where: Prisma.CompanyWhereInput = {
     ...(search && {
       OR: [
-        { name: { contains: search, mode: 'insensitive' } },
-        { nameAr: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { phone: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search } },
+        { nameAr: { contains: search } },
+        { email: { contains: search } },
+        { phone: { contains: search } },
       ],
     }),
     ...(tier && { tier: tier as 'STANDARD' | 'SILVER' | 'GOLD' | 'PLATINUM' }),

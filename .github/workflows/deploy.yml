@@ -1,0 +1,83 @@
+name: Build & Deploy to GoDaddy (FTP)
+
+# Builds the app on Node 20 and FTP-uploads the runtime artifacts to the cPanel
+# app root, then restarts Passenger by touching tmp/restart.txt.
+#
+# The DATABASE is NOT touched by this workflow. Schema changes are imported
+# manually through phpMyAdmin (see DEPLOYMENT_GODADDY_CPANEL.md). node_modules is
+# built here on Linux and shipped, so the Prisma engine matches the server
+# (binaryTargets in prisma/schema.prisma cover Debian + RHEL/CloudLinux).
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   FTP_SERVER      e.g. ftp.yourdomain.com
+#   FTP_USERNAME    cPanel/FTP user
+#   FTP_PASSWORD    FTP password
+#   FTP_REMOTE_DIR  app root, e.g. /home/USER/elbakri-portal/
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    env:
+      # Prisma needs a mysql:// URL present at build time (generate reads the
+      # datasource block). It never connects — this is a throwaway value.
+      DATABASE_URL: "mysql://user:pass@localhost:3306/elbakri"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (prisma generate + tsc)
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Prune dev dependencies
+        run: npm prune --omit=dev
+
+      - name: Prepare Passenger restart trigger
+        run: mkdir -p tmp && touch tmp/restart.txt
+
+      - name: Deploy over FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_REMOTE_DIR }}
+          local-dir: ./
+          # Ship only runtime artifacts: dist, public, prisma, node_modules,
+          # package manifests, and the restart trigger. Everything else excluded.
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.github/**
+            **/src/**
+            **/tests/**
+            **/outputs/**
+            **/uploads/**
+            **/uploads-private/**
+            **/generated/**
+            **/*.md
+            **/*.map
+            **/.env*
+            **/prisma/migrations_postgres_backup/**
+            **/prisma/schema.prisma.postgres.bak
+            **/.claude/**

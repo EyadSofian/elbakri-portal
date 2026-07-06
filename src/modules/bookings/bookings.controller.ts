@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '../../config/db';
 import { generateBookingRef, generateInvoiceNumber, paginate, paginateMeta } from '../../shared/helpers';
+import { setJsonStringArray } from '../../shared/json-array';
 import { sendEmail, bookingConfirmationEmail, bookingRequestEmail, bookingStatusEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
@@ -207,7 +208,7 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
           airline: body.airline,
           flightNumber: body.flightNumber,
           cabinClass: body.cabinClass,
-          passengerNames: body.passengerNames ?? [],
+          passengerNames: setJsonStringArray(body.passengerNames),
           adultsCount,
           childrenCount,
           infantsCount,

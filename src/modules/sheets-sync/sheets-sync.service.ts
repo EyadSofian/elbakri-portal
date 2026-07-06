@@ -2,6 +2,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { SyncStatus } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { getSheetsClient } from '../../config/sheets';
+import { setJsonStringArray } from '../../shared/json-array';
 
 export type SyncEntity =
   | 'hotels'
@@ -212,7 +213,7 @@ async function upsertHotels(rows: SheetRow[], errors: string[]): Promise<{ creat
         address: pick(row, 'address') || name,
         description: pick(row, 'description') || null,
         descriptionAr: pick(row, 'descriptionAr', 'arabicDescription') || null,
-        amenities: splitList(pick(row, 'amenities')),
+        amenities: setJsonStringArray(splitList(pick(row, 'amenities'))),
         // Structured attributes from Verified_Hotels (Arabic yes/no cells)
         seaFront:     parseFlag(pick(row, 'seaFront', 'sea_front')),
         privateBeach: parseFlag(pick(row, 'privateBeach', 'private_beach')),
@@ -269,7 +270,7 @@ async function findHotel(row: SheetRow) {
 
   const hotelName = pick(row, 'hotelName', 'hotel');
   return hotelName
-    ? prisma.hotel.findFirst({ where: { name: { equals: hotelName, mode: 'insensitive' } } })
+    ? prisma.hotel.findFirst({ where: { name: { equals: hotelName } } })
     : null;
 }
 
@@ -341,7 +342,7 @@ async function upsertCruises(rows: SheetRow[], errors: string[]): Promise<{ crea
         operator: pick(row, 'operator') || null,
         cabins: parseIntCell(pick(row, 'cabins'), 0),
         route: enumCell(pick(row, 'route'), routes, 'LUXOR_ASWAN'),
-        departureDays: splitList(pick(row, 'departureDays')),
+        departureDays: setJsonStringArray(splitList(pick(row, 'departureDays'))),
         duration: parseIntCell(pick(row, 'duration', 'nights'), 4),
         description: pick(row, 'description') || null,
         descriptionAr: pick(row, 'descriptionAr') || null,
@@ -448,11 +449,11 @@ async function upsertActivities(rows: SheetRow[], errors: string[]): Promise<{ c
         city,
         category: enumCell(pick(row, 'category'), categories, 'SIGHTSEEING'),
         duration: pick(row, 'duration') || null,
-        timeSlots: timeSlotsRaw ? splitList(timeSlotsRaw) : [],
+        timeSlots: setJsonStringArray(timeSlotsRaw ? splitList(timeSlotsRaw) : []),
         description: pick(row, 'description') || null,
         descriptionAr: pick(row, 'descriptionAr') || null,
-        includes: splitList(pick(row, 'includes')),
-        excludes: splitList(pick(row, 'excludes')),
+        includes: setJsonStringArray(splitList(pick(row, 'includes'))),
+        excludes: setJsonStringArray(splitList(pick(row, 'excludes'))),
         imageUrl: pick(row, 'imageUrl', 'image') || null,
         priceAdult: parseAmount(pick(row, 'priceAdult', 'adultRate', 'rate')),
         priceChild: parseAmount(pick(row, 'priceChild', 'childRate'), Number.parseFloat(pick(row, 'priceAdult', 'rate')) || 0),
