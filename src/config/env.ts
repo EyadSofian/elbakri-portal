@@ -74,11 +74,21 @@ export function validateEnvOrExit(): void {
 
   if (errors.length) {
     for (const e of errors) console.error(`❌ [env] ${e}`);
-    if (isProd) {
+    if (isProd && !isServerless()) {
       console.error('❌ [env] Refusing to start with an invalid production configuration.');
       process.exit(1);
+    } else if (isProd) {
+      // On a serverless host process.exit() kills the invocation with an opaque
+      // FUNCTION_INVOCATION_FAILED and no cause in the response — the operator
+      // sees a 500 and nothing else. Log loudly and let requests fail with a
+      // real error instead, so the misconfiguration is diagnosable.
+      console.error('❌ [env] Invalid production configuration — requests will fail until this is fixed.');
     } else {
       console.warn('⚠️  [env] The above would abort startup in production (NODE_ENV=production).');
     }
   }
+}
+
+function isServerless(): boolean {
+  return Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 }

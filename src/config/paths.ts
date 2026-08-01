@@ -21,9 +21,20 @@ import path from 'path';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
+/**
+ * Serverless hosts (Vercel, Lambda) mount the deployment read-only; only /tmp
+ * is writable, and it is per-instance and short-lived. Storage therefore
+ * defaults there so writes succeed, but nothing written survives — a serverless
+ * deploy needs object storage (S3/R2/Blob) before uploads and generated PDFs
+ * can be relied on. See DEPLOYMENT_VERCEL.md.
+ */
+export const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+const STORAGE_ROOT = IS_SERVERLESS ? '/tmp' : PROJECT_ROOT;
+
 function resolveDir(envValue: string | undefined, fallbackRelative: string): string {
   const target = envValue && envValue.trim() ? envValue.trim() : fallbackRelative;
-  return path.isAbsolute(target) ? target : path.resolve(PROJECT_ROOT, target);
+  return path.isAbsolute(target) ? target : path.resolve(STORAGE_ROOT, target);
 }
 
 /** Publicly served uploads (images). Default <root>/uploads. */
@@ -42,10 +53,22 @@ export const PRIVATE_UPLOADS_DIR = resolveDir(
 /** Generated PDFs (invoices, vouchers, statements). Default <root>/generated. */
 export const GENERATED_DIR = resolveDir(process.env.PDF_DIR, './generated');
 
-/** Create the storage directories up-front so first write never fails. */
+/**
+ * Create the storage directories up-front so first write never fails.
+ *
+ * Never throws: this runs at module load, and on a read-only host an
+ * uncaught EROFS/EACCES here takes the whole process (or serverless
+ * invocation) down before a single route is registered. A directory that
+ * cannot be created is reported and left to fail at actual write time, where
+ * the error reaches one request instead of every request.
+ */
 export function ensureStorageDirs(): void {
   for (const dir of [PUBLIC_UPLOADS_DIR, PRIVATE_UPLOADS_DIR, GENERATED_DIR]) {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    try {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      console.warn(`⚠️  [paths] could not create storage dir ${dir}:`, (err as Error).message);
+    }
   }
 }
 

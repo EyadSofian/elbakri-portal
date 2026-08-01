@@ -6,6 +6,8 @@ import helmet from 'helmet';
 import path from 'path';
 import { Readable } from 'stream';
 
+import fs from 'fs';
+
 import { validateEnvOrExit } from './config/env';
 import { PUBLIC_UPLOADS_DIR, GENERATED_DIR, ensureStorageDirs } from './config/paths';
 import { authenticate } from './middleware/auth';
@@ -45,6 +47,28 @@ validateEnvOrExit();
 // Create upload/generated directories up-front so the first write never fails.
 ensureStorageDirs();
 
+/**
+ * Find the `public/` directory.
+ *
+ * Locally it is one level above dist/. Under a bundler __dirname points into
+ * the bundle, and on a serverless host the deployment is unpacked somewhere
+ * else again — so each candidate is probed and the first real one wins.
+ * Returning a path that does not exist would make express.static silently
+ * serve nothing, which looks identical to a routing bug.
+ */
+function resolvePublicDir(): string {
+  const candidates = [
+    path.join(__dirname, '..', 'public'),
+    path.join(process.cwd(), 'public'),
+    path.join(__dirname, '..', '..', 'public'),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'login.html'))) return dir;
+  }
+  console.warn('⚠️  [static] public/ not found; tried:', candidates.join(', '));
+  return candidates[0];
+}
+
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3000');
 
@@ -69,7 +93,10 @@ app.use(cookieParser());
 // Static files. NOTE: only PUBLIC uploads are served here; private documents
 // live in a separate, non-served directory and are only reachable via the
 // authenticated route /api/files/private/:filename.
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Bundlers rewrite __dirname, and serverless hosts unpack the app under a
+// different root, so the static directory is located rather than assumed.
+const PUBLIC_DIR = resolvePublicDir();
+app.use(express.static(PUBLIC_DIR));
 app.use('/uploads', express.static(PUBLIC_UPLOADS_DIR));
 app.use('/generated', express.static(GENERATED_DIR));
 
@@ -183,8 +210,15 @@ process.on('uncaughtException', (err) => {
   console.error('⚠️  UNCAUGHT_EXCEPTION:', err);
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Elbakri Portal running at http://localhost:${PORT}`);
-});
+// Only bind a port when we own the process. On a serverless host the platform
+// invokes the exported handler directly; calling listen() there wastes an
+// instance and can race the invocation.
+const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+if (!IS_SERVERLESS) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Elbakri Portal running at http://localhost:${PORT}`);
+  });
+}
 
 export default app;
