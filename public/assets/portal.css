@@ -1,57 +1,301 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   ELBAKRI OVERSEAS — DESIGN SYSTEM
+   ───────────────────────────────────────────────────────────────────────────
+   Built the way the dashboards that hold up are built (Stripe, Linear,
+   Vercel): a neutral surface system doing ~95% of the work, ONE accent used
+   with restraint, and colour otherwise reserved for state and meaning.
+
+     NEUTRALS  cool greys, very slightly blue — carry every surface, border
+               and label. Hierarchy comes from type weight and spacing.
+     ACCENT    #2D4AA8 — the Elbakri navy raised to an interactive lightness.
+               Same hue as the mark (#0B1F52), so the identity is the brand's
+               own colour rather than an invented one. Used only for: primary
+               action, focus, active nav, selection, links.
+     STATUS    emerald / amber / rose / azure — never decorative, only meaning.
+
+   Deliberately absent: gradients, glows, coloured washes, and a decorative
+   second hue. Those read as ornament, and ornament is what makes an interface
+   look generated. Everything is a token, which is what makes dark mode a
+   value swap instead of a rewrite.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 :root {
-  /* ════ PREMIUM TRAVEL TEAL palette (2026-06-13c) — navy is the brand base,
-     teal/cyan is the dominant interactive colour (CTAs, focus, active, wallet,
-     selected rows, glass highlights). White/glass surfaces on cool gray. ════ */
+  color-scheme: light;
+
+  /* ── Neutrals — the actual substance of the UI ───────────────────────── */
+  --n-0:   #FFFFFF;
+  --n-25:  #FCFCFD;
+  --n-50:  #F8F9FC;
+  --n-100: #F1F3F9;
+  --n-200: #E4E8F0;
+  --n-300: #D2D8E4;
+  --n-400: #9AA4B8;
+  --n-500: #6C7789;
+  --n-600: #4E5867;
+  --n-700: #3A424E;
+  --n-800: #252B34;
+  --n-900: #171B22;
+  --n-950: #0E1116;
+
+  /* ── Brand ramp — one hue, anchored on the logo navy at 900 ──────────── */
+  --navy-50:  #EEF2FC;
+  --navy-100: #DCE4F8;
+  --navy-200: #BBC9F1;
+  --navy-300: #8FA6E5;
+  --navy-400: #6180D6;   /* accent on dark — 4.8:1 on --surface */
+  --navy-500: #3D5FC4;   /* focus ring — 5.8:1 on white */
+  --navy-600: #2D4AA8;   /* accent on light — 7.9:1 on white */
+  --navy-700: #233C89;
+  --navy-800: #1A2E6B;
+  --navy-900: #0B1F52;   /* ← the logo navy */
+  --navy-950: #071335;
+
+  /* ── Surfaces (light) ────────────────────────────────────────────────── */
+  --bg-base: #F6F7FA;
   --surface: #FFFFFF;
-  --surface-raised: #F4F9FB;
-  --surface-muted: #E9F2F6;
-  --border: #D8E4EC;
-  --border-strong: #BFD2DE;
-  --text-primary: #0B1736;
-  --text-secondary: #516179;
-  --text-muted: #7C8AA0;
-  /* Brand base = navy */
-  --brand-navy: #071F5C;
-  --brand-navy-2: #102A6B;
-  --brand-navy-3: #1C3F8F;
-  --brand-indigo: #27409A;
-  /* Interactive accents = teal + cyan (user palette) */
-  --accent-teal: #14B8A6;
-  --accent-cyan: #38BDF8;
-  --brand-teal: #14B8A6;
-  --brand-teal-2: #0D9488;       /* deeper teal — hover / text on light */
-  --brand-cyan: #38BDF8;
-  --brand-cyan-2: #0EA5E9;       /* deeper sky — hover / text on light */
-  /* Primary accent = teal, secondary = cyan. */
-  --brand-accent: #14B8A6;
-  --brand-accent-2: #38BDF8;
-  --brand-accent-soft: #D6F3EF;
-  --accent-glow: rgba(20, 184, 166, 0.26);
-  --success: #059669;
-  --success-soft: #D1FAE5;
-  --warning: #F59E0B;            /* amber — warnings ONLY, never branding */
-  --warning-soft: #FEF3C7;
-  --danger: #DC2626;
-  --danger-soft: #FEE2E2;
-  --info: #0EA5E9;
-  --info-soft: #E0F2FE;
-  --purple: #6941c6;
-  --purple-soft: #f1edff;
-  --shadow-subtle: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-card: 0 2px 8px rgba(16, 24, 40, 0.08);
-  --shadow-popover: 0 10px 28px rgba(16, 24, 40, 0.16);
-  --shadow-modal: 0 20px 60px rgba(16, 24, 40, 0.22);
-  --r-4: 4px;
-  --r-8: 8px;
-  --r-12: 12px;
-  --r-16: 16px;
-  --sidebar-width: 280px;
+  --surface-raised: var(--n-50);
+  --surface-muted: var(--n-100);
+  --surface-sunken: var(--n-200);
+  --border: var(--n-200);
+  --border-strong: var(--n-300);
+  --border-soft: rgba(23, 27, 34, 0.08);
+
+  /* ── Text (light) ────────────────────────────────────────────────────── */
+  --text-primary: #171B22;     /* neutral ink, 16.1:1 — navy is for accents */
+  --text-secondary: #4E5867;   /* 8.1:1 on white */
+  --text-muted: #6C7789;       /* 4.9:1 on white */
+  --text-inverse: #FFFFFF;
+
+  /* ── Brand aliases (kept stable so every component keeps working) ─────── */
+  --brand-navy: var(--navy-900);
+  --brand-navy-2: var(--navy-800);
+  --brand-navy-3: var(--navy-700);
+  --brand-indigo: var(--navy-600);
+  --brand-accent: var(--navy-600);
+  --brand-accent-2: var(--navy-500);
+  --brand-accent-soft: var(--navy-50);
+  --brand-accent-text: var(--navy-600);
+  /* Legacy teal/cyan/gold names all resolve into the single brand ramp — one
+     swap re-skins every rule that still calls them, with no missed selector. */
+  --accent-teal: var(--navy-600);
+  --accent-cyan: var(--navy-500);
+  --brand-teal: var(--navy-600);
+  --brand-teal-2: var(--navy-700);
+  --brand-cyan: var(--navy-600);
+  --brand-cyan-2: var(--navy-700);
+  --gold-50:  var(--navy-50);
+  --gold-100: var(--navy-50);
+  --gold-200: var(--navy-100);
+  --gold-300: var(--navy-300);
+  --gold-400: var(--navy-400);
+  --gold-500: var(--navy-600);
+  --gold-600: var(--navy-700);
+  --gold-700: var(--navy-600);
+  --gold-800: var(--navy-800);
+  --gold-900: var(--navy-900);
+  --accent-glow: rgba(61, 95, 196, 0.24);
+  --accent-tint: rgba(45, 74, 168, 0.055);
+  --accent-tint-strong: rgba(45, 74, 168, 0.10);
+
+  /* ── Status ──────────────────────────────────────────────────────────── */
+  --success: #0E7C58;
+  --success-soft: #D7F2E5;
+  --success-hover: #0A6446;
+  --warning: #B45309;
+  --warning-soft: #FBEBCF;
+  --danger: #C42B2B;
+  --danger-soft: #FBE0E0;
+  --danger-hover: #A32222;
+  --info: #1D4FD8;
+  --info-soft: #E1E9FE;
+  --purple: #6941C6;
+  --purple-soft: #EFEAFC;
+
+  /* ── Backgrounds ─────────────────────────────────────────────────────── */
+  /* Flat. The previous build layered two radial washes behind every page;
+     they added nothing a reader could use and were the loudest ornament in
+     the app. A plain neutral ground lets the cards define the structure. */
+  --bg-wash: none;
+  /* Chrome is near-black neutral with a navy undertone — not a saturated
+     brand slab. Same reason a Vercel or Linear sidebar is grey, not brand. */
+  --sidebar-bg: #12151C;
+  --sidebar-edge: rgba(255, 255, 255, 0.08);
+  --sidebar-text: rgba(255, 255, 255, 0.72);
+  --sidebar-text-dim: rgba(255, 255, 255, 0.38);
+  --sidebar-active-bg: rgba(255, 255, 255, 0.07);
+  --skeleton-sheen: rgba(255, 255, 255, 0.72);
+
+  /* ── Elevation. Light = shadows; dark swaps these for luminance steps. ── */
+  --shadow-subtle: 0 1px 2px rgba(11, 31, 82, 0.06);
+  --shadow-soft: 0 1px 2px rgba(11, 31, 82, 0.05), 0 2px 8px rgba(11, 31, 82, 0.05);
+  --shadow-card: 0 2px 6px rgba(11, 31, 82, 0.07), 0 8px 20px rgba(11, 31, 82, 0.07);
+  --shadow-float: 0 8px 20px rgba(11, 31, 82, 0.10), 0 20px 44px rgba(11, 31, 82, 0.12);
+  --shadow-popover: 0 8px 28px rgba(11, 31, 82, 0.16);
+  --shadow-modal: 0 24px 64px rgba(5, 13, 36, 0.24);
+  --shadow-glow-teal: 0 6px 18px var(--accent-glow);   /* legacy name */
+  --shadow-glow-accent: 0 6px 18px var(--accent-glow);
+  --ring: 0 0 0 3px var(--accent-glow);
+  --focus-ring: var(--navy-600);
+
+  /* ── Glass ───────────────────────────────────────────────────────────── */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-strong: rgba(255, 255, 255, 0.88);
+  --surface-glass: rgba(255, 255, 255, 0.74);
+  --glass-border: rgba(255, 255, 255, 0.62);
+  --glass-dark-bg: rgba(255, 255, 255, 0.07);
+  --glass-dark-border: rgba(255, 255, 255, 0.13);
+  --glass-shadow: 0 8px 30px rgba(11, 31, 82, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  --blur-glass: blur(18px) saturate(150%);
+  --glass-blur: 16px;
+
+  /* ── Radius ──────────────────────────────────────────────────────────── */
+  --r-4: 6px;
+  --r-6: 8px;
+  --r-8: 10px;
+  --r-10: 12px;
+  --r-12: 14px;
+  --r-16: 18px;
+  --r-20: 22px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+  --r-pill: 999px;
+
+  /* ── Motion (Material 3 easing/duration tokens) ──────────────────────── */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decel: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-accel: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-out: var(--ease-standard);        /* legacy alias */
+  --dur-1: 100ms;
+  --dur-2: 150ms;
+  --dur-3: 200ms;
+  --dur-4: 260ms;
+  --dur-5: 340ms;
+
+  /* ── Layout ──────────────────────────────────────────────────────────── */
+  --sidebar-width: 272px;
   --sidebar-collapsed-width: 76px;
   --sidebar-w: var(--sidebar-width);
   --topbar-h: 64px;
-  --font-en: "Plus Jakarta Sans", "Inter", "DM Sans", system-ui, sans-serif;
+
+  /* ── Type ────────────────────────────────────────────────────────────── */
+  --font-en: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
   --font-ar: "Cairo", "Tajawal", system-ui, sans-serif;
   --font: var(--font-en);
+  --font-num: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+
+  /* Legacy names still referenced by older rules */
+  --bg-app: var(--bg-base);
+  --bg-glass: var(--glass-bg);
+  --bg-glass-strong: var(--glass-bg-strong);
+  --glass-white: rgba(255, 255, 255, 0.82);
+  --glass-surface: rgba(248, 250, 252, 0.72);
+  --navy-glow: rgba(11, 31, 82, 0.12);
+  --border-glass: rgba(255, 255, 255, 0.55);
+  --shadow-glow: 0 0 0 3px rgba(11, 31, 82, 0.08);
+  --stat-icon-bg: var(--gold-100);
+  --dest-bg: var(--surface-muted);
+}
+
+/* ═══ DARK THEME ═══════════════════════════════════════════════════════════
+   Four surface levels, each ~6% lighter than the last and tinted toward navy,
+   because drop shadows carry no signal on dark ground — luminance does.
+   Text is off-white (#E8ECF5), never #FFF, to keep glare down over long ops
+   shifts. Gold lightens to --gold-400 so it holds its perceptual weight.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-base: #0B0D12;          /* L0 — app ground */
+  --surface: #12151C;          /* L1 — cards, panels, sidebar */
+  --surface-raised: #191D26;   /* L2 — nested cards, table heads, hover */
+  --surface-muted: #212630;    /* L2.5 — chips, inset wells */
+  --surface-sunken: #0E1116;
+  --border: #262B35;
+  --border-strong: #363D49;
+  --border-soft: rgba(255, 255, 255, 0.07);
+
+  --text-primary: #E9EBEF;     /* 15.0:1 on --surface */
+  --text-secondary: #A8AFBC;   /* 8.3:1 */
+  --text-muted: #7B838F;       /* 4.9:1 */
+  --text-inverse: #0B0D12;
+
+  /* Same hue, raised until it carries on a dark ground. */
+  --brand-navy: #0B0D12;
+  --brand-navy-2: #161A22;
+  --brand-navy-3: var(--navy-500);
+  --brand-indigo: var(--navy-400);
+  --brand-accent: var(--navy-400);
+  --brand-accent-2: var(--navy-300);
+  --brand-accent-soft: rgba(97, 128, 214, 0.14);
+  --brand-accent-text: #8FA6E5;
+  --accent-teal: var(--navy-400);
+  --accent-cyan: var(--navy-300);
+  --brand-teal: var(--navy-400);
+  --brand-teal-2: #8FA6E5;
+  --brand-cyan: var(--navy-400);
+  --brand-cyan-2: #8FA6E5;
+  --gold-50:  rgba(97, 128, 214, 0.14);
+  --gold-100: rgba(97, 128, 214, 0.14);
+  --gold-200: var(--navy-800);
+  --gold-300: var(--navy-300);
+  --gold-400: var(--navy-400);
+  --gold-500: var(--navy-400);
+  --gold-600: var(--navy-500);
+  --gold-700: #8FA6E5;
+  --gold-800: var(--navy-700);
+  --gold-900: var(--navy-800);
+  --accent-glow: rgba(97, 128, 214, 0.28);
+  --accent-tint: rgba(97, 128, 214, 0.08);
+  --accent-tint-strong: rgba(97, 128, 214, 0.16);
+
+  --success: #34D399;
+  --success-soft: rgba(52, 211, 153, 0.16);
+  --success-hover: #10B981;
+  --warning: #FBBF24;
+  --warning-soft: rgba(251, 191, 36, 0.16);
+  --danger: #F87171;
+  --danger-soft: rgba(248, 113, 113, 0.16);
+  --danger-hover: #EF4444;
+  --info: #60A5FA;
+  --info-soft: rgba(96, 165, 250, 0.16);
+  --purple: #A78BFA;
+  --purple-soft: rgba(167, 139, 250, 0.16);
+
+  /* On dark the sidebar can't out-darken the page, so it goes the other way:
+     one step lighter than the ground, which is how elevation reads here. */
+  --bg-wash: none;
+  --sidebar-bg: #12151C;
+  --sidebar-edge: rgba(255, 255, 255, 0.07);
+  --sidebar-text: rgba(233, 235, 239, 0.74);
+  --sidebar-text-dim: rgba(233, 235, 239, 0.38);
+  --sidebar-active-bg: rgba(255, 255, 255, 0.06);
+  --skeleton-sheen: rgba(255, 255, 255, 0.05);
+
+  /* Shadows stay, but shallow — they add contact, not elevation. */
+  --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.44), 0 2px 8px rgba(0, 0, 0, 0.32);
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.44), 0 10px 24px rgba(0, 0, 0, 0.34);
+  --shadow-float: 0 10px 24px rgba(0, 0, 0, 0.50), 0 24px 52px rgba(0, 0, 0, 0.42);
+  --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 28px 70px rgba(0, 0, 0, 0.66);
+  --shadow-glow-teal: 0 6px 20px var(--accent-glow);
+  --shadow-glow-accent: 0 6px 20px var(--accent-glow);
+  --focus-ring: var(--gold-400);
+
+  --glass-bg: rgba(22, 32, 54, 0.72);
+  --glass-bg-strong: rgba(22, 32, 54, 0.90);
+  --surface-glass: rgba(22, 32, 54, 0.74);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-shadow: 0 8px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --glass-white: rgba(22, 32, 54, 0.82);
+  --glass-surface: rgba(14, 21, 38, 0.72);
+  --border-glass: rgba(255, 255, 255, 0.10);
+  --navy-glow: rgba(0, 0, 0, 0.5);
+  --stat-icon-bg: var(--accent-tint-strong);
+  --dest-bg: var(--surface-raised);
 }
 
 html[lang="ar"] {
@@ -66,10 +310,7 @@ html,
 body {
   min-height: 100%;
   margin: 0;
-  background-color: #F6F8FB;
-  background-image:
-    radial-gradient(ellipse 900px 500px at 95% 0%, rgba(24,168,200,0.025) 0%, transparent 60%),
-    radial-gradient(ellipse 600px 700px at 5% 100%, rgba(15,27,71,0.025) 0%, transparent 55%);
+  background-color: var(--bg-base);
   background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font);
@@ -134,7 +375,7 @@ a {
   height: 100vh;
   overflow-y: auto;
   background:
-    radial-gradient(130% 70% at 0% 0%, rgba(24, 168, 200, 0.16) 0%, transparent 48%),
+    radial-gradient(130% 70% at 0% 0%, var(--accent-tint-strong) 0%, transparent 48%),
     linear-gradient(180deg, var(--brand-navy-2), var(--brand-navy));
   color: #fff;
   z-index: 40;
@@ -201,7 +442,7 @@ a {
   background: var(--brand-accent);
   color: var(--brand-navy);
   font-weight: 800;
-  box-shadow: 0 8px 18px rgba(24, 168, 200, 0.28);
+  box-shadow: 0 8px 18px var(--accent-glow);
 }
 
 /* Real logo image in sidebar / login */
@@ -251,7 +492,7 @@ html[lang="ar"] .brand-sub {
   margin-top: 10px;
   padding: 3px 8px;
   border-radius: var(--r-4);
-  background: rgba(24, 168, 200, 0.16);
+  background: var(--accent-tint-strong);
   color: var(--brand-accent);
   font-size: 10px;
   font-weight: 800;
@@ -424,8 +665,8 @@ html[lang="ar"] .nav-label {
 }
 
 .quick-search:focus-within {
-  border-color: var(--brand-navy-3);
-  background: #fff;
+  border-color: var(--focus-ring);
+  background: var(--surface);
 }
 
 .quick-search input {
@@ -441,7 +682,7 @@ html[lang="ar"] .nav-label {
   padding: 2px 6px;
   border: 1px solid var(--border);
   border-radius: var(--r-4);
-  background: #fff;
+  background: var(--surface);
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 800;
@@ -793,7 +1034,7 @@ html[lang="ar"] .stat-label {
   padding: 7px 10px;
   border: 1px solid var(--border);
   border-radius: var(--r-4);
-  background: #fff;
+  background: var(--surface);
   color: var(--text-primary);
   outline: 0;
 }
@@ -902,18 +1143,18 @@ html[lang="ar"] .stat-label {
   background: linear-gradient(135deg, var(--brand-teal) 0%, var(--brand-cyan) 100%);
   color: #fff;
   border-color: transparent;
-  box-shadow: 0 1px 3px rgba(0,168,142,0.28), inset 0 1px 0 rgba(255,255,255,0.18);
+  box-shadow: 0 1px 3px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.18);
 }
 
 .btn-teal:hover {
-  background: linear-gradient(135deg, #00b89b 0%, #19b3d3 100%);
-  box-shadow: 0 4px 14px rgba(0,168,142,0.36), inset 0 1px 0 rgba(255,255,255,0.22);
+  background: linear-gradient(135deg, var(--gold-400) 0%, var(--gold-500) 100%);
+  box-shadow: 0 4px 14px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.22);
   transform: translateY(-1px);
 }
 
 .btn-outline {
   border-color: var(--border-strong);
-  background: #fff;
+  background: var(--surface);
   color: var(--text-secondary);
 }
 
@@ -959,7 +1200,7 @@ html[lang="ar"] .stat-label {
   gap: 12px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
-  background: #fff;
+  background: var(--surface);
 }
 
 .bulk-bar {
@@ -1024,11 +1265,11 @@ html[lang="ar"] .data-table thead th {
 }
 
 .data-table tbody tr:hover td {
-  background: #f8fbff;
+  background: var(--accent-tint);
 }
 
 .data-table tbody tr.selected td {
-  background: #edf5ff;
+  background: var(--accent-tint-strong);
 }
 
 .data-table .numeric {
@@ -1112,8 +1353,8 @@ html[lang="ar"] .data-table thead th {
 }
 
 .badge-silver {
-  background: #eef0f3;
-  color: #475467;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
 }
 
 .badge-teal {
@@ -1185,7 +1426,7 @@ html[lang="ar"] .data-table thead th {
   height: 30px;
   border: 1px solid var(--border);
   border-radius: var(--r-4);
-  background: #fff;
+  background: var(--surface);
   color: var(--text-secondary);
   font-weight: 800;
 }
@@ -1212,8 +1453,8 @@ html[lang="ar"] .data-table thead th {
   border: 1px solid var(--border);
   border-radius: var(--r-12);
   background:
-    linear-gradient(90deg, transparent 0 18%, rgba(23, 92, 211, 0.1) 18% 22%, transparent 22% 100%),
-    linear-gradient(var(--surface-raised), #fff);
+    linear-gradient(90deg, transparent 0 18%, var(--accent-tint-strong) 18% 22%, transparent 22% 100%),
+    linear-gradient(var(--surface-raised), var(--surface));
   box-shadow: var(--shadow-subtle);
 }
 
@@ -1229,7 +1470,7 @@ html[lang="ar"] .data-table thead th {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
+  background: linear-gradient(90deg, transparent, var(--skeleton-sheen), transparent);
   animation: shimmer 1.2s infinite;
 }
 
@@ -1276,7 +1517,7 @@ html[lang="ar"] .data-table thead th {
   display: flex;
   flex-direction: column;
   border-radius: var(--r-12);
-  background: #fff;
+  background: var(--surface);
   box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
@@ -1314,7 +1555,7 @@ html[lang="ar"] .data-table thead th {
   gap: 8px;
   padding: 12px 18px;
   border-top: 1px solid var(--border);
-  background: #fff;
+  background: var(--surface);
 }
 
 [dir="rtl"] .modal-footer {
@@ -1363,7 +1604,7 @@ html[lang="ar"] .data-table thead th {
 }
 
 .tab.active {
-  background: #fff;
+  background: var(--surface);
   color: var(--brand-navy-2);
   box-shadow: var(--shadow-subtle);
 }
@@ -1574,7 +1815,7 @@ html[lang="ar"] .data-table thead th {
   justify-content: center;
   gap: 20px;
   padding: 36px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .login-card-head {
@@ -2151,7 +2392,7 @@ html[lang="ar"] .data-table thead th {
     min-height: 100dvh;
     align-items: stretch;
     padding: 0;
-    background: #f0f4f8;
+    background: var(--surface-muted);
   }
 
   .login-shell {
@@ -2570,17 +2811,9 @@ html[lang="ar"] .data-table thead th {
    PREMIUM B2B REFINEMENTS — layered on top of base styles
    ═══════════════════════════════════════════════════════════ */
 
-/* ─── CSS token additions ──────────────────────────────────── */
-:root {
-  --glass-white:    rgba(255, 255, 255, 0.82);
-  --glass-surface:  rgba(248, 250, 252, 0.72);
-  --navy-glow:      rgba(11, 31, 82, 0.12);
-  --border-glass:   rgba(255, 255, 255, 0.55);
-  --stat-icon-bg:   linear-gradient(135deg, var(--info-soft), rgba(23, 92, 211, 0.06));
-  --shadow-float:   0 4px 20px rgba(16, 24, 40, 0.10), 0 1px 3px rgba(16, 24, 40, 0.06);
-  --shadow-glow:    0 0 0 3px rgba(15, 27, 71, 0.08);
-  --r-20:           20px;
-}
+/* Token block removed — these are now defined once, theme-aware, in the design
+   system at the top of this file. Re-declaring them here would pin them to
+   light-mode values and break the dark theme. */
 
 /* ─── Topbar refinement ────────────────────────────────────── */
 .topbar {
@@ -2601,7 +2834,7 @@ html[lang="ar"] .data-table thead th {
   right: 0;
   width: 1px;
   height: 100%;
-  background: linear-gradient(180deg, rgba(24,168,200,0.3) 0%, transparent 40%);
+  background: linear-gradient(180deg, var(--accent-glow) 0%, transparent 40%);
   pointer-events: none;
 }
 
@@ -2624,7 +2857,7 @@ html[lang="ar"] .data-table thead th {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(255,255,255,0) 60%, rgba(24,168,200,0.04) 100%);
+  background: linear-gradient(135deg, rgba(255,255,255,0) 60%, var(--accent-tint) 100%);
   pointer-events: none;
 }
 
@@ -3529,7 +3762,7 @@ html[lang="ar"] .act-time-label {
 }
 
 @keyframes highlightFade {
-  from { background: rgba(24,168,200,0.18); }
+  from { background: var(--accent-tint-strong); }
   to   { background: transparent; }
 }
 
@@ -3624,7 +3857,7 @@ html[lang="ar"] .wallet-metric__label {
 /* Balance variant */
 .wallet-metric--balance {
   border-color: rgba(4, 120, 87, 0.22);
-  background: linear-gradient(135deg, #f0fdf8 0%, #e8f9f2 100%);
+  background: linear-gradient(135deg, var(--success-soft) 0%, var(--surface-raised) 100%);
 }
 .wallet-metric--balance .wallet-metric__icon {
   background: var(--success-soft);
@@ -3678,7 +3911,7 @@ html[lang="ar"] .wallet-metric__label {
   width: 120px;
   height: 120px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(24,168,200,0.07) 0%, transparent 70%);
+  background: radial-gradient(circle, var(--accent-tint) 0%, transparent 70%);
   pointer-events: none;
 }
 
@@ -3696,7 +3929,7 @@ html[lang="ar"] .wallet-metric__label {
 /* ─── Sidebar accent polish ─────────────────────────────────────── */
 .sidebar {
   background:
-    radial-gradient(130% 70% at 0% 0%, rgba(24, 168, 200, 0.12) 0%, transparent 42%),
+    radial-gradient(130% 70% at 0% 0%, var(--accent-tint-strong) 0%, transparent 42%),
     radial-gradient(60% 40% at 100% 100%, rgba(255,255,255,0.04) 0%, transparent 60%),
     linear-gradient(180deg, var(--brand-navy-2), var(--brand-navy));
 }
@@ -3707,7 +3940,7 @@ html[lang="ar"] .wallet-metric__label {
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   backdrop-filter: blur(18px) saturate(160%);
   border: 1px solid rgba(255,255,255,0.7);
-  box-shadow: 0 20px 60px rgba(16,24,40,0.18), 0 8px 24px rgba(24,168,200,0.08);
+  box-shadow: 0 20px 60px rgba(16,24,40,0.18), 0 8px 24px var(--accent-tint);
 }
 
 /* ─── Transport price card glass ────────────────────────────────── */
@@ -4000,7 +4233,7 @@ html[lang="ar"] .wallet-metric__label {
 
 .enrich-row--ok     { background: rgba(14,159,110,0.07); }
 .enrich-row--ok     .enrich-feed-icon { color: var(--success); }
-.enrich-row--cross  { background: rgba(24,168,200,0.08); }
+.enrich-row--cross  { background: var(--accent-tint); }
 .enrich-row--cross  .enrich-feed-icon { color: var(--brand-cyan); }
 .enrich-row--manual { background: rgba(217,119,6,0.08); }
 .enrich-row--manual .enrich-feed-icon { color: var(--warning); }
@@ -4042,15 +4275,7 @@ tr.enrich-row--error  td { background: rgba(224,36,36,0.05); }
    All blur effects degrade to solid surfaces via @supports.
    ═══════════════════════════════════════════════════════════════ */
 
-:root {
-  --glass-blur: 16px;
-  --glass-bg: rgba(255, 255, 255, 0.70);
-  --glass-bg-strong: rgba(255, 255, 255, 0.82);
-  --glass-border: rgba(255, 255, 255, 0.60);
-  --glass-shadow: 0 8px 30px rgba(11, 31, 82, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  --glass-dark-bg: rgba(255, 255, 255, 0.08);
-  --glass-dark-border: rgba(255, 255, 255, 0.14);
-}
+/* Glass tokens moved to the theme-aware design system at the top of the file. */
 
 /* ─── Reusable glass utilities ──────────────────────────────────── */
 .glass-panel,
@@ -4077,8 +4302,8 @@ tr.enrich-row--error  td { background: rgba(224,36,36,0.05); }
 
 /* ─── Wallet pill: navy/cyan glass (was a green blob) ────────────── */
 .wallet-pill {
-  border: 1px solid rgba(24, 168, 200, 0.30);
-  background: linear-gradient(135deg, rgba(16, 42, 104, 0.06), rgba(24, 168, 200, 0.10));
+  border: 1px solid var(--accent-glow);
+  background: linear-gradient(135deg, rgba(16, 42, 104, 0.06), var(--accent-tint-strong));
   color: var(--brand-navy-2);
 }
 .wallet-pill i,
@@ -4126,7 +4351,7 @@ tr.enrich-row--error  td { background: rgba(224,36,36,0.05); }
   [dir="rtl"] .nav-item:hover i,
   [dir="rtl"] .nav-item:hover svg { transform: translateX(-2px); }
   .nav-item.active {
-    box-shadow: inset 0 0 0 1px rgba(24, 168, 200, 0.12);
+    box-shadow: inset 0 0 0 1px var(--accent-tint-strong);
   }
   .nav-item.active::before {
     box-shadow: 0 0 10px 1px var(--accent-glow);
@@ -4160,13 +4385,13 @@ tr.enrich-row--error  td { background: rgba(224,36,36,0.05); }
 
 /* Cyan row hover (replaces navy tint for a calmer feel) */
 .data-table tbody tr:hover td {
-  background: rgba(24, 168, 200, 0.05);
+  background: var(--accent-tint);
 }
 
 /* Soft focus ring in brand cyan */
 .quick-search:focus-within {
   border-color: var(--brand-cyan);
-  box-shadow: 0 0 0 3px rgba(24, 168, 200, 0.12);
+  box-shadow: 0 0 0 3px var(--accent-tint-strong);
 }
 
 /* Honor reduced-motion for every animated surface added here */
@@ -4253,7 +4478,7 @@ tr.enrich-row--error  td { background: rgba(224,36,36,0.05); }
   transition: background 140ms ease, transform 120ms ease;
   z-index: 2;
 }
-.hms-nav:hover { background: #fff; }
+.hms-nav:hover { background: var(--surface); }
 .hms-nav:active { transform: translateY(-50%) scale(0.94); }
 .hms-nav svg { width: 18px; height: 18px; }
 .hms-prev { left: 12px; }
@@ -4307,7 +4532,7 @@ tr.enrich-row--error  td { background: rgba(224,36,36,0.05); }
 .hms-thumb.active {
   opacity: 1;
   border-color: var(--brand-cyan);
-  box-shadow: 0 0 0 3px rgba(24, 168, 200, 0.18);
+  box-shadow: 0 0 0 3px var(--accent-tint-strong);
 }
 
 /* ── Full-screen lightbox (stays inside the portal) ── */
@@ -4403,8 +4628,8 @@ tr.enrich-row--error  td { background: rgba(224,36,36,0.05); }
 .hotel-detail-shell .hotel-media-stage {
   border: 1px solid rgba(148, 163, 184, 0.35);
   background:
-    radial-gradient(circle at 18% 18%, rgba(24, 168, 200, 0.18), transparent 36%),
-    linear-gradient(135deg, #f8fafc, #eef4f8);
+    radial-gradient(circle at 18% 18%, var(--accent-tint-strong), transparent 36%),
+    linear-gradient(135deg, var(--surface-raised), var(--surface-muted));
 }
 
 .hotel-detail-shell .hotel-media-main-scroll {
@@ -4468,7 +4693,7 @@ tr.enrich-row--error  td { background: rgba(224,36,36,0.05); }
 .hotel-detail-shell .badge-outline {
   background: #fff;
   border-color: rgba(100, 116, 139, 0.28);
-  color: #172033;
+  color: var(--text-primary);
 }
 
 .hotel-detail-shell .info-grid,
@@ -4852,18 +5077,18 @@ body {
 /* Sidebar active item — subtle teal-tinted gradient instead of a flat block,
    so the selected destination reads clearly; hover stays a neutral overlay. */
 .sidebar .nav-item.active {
-  background: linear-gradient(90deg, rgba(24, 168, 200, 0.22) 0%, rgba(24, 168, 200, 0.05) 100%);
+  background: linear-gradient(90deg, var(--accent-tint-strong) 0%, var(--accent-tint) 100%);
   color: #fff;
-  box-shadow: inset 0 0 0 1px rgba(24, 168, 200, 0.12);
+  box-shadow: inset 0 0 0 1px var(--accent-tint-strong);
 }
 [dir="rtl"] .sidebar .nav-item.active {
-  background: linear-gradient(270deg, rgba(24, 168, 200, 0.22) 0%, rgba(24, 168, 200, 0.05) 100%);
+  background: linear-gradient(270deg, var(--accent-tint-strong) 0%, var(--accent-tint) 100%);
 }
 .sidebar .nav-item.active::before { top: 7px; bottom: 7px; width: 3px; }
 
 /* Consistent press/hover feedback on all button variants */
-.btn-danger:hover { background: #c81e1e; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(224, 36, 36, 0.30); }
-.btn-success:hover { background: #0b8457; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(14, 159, 110, 0.30); }
+.btn-danger:hover { background: var(--danger-hover); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(224, 36, 36, 0.30); }
+.btn-success:hover { background: var(--success-hover); transform: translateY(-1px); box-shadow: 0 4px 14px rgba(14, 159, 110, 0.30); }
 .btn-outline:active, .btn-teal:active, .btn-danger:active, .btn-success:active { transform: translateY(0); }
 
 /* Clickable summary cards get a subtle lift (data-dense dashboard pattern) */
@@ -4883,42 +5108,24 @@ body {
    data tables & forms stay solid for readability.
    ═════════════════════════════════════════════════════════════════════════ */
 
-:root {
-  --bg-app: #EEF6F8;
-  --bg-glass: rgba(255, 255, 255, 0.74);
-  --bg-glass-strong: rgba(255, 255, 255, 0.88);
-  --surface-glass: rgba(255, 255, 255, 0.74);
-  --glass-border: rgba(255, 255, 255, 0.62);
-  --border-soft: rgba(11, 35, 70, 0.10);
-  --shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.05), 0 2px 8px rgba(16, 24, 40, 0.05);
-  --shadow-float: 0 22px 50px rgba(7, 31, 92, 0.20), 0 6px 16px rgba(7, 31, 92, 0.10);
-  --shadow-glow-teal: 0 8px 24px rgba(20, 184, 166, 0.34);
-  --blur-glass: blur(18px) saturate(150%);
-  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 22px;
-  --ease-out: cubic-bezier(.2, .8, .2, 1);
-}
+/* Token block moved to the theme-aware design system at the top of the file. */
 
 /* ── App background: calm, layered, cool ── */
 body {
-  background-color: var(--bg-app);
-  background-image:
-    radial-gradient(1200px 640px at 100% -8%, rgba(24, 168, 200, 0.10), transparent 58%),
-    radial-gradient(1000px 720px at -12% 112%, rgba(11, 31, 82, 0.10), transparent 55%),
-    linear-gradient(180deg, #EEF3FA 0%, #E7EEF6 100%);
+  background-color: var(--bg-base);
+  background-image: var(--bg-wash);
 }
 
 /* ── Sidebar: layered navy glass + premium active state ───────────────── */
 .sidebar {
-  background:
-    radial-gradient(150% 60% at 0% 0%, rgba(24, 168, 200, 0.22) 0%, transparent 46%),
-    linear-gradient(186deg, #11286F 0%, #0B1F52 54%, #081842 100%);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 1px 0 0 rgba(8, 22, 58, 0.6), 18px 0 44px rgba(11, 24, 58, 0.10);
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-edge);
+  box-shadow: 1px 0 0 rgba(5, 13, 36, 0.55), 18px 0 44px rgba(11, 31, 82, 0.10);
 }
 [dir="rtl"] .sidebar {
   border-right: 0;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: -1px 0 0 rgba(8, 22, 58, 0.6), -18px 0 44px rgba(11, 24, 58, 0.10);
+  border-left: 1px solid var(--sidebar-edge);
+  box-shadow: -1px 0 0 rgba(5, 13, 36, 0.55), -18px 0 44px rgba(11, 31, 82, 0.10);
 }
 .brand-block { border-bottom-color: rgba(255, 255, 255, 0.08); padding-bottom: 14px; }
 
@@ -4935,11 +5142,11 @@ body {
 .sidebar .nav-item:hover > svg,
 .sidebar .nav-item:hover > i { background: rgba(255, 255, 255, 0.12); color: #fff; }
 .sidebar .nav-item.active {
-  background: linear-gradient(90deg, rgba(24, 168, 200, 0.22) 0%, rgba(24, 168, 200, 0.04) 100%);
-  color: #fff; box-shadow: inset 0 0 0 1px rgba(24, 168, 200, 0.16);
+  background: linear-gradient(90deg, var(--accent-tint-strong) 0%, var(--accent-tint) 100%);
+  color: #fff; box-shadow: inset 0 0 0 1px var(--accent-tint-strong);
 }
 [dir="rtl"] .sidebar .nav-item.active {
-  background: linear-gradient(270deg, rgba(24, 168, 200, 0.22) 0%, rgba(24, 168, 200, 0.04) 100%);
+  background: linear-gradient(270deg, var(--accent-tint-strong) 0%, var(--accent-tint) 100%);
 }
 .sidebar .nav-item.active > svg,
 .sidebar .nav-item.active > i {
@@ -4956,9 +5163,9 @@ body {
   margin-inline-start: auto; min-width: 18px; height: 18px; padding: 0 6px;
   display: inline-grid; place-items: center; border-radius: 999px;
   background: linear-gradient(135deg, var(--brand-teal), var(--brand-cyan));
-  color: #fff; font-size: 10px; font-weight: 800; box-shadow: 0 2px 6px rgba(0, 168, 142, 0.35);
+  color: #fff; font-size: 10px; font-weight: 800; box-shadow: 0 2px 6px var(--accent-glow);
 }
-.tier-chip { background: rgba(24, 168, 200, 0.18); color: #7fe3f2; box-shadow: inset 0 0 0 1px rgba(24, 168, 200, 0.22); }
+.tier-chip { background: var(--accent-tint-strong); color: var(--gold-300); box-shadow: inset 0 0 0 1px var(--accent-glow); }
 .sidebar-footer { border-top: 1px solid rgba(255, 255, 255, 0.08); }
 .account-mini { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: var(--r-md); padding: 8px; }
 
@@ -4974,21 +5181,21 @@ body {
   background: rgba(255, 255, 255, 0.7); box-shadow: inset 0 1px 2px rgba(11, 24, 58, 0.04);
   transition: box-shadow .18s var(--ease-out), border-color .18s, background .18s;
 }
-.quick-search:focus-within { background: #fff; border-color: var(--brand-cyan); box-shadow: 0 0 0 3px var(--accent-glow); }
-.quick-search kbd { background: #fff; border-color: var(--border-soft); }
+.quick-search:focus-within { background: var(--surface); border-color: var(--focus-ring); box-shadow: var(--ring); }
+.quick-search kbd { background: var(--surface); border-color: var(--border-soft); }
 .wallet-pill {
-  border-radius: 999px; border-color: rgba(0, 168, 142, 0.28);
-  background: linear-gradient(135deg, rgba(0, 168, 142, 0.14), rgba(24, 168, 200, 0.12));
-  color: #0a7d68; box-shadow: 0 2px 10px rgba(0, 168, 142, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  border-radius: 999px; border-color: var(--accent-glow);
+  background: linear-gradient(135deg, var(--accent-tint-strong), var(--accent-tint-strong));
+  color: var(--brand-accent-text); box-shadow: var(--shadow-subtle);
 }
 .wallet-pill svg { color: var(--brand-teal); }
-.wallet-pill strong { color: #06564a; font-variant-numeric: tabular-nums; }
+.wallet-pill strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .refresh-pill { border-radius: 999px; background: rgba(255, 255, 255, 0.6); border-color: var(--border-soft); }
 .lang-toggle { background: rgba(255, 255, 255, 0.6); border-color: var(--border-soft); }
 .lang-toggle button.active { background: linear-gradient(135deg, var(--brand-navy-3), var(--brand-navy-2)); box-shadow: 0 2px 6px rgba(11, 31, 82, 0.28); }
 .icon-button { border-radius: 10px; background: rgba(255, 255, 255, 0.5); border-color: var(--border-soft); transition: background .16s, border-color .16s, color .16s, box-shadow .16s; }
-.icon-button:hover, .icon-button.active { background: #fff; border-color: var(--border-strong); color: var(--brand-navy-2); box-shadow: var(--shadow-soft); }
-.role-chip { background: rgba(24, 168, 200, 0.12); color: var(--brand-cyan-2); }
+.icon-button:hover, .icon-button.active { background: var(--surface); border-color: var(--border-strong); color: var(--text-primary); box-shadow: var(--shadow-soft); }
+.role-chip { background: var(--accent-tint-strong); color: var(--brand-cyan-2); }
 
 /* ── Page header hierarchy ────────────────────────────────────────────── */
 .page-kicker { color: var(--brand-cyan-2); }
@@ -5001,7 +5208,7 @@ body {
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   box-shadow: var(--shadow-soft); transition: transform .18s var(--ease-out), box-shadow .18s var(--ease-out), border-color .18s;
 }
-.stat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-card); border-color: rgba(24, 168, 200, 0.35); }
+.stat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-card); border-color: var(--accent-glow); }
 .stat-ico {
   width: 38px; height: 38px; border-radius: 11px; color: #fff;
   background: linear-gradient(135deg, var(--brand-navy-3), var(--brand-navy));
@@ -5009,29 +5216,29 @@ body {
 }
 .stat-ico svg { width: 18px; height: 18px; }
 .stats-grid .stat-card:nth-child(5n+1) .stat-ico { background: linear-gradient(135deg, var(--brand-teal), var(--brand-cyan)); box-shadow: var(--shadow-glow-teal); }
-.stats-grid .stat-card:nth-child(5n+2) .stat-ico { background: linear-gradient(135deg, #3A57C9, #263B8F); box-shadow: 0 5px 14px rgba(38, 59, 143, 0.30); }
-.stats-grid .stat-card:nth-child(5n+3) .stat-ico { background: linear-gradient(135deg, var(--brand-cyan), var(--brand-cyan-2)); box-shadow: 0 5px 14px rgba(24, 168, 200, 0.30); }
-.stats-grid .stat-card:nth-child(5n+4) .stat-ico { background: linear-gradient(135deg, var(--success), #0b8457); box-shadow: 0 5px 14px rgba(14, 159, 110, 0.30); }
-.stats-grid .stat-card:nth-child(5n+5) .stat-ico { background: linear-gradient(135deg, #7C5BD9, var(--purple)); box-shadow: 0 5px 14px rgba(105, 65, 198, 0.28); }
+.stats-grid .stat-card:nth-child(5n+2) .stat-ico { background: linear-gradient(135deg, var(--navy-500), var(--navy-700)); }
+.stats-grid .stat-card:nth-child(5n+3) .stat-ico { background: linear-gradient(135deg, var(--brand-cyan), var(--brand-cyan-2)); box-shadow: 0 5px 14px var(--accent-glow); }
+.stats-grid .stat-card:nth-child(5n+4) .stat-ico { background: var(--success-soft); color: var(--success); }
+.stats-grid .stat-card:nth-child(5n+5) .stat-ico { background: var(--purple-soft); color: var(--purple); }
 .stat-value { font-size: 26px; line-height: 32px; }
 
 /* Wallet card: keep Remaining Balance as the hero ── */
 .wallet-metric--balance {
-  background: linear-gradient(135deg, rgba(0, 168, 142, 0.12), rgba(24, 168, 200, 0.08));
-  border-color: rgba(0, 168, 142, 0.32); box-shadow: inset 0 0 0 1px rgba(0, 168, 142, 0.10);
+  background: linear-gradient(135deg, var(--accent-tint-strong), var(--accent-tint));
+  border-color: var(--accent-glow); box-shadow: inset 0 0 0 1px var(--accent-tint-strong);
 }
-.wallet-metric--balance .wallet-metric__value { color: #06564a; }
+.wallet-metric--balance .wallet-metric__value { color: var(--brand-accent-text); }
 
 /* ── Cards & panels: soft depth ───────────────────────────────────────── */
 .table-card, .panel, .filter-rail { border-color: var(--border-soft); border-radius: var(--r-md); box-shadow: var(--shadow-soft); }
 .table-toolbar { background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(247, 250, 253, 0.92)); }
 
 /* ── Tables: softer header, clear hover + selected-row state ──────────── */
-.data-table thead th { background: linear-gradient(180deg, #F3F6FC, #EAF0F8); color: var(--text-secondary); border-bottom-color: var(--border-soft); }
+.data-table thead th { background: var(--surface-raised); color: var(--text-secondary); border-bottom-color: var(--border-soft); }
 .data-table tbody tr { transition: background .12s ease; }
-.data-table tbody tr:hover { background: rgba(24, 168, 200, 0.05); }
+.data-table tbody tr:hover { background: var(--accent-tint); }
 .data-table tbody tr:has(.inv-check:checked),
-.data-table tbody tr.is-selected { background: rgba(24, 168, 200, 0.10); box-shadow: inset 3px 0 0 var(--brand-cyan); }
+.data-table tbody tr.is-selected { background: var(--accent-tint-strong); box-shadow: inset 3px 0 0 var(--brand-cyan); }
 [dir="rtl"] .data-table tbody tr:has(.inv-check:checked),
 [dir="rtl"] .data-table tbody tr.is-selected { box-shadow: inset -3px 0 0 var(--brand-cyan); }
 .data-table input[type="checkbox"], .inv-check {
@@ -5042,14 +5249,14 @@ body {
 .btn { border-radius: 10px; transition: transform .14s var(--ease-out), box-shadow .18s, background .18s, border-color .18s, color .18s; }
 .btn:disabled { opacity: .55; box-shadow: none !important; transform: none !important; }
 .btn-outline { background: rgba(255, 255, 255, 0.82); border-color: var(--border-strong); }
-.btn-outline:hover { background: #fff; border-color: var(--brand-cyan); color: var(--brand-navy-2); box-shadow: var(--shadow-soft); transform: translateY(-1px); }
+.btn-outline:hover { background: var(--surface); border-color: var(--brand-accent); color: var(--text-primary); box-shadow: var(--shadow-soft); transform: translateY(-1px); }
 .btn-success:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(14, 159, 110, 0.30); }
 .btn-danger:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(224, 36, 36, 0.30); }
 .btn-sm { min-height: 32px; }
 
 /* Tier badge variants — refined, never flashy gold */
-.badge-gold { background: #fbf1dc; color: #9a6a12; }
-.badge-gold::before { background: #c8902a; }
+.badge-gold { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
+.badge-gold::before { background: var(--brand-accent); }
 
 /* ── Modals: glass shell + sticky footer ──────────────────────────────── */
 .modal { border-radius: var(--r-lg); border: 1px solid var(--glass-border); box-shadow: var(--shadow-float); }
@@ -5067,7 +5274,7 @@ body {
   background: var(--bg-glass-strong);
   -webkit-backdrop-filter: var(--blur-glass); backdrop-filter: var(--blur-glass);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-float), 0 0 0 1px rgba(24, 168, 200, 0.14);
+  box-shadow: var(--shadow-float), 0 0 0 1px var(--accent-tint-strong);
   animation: bulkUp .22s var(--ease-out);
 }
 [dir="rtl"] .bulk-toolbar { left: 0; right: var(--sidebar-w); }
@@ -5118,19 +5325,19 @@ body.has-bulkbar .page-wrap { padding-bottom: 104px; }
 }
 .btn-primary::after { background: rgba(255, 255, 255, 0.10); }
 .btn-primary:hover {
-  background: linear-gradient(135deg, #18C6B3 0%, var(--accent-teal) 100%);
-  box-shadow: 0 6px 18px rgba(20, 184, 166, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  background: linear-gradient(135deg, var(--navy-700) 0%, var(--navy-800) 100%);
+  box-shadow: var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.16);
   transform: translateY(-1px);
 }
 .btn-primary:active { transform: translateY(0); box-shadow: 0 1px 3px rgba(13, 148, 136, 0.30); }
-.request-cta { box-shadow: 0 8px 20px rgba(20, 184, 166, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
+.request-cta { box-shadow: 0 8px 20px var(--accent-tint-strong), inset 0 1px 0 rgba(255, 255, 255, 0.18); }
 
 /* Secondary glass button variant */
 .btn-glass {
   background: var(--surface-glass); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border); color: var(--text-secondary); box-shadow: var(--shadow-soft);
 }
-.btn-glass:hover { background: #fff; border-color: var(--brand-teal); color: var(--brand-teal-2); transform: translateY(-1px); }
+.btn-glass:hover { background: var(--surface); border-color: var(--brand-accent); color: var(--brand-accent-text); transform: translateY(-1px); }
 
 /* Teal focus rings on inputs (was navy) */
 .input:focus, .select:focus, .textarea:focus,
@@ -5146,21 +5353,21 @@ body.has-bulkbar .page-wrap { padding-bottom: 104px; }
 .stat-ico {
   width: 40px; height: 40px; border-radius: 12px;
   background: var(--brand-accent-soft); color: var(--brand-teal-2);
-  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.16);
+  box-shadow: inset 0 0 0 1px var(--accent-tint-strong);
 }
 .stat-ico svg { width: 19px; height: 19px; stroke-width: 2.1; }
-.stats-grid .stat-card:nth-child(5n+1) .stat-ico { background: #D6F3EF; color: #0D9488; box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.20); }
-.stats-grid .stat-card:nth-child(5n+2) .stat-ico { background: #E0F2FE; color: #0369A1; box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.18); }
-.stats-grid .stat-card:nth-child(5n+3) .stat-ico { background: #E7EBFA; color: #27409A; box-shadow: inset 0 0 0 1px rgba(39, 64, 154, 0.16); }
-.stats-grid .stat-card:nth-child(5n+4) .stat-ico { background: #D1FAE5; color: #047857; box-shadow: inset 0 0 0 1px rgba(5, 150, 105, 0.18); }
-.stats-grid .stat-card:nth-child(5n+5) .stat-ico { background: #FEF3C7; color: #B45309; box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.22); }
+.stats-grid .stat-card:nth-child(5n+1) .stat-ico { background: var(--brand-accent-soft); color: var(--brand-accent-text); box-shadow: inset 0 0 0 1px var(--accent-tint-strong); }
+.stats-grid .stat-card:nth-child(5n+2) .stat-ico { background: var(--info-soft); color: var(--info); box-shadow: inset 0 0 0 1px rgba(29, 79, 216, 0.14); }
+.stats-grid .stat-card:nth-child(5n+3) .stat-ico { background: var(--navy-100); color: var(--navy-700); box-shadow: inset 0 0 0 1px rgba(26, 60, 135, 0.12); }
+.stats-grid .stat-card:nth-child(5n+4) .stat-ico { background: var(--success-soft); color: var(--success); box-shadow: inset 0 0 0 1px rgba(14, 124, 88, 0.14); }
+.stats-grid .stat-card:nth-child(5n+5) .stat-ico { background: var(--purple-soft); color: var(--purple); box-shadow: inset 0 0 0 1px rgba(105, 65, 198, 0.14); }
 
 /* Sidebar active icon tile now reads teal→cyan (tokens updated) + glow */
 .sidebar .nav-item.active > svg, .sidebar .nav-item.active > i {
   background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan));
 }
 /* Wallet metric "remaining" hero stays teal */
-.wallet-metric--balance { background: linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(56, 189, 248, 0.10)); border-color: rgba(20, 184, 166, 0.32); }
+.wallet-metric--balance { background: linear-gradient(135deg, var(--accent-tint-strong), var(--accent-tint-strong)); border-color: var(--accent-glow); }
 .wallet-metric--balance .wallet-metric__value { color: var(--brand-teal-2); }
 
 /* ═══ Dashboard hero + service quick-actions ═══ */
@@ -5170,8 +5377,8 @@ body.has-bulkbar .page-wrap { padding-bottom: 104px; }
   position: relative; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.10);
   box-shadow: var(--shadow-float);
   background:
-    radial-gradient(120% 150% at 100% 0%, rgba(56, 189, 248, 0.34), transparent 55%),
-    radial-gradient(120% 170% at 0% 110%, rgba(20, 184, 166, 0.30), transparent 52%),
+    radial-gradient(120% 150% at 100% 0%, var(--accent-glow), transparent 55%),
+    radial-gradient(120% 170% at 0% 110%, var(--accent-glow), transparent 52%),
     linear-gradient(135deg, var(--brand-navy) 0%, var(--brand-navy-2) 100%);
 }
 .dash-hero__main { min-width: 260px; flex: 1 1 360px; }
@@ -5194,7 +5401,7 @@ html[lang="ar"] .dash-hero__eyebrow { letter-spacing: 0; text-transform: none; }
 .hero-metric__label { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255, 255, 255, 0.70); }
 html[lang="ar"] .hero-metric__label { text-transform: none; letter-spacing: 0; }
 .hero-metric__num { font-size: 18px; font-weight: 800; }
-.hero-metric--balance { display: block; background: linear-gradient(135deg, rgba(20, 184, 166, 0.36), rgba(56, 189, 248, 0.22)); border-color: rgba(255, 255, 255, 0.24); }
+.hero-metric--balance { display: block; background: linear-gradient(135deg, var(--accent-glow), var(--accent-tint-strong)); border-color: rgba(255, 255, 255, 0.24); }
 .hero-metric--balance .hero-metric__value { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; margin-top: 3px; }
 
 .quick-actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 16px; }
@@ -5204,7 +5411,7 @@ html[lang="ar"] .hero-metric__label { text-transform: none; letter-spacing: 0; }
   color: var(--text-secondary); font-size: 12px; font-weight: 700;
   transition: transform 0.16s var(--ease-out), box-shadow 0.16s, border-color 0.16s, color 0.16s;
 }
-.qa-tile:hover { transform: translateY(-3px); border-color: rgba(20, 184, 166, 0.45); box-shadow: var(--shadow-card); color: var(--brand-navy-2); }
+.qa-tile:hover { transform: translateY(-3px); border-color: var(--accent-glow); box-shadow: var(--shadow-card); color: var(--brand-navy-2); }
 .qa-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; background: var(--brand-accent-soft); color: var(--brand-teal-2); transition: background 0.16s, color 0.16s, box-shadow 0.16s; }
 .qa-ico svg { width: 21px; height: 21px; }
 .qa-tile:hover .qa-ico { background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan)); color: #fff; box-shadow: var(--shadow-glow-teal); }
@@ -5224,9 +5431,9 @@ html[lang="ar"] .hero-metric__label { text-transform: none; letter-spacing: 0; }
 }
 
 /* Destination cards — teal-consistent icon chip + accent (match quick-actions) */
-.dest-card-icon { background: var(--brand-accent-soft); border-color: rgba(20, 184, 166, 0.18); color: var(--brand-teal-2); transition: background 0.18s var(--ease-out), color 0.18s, box-shadow 0.18s; }
+.dest-card-icon { background: var(--brand-accent-soft); border-color: var(--accent-tint-strong); color: var(--brand-teal-2); transition: background 0.18s var(--ease-out), color 0.18s, box-shadow 0.18s; }
 .dest-card::before { background: linear-gradient(90deg, var(--accent-teal), var(--accent-cyan)); }
-.dest-card:hover { border-color: rgba(20, 184, 166, 0.45); }
+.dest-card:hover { border-color: var(--accent-glow); }
 .dest-card:hover .dest-card-icon { background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan)); color: #fff; box-shadow: var(--shadow-glow-teal); }
 /* Destination cards WITH a background image: darken for legible white text */
 .dest-card.has-bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(7,31,92,0.20), rgba(7,31,92,0.78)); z-index: 0; }
@@ -5303,7 +5510,7 @@ html[lang="ar"] .hero-metric__label { text-transform: none; letter-spacing: 0; }
 
 .hotel-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; padding: 12px; }
 .hotel-card { display: flex; gap: 12px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-16); box-shadow: var(--shadow-soft); transition: transform .16s var(--ease-out), box-shadow .16s, border-color .16s; }
-.hotel-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); border-color: rgba(20, 184, 166, 0.4); }
+.hotel-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); border-color: var(--accent-glow); }
 .hotel-card__media { position: relative; width: 92px; height: 92px; flex: 0 0 92px; border-radius: 12px; overflow: hidden; background: var(--surface-muted); padding: 0; cursor: pointer; }
 .hotel-card__media img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .hotel-card__initials { width: 100%; height: 100%; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent-teal), var(--accent-cyan)); color: #fff; font-weight: 800; font-size: 22px; }
@@ -5359,7 +5566,7 @@ html[lang="ar"] .hero-metric__label { text-transform: none; letter-spacing: 0; }
   height: 40px;
   color: var(--text-secondary);
   border-bottom: 2px solid var(--border-strong);
-  background: linear-gradient(var(--surface-raised), #fff);
+  background: var(--surface-raised);
 }
 .data-table tbody td { height: 48px; color: var(--text-secondary); }
 .data-table tbody tr:hover td { background: var(--brand-accent-soft); }
@@ -5411,7 +5618,7 @@ html[dir="rtl"] .modal-body .form-section-title::before { order: 2; }
 }
 .he-rate:hover, .tr-ep:hover { border-color: var(--border-strong); }
 .he-rate { background: var(--surface-raised); }
-.he-supp { background: #fff; border: 1px solid var(--border); border-radius: var(--r-8); padding: 8px 10px; }
+.he-supp { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-8); padding: 8px 10px; }
 
 /* ── Form fields: clearer labels + comfortable inputs ── */
 .form-field label { font-weight: 600; color: var(--text-secondary); }
@@ -5493,3 +5700,1111 @@ html[dir="rtl"] .modal-body .form-section-title::before { order: 2; }
     grid-template-columns: repeat(2, 1fr) !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MERIDIAN LAYER — the authoritative surface pass.
+   ───────────────────────────────────────────────────────────────────────────
+   Appended last, so this is what the cascade actually resolves to. Everything
+   above is either the structural base or a historical patch; this section is
+   where the identity, the motion, and the dark theme are decided.
+
+   Rules of the layer:
+     · colour only via tokens — never a literal, so both themes stay in sync
+     · elevation via luminance in dark, shadow in light
+     · gold marks state (active / selected / focused), navy marks structure
+     · every transition names its properties; nothing animates `all`
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Motion floor ─────────────────────────────────────────────────────────
+   One easing curve and four durations across the whole app. Interfaces feel
+   "smooth" when timings agree, not when individual widgets are fancy. */
+
+.btn, .icon-button, .icon-btn, .nav-item, .tab, .stat-card, .qa-tile,
+.hotel-card, .dest-card, .panel, .table-card, .filter-chip, .badge,
+.pager button, .lang-toggle button, .theme-toggle, .mode-card, .he-amenity,
+.he-tabbtn, .bk-tab, .link-btn, .sort-btn, .row-actions button {
+  transition-property: background-color, background-image, border-color, color,
+                       box-shadow, transform, opacity;
+  transition-duration: var(--dur-2);
+  transition-timing-function: var(--ease-standard);
+}
+
+/* Theme swaps animate the big flat planes only. Animating every element makes
+   the switch feel laggy; animating nothing makes it feel like a page reload. */
+html.theme-transition,
+html.theme-transition body,
+html.theme-transition .sidebar,
+html.theme-transition .topbar,
+html.theme-transition .panel,
+html.theme-transition .table-card,
+html.theme-transition .stat-card,
+html.theme-transition .modal {
+  transition: background-color var(--dur-4) var(--ease-standard),
+              color var(--dur-4) var(--ease-standard),
+              border-color var(--dur-4) var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .btn:hover, .stat-card:hover, .qa-tile:hover, .hotel-card:hover,
+  .dest-card:hover, .sidebar .nav-item:hover, .icon-button:hover {
+    transform: none !important;
+  }
+}
+
+/* ── Type ─────────────────────────────────────────────────────────────────
+   Arabic needs a touch more size and line-height than Latin at the same
+   optical weight; Cairo's x-height runs small in dense tables. */
+
+body { font-size: 13.5px; letter-spacing: -0.002em; }
+html[lang="ar"] body { font-size: 14.5px; line-height: 1.62; }
+html[lang="ar"] .data-table { font-size: 13.5px; }
+html[lang="ar"] .btn { font-size: 13px; }
+
+.page-title { letter-spacing: -0.022em; font-weight: 800; }
+.stat-value, .numeric, .hero-metric__num, .hero-metric__value,
+.wallet-metric__value, .rf-price, .hotel-card__price, .dash-hero__title {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+/* ── Focus. One ring, always visible, always 3:1 against its surround. ──── */
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--r-4);
+}
+.sidebar :where(button, a):focus-visible {
+  outline-color: var(--brand-accent);
+  outline-offset: -2px;
+}
+.input:focus, .select:focus, .textarea:focus,
+.field input:focus, .field select:focus, .field textarea:focus,
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+  border-color: var(--brand-accent);
+  box-shadow: var(--ring);
+  outline: none;
+}
+
+/* ── Chrome: sidebar ──────────────────────────────────────────────────── */
+
+.sidebar { border-inline-end: 1px solid var(--sidebar-edge); }
+.brand-block { border-bottom-color: var(--sidebar-edge); }
+.nav-label { color: var(--sidebar-text-dim); font-weight: 700; }
+.sidebar .nav-item { color: var(--sidebar-text); }
+
+/* Nav icons sit bare on the chrome. The old build gave every item a rounded
+   tile, which turned a 25-item menu into 25 competing boxes; the icon alone
+   is enough to scan by. */
+.sidebar .nav-item > svg,
+.sidebar .nav-item > i {
+  width: 17px; height: 17px; flex: 0 0 17px;
+  padding: 0; background: none; border-radius: 0; box-shadow: none;
+  color: rgba(255, 255, 255, 0.58);
+  stroke-width: 1.9;
+}
+.sidebar .nav-item { gap: 11px; padding: 8px 11px; border-radius: 7px; }
+.sidebar .nav-item:hover { background: rgba(255, 255, 255, 0.05); transform: none; }
+[dir="rtl"] .sidebar .nav-item:hover { transform: none; }
+.sidebar .nav-item:hover > svg,
+.sidebar .nav-item:hover > i { background: none; color: rgba(255, 255, 255, 0.85); }
+
+/* Active state: a lifted surface and full-strength text. One quiet signal,
+   not a coloured pill — the item you're on is the only lit row on screen. */
+.sidebar .nav-item.active {
+  background: var(--sidebar-active-bg);
+  color: #fff;
+  box-shadow: none;
+  font-weight: 650;
+}
+[dir="rtl"] .sidebar .nav-item.active { background: var(--sidebar-active-bg); }
+.sidebar .nav-item.active > svg,
+.sidebar .nav-item.active > i { background: none; color: #fff; box-shadow: none; }
+.sidebar .nav-item.active::before {
+  top: 9px; bottom: 9px; left: 0; width: 2px;
+  background: var(--navy-400);
+  box-shadow: none;
+  border-radius: 0 2px 2px 0;
+}
+[dir="rtl"] .sidebar .nav-item.active::before { left: auto; right: 0; border-radius: 2px 0 0 2px; }
+
+/* Counts are data, so they stay neutral until there is something to act on. */
+.nav-count {
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.80);
+  box-shadow: none;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-footer { border-top-color: var(--sidebar-edge); }
+.account-mini {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.07);
+}
+.avatar { background: rgba(255, 255, 255, 0.10); color: #fff; font-weight: 650; }
+.brand-mark { background: rgba(255, 255, 255, 0.10); color: #fff; box-shadow: none; }
+.tier-chip, .sidebar .role-chip {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
+  box-shadow: none;
+  font-weight: 600;
+}
+
+/* ── Chrome: topbar ───────────────────────────────────────────────────── */
+
+.topbar {
+  background: var(--glass-bg-strong);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 var(--glass-border) inset, 0 8px 24px rgba(11, 31, 82, 0.04);
+}
+:root[data-theme="dark"] .topbar { box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 8px 24px rgba(0,0,0,0.35); }
+
+.breadcrumb-label { color: var(--text-muted); }
+.breadcrumb-title { color: var(--text-primary); }
+.quick-search { background: var(--surface-raised); border-color: var(--border); }
+.quick-search input { color: var(--text-primary); }
+.quick-search input::placeholder { color: var(--text-muted); }
+.quick-search kbd { color: var(--text-muted); }
+.refresh-pill { background: var(--surface-raised); border-color: var(--border); color: var(--text-secondary); }
+.refresh-pill:hover { border-color: var(--border-strong); color: var(--text-primary); }
+.icon-button { background: transparent; border-color: transparent; color: var(--text-muted); }
+.icon-button:hover, .icon-button.active { background: var(--surface-raised); border-color: var(--border); color: var(--text-primary); }
+
+/* Wallet pill — a value readout, not a badge. The number does the work; the
+   container just groups it. */
+.wallet-pill {
+  background: var(--surface-raised);
+  border-color: var(--border);
+  color: var(--text-muted);
+  font-weight: 600;
+  box-shadow: none;
+}
+.wallet-pill svg { color: var(--text-muted); }
+.wallet-pill strong { color: var(--text-primary); font-weight: 650; }
+
+.lang-toggle { background: var(--surface-raised); border-color: var(--border); }
+.lang-toggle button { color: var(--text-muted); font-weight: 600; }
+.lang-toggle button.active {
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-subtle);
+}
+:root[data-theme="dark"] .lang-toggle button.active { background: var(--surface-muted); color: var(--text-primary); }
+.topbar .role-chip { background: var(--surface-raised); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* ── Theme toggle ─────────────────────────────────────────────────────────
+   A two-state segmented switch rather than a single icon button: with one
+   icon you can never tell whether it shows the current theme or the one
+   you'd get by clicking. Two slots with a moving thumb removes the guess. */
+
+.theme-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-raised);
+  flex: 0 0 auto;
+}
+.theme-toggle::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  inset-inline-start: 3px;
+  width: 30px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-subtle);
+  transition: transform var(--dur-3) var(--ease-standard), background-color var(--dur-3) var(--ease-standard);
+}
+:root[data-theme="dark"] .theme-toggle::before {
+  transform: translateX(30px);
+  background: var(--surface-muted);
+}
+/* `dir` sits on <html>, which is also :root — so this is one element, not two. */
+:root[data-theme="dark"][dir="rtl"] .theme-toggle::before { transform: translateX(-30px); }
+.theme-toggle button {
+  position: relative;
+  z-index: 1;
+  width: 30px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-muted);
+}
+.theme-toggle button svg { width: 15px; height: 15px; }
+.theme-toggle button:hover { color: var(--text-secondary); }
+:root:not([data-theme="dark"]) .theme-toggle button[data-theme-set="light"] { color: var(--text-primary); }
+:root[data-theme="dark"] .theme-toggle button[data-theme-set="dark"] { color: var(--text-primary); }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────
+   Two weights of "primary": navy is the workhorse (save, confirm, submit),
+   gold is the invitation (request a quote, new booking). Gold carries navy
+   text at 6.7:1 — the pairing is accessible, which is why it can be used
+   at full saturation instead of being watered down. */
+
+/* Flat fills, one hairline, a real press. No gradients, no glow, no hover
+   float — those three are what made the old buttons read as generated rather
+   than drawn. Weight is carried by colour and size instead. */
+
+.btn {
+  min-height: 38px;
+  padding: 0 15px;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  box-shadow: none;
+  transition: background-color var(--dur-2) var(--ease-standard),
+              border-color var(--dur-2) var(--ease-standard),
+              color var(--dur-2) var(--ease-standard),
+              box-shadow var(--dur-2) var(--ease-standard);
+}
+.btn i, .btn svg { width: 16px; height: 16px; stroke-width: 2; }
+.btn:active { transform: none; }
+.btn-sm { min-height: 32px; padding: 0 11px; font-size: 12.5px; border-radius: 7px; }
+.btn-sm i, .btn-sm svg { width: 14px; height: 14px; }
+.btn-icon { width: 34px; min-height: 34px; padding: 0; border-radius: 8px; }
+.btn-block { width: 100%; }
+
+/* Primary — the accent, solid. One per screen: the action that commits. */
+.btn-primary {
+  background: var(--navy-600);
+  border-color: var(--navy-600);
+  color: #fff;
+}
+.btn-primary::after { content: none; }
+.btn-primary:hover { background: var(--navy-700); border-color: var(--navy-700); }
+.btn-primary:active { background: var(--navy-800); border-color: var(--navy-800); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.24); }
+:root[data-theme="dark"] .btn-primary { background: var(--navy-500); border-color: var(--navy-500); }
+:root[data-theme="dark"] .btn-primary:hover { background: var(--navy-400); border-color: var(--navy-400); }
+:root[data-theme="dark"] .btn-primary:active { background: var(--navy-600); border-color: var(--navy-600); }
+
+/* Was a second accent colour. It is now the same accent — a second saturated
+   hue for "also important" is exactly the ornament this system avoids. */
+.btn-teal, .request-cta {
+  background: var(--navy-600);
+  border-color: var(--navy-600);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: none;
+}
+.btn-teal:hover, .request-cta:hover {
+  background: var(--navy-700);
+  border-color: var(--navy-700);
+  box-shadow: none;
+}
+.btn-teal:active, .request-cta:active { background: var(--navy-800); border-color: var(--navy-800); box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.24); }
+:root[data-theme="dark"] .btn-teal,
+:root[data-theme="dark"] .request-cta { background: var(--navy-500); border-color: var(--navy-500); }
+:root[data-theme="dark"] .btn-teal:hover,
+:root[data-theme="dark"] .request-cta:hover { background: var(--navy-400); border-color: var(--navy-400); }
+.request-cta { min-height: 42px; padding: 0 18px; border-radius: 9px; }
+.request-cta-sm { min-height: 34px; padding: 0 13px; border-radius: 7px; box-shadow: none; }
+.request-cta svg, .btn-teal svg { color: currentColor; }
+
+/* Secondary — a hairline and nothing else until you touch it. */
+.btn-outline {
+  background: transparent;
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+.btn-outline:hover {
+  background: var(--surface-raised);
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+  box-shadow: none;
+  transform: none;
+}
+.btn-outline:active { background: var(--surface-muted); }
+
+.btn-muted { background: var(--surface-muted); border-color: transparent; color: var(--text-secondary); }
+.btn-muted:hover { background: var(--surface-sunken); color: var(--text-primary); }
+.btn-muted:active { box-shadow: inset 0 2px 4px rgba(11, 31, 82, 0.12); }
+
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); box-shadow: none; transform: none; }
+.btn-success { background: var(--success); border-color: var(--success); color: #fff; }
+.btn-success:hover { background: var(--success-hover); border-color: var(--success-hover); box-shadow: none; transform: none; }
+:root[data-theme="dark"] .btn-danger,
+:root[data-theme="dark"] .btn-success { color: var(--navy-950); font-weight: 700; }
+
+.btn-glass { background: var(--surface-glass); border-color: var(--glass-border); color: var(--text-secondary); box-shadow: none; }
+.btn-glass:hover { background: var(--surface); border-color: var(--border-strong); color: var(--text-primary); transform: none; }
+
+.btn:disabled { opacity: 0.45; box-shadow: none !important; transform: none !important; }
+.link-btn { color: var(--brand-accent-text); font-weight: 600; }
+.link-btn:hover { color: var(--text-primary); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Buttons sitting on the dark hero get their own light treatment. */
+.dash-hero__cta .btn-glass {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+.dash-hero__cta .btn-glass:hover { background: rgba(255, 255, 255, 0.16); border-color: rgba(255, 255, 255, 0.28); color: #fff; }
+.dash-hero__cta .btn-primary { background: #fff; border-color: #fff; color: var(--n-900); font-weight: 600; }
+.dash-hero__cta .btn-primary:hover { background: var(--n-100); border-color: var(--n-100); }
+
+/* Icon-only row actions in tables: quiet until hovered, never a coloured blob. */
+.row-actions .btn, .row-actions button {
+  width: 30px; min-height: 30px; padding: 0;
+  border-radius: 7px; border: 1px solid transparent;
+  background: transparent; color: var(--text-muted);
+}
+.row-actions .btn:hover, .row-actions button:hover {
+  background: var(--surface-muted); border-color: var(--border); color: var(--text-primary);
+}
+.row-actions .btn-danger, .row-actions button.btn-danger { background: transparent; color: var(--text-muted); }
+.row-actions .btn-danger:hover, .row-actions button.btn-danger:hover { background: var(--danger-soft); border-color: transparent; color: var(--danger); }
+
+/* Pills in the topbar keep the same button geometry so the bar reads as one row. */
+.refresh-pill, .wallet-pill { height: 38px; border-radius: 8px; }
+.lang-toggle, .theme-toggle { height: 38px; border-radius: 8px; }
+.lang-toggle button, .theme-toggle button { border-radius: 6px; height: 30px; }
+.theme-toggle::before { height: 30px; border-radius: 6px; }
+.icon-button { width: 38px; height: 38px; border-radius: 8px; }
+
+/* ── Surfaces ─────────────────────────────────────────────────────────── */
+
+.panel, .table-card, .filter-rail, .stat-card, .qa-tile, .hotel-card, .modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+/* Flat surfaces with a hairline. Shadows on every card produce a page of
+   floating tiles with no depth order; the border is enough to separate a
+   card from the ground, and real elevation is reserved for things that
+   actually float (modals, popovers, the bulk dock). */
+.panel, .table-card, .filter-rail { box-shadow: none; border-radius: var(--r-sm); }
+.panel-header, .filter-head, .table-toolbar, .table-foot {
+  background: var(--surface);
+  border-color: var(--border);
+}
+.panel-title, .modal-title, .filter-head { color: var(--text-primary); }
+.panel-subtitle, .page-subtitle { color: var(--text-muted); }
+.page-kicker { color: var(--brand-accent-text); letter-spacing: 0.10em; }
+
+.stat-card {
+  border-radius: var(--r-sm);
+  box-shadow: none;
+  background: var(--surface);
+}
+.stat-card:hover {
+  transform: none;
+  border-color: var(--border-strong);
+  box-shadow: none;
+}
+/* Stat icons were five different hues cycling by position, which implied a
+   categorical meaning that does not exist. They are all one neutral chip now;
+   the label and the number are what differ. */
+.stat-ico,
+.stats-grid .stat-card:nth-child(5n+1) .stat-ico,
+.stats-grid .stat-card:nth-child(5n+2) .stat-ico,
+.stats-grid .stat-card:nth-child(5n+3) .stat-ico,
+.stats-grid .stat-card:nth-child(5n+4) .stat-ico,
+.stats-grid .stat-card:nth-child(5n+5) .stat-ico {
+  width: 32px; height: 32px;
+  border-radius: var(--r-6);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  box-shadow: none;
+}
+.stat-ico svg { width: 16px; height: 16px; stroke-width: 1.8; }
+.stat-label { color: var(--text-muted); letter-spacing: 0.06em; }
+.stat-value { color: var(--text-primary); }
+.stat-sub { color: var(--text-muted); }
+
+.info-item { background: var(--surface-raised); border-color: var(--border); }
+.info-label { color: var(--text-muted); }
+.info-value { color: var(--text-primary); }
+.tabs { background: var(--surface-raised); border-color: var(--border); }
+.tab { color: var(--text-muted); }
+.tab:hover { color: var(--text-secondary); }
+.tab.active { background: var(--surface); color: var(--text-primary); box-shadow: var(--shadow-subtle); }
+.detail-tabs { border-bottom-color: var(--border); }
+
+/* ── Tables ───────────────────────────────────────────────────────────────
+   The densest surface in the product — agents read these for hours. Header
+   is a flat raised plane (no gradient: gradients fight sticky headers when
+   rows scroll under them), rows separate by hairline, and the selected row
+   is marked by a gold rail so selection survives colour-blindness. */
+
+.data-table thead th {
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-strong);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+.data-table tbody td { border-bottom-color: var(--border); color: var(--text-secondary); }
+.data-table tbody tr:hover td { background: var(--accent-tint); }
+.data-table tbody tr.selected td,
+.data-table tbody tr:has(.inv-check:checked) td { background: var(--accent-tint-strong); }
+.data-table tbody tr.selected td:first-child,
+.data-table tbody tr:has(.inv-check:checked) td:first-child {
+  box-shadow: inset 3px 0 0 var(--brand-accent);
+}
+[dir="rtl"] .data-table tbody tr.selected td:first-child,
+[dir="rtl"] .data-table tbody tr:has(.inv-check:checked) td:first-child {
+  box-shadow: inset -3px 0 0 var(--brand-accent);
+}
+.data-table .primary-text { color: var(--text-primary); }
+.data-table .secondary-text, .secondary-text { color: var(--text-muted); }
+.data-table input[type="checkbox"], .inv-check, .check-row input { accent-color: var(--brand-accent); }
+.logo-cell { background: var(--surface-raised); border-color: var(--border); color: var(--text-secondary); }
+.pager button { background: var(--surface); border-color: var(--border); color: var(--text-secondary); }
+.pager button:hover:not(.active) { border-color: var(--border-strong); color: var(--text-primary); }
+.pager button.active { background: var(--navy-800); border-color: var(--navy-800); color: #fff; }
+:root[data-theme="dark"] .pager button.active { background: var(--gold-500); border-color: var(--gold-500); color: var(--navy-900); }
+
+@media (max-width: 860px) {
+  .data-table tbody td:first-child { background: var(--surface); box-shadow: 1px 0 0 var(--border); }
+  .data-table thead th:first-child { background: var(--surface-raised); box-shadow: 1px 0 0 var(--border); }
+  .data-table tbody tr:hover td:first-child,
+  .data-table tbody tr.selected td:first-child { background: var(--accent-tint-strong); }
+}
+
+/* ── Badges. Status must survive both themes and greyscale, so each carries
+      a dot as well as a hue. ─────────────────────────────────────────────── */
+
+.badge { font-weight: 700; letter-spacing: 0.01em; }
+.badge-standard { background: var(--surface-muted); color: var(--text-secondary); }
+.badge-teal { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
+.badge-outline { border: 1px solid var(--border-strong); color: var(--text-secondary); background: transparent; }
+.badge-platinum { background: var(--purple-soft); color: var(--purple); }
+.badge-credit { background: var(--success-soft); color: var(--success); }
+.badge-debit { background: var(--danger-soft); color: var(--danger); }
+.badge-refund { background: var(--info-soft); color: var(--info); }
+
+/* ── Forms ────────────────────────────────────────────────────────────── */
+
+.field label, .form-field label, .field > span { color: var(--text-secondary); font-weight: 700; }
+.input, .select, .textarea,
+.field input, .field select, .field textarea,
+.form-field input, .form-field select, .form-field textarea {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-primary);
+  border-radius: var(--r-6);
+  transition: border-color var(--dur-2) var(--ease-standard),
+              box-shadow var(--dur-2) var(--ease-standard),
+              background-color var(--dur-2) var(--ease-standard);
+}
+.input::placeholder, .textarea::placeholder,
+.field input::placeholder, .field textarea::placeholder,
+.form-field input::placeholder, .form-field textarea::placeholder { color: var(--text-muted); }
+.field input:hover, .field select:hover, .field textarea:hover,
+.form-field input:hover, .form-field select:hover, .form-field textarea:hover { border-color: var(--border-strong); }
+.help-text, .rf-help { color: var(--text-muted); }
+.form-section-title { color: var(--text-primary); border-bottom-color: var(--border); }
+.modal-body .form-section { background: var(--surface-raised); border-color: var(--border); }
+.modal-body .form-section-title { color: var(--text-primary); }
+.modal-body .form-section-title::before { background: var(--brand-accent); }
+.rf-price { color: var(--brand-accent-text); }
+
+/* Native controls follow the theme (date pickers, select arrows, scrollbars) */
+:root[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
+:root[data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator,
+:root[data-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.7);
+}
+
+/* ── Modals & overlays ────────────────────────────────────────────────── */
+
+.modal-overlay { background: rgba(5, 13, 36, 0.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+:root[data-theme="dark"] .modal-overlay { background: rgba(0, 0, 0, 0.68); }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-modal);
+}
+.modal-header, .modal-footer { background: var(--surface); border-color: var(--border); }
+.modal-overlay.open .modal { animation: modalIn var(--dur-4) var(--ease-decel); }
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.toast {
+  background: var(--navy-900);
+  color: #fff;
+  border: 1px solid var(--sidebar-edge);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-float);
+  animation: toastIn var(--dur-4) var(--ease-decel);
+}
+:root[data-theme="dark"] .toast { background: var(--surface-overlay, var(--surface-muted)); color: var(--text-primary); }
+.toast.success { background: var(--success); color: #fff; }
+.toast.error { background: var(--danger); color: #fff; }
+.toast.warning { background: var(--warning); color: #fff; }
+:root[data-theme="dark"] .toast.success,
+:root[data-theme="dark"] .toast.error,
+:root[data-theme="dark"] .toast.warning { color: var(--navy-950); }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+.alert { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); border-radius: var(--r-8); }
+
+/* Offer popup — a drawn medallion instead of the 🎁 emoji it used to render.
+   Emoji pick up the OS font, so the same modal looked different on every
+   machine and had no relationship to the rest of the icon set. */
+.offer-medallion {
+  width: 72px; height: 72px; margin: 0 auto 18px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent-text);
+  box-shadow: inset 0 0 0 1px var(--accent-tint-strong);
+}
+.offer-medallion svg { width: 30px; height: 30px; stroke-width: 1.8; }
+.offer-validity {
+  display: inline-block; margin-bottom: 10px; padding: 4px 12px;
+  border-radius: var(--r-pill);
+  background: var(--surface-muted); color: var(--text-muted);
+  font-size: 11px; font-weight: 600;
+}
+
+/* ── Empty & loading states ───────────────────────────────────────────────
+   An empty table should read as "nothing here yet", not as "something
+   broke" — so it keeps the page's own surface and never uses danger red. */
+
+.empty-state { color: var(--text-muted); }
+.empty-state strong { color: var(--text-primary); }
+.empty-illustration { border-color: var(--border); background: var(--surface-raised); box-shadow: var(--shadow-subtle); }
+.empty-state svg { color: var(--text-muted); opacity: 0.6; }
+
+.skeleton { background: var(--surface-muted); }
+.skeleton::after { background: linear-gradient(90deg, transparent, var(--skeleton-sheen), transparent); }
+
+/* ── Dashboard hero ───────────────────────────────────────────────────── */
+
+/* One flat dark plane. The previous version stacked two radial washes and a
+   diagonal gradient behind the copy — three light sources on a panel whose
+   job is to state a name and a balance. */
+.dash-hero {
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  box-shadow: none;
+  background: var(--n-900);
+}
+:root[data-theme="dark"] .dash-hero { background: var(--surface-raised); border-color: var(--border); }
+.dash-hero__eyebrow { color: rgba(255, 255, 255, 0.55); font-weight: 600; }
+.dash-hero__sub { color: rgba(255, 255, 255, 0.68); }
+.dash-hero__title { letter-spacing: -0.025em; }
+.hero-metric { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.10); border-radius: var(--r-sm); }
+.hero-metric:hover { background: rgba(255, 255, 255, 0.10); }
+.hero-metric__ico { background: rgba(255, 255, 255, 0.10); }
+.hero-metric__label { color: rgba(255, 255, 255, 0.55); font-weight: 600; }
+/* The balance is the number the page exists to show. It earns emphasis from
+   size and a lighter surface — not from being the only coloured object. */
+.hero-metric--balance {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+}
+.hero-metric--balance:hover { background: rgba(255, 255, 255, 0.15); }
+.hero-metric--balance .hero-metric__value { font-size: 27px; }
+
+/* ── Quick actions / destination cards / hotel cards ──────────────────── */
+
+.qa-tile { background: var(--surface); border-color: var(--border); color: var(--text-secondary); border-radius: var(--r-sm); box-shadow: none; }
+.qa-tile:hover { transform: none; border-color: var(--border-strong); background: var(--surface-raised); box-shadow: none; color: var(--text-primary); }
+.qa-ico { background: var(--surface-muted); color: var(--text-secondary); border-radius: var(--r-sm); box-shadow: none; }
+.qa-ico svg { stroke-width: 1.7; }
+.qa-tile:hover .qa-ico { background: var(--brand-accent-soft); color: var(--brand-accent-text); box-shadow: none; }
+
+.dest-card { background: var(--surface); border-color: var(--border); }
+.dest-card::before { background: var(--brand-accent); }
+.dest-card:hover { border-color: var(--border-strong); }
+.dest-card-icon { background: var(--surface-muted); border-color: var(--border); color: var(--text-secondary); }
+.dest-card:hover .dest-card-icon { background: var(--brand-accent-soft); color: var(--brand-accent-text); box-shadow: none; }
+.dest-card-name { color: var(--text-primary); }
+.dest-card-sub, .dest-card-count { color: var(--text-muted); }
+
+.hotel-card { border-radius: var(--r-md); box-shadow: var(--shadow-soft); }
+.hotel-card:hover { border-color: var(--accent-tint-strong); box-shadow: var(--shadow-card); }
+.hotel-card__media { background: var(--surface-muted); }
+.hotel-card__initials { background: linear-gradient(140deg, var(--navy-700), var(--navy-900)); color: #fff; }
+.hotel-card__name, .hotel-card__price { color: var(--text-primary); }
+.hotel-card__meta { color: var(--text-secondary); }
+.hotel-view-toggle { background: var(--surface); border-color: var(--border); }
+.hotel-view-btn { color: var(--text-muted); }
+.hotel-view-btn.active { background: var(--brand-accent-soft); color: var(--brand-accent-text); }
+.filter-chip { background: var(--brand-accent-soft); border-color: var(--accent-tint-strong); color: var(--brand-accent-text); }
+.filter-chip--clear { background: var(--surface-muted); border-color: var(--border); color: var(--text-secondary); }
+.hotel-attr-chip, .hotel-attr-more, .amenity-chip, .area-chip {
+  background: var(--surface-muted); color: var(--text-secondary); border-color: var(--border);
+}
+
+/* ── Collapsed-sidebar brand mark + tooltips ──────────────────────────── */
+
+@media (min-width: 861px) {
+  body.sidebar-collapsed .brand-row::before {
+    background: linear-gradient(140deg, var(--gold-400), var(--gold-600));
+    color: var(--navy-900);
+    box-shadow: 0 6px 16px var(--accent-glow);
+  }
+  body.sidebar-collapsed .nav-item[data-tip]::after {
+    background: var(--navy-900);
+    color: #fff;
+    border: 1px solid var(--sidebar-edge);
+    box-shadow: var(--shadow-popover);
+  }
+  :root[data-theme="dark"] body.sidebar-collapsed .nav-item[data-tip]::after {
+    background: var(--surface-muted); color: var(--text-primary);
+  }
+}
+
+/* ── Bulk bar / glass utilities in dark ───────────────────────────────── */
+
+.bulk-toolbar { background: var(--glass-bg-strong); border-color: var(--glass-border); box-shadow: var(--shadow-float); }
+.bulk-toolbar .bulk-info::before { background: linear-gradient(var(--gold-400), var(--gold-600)); }
+.bulk-toolbar .bulk-info .primary-text { color: var(--text-primary); }
+.bulk-toolbar .bulk-info .secondary-text { color: var(--brand-accent-text); }
+.bulk-bar { background: var(--brand-accent-soft); color: var(--text-primary); border-bottom-color: var(--border); }
+.glass-panel, .glass-card, .glass-modal, .glass-pill {
+  background: var(--glass-bg); border-color: var(--glass-border); box-shadow: var(--glass-shadow);
+}
+
+/* ── Scrollbars follow the theme (otherwise dark mode gets white gutters) ─ */
+
+* { scrollbar-color: var(--border-strong) transparent; scrollbar-width: thin; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--r-pill); border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); background-clip: content-box; }
+.sidebar { scrollbar-color: rgba(255, 255, 255, 0.18) transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); background-clip: content-box; }
+
+/* ── Selection ────────────────────────────────────────────────────────── */
+
+::selection { background: var(--accent-tint-strong); color: var(--text-primary); }
+
+/* ── Entry choreography ───────────────────────────────────────────────────
+   Cards fade up in a short stagger on page render. Capped at six children:
+   beyond that the last card arrives late enough to feel like lag. */
+
+@keyframes meridianRise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.stats-grid > *, .quick-actions > *, .dest-grid > * {
+  animation: meridianRise var(--dur-4) var(--ease-decel) both;
+}
+.stats-grid > *:nth-child(1), .quick-actions > *:nth-child(1), .dest-grid > *:nth-child(1) { animation-delay: 0ms; }
+.stats-grid > *:nth-child(2), .quick-actions > *:nth-child(2), .dest-grid > *:nth-child(2) { animation-delay: 40ms; }
+.stats-grid > *:nth-child(3), .quick-actions > *:nth-child(3), .dest-grid > *:nth-child(3) { animation-delay: 80ms; }
+.stats-grid > *:nth-child(4), .quick-actions > *:nth-child(4), .dest-grid > *:nth-child(4) { animation-delay: 120ms; }
+.stats-grid > *:nth-child(5), .quick-actions > *:nth-child(5), .dest-grid > *:nth-child(5) { animation-delay: 160ms; }
+.stats-grid > *:nth-child(n+6), .quick-actions > *:nth-child(n+6), .dest-grid > *:nth-child(n+6) { animation-delay: 200ms; }
+
+/* ── Login ────────────────────────────────────────────────────────────────
+   The remote Unsplash photo is gone: it was a third-party request on the
+   critical path of the one page every session starts with, and it rendered
+   as a grey box whenever the CDN was slow. Replaced with a composed navy
+   field — a horizon glow, a starfield of route dots, and a gold meridian
+   arc — which ships inside the stylesheet and paints immediately. */
+
+.login-page { background: var(--n-950); padding: 24px; }
+:root[data-theme="dark"] .login-page { background: #06080C; }
+.login-shell {
+  position: relative;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: var(--r-lg);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.40);
+  overflow: hidden;
+}
+.login-panel {
+  position: relative;
+  background: var(--n-900);
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.07);
+}
+.login-panel > * { position: relative; z-index: 1; }
+.login-copy h1 { letter-spacing: -0.03em; font-weight: 700; }
+.login-copy p:last-child { color: rgba(255, 255, 255, 0.62); }
+.login-copy .eyebrow, .login-card-head .eyebrow {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.48);
+}
+html[lang="ar"] .login-copy .eyebrow,
+html[lang="ar"] .login-card-head .eyebrow { letter-spacing: 0; text-transform: none; }
+.login-card-head .eyebrow { color: var(--text-muted); }
+.login-metrics div {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.09);
+  border-radius: var(--r-sm);
+}
+.login-metrics strong { color: #fff; font-weight: 650; }
+.login-metrics span { color: rgba(255, 255, 255, 0.52); font-weight: 500; }
+.login-card { background: var(--surface); }
+.login-card-head h2 { color: var(--text-primary); letter-spacing: -0.02em; }
+.login-foot { color: var(--text-muted); }
+.login-card-controls { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.login-card-controls .btn-sm { min-height: 36px; padding: 0 12px; }
+
+/* The only action on the page — sized up, same accent as everywhere else. */
+#btnLogin.btn-primary { min-height: 44px; font-size: 14px; }
+
+/* ── Brand artwork ────────────────────────────────────────────────────────
+   The logo only ever sits on a navy plane (sidebar, login panel) in both
+   themes, so the white lockup is the only file needed — no recolouring, no
+   theme variant, no filters touching the artwork. Sized by height so the
+   supplied asset's own aspect ratio is preserved exactly as delivered. */
+.brand-logo, .login-logo-img {
+  width: auto;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+}
+.brand-logo { height: 34px; max-width: calc(var(--sidebar-w) - 56px); }
+.login-brand .login-logo-img { height: 44px; max-width: 260px; }
+@media (max-width: 900px) { .login-brand .login-logo-img { height: 36px; } }
+
+/* The panel used to be three blocks pushed to the corners of a 620px column,
+   which left two large voids. Grouping the mark with the copy and letting the
+   metrics sit at the foot removes them. */
+.login-shell { min-height: 560px; }
+.login-panel { justify-content: flex-end; gap: 28px; }
+.login-brand { margin-bottom: auto; }
+.login-copy h1 { margin-bottom: 10px; }
+
+@media (max-width: 900px) {
+  .login-shell { grid-template-columns: 1fr; min-height: 0; }
+  .login-panel { gap: 20px; padding: 28px; justify-content: flex-start; }
+  .login-brand { margin-bottom: 0; }
+  .login-copy h1 { font-size: 28px; line-height: 36px; }
+  .login-card { padding: 26px; }
+  .login-metrics { gap: 6px; }
+}
+
+/* ── Dark-mode corrections for surfaces that assumed a white page ──────── */
+
+:root[data-theme="dark"] {
+  /* modal / popover level — one step above --surface-raised */
+  --surface-overlay: #1E2A45;
+}
+:root[data-theme="dark"] .modal,
+:root[data-theme="dark"] .bulk-toolbar { background: var(--surface-overlay); }
+:root[data-theme="dark"] .modal-header,
+:root[data-theme="dark"] .modal-footer { background: var(--surface-overlay); }
+:root[data-theme="dark"] .modal-body .form-section { background: var(--surface-raised); }
+:root[data-theme="dark"] .he-supp,
+:root[data-theme="dark"] .he-rate,
+:root[data-theme="dark"] .tr-ep,
+:root[data-theme="dark"] .he-thumb,
+:root[data-theme="dark"] .he-main-preview { background: var(--surface-raised); border-color: var(--border); }
+:root[data-theme="dark"] .he-tabbtn { color: var(--text-secondary); }
+:root[data-theme="dark"] .he-thumb-actions button { background: rgba(232, 236, 245, 0.90); color: var(--navy-900); }
+:root[data-theme="dark"] .hd-policy { background: var(--surface-raised); }
+:root[data-theme="dark"] .empty-illustration { background: var(--surface-raised); }
+:root[data-theme="dark"] img.hotel-card__media,
+:root[data-theme="dark"] .dest-card-img { filter: brightness(0.92); }
+:root[data-theme="dark"] .brand-logo,
+:root[data-theme="dark"] .login-logo-img { filter: none; }
+
+/* Ensure anything still painting a literal white plane in dark mode is caught. */
+:root[data-theme="dark"] .table-toolbar,
+:root[data-theme="dark"] .panel-header,
+:root[data-theme="dark"] .table-foot,
+:root[data-theme="dark"] .tab.active,
+:root[data-theme="dark"] .pager button,
+:root[data-theme="dark"] .quick-search kbd,
+:root[data-theme="dark"] .hms-nav:hover { background: var(--surface-raised); }
+
+/* ── Print: never print the dark theme or the app chrome ──────────────── */
+
+@media print {
+  .sidebar, .topbar, .bulk-toolbar, .toast, .page-actions, .filter-rail { display: none !important; }
+  .main-content { margin: 0 !important; padding-top: 0 !important; }
+  body { background: #fff !important; color: #000 !important; }
+  .panel, .table-card { box-shadow: none !important; border-color: #ccc !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   IDENTITY PASS — navy chrome, drawn status colours, Phosphor sizing.
+   ───────────────────────────────────────────────────────────────────────────
+   Three corrections to the layer above:
+
+   1. CHROME IS NAVY, NOT BLACK. Neutral-grey chrome is the right call for a
+      product whose brand is neutral. Elbakri's mark is #0B1F52, so grey chrome
+      throws the identity away. The sidebar is the logo navy, flat — brand
+      colour, none of the gradient/glow ornament it used to carry.
+
+   2. STATUS COLOURS ARE DRAWN, NOT DEFAULTED. #22c55e / #ef4444 are the stock
+      framework values; they read as a template and they clash with navy.
+      These are mixed for this palette: pine green, oxblood red, ochre amber —
+      each held to >=4.9:1 on its own surface.
+
+   3. BADGES ARE TAGS, NOT PILLS. A saturated capsule per row is the loudest
+      thing in a table it is only annotating. Squared tag, hairline, dot.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Chrome — the logo navy itself. */
+  --sidebar-bg: #0B1F52;
+  --sidebar-edge: rgba(255, 255, 255, 0.09);
+  --sidebar-text: rgba(255, 255, 255, 0.74);
+  --sidebar-text-dim: rgba(255, 255, 255, 0.40);
+  --sidebar-active-bg: rgba(255, 255, 255, 0.10);
+
+  /* Page ground picks up a trace of the brand so white cards read as warm-cool
+     against it rather than floating on flat grey. */
+  --bg-base: #F4F6FA;
+  --border: #E1E6EF;
+  --border-strong: #C7CFDE;
+
+  /* Status — mixed for this palette, not taken from a framework default. */
+  --success: #17795E;        /* pine — 5.3:1 on white */
+  --success-soft: #E1F1EB;
+  --success-hover: #12634C;
+  --danger: #B0392F;         /* oxblood — 6.1:1 on white */
+  --danger-soft: #FAE7E5;
+  --danger-hover: #932E26;
+  --warning: #9A6414;        /* ochre — 5.0:1 on white */
+  --warning-soft: #F7EDDC;
+  --info: var(--navy-600);
+  --info-soft: var(--navy-50);
+}
+
+:root[data-theme="dark"] {
+  /* Deep navy, not neutral black — same reasoning as light. */
+  --sidebar-bg: #081432;
+  --bg-base: #060A14;
+
+  --surface: #0C1222;
+  --surface-raised: #131A2C;
+  --surface-muted: #1A2338;
+  --surface-sunken: #080D18;
+  --surface-overlay: #1B2439;
+  --border: #232D44;
+  --border-strong: #35415C;
+
+  --success: #3FB98C;
+  --success-soft: rgba(63, 185, 140, 0.15);
+  --success-hover: #2FA57A;
+  --danger: #E8695C;
+  --danger-soft: rgba(232, 105, 92, 0.15);
+  --danger-hover: #D9564A;
+  --warning: #D9A441;
+  --warning-soft: rgba(217, 164, 65, 0.15);
+  --info: var(--navy-400);
+  --info-soft: rgba(97, 128, 214, 0.15);
+}
+
+/* ── Phosphor sizing ──────────────────────────────────────────────────────
+   Phosphor renders as a font, so the `svg { width: … }` rules throughout this
+   file no longer bite. Size is font-size; the box follows it. */
+
+.ph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 16px;
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+}
+.btn .ph { font-size: 16px; }
+.btn-sm .ph { font-size: 15px; }
+.nav-item .ph, .sidebar .nav-item > .ph { font-size: 17px; width: 17px; height: 17px; flex: 0 0 17px; }
+.icon-button .ph, .icon-btn .ph { font-size: 17px; }
+.stat-ico .ph { font-size: 17px; }
+.qa-ico .ph { font-size: 21px; }
+.hero-metric__ico .ph { font-size: 17px; }
+.dest-card-icon .ph { font-size: 19px; }
+.quick-search .ph { font-size: 16px; color: var(--text-muted); }
+.badge .ph { font-size: 12px; }
+.row-actions .ph { font-size: 16px; }
+.empty-state .ph { font-size: 34px; }
+.offer-medallion .ph { font-size: 30px; }
+.modal-header .icon-button .ph { font-size: 18px; }
+.table-toolbar .ph, .filter-head .ph { font-size: 16px; }
+.he-tabbtn .ph, .bk-tab .ph { font-size: 16px; }
+.login-card .ph { font-size: 17px; }
+/* The submit spinner is a glyph now, so rotate the element itself. */
+.btn-spin .ph { animation: btnspin 0.7s linear infinite; }
+
+/* ── Navy chrome ──────────────────────────────────────────────────────── */
+
+.sidebar { background: var(--sidebar-bg); }
+.brand-block { border-bottom-color: var(--sidebar-edge); }
+.sidebar .nav-item > .ph { color: rgba(255, 255, 255, 0.60); }
+.sidebar .nav-item:hover > .ph { color: rgba(255, 255, 255, 0.88); }
+.sidebar .nav-item.active > .ph { color: #fff; }
+.sidebar .nav-item.active::before { background: #fff; }
+
+.topbar { background: var(--surface); border-bottom: 1px solid var(--border); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; }
+
+/* ── Status as tags ───────────────────────────────────────────────────── */
+
+.badge {
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.badge::before { width: 5px; height: 5px; }
+
+.badge-pending, .badge-unpaid, .badge-warning, .badge-submitted, .badge-under_review {
+  background: var(--warning-soft); color: var(--warning); border-color: color-mix(in srgb, var(--warning) 22%, transparent);
+}
+.badge-confirmed, .badge-paid, .badge-approved, .badge-active, .badge-success, .badge-completed {
+  background: var(--success-soft); color: var(--success); border-color: color-mix(in srgb, var(--success) 22%, transparent);
+}
+.badge-cancelled, .badge-rejected, .badge-overdue, .badge-inactive, .badge-danger {
+  background: var(--danger-soft); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 22%, transparent);
+}
+.badge-info, .badge-ticketed {
+  background: var(--info-soft); color: var(--info); border-color: color-mix(in srgb, var(--info) 22%, transparent);
+}
+.badge-standard, .badge-silver {
+  background: var(--surface-muted); color: var(--text-secondary); border-color: var(--border);
+}
+.badge-teal, .badge-gold, .badge-platinum {
+  background: var(--brand-accent-soft); color: var(--brand-accent-text); border-color: color-mix(in srgb, var(--brand-accent) 22%, transparent);
+}
+.badge-credit { background: var(--success-soft); color: var(--success); border-color: color-mix(in srgb, var(--success) 22%, transparent); }
+.badge-debit { background: var(--danger-soft); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 22%, transparent); }
+.badge-refund { background: var(--info-soft); color: var(--info); border-color: color-mix(in srgb, var(--info) 22%, transparent); }
+/* Older engines ignore color-mix; the tinted fill alone still reads. */
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  .badge { border-color: transparent; }
+}
+
+.trend { border-radius: 6px; background: var(--success-soft); color: var(--success); }
+.trend.down { background: var(--danger-soft); color: var(--danger); }
+
+/* Six stat cards across 1440px leaves ~150px of usable width. A fixed 26px
+   value broke "EGP 412,300.50" across two lines mid-number, which is unreadable
+   for a balance. Fluid size keeps the whole figure on one line down to ~1100px,
+   and the grid drops to three columns below that. */
+.stat-value {
+  font-size: clamp(17px, 1.5vw, 24px);
+  line-height: 1.25;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+.hero-metric__value { font-size: clamp(19px, 1.7vw, 27px); overflow-wrap: normal; word-break: keep-all; }
+@media (max-width: 1180px) { .stat-value { font-size: 22px; } }
+
+/* ── Shapes ───────────────────────────────────────────────────────────────
+   One radius family: 6px for controls and tags, 8px for buttons and inputs,
+   10px for cards and panels. The old file mixed 4/8/10/12/14/16/20/999 with
+   no rule, which is what made the surfaces feel unrelated. */
+
+.panel, .table-card, .filter-rail, .stat-card, .qa-tile, .hotel-card, .info-item,
+.modal-body .form-section, .he-rate, .he-supp, .tr-ep, .dest-card { border-radius: 10px; }
+.modal { border-radius: 12px; }
+.tabs, .lang-toggle, .theme-toggle, .wallet-pill, .refresh-pill { border-radius: 8px; }
+.tab, .filter-chip, .amenity-chip, .area-chip, .hotel-attr-chip, .ctx-chip { border-radius: 6px; }
+.avatar, .logo-cell, .stat-ico, .qa-ico, .dest-card-icon, .hero-metric__ico { border-radius: 8px; }
+.filter-chip, .amenity-chip, .area-chip, .hotel-attr-chip { border-radius: 6px; }
+
+/* ── Table density ────────────────────────────────────────────────────── */
+
+.data-table thead th { background: var(--surface-raised); border-bottom: 1px solid var(--border); }
+.data-table tbody tr:hover td { background: var(--surface-raised); }
+.data-table tbody tr.selected td,
+.data-table tbody tr:has(.inv-check:checked) td { background: var(--brand-accent-soft); }
+:root[data-theme="dark"] .data-table tbody tr:hover td { background: rgba(255, 255, 255, 0.025); }
+
+/* ── Dark: keep the login and hero on navy, not black ─────────────────── */
+
+.login-page { background: #06101F; }
+:root[data-theme="dark"] .login-page { background: #04090F; }
+.login-panel { background: var(--sidebar-bg); }
+:root[data-theme="dark"] .login-panel { background: #081432; }
+.dash-hero { background: var(--sidebar-bg); }
+:root[data-theme="dark"] .dash-hero { background: var(--surface-raised); border-color: var(--border); }
+.toast { background: var(--sidebar-bg); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONTRAST CORRECTIONS
+   ───────────────────────────────────────────────────────────────────────────
+   Every value here comes from an automated audit of the rendered pages, not
+   from arithmetic on paper: each text node was measured against its real
+   composited background in both themes. Seven root causes accounted for all
+   107 failures.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* 1. Muted text cleared 4.5:1 on white but not on --surface-raised or the
+        page ground, where most of it actually sits (table headers, subtitles,
+        chips). Measured on --bg-base now: 4.96:1. */
+  --text-muted: #626B7C;
+
+  /* 2. Sidebar group labels were 3.6:1 on the navy. */
+  --sidebar-text-dim: rgba(255, 255, 255, 0.55);
+
+  /* 3. Ochre on its own soft fill was 4.30:1. */
+  --warning: #8A5810;
+}
+
+:root[data-theme="dark"] {
+  --sidebar-text-dim: rgba(255, 255, 255, 0.55);
+  /* 4. Info at navy-400 on its 15% fill was 4.15:1; navy-300 is 6.5:1. */
+  --info: var(--navy-300);
+}
+
+/* 5. Pager's current page put navy-900 ink on a navy-400 chip in dark (4.18:1).
+      White on navy-500 instead. */
+:root[data-theme="dark"] .pager button.active {
+  background: var(--navy-500);
+  border-color: var(--navy-500);
+  color: #fff;
+}
+
+/* 6. The hero's white CTA lost its background to the dark .btn-primary rule
+      (higher specificity) but kept its dark ink — 2.99:1, on the most
+      prominent button on the page. Restated at matching specificity. */
+:root[data-theme="dark"] .dash-hero__cta .btn-primary {
+  background: #fff;
+  border-color: #fff;
+  color: var(--n-900);
+}
+:root[data-theme="dark"] .dash-hero__cta .btn-primary:hover {
+  background: var(--n-200);
+  border-color: var(--n-200);
+}
+
+/* 7. The wallet "Deposited" figure was painted with --brand-navy-2, which is
+      near-black in dark mode — 1.01:1 against its own card, i.e. invisible.
+      All four wallet variants are restated against theme-aware tokens. */
+.wallet-metric--deposit .wallet-metric__value { color: var(--text-primary); }
+.wallet-metric--deposit .wallet-metric__icon { background: var(--surface-muted); color: var(--text-secondary); }
+.wallet-metric--used .wallet-metric__value { color: var(--danger); }
+.wallet-metric--balance {
+  border-color: color-mix(in srgb, var(--success) 26%, transparent);
+  background: var(--success-soft);
+}
+.wallet-metric--balance .wallet-metric__value { color: var(--success); }
+.wallet-metric--balance .wallet-metric__icon { background: var(--surface); color: var(--success); }
+.wallet-metric--negative { border-color: color-mix(in srgb, var(--danger) 26%, transparent); background: var(--danger-soft); }
+.wallet-metric--negative .wallet-metric__value,
+.wallet-metric--negative .wallet-metric__icon { color: var(--danger); }
+.wallet-metric__label { color: var(--text-muted); }
+/* Muted grey on the tinted balance card was 3.86:1 in dark — the card's own
+   fill lifts the floor, so its label needs the next step up. */
+.wallet-metric--balance .wallet-metric__label,
+.wallet-metric--negative .wallet-metric__label { color: var(--text-secondary); }

@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0B1F52" />
   <title>Elbakri Overseas - Super Admin</title>
+  <!-- Runs before the stylesheet so the theme is on <html> at first paint. -->
+  <script src="/assets/theme.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -11,34 +14,35 @@
   <style>
     /* Dedicated hotel + transport tabbed editors */
     .he-tabs { display:flex; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--border); margin:-4px 0 16px; }
-    .he-tabbtn { background:transparent; border:none; padding:10px 14px; font-size:13px; font-weight:600; color:var(--text-secondary,#516179); cursor:pointer; border-bottom:2px solid transparent; border-radius:8px 8px 0 0; }
-    .he-tabbtn:hover { color:var(--brand-teal,#14B8A6); background:var(--bg-glass,rgba(20,184,166,.06)); }
-    .he-tabbtn.active { color:var(--brand-teal,#14B8A6); border-bottom-color:var(--brand-teal,#14B8A6); }
-    .he-main-preview { position:relative; width:200px; height:140px; border-radius:12px; overflow:hidden; border:1px solid var(--border); background:var(--bg-app,#eef6f8); display:flex; align-items:center; justify-content:center; }
+    .he-tabbtn { background:transparent; border:none; padding:10px 14px; font-size:13px; font-weight:600; color:var(--text-secondary); cursor:pointer; border-bottom:2px solid transparent; border-radius:8px 8px 0 0; }
+    .he-tabbtn:hover { color:var(--brand-accent); background:var(--accent-tint); }
+    .he-tabbtn.active { color:var(--brand-accent); border-bottom-color:var(--brand-accent); }
+    .he-main-preview { position:relative; width:200px; height:140px; border-radius:12px; overflow:hidden; border:1px solid var(--border); background:var(--surface-muted); display:flex; align-items:center; justify-content:center; }
     .he-main-preview img { width:100%; height:100%; object-fit:cover; }
-    .he-noimg { display:flex; flex-direction:column; align-items:center; gap:6px; color:var(--text-secondary,#94a3b8); font-size:12px; }
+    .he-noimg { display:flex; flex-direction:column; align-items:center; gap:6px; color:var(--text-muted); font-size:12px; }
     .he-noimg svg { width:28px; height:28px; }
     .he-img-x, .he-thumb-actions button { cursor:pointer; }
-    .he-img-x { position:absolute; top:6px; right:6px; width:26px; height:26px; border-radius:50%; border:none; background:rgba(15,23,42,.7); color:#fff; display:flex; align-items:center; justify-content:center; }
+    .he-img-x { position:absolute; top:6px; right:6px; width:26px; height:26px; border-radius:50%; border:none; background:rgba(5,13,36,.68); color:#fff; display:flex; align-items:center; justify-content:center; }
     .he-img-x svg { width:14px; height:14px; }
     .he-gallery-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
-    .he-thumb { position:relative; border-radius:10px; overflow:hidden; border:1px solid var(--border); aspect-ratio:4/3; background:var(--bg-app,#eef6f8); }
+    .he-thumb { position:relative; border-radius:10px; overflow:hidden; border:1px solid var(--border); aspect-ratio:4/3; background:var(--surface-muted); }
     .he-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-    .he-thumb-actions { position:absolute; inset:auto 0 0 0; display:flex; justify-content:center; gap:2px; padding:4px; background:linear-gradient(transparent,rgba(15,23,42,.78)); opacity:0; transition:opacity .15s; }
+    .he-thumb-actions { position:absolute; inset:auto 0 0 0; display:flex; justify-content:center; gap:2px; padding:4px; background:linear-gradient(transparent,rgba(5,13,36,.78)); opacity:0; transition:opacity .15s; }
     .he-thumb:hover .he-thumb-actions { opacity:1; }
-    .he-thumb-actions button { width:26px; height:26px; border-radius:6px; border:none; background:rgba(255,255,255,.92); color:#0b1736; display:flex; align-items:center; justify-content:center; }
+    .he-thumb-actions button { width:26px; height:26px; border-radius:6px; border:none; background:var(--surface); color:var(--text-primary); display:flex; align-items:center; justify-content:center; }
     .he-thumb-actions button:disabled { opacity:.4; cursor:default; }
     .he-thumb-actions button svg { width:14px; height:14px; }
     .he-amenity { display:inline-flex; align-items:center; gap:4px; padding:7px 13px; border:1px solid var(--border); border-radius:999px; cursor:pointer; font-size:13px; user-select:none; transition:all .12s; }
-    .he-amenity:hover { border-color:var(--brand-teal,#14B8A6); }
-    .he-amenity.on { background:var(--brand-teal,#14B8A6); color:#fff; border-color:var(--brand-teal,#14B8A6); }
+    .he-amenity:hover { border-color:var(--brand-accent); }
+    .he-amenity.on { background:var(--brand-accent); color:#fff; border-color:var(--brand-accent); }
     .btn-sm { padding:5px 10px; font-size:12px; }
     /* Typed transport endpoint editor */
     .tr-ep { border:1px solid var(--border); border-radius:10px; padding:12px; }
     .tr-ep-grid { display:grid; grid-template-columns:1fr 1.4fr; gap:8px; }
     @media (max-width:640px){ .he-tabbtn{ padding:8px 10px; font-size:12px; } .he-main-preview{ width:100%; } .he-supp{ grid-template-columns:1fr 1fr !important; } .tr-ep-grid{ grid-template-columns:1fr; } }
   </style>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+  <script src="/assets/icons.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="/assets/i18n.js"></script>
 </head>
@@ -47,7 +51,8 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand-block">
         <div class="brand-row">
-          <img src="/assets/brand/elbakri-logo-white.svg" class="brand-logo" alt="Elbakri Overseas" />
+          <!-- Real brand artwork. Falls back to the placeholder until the PNG is dropped in. -->
+          <img src="/assets/brand/elbakri-logo-white.png" onerror="this.onerror=null;this.src='/assets/brand/elbakri-logo-white.svg'" class="brand-logo" alt="Elbakri Overseas" />
           <button class="icon-button sidebar-close" onclick="closeSidebar()" aria-label="Close menu"><i data-lucide="x"></i></button>
         </div>
         <div class="role-chip" data-i18n="app.superAdmin">Super Admin</div>
@@ -133,6 +138,10 @@
         <div class="lang-toggle" role="group" aria-label="Language">
           <button data-lang="en" class="active">EN</button>
           <button data-lang="ar">AR</button>
+        </div>
+        <div class="theme-toggle" role="group" data-i18n-label="theme.label" aria-label="Theme">
+          <button type="button" data-theme-set="light" data-i18n-title="theme.light" title="Light" aria-label="Light"><i data-lucide="sun"></i></button>
+          <button type="button" data-theme-set="dark" data-i18n-title="theme.dark" title="Dark" aria-label="Dark"><i data-lucide="moon"></i></button>
         </div>
         <div class="topbar-actions">
           <button class="icon-button" data-i18n-label="topbar.notifications" title="Notifications"><i data-lucide="bell"></i></button>
@@ -938,7 +947,7 @@ async function showCompanyModal(id) {
       <div class="form-section-title">${t("form.branding")}</div>
       <div class="form-grid">
         ${field("mCoLogoUrl", "form.logo", c?.logoUrl)}
-        ${field("mCoThemeColor", "form.themeColor", c?.themeColor || "#1b2b6b", false, "color")}
+        ${field("mCoThemeColor", "form.themeColor", c?.themeColor || "var(--navy-800)", false, "color")}
       </div>
     </div>`;
   openModal(title, body, `
@@ -1710,7 +1719,7 @@ const AMENITY_PRESETS = [
 function hotelThumb(h) {
   if (h.imageUrl) return `<img src="${escapeHtml(hotelImageSrc(h.imageUrl))}" alt="" style="width:48px;height:48px;border-radius:8px;object-fit:cover">`;
   const initials = (h.name || "?").split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase();
-  return `<div style="width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--accent-2,#5b8def),var(--accent,#7c5cff));color:#fff;font-weight:700;font-size:14px">${escapeHtml(initials)}</div>`;
+  return `<div style="width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--navy-800);color:#fff;font-weight:700;font-size:14px">${escapeHtml(initials)}</div>`;
 }
 
 // Upscale Booking/bstatic thumbnails (square60, max300, square600…) to large res.
@@ -2312,7 +2321,7 @@ function drawHotelsPage(rows) {
     ["3","4","5"].map(s => `<option value="${s}" ${f.stars === s ? "selected" : ""}>${s}★</option>`).join("");
 
   const amenityChips = AMENITY_PRESETS.map(a => `
-    <label class="check-row" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid var(--border);border-radius:999px;cursor:pointer;font-size:12px;background:${f.amenities.has(a) ? "var(--accent-2-bg,#e7eeff)" : "transparent"}">
+    <label class="check-row" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border:1px solid var(--border);border-radius:999px;cursor:pointer;font-size:12px;background:${f.amenities.has(a) ? "var(--accent-2-bg,var(--info-soft))" : "transparent"}">
       <input type="checkbox" ${f.amenities.has(a) ? "checked" : ""} onchange="toggleHotelAmenity('${a}')" style="margin:0">
       ${escapeHtml(a)}
     </label>`).join("");
@@ -4128,7 +4137,7 @@ function setFxHealth(status, lastUpdated) {
     dot = "var(--success)";
     label = t("fx.providerLive", "Live — provider reachable");
   } else {
-    dot = "var(--warning, #D97706)";
+    dot = "var(--warning, var(--warning))";
     label = t("fx.providerStale", "Cached — rates may be stale");
   }
   el.innerHTML = `<span class="secondary-text" style="display:inline-flex;align-items:center;gap:7px">
@@ -5159,7 +5168,7 @@ async function renderHotelEnrichment() {
 
 function bkShell() {
   const tokenNote = bkMeta.hasEnvToken
-    ? `<div class="rf-help" style="color:var(--success,#16a34a)">Server APIFY_TOKEN detected — you can leave this blank.</div>`
+    ? `<div class="rf-help" style="color:var(--success,var(--success))">Server APIFY_TOKEN detected — you can leave this blank.</div>`
     : `<div class="rf-help">Token stays in memory for this run only — never stored or committed.</div>`;
   return `
   <section class="panel glass-card" style="margin-bottom:14px">

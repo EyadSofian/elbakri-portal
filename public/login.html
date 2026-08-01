@@ -3,19 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0B1F52" />
   <title>Elbakri Overseas - Login</title>
+  <!-- Runs before the stylesheet so the theme is on <html> at first paint. -->
+  <script src="/assets/theme.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/portal.css" />
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+  <script src="/assets/icons.js"></script>
   <script src="/assets/i18n.js"></script>
 </head>
 <body class="login-page">
   <main class="login-shell">
     <section class="login-panel">
       <div class="login-brand">
-        <img src="/assets/brand/elbakri-logo-white.svg" class="login-logo-img" alt="Elbakri Overseas" />
+        <!-- Real brand artwork. Falls back to the placeholder until the PNG is dropped in. -->
+        <img src="/assets/brand/elbakri-logo-white.png" onerror="this.onerror=null;this.src='/assets/brand/elbakri-logo-white.svg'" class="login-logo-img" alt="Elbakri Overseas" />
       </div>
 
       <div class="login-copy">
@@ -46,7 +51,16 @@
           <p class="eyebrow" data-i18n="login.workspace">Workspace Login</p>
           <h2 id="loginTitle" data-i18n="login.cardTitle">Agent Portal</h2>
         </div>
-        <button type="button" class="btn btn-ghost btn-sm" id="langBtn" onclick="toggleLang()" data-i18n="topbar.language" aria-label="Language">AR</button>
+        <div class="login-card-controls">
+          <div class="theme-toggle" role="group" data-i18n-label="theme.label" aria-label="Theme">
+            <button type="button" data-theme-set="light" data-i18n-title="theme.light" title="Light" aria-label="Light"><i data-lucide="sun"></i></button>
+            <button type="button" data-theme-set="dark" data-i18n-title="theme.dark" title="Dark" aria-label="Dark"><i data-lucide="moon"></i></button>
+          </div>
+          <!-- Shows the language you'd switch TO, so the label is the action.
+               (It was bound to topbar.language, which rendered the word
+               "Language" — a label, not a choice.) -->
+          <button type="button" class="btn btn-outline btn-sm" id="langBtn" onclick="toggleLang()" data-i18n-label="topbar.language" aria-label="Language">العربية</button>
+        </div>
       </div>
 
       <div class="alert alert-danger hidden" id="errorMsg"></div>
@@ -95,9 +109,15 @@
       if (window.lucide) window.lucide.createIcons();
     }
 
+    function syncLangButton() {
+      const btn = document.getElementById("langBtn");
+      if (btn) btn.textContent = document.documentElement.lang === "ar" ? "English" : "العربية";
+    }
+
     function toggleLang() {
       const next = document.documentElement.lang === "ar" ? "en" : "ar";
       setLang(next);
+      syncLangButton();
       refreshIcons();
     }
 
@@ -186,6 +206,7 @@
       window.location.href = role === "SUPERADMIN" ? "/admin.html" : "/dashboard.html";
     }
 
+    syncLangButton();
     refreshIcons();
   </script>
 </body>

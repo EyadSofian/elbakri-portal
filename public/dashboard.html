@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0B1F52" />
   <title>Elbakri Overseas - Agency Portal</title>
+  <!-- Runs before the stylesheet so the theme is on <html> at first paint. -->
+  <script src="/assets/theme.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -11,21 +14,22 @@
   <style>
     /* Hotel detail — rates, price preview, policies */
     .hd-section { margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
-    .hd-title { font-size:14px; font-weight:700; color:var(--text,#0b1736); margin-bottom:10px; }
+    .hd-title { font-size:14px; font-weight:700; color:var(--text-primary); margin-bottom:10px; }
     .hd-preview-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
     .hd-preview-out { margin-top:10px; }
-    .hd-total { font-size:22px; font-weight:800; color:var(--brand-teal,#14B8A6); }
+    .hd-total { font-size:22px; font-weight:800; color:var(--brand-accent); }
     .hd-policies { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
-    .hd-policy { background:var(--bg-glass,rgba(20,184,166,.05)); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
-    .hd-policy-k { font-size:12px; font-weight:700; color:var(--brand-teal,#14B8A6); margin-bottom:4px; }
-    .hd-policy-v { font-size:13px; color:var(--text-secondary,#516179); white-space:pre-wrap; line-height:1.45; }
+    .hd-policy { background:var(--accent-tint); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+    .hd-policy-k { font-size:12px; font-weight:700; color:var(--brand-accent); margin-bottom:4px; }
+    .hd-policy-v { font-size:13px; color:var(--text-secondary); white-space:pre-wrap; line-height:1.45; }
     /* Typed transport From/To */
     .tf-ep-types { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
     .tf-ep-type { flex:1; min-width:90px; text-align:center; padding:9px 10px; border:1px solid var(--border); border-radius:10px; cursor:pointer; font-size:13px; font-weight:600; user-select:none; transition:all .12s; }
-    .tf-ep-type.on { background:var(--brand-teal,#14B8A6); color:#fff; border-color:var(--brand-teal,#14B8A6); }
+    .tf-ep-type.on { background:var(--brand-accent); color:#fff; border-color:var(--brand-accent); }
     @media (max-width:640px){ .hd-preview-grid{ grid-template-columns:1fr; } }
   </style>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+  <script src="/assets/icons.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="/assets/i18n.js"></script>
 </head>
@@ -34,7 +38,8 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand-block">
         <div class="brand-row">
-          <img src="/assets/brand/elbakri-logo-white.svg" class="brand-logo" alt="Elbakri Overseas" />
+          <!-- Real brand artwork. Falls back to the placeholder until the PNG is dropped in. -->
+          <img src="/assets/brand/elbakri-logo-white.png" onerror="this.onerror=null;this.src='/assets/brand/elbakri-logo-white.svg'" class="brand-logo" alt="Elbakri Overseas" />
           <button class="icon-button sidebar-close" onclick="closeSidebar()" aria-label="Close menu"><i data-lucide="x"></i></button>
         </div>
         <div class="tier-chip" id="agentTier">STANDARD</div>
@@ -109,6 +114,10 @@
         <div class="lang-toggle" role="group" aria-label="Language">
           <button data-lang="en" class="active">EN</button>
           <button data-lang="ar">AR</button>
+        </div>
+        <div class="theme-toggle" role="group" data-i18n-label="theme.label" aria-label="Theme">
+          <button type="button" data-theme-set="light" data-i18n-title="theme.light" title="Light" aria-label="Light"><i data-lucide="sun"></i></button>
+          <button type="button" data-theme-set="dark" data-i18n-title="theme.dark" title="Dark" aria-label="Dark"><i data-lucide="moon"></i></button>
         </div>
         <button class="icon-button" data-i18n-label="topbar.notifications"><i data-lucide="bell"></i></button>
       </header>
@@ -863,7 +872,7 @@ function hotelPriceCell(h) {
 function hotelThumbAgent(h) {
   if (h.imageUrl) return `<img src="${escapeHtml(hotelImageSrc(h.imageUrl))}" alt="" style="width:44px;height:44px;border-radius:8px;object-fit:cover">`;
   const initials = (h.name || "?").split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase();
-  return `<div style="width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#5b8def,#7c5cff);color:#fff;font-weight:700;font-size:13px">${escapeHtml(initials)}</div>`;
+  return `<div style="width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--navy-800);color:#fff;font-weight:700;font-size:13px">${escapeHtml(initials)}</div>`;
 }
 
 // Upscale Booking/bstatic thumbnails (square60, max300, square600…) to large res.
@@ -3769,18 +3778,18 @@ async function maybeShowOfferPopup() {
   const body = `
     <div style="text-align:center">
       ${o.imageUrl
-        ? `<img src="${escapeHtml(o.imageUrl)}" alt="" style="width:100%;max-height:220px;object-fit:cover;border-radius:var(--r-8);margin-bottom:18px">`
-        : `<div style="font-size:52px;margin-bottom:16px">🎁</div>`}
+        ? `<img src="${escapeHtml(o.imageUrl)}" alt="" style="width:100%;max-height:220px;object-fit:cover;border-radius:var(--r-12);margin-bottom:18px">`
+        : `<div class="offer-medallion">${icon("tag")}</div>`}
       <div style="font-size:20px;font-weight:800;margin-bottom:10px;color:var(--text-primary)">${escapeHtml(title)}</div>
       ${desc ? `<p style="color:var(--text-secondary);line-height:1.6;margin:0 0 14px;font-size:13px">${escapeHtml(desc)}</p>` : ""}
       ${o.validFrom || o.validTo
-        ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;background:var(--surface-muted);border-radius:20px;padding:4px 12px;display:inline-block">
+        ? `<div class="offer-validity">
             ${o.validFrom ? formatDate(o.validFrom) : ""}${o.validTo ? " – " + formatDate(o.validTo) : ""}
            </div>`
         : ""}
     </div>`;
 
-  openModal(`🎁 ${t("offers.popup","Special Offer")}`, body, `
+  openModal(t("offers.popup", "Special Offer"), body, `
     <button class="btn btn-outline" onclick="dismissOfferToday('${escapeHtml(key)}')">${t("offers.dontShow","Don't show today")}</button>
     ${o.ctaAction
       ? `<button class="btn btn-primary" onclick="closeModal();setPage('${escapeHtml(o.ctaAction)}')">${icon("arrow-right")}&nbsp;${escapeHtml(cta)}</button>`

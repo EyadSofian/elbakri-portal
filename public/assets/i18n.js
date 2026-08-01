@@ -1364,6 +1364,7 @@
         market: { pricingTitle: "Egyptian Market Price" },
         btn: { clear: "Clear" },
         simCard: { quantity: "Quantity", perSim: "per SIM" },
+        theme: { label: "Theme", light: "Light theme", dark: "Dark theme" },
       },
       ar: {
         transport: {
@@ -1414,6 +1415,7 @@
         market: { pricingTitle: "سعر السوق المصري" },
         btn: { clear: "مسح" },
         simCard: { quantity: "الكمية", perSim: "لكل شريحة" },
+        theme: { label: "المظهر", light: "المظهر الفاتح", dark: "المظهر الداكن" },
       },
     };
     const merge = (target, src) => {
