@@ -6808,3 +6808,402 @@ html[lang="ar"] .login-card-head .eyebrow { letter-spacing: 0; text-transform: n
    fill lifts the floor, so its label needs the next step up. */
 .wallet-metric--balance .wallet-metric__label,
 .wallet-metric--negative .wallet-metric__label { color: var(--text-secondary); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYOUT CORRECTIONS
+   ───────────────────────────────────────────────────────────────────────────
+   From an automated sweep of 15 pages x 3 widths x 2 themes x 2 directions.
+   Four root causes produced all 788 occurrences.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. The topbar overflowed by up to 136px between 861px and desktop ─────
+   There was a desktop layout and an ≤860px wrapped layout, and nothing in
+   between — so at tablet width the bar simply ran past its own right edge,
+   taking the search field (62px over) with it. The cause is rigid children:
+   a 190px breadcrumb floor and a fixed-width search that could not give up
+   space. Both now shrink, and non-essential text drops out in tiers. */
+
+.topbar { gap: 10px; min-width: 0; }
+.topbar > * { min-width: 0; }
+.breadcrumb { min-width: 0; flex: 0 1 auto; overflow: hidden; }
+.breadcrumb-label, .breadcrumb-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The search absorbs whatever slack is left instead of forcing an overflow. */
+.quick-search {
+  width: auto;
+  flex: 1 1 clamp(120px, 26vw, 380px);
+  max-width: 380px;
+  min-width: 0;
+}
+.quick-search input { min-width: 0; }
+.wallet-pill, .refresh-pill, .lang-toggle, .theme-toggle, .topbar-actions { flex: 0 0 auto; }
+.wallet-pill { min-width: 0; }
+.wallet-pill strong { overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 1400px) {
+  /* "Just now" is a nicety; the refresh affordance is the icon. The base rule
+     carries gap:8px, which kept 19px of empty track once the label was gone. */
+  .refresh-pill { width: 38px; padding: 0; gap: 0; justify-content: center; }
+  .refresh-pill span { display: none; }
+}
+
+/* Toolbars above tables held their buttons on one nowrap line and overran the
+   card by up to 18px at tablet width. */
+.table-toolbar, .toolbar-actions, .page-actions { flex-wrap: wrap; min-width: 0; }
+.table-toolbar { row-gap: 8px; }
+
+@media (max-width: 1240px) {
+  .quick-search kbd { display: none; }
+  .topbar .role-chip { display: none; }
+  /* Keep the balance, drop the word in front of it. */
+  .wallet-pill > span { display: none; }
+}
+
+@media (max-width: 1080px) {
+  .breadcrumb-label { display: none; }
+  .topbar-actions .icon-button:nth-child(n + 2) { display: none; }
+  .topbar { padding: 0 14px; }
+}
+
+@media (max-width: 940px) and (min-width: 861px) {
+  /* Last resort before the wrapped layout takes over: the search collapses to
+     its icon, which still opens the same field on focus. */
+  .quick-search { flex: 0 0 42px; max-width: 42px; padding: 0; justify-content: center; }
+  .quick-search input { display: none; }
+}
+
+/* ── 2. Icon boxes were 9px narrower than their own glyph ─────────────────
+   `.ph` was pinned to width:1em/height:1em, but a Phosphor glyph's advance
+   width is not exactly 1em — so every icon reported horizontal overflow, and
+   the button and row-action boxes around them inherited it. Letting the box
+   size to the glyph removes the overflow without changing the optical size,
+   which is set by font-size. */
+.ph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  width: auto;
+  height: auto;
+  flex: 0 0 auto;
+}
+.nav-item .ph, .sidebar .nav-item > .ph { width: auto; height: auto; flex: 0 0 auto; }
+/* Icon-only controls centre their glyph on a fixed box instead. */
+.icon-button, .btn-icon, .row-actions .btn, .row-actions button { flex: 0 0 auto; }
+
+/* ── 3. Row actions clipped their own buttons in the invoices table ─────── */
+.row-actions { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; overflow: visible; }
+td .row-actions { min-width: max-content; }
+.data-table td:last-child { white-space: nowrap; }
+
+/* ── 4. Touch targets ─────────────────────────────────────────────────────
+   WCAG 2.2 (2.5.8) sets a 24x24 floor; 16px checkboxes and 13px inputs were
+   under it, and 30px controls are legal but uncomfortable on a phone. Below
+   640px every interactive control gets a real target — checkboxes keep their
+   drawn size and gain the hit area through padding, so nothing gets chunky. */
+@media (max-width: 640px) {
+  .btn, .btn-sm, .icon-button, .btn-icon, .icon-btn,
+  .row-actions .btn, .row-actions button, .pager button {
+    min-height: 38px;
+  }
+  .icon-button, .btn-icon, .icon-btn, .row-actions .btn, .row-actions button { min-width: 38px; }
+  .btn-sm { padding: 0 12px; }
+  .lang-toggle, .theme-toggle { height: 38px; }
+  .lang-toggle button, .theme-toggle button { height: 30px; min-height: 30px; }
+  .theme-toggle::before { height: 30px; }
+
+  /* .data-table input[type=checkbox] pins these to 16px at a higher
+     specificity, so the mobile size has to match it to win. */
+  .data-table input[type="checkbox"],
+  .data-table .inv-check,
+  input[type="checkbox"],
+  .inv-check,
+  #rememberMe {
+    width: 22px;
+    height: 22px;
+  }
+  .check-row { min-height: 38px; align-items: center; }
+  .link-btn, .sort-btn { min-height: 38px; display: inline-flex; align-items: center; }
+  .badge { min-height: 24px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIQUID GLASS
+   ───────────────────────────────────────────────────────────────────────────
+   Glass is a *material*, not a colour wash. What makes it read as glass rather
+   than "a translucent box" is four things happening together:
+
+     · refraction — blur AND saturation lift, so colour bleeds through
+     · specular edge — a bright hairline on the lit (top/leading) edge only
+     · contact shadow — a dark hairline on the opposite edge
+     · a cast shadow that is softer and wider than a solid card's
+
+   Applied to CHROME ONLY: topbar, mobile sidebar, modals, popovers, pills, the
+   bulk dock, toasts, drawers. Data tables and form fields stay opaque — text
+   over a live-blurred background is the single fastest way to make a dense
+   ops screen unreadable, and it is what most "glassmorphism" passes get wrong.
+
+   backdrop-filter is expensive; each rule below is on an element that already
+   has its own compositing layer (fixed / transformed), so this adds no new
+   layer promotions. Everything degrades to an opaque surface via @supports.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --glass-blur-amount: 20px;
+  --glass-saturate: 180%;
+  --glass-film: rgba(255, 255, 255, 0.62);
+  --glass-film-strong: rgba(255, 255, 255, 0.78);
+  --glass-hairline: rgba(255, 255, 255, 0.75);   /* specular, lit edge */
+  --glass-contact: rgba(11, 31, 82, 0.06);       /* opposite edge */
+  --glass-rim: rgba(11, 31, 82, 0.10);
+  --glass-cast: 0 12px 40px rgba(11, 31, 82, 0.12);
+}
+
+:root[data-theme="dark"] {
+  --glass-film: rgba(18, 24, 40, 0.60);
+  --glass-film-strong: rgba(18, 24, 40, 0.80);
+  --glass-hairline: rgba(255, 255, 255, 0.14);
+  --glass-contact: rgba(0, 0, 0, 0.40);
+  --glass-rim: rgba(255, 255, 255, 0.09);
+  --glass-cast: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+/* The material itself, as one reusable definition. */
+.topbar,
+.modal,
+.bulk-toolbar,
+.toast,
+.wallet-pill,
+.refresh-pill,
+.lang-toggle,
+.theme-toggle,
+.quick-search {
+  -webkit-backdrop-filter: blur(var(--glass-blur-amount)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur-amount)) saturate(var(--glass-saturate));
+}
+
+/* ── Topbar: the largest pane, so the lightest film ─────────────────────── */
+.topbar {
+  background: var(--glass-film-strong);
+  border-bottom: 1px solid var(--glass-rim);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hairline),
+    0 1px 0 var(--glass-contact);
+}
+:root[data-theme="dark"] .topbar {
+  box-shadow: inset 0 1px 0 var(--glass-hairline), 0 1px 0 var(--glass-contact);
+}
+
+/* ── Topbar controls: small panes read as one continuous surface ────────── */
+.quick-search,
+.wallet-pill,
+.refresh-pill,
+.lang-toggle,
+.theme-toggle {
+  background: var(--glass-film);
+  border-color: var(--glass-rim);
+  box-shadow: inset 0 1px 0 var(--glass-hairline);
+}
+.quick-search:focus-within {
+  background: var(--glass-film-strong);
+  border-color: var(--brand-accent);
+  box-shadow: inset 0 1px 0 var(--glass-hairline), var(--ring);
+}
+.icon-button:hover, .icon-button.active {
+  background: var(--glass-film);
+  border-color: var(--glass-rim);
+  box-shadow: inset 0 1px 0 var(--glass-hairline);
+}
+/* The moving thumb is the brightest pane in the group — it is "closer". */
+.theme-toggle::before,
+.lang-toggle button.active,
+.tab.active {
+  background: var(--glass-film-strong);
+  box-shadow: inset 0 1px 0 var(--glass-hairline), 0 1px 2px var(--glass-contact);
+}
+
+/* ── Modals & floating docks: heaviest blur, full rim ───────────────────── */
+.modal {
+  background: var(--glass-film-strong);
+  border: 1px solid var(--glass-rim);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hairline),
+    inset 0 -1px 0 var(--glass-contact),
+    var(--shadow-modal);
+}
+.modal-header, .modal-footer { background: transparent; border-color: var(--glass-rim); }
+.modal-body .form-section { background: var(--surface); }
+.modal-overlay {
+  background: rgba(11, 31, 82, 0.26);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  backdrop-filter: blur(6px) saturate(120%);
+}
+:root[data-theme="dark"] .modal-overlay { background: rgba(0, 0, 0, 0.50); }
+
+.bulk-toolbar {
+  background: var(--glass-film-strong);
+  border: 1px solid var(--glass-rim);
+  box-shadow: inset 0 1px 0 var(--glass-hairline), var(--glass-cast);
+}
+
+.toast {
+  background: var(--glass-film-strong);
+  color: var(--text-primary);
+  border: 1px solid var(--glass-rim);
+  box-shadow: inset 0 1px 0 var(--glass-hairline), var(--glass-cast);
+}
+/* Status toasts keep their meaning colour — glass would dilute the signal. */
+.toast.success { background: var(--success); color: #fff; }
+.toast.error { background: var(--danger); color: #fff; }
+.toast.warning { background: var(--warning); color: #fff; }
+
+/* ── Drawers over content on mobile ─────────────────────────────────────── */
+@media (max-width: 860px) {
+  .sidebar {
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(24px) saturate(160%);
+    box-shadow: var(--glass-cast);
+  }
+  .sidebar-backdrop, .filter-backdrop {
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+}
+@media (max-width: 768px) {
+  .filter-rail {
+    background: var(--glass-film-strong);
+    -webkit-backdrop-filter: blur(var(--glass-blur-amount)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur-amount)) saturate(var(--glass-saturate));
+    box-shadow: inset 0 1px 0 var(--glass-hairline), var(--glass-cast);
+  }
+}
+
+/* ── Sidebar: glass over navy, so the specular edge is the only lift ────── */
+.sidebar .brand-block { box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.07); }
+.sidebar .nav-item.active {
+  background: rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13);
+}
+.account-mini {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+/* ── Fallback: no backdrop-filter → opaque surfaces, same geometry ──────── */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .topbar, .modal, .bulk-toolbar, .toast, .filter-rail { background: var(--surface); }
+  .quick-search, .wallet-pill, .refresh-pill, .lang-toggle, .theme-toggle { background: var(--surface-raised); }
+  .theme-toggle::before, .lang-toggle button.active, .tab.active { background: var(--surface); }
+  .modal-overlay { background: rgba(11, 31, 82, 0.55); }
+}
+
+/* Blur is the most expensive thing on the page; drop it when the user has
+   asked for less motion/effects, and on very small screens where the chrome
+   covers most of the viewport anyway. */
+@media (prefers-reduced-transparency: reduce) {
+  .topbar, .modal, .bulk-toolbar, .toast, .filter-rail,
+  .quick-search, .wallet-pill, .refresh-pill, .lang-toggle, .theme-toggle {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--surface);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BRAND LOCKUP
+   ───────────────────────────────────────────────────────────────────────────
+   The mark was sitting alone on a large flat navy field — it read as an
+   unfinished blue panel rather than a brand area. It now sits on a glass
+   plate: the plate gives the mark an edge to belong to, and the panel gets
+   structure instead of a void.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Login ──────────────────────────────────────────────────────────────── */
+.login-brand {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 22px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 8px 28px rgba(0, 0, 0, 0.22);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  backdrop-filter: blur(14px) saturate(150%);
+}
+.login-brand .login-logo-img { height: 46px; max-width: 230px; }
+
+/* A quiet field behind the panel so the plate has something to sit on: a fine
+   rule grid at 3% — structure you read as depth, not as decoration. */
+.login-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(120% 90% at 20% 15%, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(120% 90% at 20% 15%, #000 0%, transparent 72%);
+}
+
+/* Metric tiles pick up the same material so the panel reads as one system. */
+.login-metrics div {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
+.brand-block { padding: 16px 14px 14px; }
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.brand-logo { height: 30px; max-width: calc(var(--sidebar-w) - 84px); }
+
+@media (min-width: 861px) {
+  /* Collapsed rail: the plate becomes the mark's container. */
+  body.sidebar-collapsed .brand-row { padding: 8px; justify-content: center; }
+}
+
+@media (max-width: 900px) {
+  .login-brand { padding: 12px 16px; gap: 10px; }
+  .login-brand .login-logo-img { height: 34px; }
+  .login-panel::before { display: none; }
+}
+
+/* ── Final layout corrections ─────────────────────────────────────────────
+   Two elements were genuinely clipping their own content (overflow:hidden with
+   more inside than fits), plus checkboxes still sat under the WCAG 2.2 24px
+   target floor on phones. */
+
+/* The invoices toolbar's primary button clipped its label by 25px: it was
+   inheriting a fixed .btn-icon-ish width while carrying text. */
+.table-toolbar .btn-primary.btn-sm,
+.toolbar-actions .btn-primary.btn-sm { width: auto; min-width: max-content; overflow: visible; }
+
+/* The wallet panel clipped its widest row by 24px because the card hides
+   overflow to keep its rounded corners; the row scrolls instead. */
+.wallet-panel { overflow: hidden; }
+.wallet-panel > .wallet-metrics,
+.wallet-panel .table-scroll { overflow-x: auto; }
+
+@media (max-width: 640px) {
+  /* WCAG 2.2 §2.5.8 sets a 24x24 CSS-px minimum for pointer targets. */
+  .data-table input[type="checkbox"],
+  .data-table .inv-check,
+  input[type="checkbox"],
+  .inv-check,
+  #rememberMe,
+  #invSelectAll { width: 24px; height: 24px; }
+}
