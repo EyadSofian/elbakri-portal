@@ -10,6 +10,7 @@ import fs from 'fs';
 
 import { validateEnvOrExit } from './config/env';
 import { PUBLIC_UPLOADS_DIR, GENERATED_DIR, ensureStorageDirs } from './config/paths';
+import { DEMO_MODE, createDemoRouter } from './demo/demo.router';
 import { authenticate } from './middleware/auth';
 
 import authRouter from './modules/auth/auth.routes';
@@ -147,6 +148,14 @@ app.get('/media/hotel-image', async (req, res) => {
     res.status(502).send('Image proxy failed');
   }
 });
+
+// Preview mode: answers the whole API from fixtures so the portal can be
+// reviewed without a database. Mounted ahead of every real route, so when it
+// is on Prisma is never reached. Off unless DEMO_MODE=1 is explicitly set.
+if (DEMO_MODE) {
+  console.warn('⚠️  [demo] DEMO_MODE is ON — all API responses are fixtures and nothing is saved.');
+  app.use('/api', createDemoRouter());
+}
 
 // Auth (no JWT required)
 app.use('/api/auth', authRouter);

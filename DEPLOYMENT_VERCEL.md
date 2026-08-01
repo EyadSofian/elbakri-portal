@@ -19,6 +19,29 @@ Three things in the boot path assumed a normal server process:
 
 ---
 
+## Just want to look at it? Use preview mode
+
+If you only want to see the interface and do not want to set up a database
+yet, set **one** environment variable in Vercel and redeploy:
+
+```
+DEMO_MODE=1
+```
+
+Nothing else is required — no `DATABASE_URL`, no secrets. The API then answers
+from built-in fixtures, so login works, every page renders with realistic
+data, and Prisma is never called. Log in with any of the accounts in the table
+further down (e.g. `admin@elbakri.com` / `Admin@1982`).
+
+What preview mode does **not** do: save anything. Any create/edit/delete
+returns "Preview mode — this action was not saved" and changes nothing. The
+data is invented; there is no real agency, client or balance in it.
+
+**Remove `DEMO_MODE` before the portal is used for real work** — with it on,
+the app will never read or write your database.
+
+---
+
 ## Two limits you must accept (or design around)
 
 **1. Uploads and generated PDFs do not persist.**

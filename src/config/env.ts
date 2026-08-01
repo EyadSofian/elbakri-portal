@@ -28,8 +28,17 @@ export interface EnvCheckResult {
 
 export function checkEnv(): EnvCheckResult {
   const isProd = process.env.NODE_ENV === 'production';
+  const isDemo = process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true';
   const errors: string[] = [];
   const warnings: string[] = [];
+
+  if (isDemo) {
+    // Preview mode never reaches the database and signs its own short-lived
+    // tokens, so requiring production credentials would block the one thing it
+    // exists for: looking at the interface before any infrastructure exists.
+    warnings.push('DEMO_MODE is enabled — the API serves fixtures, nothing is persisted, and no database is used. Do not leave this on for real use.');
+    return { errors, warnings };
+  }
 
   for (const key of REQUIRED) {
     if (!process.env[key] || !String(process.env[key]).trim()) {
