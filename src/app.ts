@@ -8,9 +8,11 @@ import { Readable } from 'stream';
 
 import fs from 'fs';
 
-import { validateEnvOrExit } from './config/env';
+import { validateEnvOrExit, runtimeStatus } from './config/env';
 import { PUBLIC_UPLOADS_DIR, GENERATED_DIR, ensureStorageDirs } from './config/paths';
-import { DEMO_MODE, createDemoRouter } from './demo/demo.router';
+import { DEMO_MODE, createDemoRouter, demoAccountHints } from './demo/demo.router';
+import { installAsyncErrorHandling } from './middleware/async-errors';
+import { serviceGuard } from './middleware/service-guard';
 import { authenticate } from './middleware/auth';
 
 import authRouter from './modules/auth/auth.routes';
@@ -42,6 +44,10 @@ import groupTypesRouter from './modules/group-types/group-types.routes';
 import vouchersRouter from './modules/vouchers/vouchers.routes';
 import filesRouter from './modules/files/files.routes';
 
+// Teach Express 4 to notice a rejected promise from an async handler. Must run
+// before any route is registered so nothing can slip through unwrapped; without
+// it a failing controller never answers its request at all.
+installAsyncErrorHandling();
 // Validate configuration before anything else — aborts a misconfigured
 // production boot (missing/placeholder secrets, localhost BASE_URL, …).
 validateEnvOrExit();
@@ -149,6 +155,24 @@ app.get('/media/hotel-image', async (req, res) => {
   }
 });
 
+// What this deployment is currently able to do. Mounted ahead of preview mode
+// (whose catch-all would otherwise answer it with an empty list) and ahead of
+// the configuration guard, because the whole point of this route is to be
+// reachable on a deployment that is not configured. It exposes the *names* of
+// unset variables and never their values, and the login page reads it to tell
+// the visitor which credentials apply.
+app.get('/api/health', (_req, res) => {
+  const status = runtimeStatus();
+  res.json({
+    success: true,
+    data: {
+      ...status,
+      uptime: Math.round(process.uptime()),
+      ...(DEMO_MODE ? { demoAccounts: demoAccountHints() } : {}),
+    },
+  });
+});
+
 // Preview mode: answers the whole API from fixtures so the portal can be
 // reviewed without a database. Mounted ahead of every real route, so when it
 // is on Prisma is never reached. Off unless DEMO_MODE=1 is explicitly set.
@@ -156,6 +180,11 @@ if (DEMO_MODE) {
   console.warn('⚠️  [demo] DEMO_MODE is ON — all API responses are fixtures and nothing is saved.');
   app.use('/api', createDemoRouter());
 }
+
+// Past this point every route needs a database and signing secrets. When they
+// are absent, say so with a 503 that names them rather than letting each
+// controller fail its own way.
+app.use('/api', serviceGuard);
 
 // Auth (no JWT required)
 app.use('/api/auth', authRouter);
@@ -191,19 +220,42 @@ app.use('/api/admin/ui-templates', authenticate, adminUiTemplatesRouter);
 app.use('/api/admin/enrich', authenticate, enrichRouter);
 app.use('/api/admin', authenticate, adminRouter);
 
-// SPA fallback — serve admin for /admin, dashboard for everything else
+// SPA fallback — serve admin for /admin, dashboard for everything else.
+// Both use the *resolved* public directory: __dirname points inside the bundle
+// on a serverless host, so `__dirname/../public` sends a path that does not
+// exist and every non-static URL 500s instead of rendering the app.
 app.get('/admin*', (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'admin.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'admin.html'));
 });
 
 app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'dashboard.html'));
 });
 
 // Global error handler. Log the real error server-side; never leak its message
 // (stack/Prisma/SQL details) to the client — return a stable generic response.
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error(err);
+
+  // A handler that already answered and then rejected would otherwise trigger
+  // ERR_HTTP_HEADERS_SENT here; let Express close the connection instead.
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+
+  // The database being unreachable or unconfigured is an operator problem, not
+  // a caller problem — 503 says "try later / fix the deploy", where a 500 reads
+  // as a bug in the request. The message stays generic; details are in the log.
+  if (err.name === 'PrismaClientInitializationError') {
+    res.status(503).json({
+      success: false,
+      error: 'DATABASE_UNAVAILABLE',
+      message: 'The service cannot reach its database right now. Please try again shortly.',
+    });
+    return;
+  }
+
   res.status(500).json({ success: false, error: 'INTERNAL_ERROR', message: 'Something went wrong. Please try again.' });
 });
 

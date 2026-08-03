@@ -1962,6 +1962,99 @@ html[lang="ar"] .data-table thead th {
   display: block;
 }
 
+/* Login screen server notice — preview credentials, or missing configuration.
+   Informational, so it is deliberately quieter than .alert. */
+.login-notice {
+  padding: 12px 14px;
+  border: 1px solid var(--info);
+  border-radius: var(--r-8);
+  background: var(--info-soft);
+  color: var(--info);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.login-notice.hidden {
+  display: none;
+}
+
+.login-notice-warning {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.login-notice strong {
+  display: block;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.login-notice p {
+  margin: 0 0 6px;
+}
+
+.login-notice-accounts {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  /* minmax(0, 1fr) rather than the implicit 1fr: an auto-sized track refuses to
+     go below its content width, and the longer demo emails would then push each
+     row past the notice's edge. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.login-notice-accounts li {
+  min-width: 0;
+}
+
+.login-notice-accounts button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid currentColor;
+  border-radius: var(--r-8);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.login-notice-accounts button:hover,
+.login-notice-accounts button:focus-visible {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* A flex item will not shrink below its content width by default, so the longer
+   demo emails would push the row past the notice. Let the address truncate and
+   keep the password — the part being read — intact. */
+.login-notice-accounts button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-notice-accounts button > code {
+  flex: 0 0 auto;
+}
+
+.login-notice-accounts code,
+.login-notice code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  /* Credentials and variable names are always Latin — keep them LTR inside an
+     Arabic (RTL) page so they do not render reordered. */
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
 .mobile-menu {
   display: none;
 }
