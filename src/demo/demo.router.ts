@@ -41,6 +41,22 @@ import {
 
 export const DEMO_MODE = process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true';
 
+/**
+ * The accounts a reviewer can sign in with, for the login screen's preview hint.
+ *
+ * Publishing these is safe and is the point: preview mode is opt-in, the users
+ * are invented, and the only thing the credentials unlock is more fixtures.
+ * Without the hint the preview is unusable — the passwords existed solely in a
+ * deployment document, so the first thing a visitor met was a login form with
+ * nothing that would open it.
+ */
+export function demoAccountHints(): Array<{ email: string; password: string; name: string; role: string }> {
+  return Object.entries(DEMO_LOGINS).map(([email, password]) => {
+    const user = DEMO_USERS.find((u) => u.email.toLowerCase() === email);
+    return { email, password, name: user?.name ?? '', role: user?.role ?? 'AGENT' };
+  });
+}
+
 const ok = (data: unknown, meta?: unknown) => ({ success: true, data, ...(meta ? { meta } : {}) });
 const page = (rows: unknown[]) => ok(rows, { page: 1, limit: 20, total: rows.length, pages: 1 });
 

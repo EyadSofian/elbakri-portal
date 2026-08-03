@@ -65,6 +65,10 @@
 
       <div class="alert alert-danger hidden" id="errorMsg"></div>
 
+      <!-- Filled in from /api/health: the preview accounts when the server runs
+           on fixtures, or the missing configuration when it cannot serve. -->
+      <div class="login-notice hidden" id="serverNotice"></div>
+
       <form id="loginForm" class="form-stack" onsubmit="handleLogin(event)" novalidate>
         <label class="field">
           <span data-i18n="form.email">Email address</span>
@@ -179,11 +183,33 @@
           credentials: "include",
           body: JSON.stringify({ email, password }),
         });
-        const data = await res.json();
+        // A non-JSON body means the request never reached the app (platform
+        // timeout, crashed function, proxy error page). Treat it as such
+        // instead of parsing it as a login result.
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {
+          showError(t("login.unavailable"));
+          setLoading(false);
+          return;
+        }
 
         if (!res.ok || !data.success) {
-          const inactive = String(data.message || "").toLowerCase().includes("inactive");
-          showError(inactive ? t("login.inactive") : t("login.invalid"));
+          // Only 401 actually means the credentials were wrong. Anything else
+          // is a server-side problem, and reporting it as "invalid email or
+          // password" sends people hunting for a typo that isn't there.
+          if (res.status === 401) {
+            showError(t("login.invalid"));
+          } else if (res.status === 403 && String(data.error) === "COMPANY_INACTIVE") {
+            showError(t("login.inactive"));
+          } else if (String(data.error) === "NOT_CONFIGURED") {
+            showError(t("login.notConfigured"));
+          } else if (res.status === 429) {
+            showError(t("login.tooMany"));
+          } else {
+            showError(data.message || t("login.unavailable"));
+          }
           setLoading(false);
           return;
         }
@@ -200,6 +226,66 @@
       }
     }
 
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (c) => (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+      ));
+    }
+
+    function fillCredentials(email, password) {
+      document.getElementById("email").value = email;
+      document.getElementById("password").value = password;
+      clearErrors();
+      document.getElementById("btnLogin").focus();
+    }
+
+    /**
+     * Ask the server what it can actually do, and say so.
+     *
+     * In preview mode the form is unopenable unless the fixture accounts are
+     * shown; when configuration is missing, the failure is the deployment's, not
+     * the visitor's, and a login form gives no way to tell those apart.
+     */
+    async function describeServer() {
+      const box = document.getElementById("serverNotice");
+      let status;
+      try {
+        const res = await fetch("/api/health", { headers: { Accept: "application/json" } });
+        if (!res.ok) return;
+        status = (await res.json()).data;
+      } catch {
+        return; // Offline or blocked — the login attempt itself will report it.
+      }
+      if (!status) return;
+
+      if (status.mode === "preview") {
+        const accounts = Array.isArray(status.demoAccounts) ? status.demoAccounts : [];
+        box.className = "login-notice login-notice-info";
+        box.innerHTML =
+          `<strong>${escapeHtml(t("login.previewTitle"))}</strong>` +
+          `<p>${escapeHtml(t("login.previewBody"))}</p>` +
+          (accounts.length
+            ? `<ul class="login-notice-accounts">${accounts.map((a) => (
+                `<li><button type="button" data-email="${escapeHtml(a.email)}" data-password="${escapeHtml(a.password)}">` +
+                `<span>${escapeHtml(a.email)}</span><code>${escapeHtml(a.password)}</code></button></li>`
+              )).join("")}</ul>`
+            : "");
+        box.querySelectorAll("button[data-email]").forEach((btn) => {
+          btn.addEventListener("click", () => fillCredentials(btn.dataset.email, btn.dataset.password));
+        });
+      } else if (!status.ready) {
+        box.className = "login-notice login-notice-warning";
+        const missing = Array.isArray(status.missing) ? status.missing.join(", ") : "";
+        box.innerHTML =
+          `<strong>${escapeHtml(t("login.notConfiguredTitle"))}</strong>` +
+          `<p>${escapeHtml(t("login.notConfigured"))}</p>` +
+          (missing ? `<p><code>${escapeHtml(missing)}</code></p>` : "");
+      } else {
+        return; // Live and configured — nothing to announce.
+      }
+      box.classList.remove("hidden");
+    }
+
     const token = localStorage.getItem("accessToken");
     if (token) {
       const role = localStorage.getItem("userRole");
@@ -208,6 +294,7 @@
 
     syncLangButton();
     refreshIcons();
+    describeServer();
   </script>
 </body>
 </html>

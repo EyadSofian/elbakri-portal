@@ -30,8 +30,8 @@ DEMO_MODE=1
 
 Nothing else is required — no `DATABASE_URL`, no secrets. The API then answers
 from built-in fixtures, so login works, every page renders with realistic
-data, and Prisma is never called. Log in with any of the accounts in the table
-further down (e.g. `admin@elbakri.com` / `Admin@1982`).
+data, and Prisma is never called. The login screen lists the preview accounts
+and fills the form when you pick one, so there is nothing to look up.
 
 What preview mode does **not** do: save anything. Any create/edit/delete
 returns "Preview mode — this action was not saved" and changes nothing. The
@@ -39,6 +39,27 @@ data is invented; there is no real agency, client or balance in it.
 
 **Remove `DEMO_MODE` before the portal is used for real work** — with it on,
 the app will never read or write your database.
+
+---
+
+## "I typed my password and nothing happened"
+
+Open `/api/health` on the deployment. It answers regardless of how the project
+is configured and tells you which of three states you are in:
+
+```json
+{ "success": true, "data": { "mode": "preview", "ready": true, "missing": [] } }
+```
+
+| `mode` / `ready` | Meaning | What to do |
+|---|---|---|
+| `preview` | Running on fixtures | Sign in with an account shown on the login screen |
+| `live`, `ready: true` | Configured, talking to the real database | Credentials come from your database (`npm run db:seed`) |
+| `live`, `ready: false` | **Not configured** — `missing` names the unset variables | Set them (or `DEMO_MODE=1`) and redeploy |
+
+The login screen reads the same endpoint and says which case applies, so an
+unconfigured deployment now shows "Server not configured" instead of blaming
+the password. Only variable *names* are ever returned — never their values.
 
 ---
 

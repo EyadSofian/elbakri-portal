@@ -26,6 +26,34 @@ export interface EnvCheckResult {
   warnings: string[];
 }
 
+/** Configuration the API cannot answer a single request without. BASE_URL is
+ *  deliberately absent: it shapes links and CORS, but its absence does not stop
+ *  a request from being served, and checkEnv() already reports it at boot. */
+const RUNTIME_CRITICAL = ['DATABASE_URL', 'JWT_SECRET', 'REFRESH_TOKEN_SECRET'] as const;
+
+export interface RuntimeStatus {
+  /** 'preview' answers from fixtures; 'live' talks to the real database. */
+  mode: 'preview' | 'live';
+  /** False when the API is configured so incompletely that requests must fail. */
+  ready: boolean;
+  /** Names (never values) of the critical variables that are not set. */
+  missing: string[];
+}
+
+/**
+ * What this deployment can actually do right now.
+ *
+ * Read at request time rather than cached at import time so a serverless
+ * instance that is reused after an environment change reports the truth.
+ */
+export function runtimeStatus(): RuntimeStatus {
+  if (process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true') {
+    return { mode: 'preview', ready: true, missing: [] };
+  }
+  const missing = RUNTIME_CRITICAL.filter((k) => !process.env[k] || !String(process.env[k]).trim());
+  return { mode: 'live', ready: missing.length === 0, missing: [...missing] };
+}
+
 export function checkEnv(): EnvCheckResult {
   const isProd = process.env.NODE_ENV === 'production';
   const isDemo = process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true';
