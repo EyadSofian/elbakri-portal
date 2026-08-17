@@ -1,3 +1,11 @@
+> ⚠️ **HISTORICAL — no longer the active deployment path.** The portal now runs
+> on **Railway + PostgreSQL**; `prisma/schema.prisma` targets `postgresql`, so the
+> MySQL steps below (and `database/mysql/init.sql`) no longer match the schema.
+> Use **[DEPLOYMENT_RAILWAY.md](DEPLOYMENT_RAILWAY.md)** instead. Restoring this
+> path would mean reverting the Prisma provider back to `mysql`.
+
+---
+
 # Deploying Elbakri Portal on GoDaddy (cPanel Node.js App + MySQL/MariaDB)
 
 This guide deploys the Node/Express/Prisma backend + static portal to GoDaddy

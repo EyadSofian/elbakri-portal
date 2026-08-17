@@ -1,4 +1,13 @@
 -- ================================================================
+-- ⚠️  LEGACY / HISTORICAL — DO NOT IMPORT.
+-- The portal now runs on PostgreSQL (prisma/schema.prisma has
+-- provider = "postgresql"). This MySQL dump is a snapshot of the old
+-- GoDaddy cPanel schema and is NO LONGER kept in sync with the models.
+-- The current schema is applied with `npx prisma migrate deploy`
+-- (baseline: prisma/migrations/20260817000000_postgres_init/).
+-- ================================================================
+
+-- ================================================================
 -- Elbakri Portal — Full MySQL/MariaDB initial schema
 -- Generated from prisma/schema.prisma (provider = mysql).
 -- Import via phpMyAdmin: select your (empty) database, open the

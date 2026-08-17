@@ -8,6 +8,7 @@ import { Readable } from 'stream';
 
 import fs from 'fs';
 
+import { prisma } from './config/db';
 import { validateEnvOrExit } from './config/env';
 import { PUBLIC_UPLOADS_DIR, GENERATED_DIR, ensureStorageDirs } from './config/paths';
 import { DEMO_MODE, createDemoRouter } from './demo/demo.router';
@@ -90,6 +91,27 @@ app.use(helmet({
 app.use(cors({ origin: process.env.BASE_URL, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
+
+/**
+ * Liveness probe for the hosting platform's health check (Railway's
+ * `healthcheckPath`). Deliberately does NOT query the database: a probe that
+ * fails while Postgres is still starting would roll back an otherwise healthy
+ * deploy. Pass ?db=1 for an explicit connectivity check when diagnosing.
+ * Declared before the API routers so it never requires authentication, and
+ * before the SPA fallback so it never returns HTML.
+ */
+app.get('/api/health', async (req, res) => {
+  if (req.query.db === '1') {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ success: true, status: 'ok', database: 'up' });
+    } catch {
+      res.status(503).json({ success: false, status: 'degraded', database: 'down' });
+    }
+    return;
+  }
+  res.json({ success: true, status: 'ok', uptime: process.uptime() });
+});
 
 // Static files. NOTE: only PUBLIC uploads are served here; private documents
 // live in a separate, non-served directory and are only reachable via the

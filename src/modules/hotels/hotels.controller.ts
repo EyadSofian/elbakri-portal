@@ -56,8 +56,8 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
 
   const where: Prisma.HotelWhereInput = {
     ...(caller.role !== 'SUPERADMIN' && { isActive: true }),
-    ...(req.query.city && { city: { contains: String(req.query.city) } }),
-    ...(req.query.area && { area: { contains: String(req.query.area) } }),
+    ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' as const } }),
+    ...(req.query.area && { area: { contains: String(req.query.area), mode: 'insensitive' as const } }),
     ...(req.query.stars && { stars: parseInt(String(req.query.stars)) }),
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
     ...(priceFilter && { pricePerNight: priceFilter }),
@@ -75,21 +75,21 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
     ...boolFilter('allInclusive'),
     ...(search && {
       OR: [
-        { name: { contains: search } },
-        { nameAr: { contains: search } },
-        { city: { contains: search } },
-        { cityAr: { contains: search } },
-        { country: { contains: search } },
-        { address: { contains: search } },
-        { description: { contains: search } },
-        { descriptionAr: { contains: search } },
+        { name: { contains: search, mode: 'insensitive' as const } },
+        { nameAr: { contains: search, mode: 'insensitive' as const } },
+        { city: { contains: search, mode: 'insensitive' as const } },
+        { cityAr: { contains: search, mode: 'insensitive' as const } },
+        { country: { contains: search, mode: 'insensitive' as const } },
+        { address: { contains: search, mode: 'insensitive' as const } },
+        { description: { contains: search, mode: 'insensitive' as const } },
+        { descriptionAr: { contains: search, mode: 'insensitive' as const } },
         {
           destination: {
             is: {
               OR: [
-                { name: { contains: search } },
-                { nameAr: { contains: search } },
-                { slug: { contains: search } },
+                { name: { contains: search, mode: 'insensitive' as const } },
+                { nameAr: { contains: search, mode: 'insensitive' as const } },
+                { slug: { contains: search, mode: 'insensitive' as const } },
               ],
             },
           },
@@ -171,7 +171,7 @@ export async function listHotelAreas(req: Request, res: Response): Promise<void>
     ...(caller.role !== 'SUPERADMIN' && { isActive: true }),
     area: { not: null },
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
-    ...(req.query.city && { city: { contains: String(req.query.city) } }),
+    ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' as const } }),
   };
   const rows = await prisma.hotel.findMany({
     where,

@@ -27,7 +27,7 @@ export async function listActivities(req: Request, res: Response): Promise<void>
   const where = {
     isActive: true,
     // city is now a free-text field (case-insensitive contains)
-    ...(req.query.city && { city: { contains: String(req.query.city) } }),
+    ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' as const } }),
     ...(req.query.category && { category: req.query.category as ActivityCategory }),
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
     ...(req.query.confirmableOnly && { isConfirmableInApp: true }),
