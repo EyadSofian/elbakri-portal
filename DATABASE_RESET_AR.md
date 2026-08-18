@@ -9,12 +9,36 @@
 
 ## 1. الأمر الأساسي
 
+شغّله من **جوه** خدمة Railway نفسها:
+
 ```bash
+railway ssh                                   # شِل جوه الخدمة
+
 # معاينة فقط — يعرض عدد الصفوف في كل جدول ولا يمسح أي حاجة
-railway run npx ts-node prisma/reset-all-data.ts
+npx ts-node prisma/reset-all-data.ts
 
 # التنفيذ الفعلي — يفرّغ كل الجداول
-railway run npx ts-node prisma/reset-all-data.ts --yes
+npx ts-node prisma/reset-all-data.ts --yes
+```
+
+### ⚠️ ليه `railway ssh` مش `railway run`
+
+الـ `DATABASE_URL` بتاعكم بيشاور على `postgres.railway.internal` — ده اسم
+على **الشبكة الخاصة** بتاعة Railway، مابيتحلّش غير من جوه Railway نفسها.
+
+و`railway run` بيشغّل الأمر على **جهازك إنت** وبس بيحقن متغيرات Railway،
+فالاسم ده مش هيتحل عندك والاتصال هيفشل.
+
+يعني عندك طريقتين:
+
+```bash
+# ١) من جوه الخدمة — الأسهل والأضمن
+railway ssh
+npx ts-node prisma/reset-all-data.ts --yes
+
+# ٢) من جهازك — لازم تستخدم اللينك العام بدل الخاص
+#    (Postgres → Variables → DATABASE_PUBLIC_URL، هيكون *.proxy.rlwy.net)
+DATABASE_URL="$DATABASE_PUBLIC_URL" npx ts-node prisma/reset-all-data.ts --yes
 ```
 
 أو محليًا لو الـ `DATABASE_URL` موجود في ملف `.env`:
@@ -23,6 +47,9 @@ railway run npx ts-node prisma/reset-all-data.ts --yes
 npm run db:reset:data          # معاينة
 npm run db:reset:data -- --yes # تنفيذ
 ```
+
+> السكربت بيطبع **اسم السيرفر واسم قاعدة البيانات** اللي هيمسحها قبل ما
+> يلمس أي حاجة. اتأكد من السطر ده إنه فعلًا القاعدة اللي إنت قاصدها.
 
 > السكربت **معاينة افتراضيًا**. من غير `--yes` مش بيمسح أي حاجة، بس بيطبع
 > تقرير بعدد الصفوف في كل جدول عشان تشوف إنت رايح تمسح إيه بالظبط.
@@ -49,10 +76,10 @@ npm run db:reset:data -- --yes # تنفيذ
 
 ```bash
 # امسح الملفات المرفوعة كمان (صور الفنادق، جوازات السفر، PDF الفواتير)
-railway run npx ts-node prisma/reset-all-data.ts --yes --files
+npx ts-node prisma/reset-all-data.ts --yes --files
 
 # امسح حساب الـ SUPERADMIN هو كمان (لازم تعمل db:seed بعدها عشان تقدر تدخل)
-railway run npx ts-node prisma/reset-all-data.ts --yes --wipe-superadmin
+npx ts-node prisma/reset-all-data.ts --yes --wipe-superadmin
 ```
 
 ---
@@ -64,10 +91,10 @@ railway run npx ts-node prisma/reset-all-data.ts --yes --wipe-superadmin
 
 ```bash
 # لو مسحت الـ SUPERADMIN كمان
-railway run npm run db:seed
+npm run db:seed
 
 # بناء الكتالوج كله بالترتيب — أمر واحد
-railway run npm run db:seed:catalog
+npm run db:seed:catalog
 ```
 
 `db:seed:catalog` بيشغّل بالترتيب:
@@ -83,11 +110,11 @@ railway run npm run db:seed:catalog
 ولو عايز تشغّلهم واحد واحد:
 
 ```bash
-railway run npm run db:seed:hotels
-railway run npm run db:seed:mea
-railway run npm run db:seed:airports
-railway run npm run db:seed:destinations
-railway run npm run db:apply:images
+npm run db:seed:hotels
+npm run db:seed:mea
+npm run db:seed:airports
+npm run db:seed:destinations
+npm run db:apply:images
 ```
 
 بعد كده الشركات والمستخدمين بتوعهم بيتعملوا من داخل البورتال بحساب الـ
@@ -98,14 +125,17 @@ SUPERADMIN — مفيش seed بيعمل شركات وهمية.
 ## 4. الخطوات كاملة (نسخ ولصق)
 
 ```bash
-# 1. شوف إنت رايح تمسح إيه
-railway run npx ts-node prisma/reset-all-data.ts
+# 0. ادخل جوه الخدمة
+railway ssh
+
+# 1. شوف إنت رايح تمسح إيه (واتأكد من اسم القاعدة اللي هيطبعه)
+npx ts-node prisma/reset-all-data.ts
 
 # 2. امسح
-railway run npx ts-node prisma/reset-all-data.ts --yes
+npx ts-node prisma/reset-all-data.ts --yes
 
 # 3. ابنِ الكتالوج من جديد
-railway run npm run db:seed:catalog
+npm run db:seed:catalog
 ```
 
 ---

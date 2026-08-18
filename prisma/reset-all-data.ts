@@ -33,11 +33,16 @@ import {
  *    you are never locked out of the portal. `--wipe-superadmin` opts out.
  *  - Uploaded files are left on disk unless `--files` is passed.
  *
- * USAGE
- *   railway run npx ts-node prisma/reset-all-data.ts             # preview only
- *   railway run npx ts-node prisma/reset-all-data.ts --yes       # wipe rows
- *   railway run npx ts-node prisma/reset-all-data.ts --yes --files
- *   railway run npx ts-node prisma/reset-all-data.ts --yes --wipe-superadmin
+ * USAGE — run it from a shell INSIDE the Railway service (`railway ssh`), not
+ * through `railway run`: that executes on your own machine, where the
+ * DATABASE_URL's `*.railway.internal` host does not resolve. To run it from
+ * your machine anyway, override the URL with the public one:
+ * `DATABASE_URL="$DATABASE_PUBLIC_URL" npx ts-node prisma/reset-all-data.ts`.
+ *
+ *   npx ts-node prisma/reset-all-data.ts             # preview only
+ *   npx ts-node prisma/reset-all-data.ts --yes       # wipe rows
+ *   npx ts-node prisma/reset-all-data.ts --yes --files
+ *   npx ts-node prisma/reset-all-data.ts --yes --wipe-superadmin
  *
  * AFTER THE WIPE, rebuild the catalogue (each seed is idempotent):
  *   npm run db:seed              # SuperAdmin (only needed with --wipe-superadmin)
