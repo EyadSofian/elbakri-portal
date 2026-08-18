@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
-import { Market, MealPlan, HotelSupplementType } from '@prisma/client';
+import { Market, HotelSupplementType } from '@prisma/client';
 import { prisma } from '../../config/db';
 
 // ─────────────────────────────────────────────
@@ -9,17 +9,23 @@ import { prisma } from '../../config/db';
 // the rate applies to ALL markets (fallback when no market-specific row exists).
 // ─────────────────────────────────────────────
 
-const MARKETS: Market[] = ['EGYPTIAN', 'INTERNATIONAL', 'GULF', 'FOREIGN'];
-const MEAL_PLANS: MealPlan[] = ['ROOM_ONLY', 'BREAKFAST', 'HALF_BOARD', 'FULL_BOARD', 'ALL_INCLUSIVE', 'ULTRA_ALL_INCLUSIVE'];
-const SUPP_TYPES: HotelSupplementType[] = ['FIXED_AMOUNT', 'PERCENTAGE', 'TEXT_ONLY'];
+const MARKETS: Market[] = ['EGYPTIAN', 'INTERNATIONAL', 'GULF', 'FOREIGN', 'MIDDLE_EAST', 'NORTH_AFRICA', 'ARAB_48'];
+const SUPP_TYPES: HotelSupplementType[] = ['FIXED_AMOUNT', 'PERCENTAGE', 'TOTAL_PRICE', 'TEXT_ONLY'];
 
 function asMarket(v: unknown): Market | null {
   const s = String(v ?? '').trim().toUpperCase();
   return (MARKETS as string[]).includes(s) ? (s as Market) : null;
 }
-function asMealPlan(v: unknown): MealPlan | null {
+/**
+ * Meal plans are admin-managed (MealPlanOption), so the value is validated
+ * against the configured list rather than a fixed enum — that is what lets an
+ * admin add a plan like Soft All Inclusive without a code change.
+ */
+async function asMealPlanCode(v: unknown): Promise<string | null> {
   const s = String(v ?? '').trim().toUpperCase();
-  return (MEAL_PLANS as string[]).includes(s) ? (s as MealPlan) : null;
+  if (!s) return null;
+  const found = await prisma.mealPlanOption.findUnique({ where: { code: s }, select: { code: true } });
+  return found?.code ?? null;
 }
 function asSuppType(v: unknown): HotelSupplementType {
   const s = String(v ?? '').trim().toUpperCase();
@@ -104,7 +110,7 @@ export async function saveHotelRates(req: Request, res: Response): Promise<void>
           singlePrice: decOrNull(r.singlePrice),
           doublePrice: decOrNull(r.doublePrice),
           triplePrice: decOrNull(r.triplePrice),
-          mealPlan: asMealPlan(r.mealPlan),
+          mealPlan: await asMealPlanCode(r.mealPlan),
           validFrom: dateOrNull(r.validFrom),
           validTo: dateOrNull(r.validTo),
           isActive: r.isActive !== false,
@@ -141,7 +147,7 @@ export interface VisibleHotelRate {
   singlePrice: Decimal | null;
   doublePrice: Decimal | null;
   triplePrice: Decimal | null;
-  mealPlan: MealPlan | null;
+  mealPlan: string | null;
   notes: string | null;
   supplements: { id: string; name: string; type: HotelSupplementType; amount: Decimal | null; currency: string | null; notes: string | null }[];
 }

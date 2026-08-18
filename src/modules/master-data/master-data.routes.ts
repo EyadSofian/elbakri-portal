@@ -3,6 +3,12 @@ import { requireRole } from '../../middleware/role';
 import { validate } from '../../middleware/validate';
 import { transportRateSchema, visaFeeSchema, receptionRateSchema } from './master-data.schema';
 import {
+  listMealPlans,
+  createMealPlan,
+  updateMealPlan,
+  deleteMealPlan,
+} from './meal-plans.controller';
+import {
   bulkSetTransportDirection,
   createReceptionServiceRate,
   createTransportRate,
@@ -27,6 +33,13 @@ router.post('/transport-rates', requireRole('SUPERADMIN'), validate(transportRat
 router.patch('/transport-rates/bulk-direction', requireRole('SUPERADMIN'), bulkSetTransportDirection);
 router.patch('/transport-rates/:id', requireRole('SUPERADMIN'), validate(transportRateSchema), updateTransportRate);
 router.delete('/transport-rates/:id', requireRole('SUPERADMIN'), deleteTransportRate);
+
+// Admin-managed meal plans (Room Only, Soft All Inclusive, …). Reading is open
+// to any signed-in user because the booking screens render the labels.
+router.get('/meal-plans', listMealPlans);
+router.post('/meal-plans', requireRole('SUPERADMIN'), createMealPlan);
+router.patch('/meal-plans/:id', requireRole('SUPERADMIN'), updateMealPlan);
+router.delete('/meal-plans/:id', requireRole('SUPERADMIN'), deleteMealPlan);
 
 router.get('/visa-fees', listVisaFees);
 router.post('/visa-fees', requireRole('SUPERADMIN'), validate(visaFeeSchema), createVisaFee);

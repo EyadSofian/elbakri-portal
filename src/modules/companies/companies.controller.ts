@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { Prisma } from '@prisma/client';
+import { Prisma, Market } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '../../config/db';
 import { generatePassword, paginate, paginateMeta } from '../../shared/helpers';
@@ -14,14 +14,22 @@ function nullable(value: unknown): string | null | undefined {
   return text ? text : null;
 }
 
-function defaultCompanyCurrency(market: 'EGYPTIAN' | 'INTERNATIONAL'): 'EGP' | 'USD' {
+// Every market a company can be sold under. The list used to be hard-coded to
+// EGYPTIAN | INTERNATIONAL here, which meant the Gulf market existed in the
+// schema but could never actually be assigned to a company.
+const COMPANY_MARKETS: Market[] = ['EGYPTIAN', 'INTERNATIONAL', 'GULF', 'FOREIGN', 'MIDDLE_EAST', 'NORTH_AFRICA', 'ARAB_48'];
+
+function asCompanyMarket(v: unknown, fallback: Market = 'INTERNATIONAL'): Market {
+  const s = String(v ?? '').trim().toUpperCase();
+  return (COMPANY_MARKETS as string[]).includes(s) ? (s as Market) : fallback;
+}
+
+/** Only the local market bills in EGP; every other market is sold in USD. */
+function defaultCompanyCurrency(market: Market): 'EGP' | 'USD' {
   return market === 'EGYPTIAN' ? 'EGP' : 'USD';
 }
 
-function normalizeCompanyCurrency(
-  value: string | undefined,
-  market: 'EGYPTIAN' | 'INTERNATIONAL',
-): 'EGP' | 'USD' {
+function normalizeCompanyCurrency(value: string | undefined, market: Market): 'EGP' | 'USD' {
   return value === 'EGP' || value === 'USD' ? value : defaultCompanyCurrency(market);
 }
 
@@ -102,7 +110,7 @@ export async function createCompany(req: Request, res: Response): Promise<void> 
 
   const tempPassword = generatePassword(12);
   const hashedPassword = await bcrypt.hash(tempPassword, 12);
-  const market = body.market === 'EGYPTIAN' ? 'EGYPTIAN' : 'INTERNATIONAL';
+  const market = asCompanyMarket(body.market);
   const currency = normalizeCompanyCurrency(body.currency, market);
 
   // A company and its admin login are created together or not at all. Done as
@@ -251,11 +259,11 @@ export async function updateCompany(req: Request, res: Response): Promise<void> 
     where: { id: req.params.id },
     select: { market: true, currency: true },
   });
-  const nextMarket = body.market === 'EGYPTIAN'
-    ? 'EGYPTIAN'
-    : body.market === 'INTERNATIONAL'
-      ? 'INTERNATIONAL'
-      : (current.market === 'EGYPTIAN' ? 'EGYPTIAN' : 'INTERNATIONAL');
+  // Keep whatever the company is already on when the request does not name a
+  // market — the old version silently collapsed Gulf/Foreign to International.
+  const nextMarket = body.market !== undefined
+    ? asCompanyMarket(body.market, current.market)
+    : current.market;
   const nextCurrency = body.currency !== undefined || body.market !== undefined
     ? normalizeCompanyCurrency(body.currency ?? current.currency, nextMarket)
     : undefined;

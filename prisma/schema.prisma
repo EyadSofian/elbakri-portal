@@ -30,11 +30,17 @@ enum CompanyTier {
 
 // Client market / nationality bucket — drives which explicit price tier the
 // company sees and its default display currency.
+// Sales markets. A rate row and a company each carry one; a hotel rate with
+// market = null applies to all of them. Values are additive on purpose — an
+// existing company or price row keeps whatever it was set to.
 enum Market {
-  EGYPTIAN
+  EGYPTIAN // the local Egyptian market (shown as "السوق المحلي")
   INTERNATIONAL
   GULF
   FOREIGN
+  MIDDLE_EAST
+  NORTH_AFRICA
+  ARAB_48 // Arab citizens of Israel — a distinct market with its own rates
 }
 
 enum ServiceScope {
@@ -176,6 +182,9 @@ enum VisaType {
   HAJJ
 }
 
+// Kept for QuoteRequest, where the customer picks from a fixed list. Hotel rate
+// rows instead reference MealPlanOption by code, so an admin can add their own
+// plans without a code change — see HotelRate.mealPlan.
 enum MealPlan {
   ROOM_ONLY
   BREAKFAST
@@ -183,6 +192,7 @@ enum MealPlan {
   FULL_BOARD
   ALL_INCLUSIVE
   ULTRA_ALL_INCLUSIVE
+  SOFT_ALL_INCLUSIVE
 }
 
 enum ProcessingType {
@@ -253,11 +263,16 @@ enum TransportEndpointType {
   DESTINATION
 }
 
-// How a hotel rate supplement behaves. TEXT_ONLY = informational (e.g. "Nile
-// View"), FIXED_AMOUNT / PERCENTAGE = an actual surcharge.
+// How a supplement changes the room price.
+//   FIXED_AMOUNT — add this much on top (e.g. Sea View +150)
+//   PERCENTAGE   — add this percent on top
+//   TOTAL_PRICE  — this room category costs exactly this instead of the row's
+//                  own price (e.g. "Suite = 4200", not "+4200")
+//   TEXT_ONLY    — informational, no price effect
 enum HotelSupplementType {
   FIXED_AMOUNT
   PERCENTAGE
+  TOTAL_PRICE
   TEXT_ONLY
 }
 
@@ -532,7 +547,7 @@ model HotelRate {
   singlePrice  Decimal?              @db.Decimal(10, 2)
   doublePrice  Decimal?              @db.Decimal(10, 2)
   triplePrice  Decimal?              @db.Decimal(10, 2)
-  mealPlan     MealPlan?
+  mealPlan     String? // MealPlanOption.code — admin-managed, not a fixed enum
   validFrom    DateTime?
   validTo      DateTime?
   isActive     Boolean               @default(true)
@@ -544,6 +559,22 @@ model HotelRate {
 
   @@index([hotelId])
   @@index([hotelId, isActive])
+}
+
+// Meal plans an admin maintains themselves (Room Only, Bed & Breakfast, Soft
+// All Inclusive, anything else a contract calls for). HotelRate.mealPlan holds
+// the `code`; the labels are what the portal displays.
+model MealPlanOption {
+  id           String   @id @default(cuid())
+  code         String   @unique // stable key stored on rates, e.g. SOFT_ALL_INCLUSIVE
+  labelEn      String
+  labelAr      String?
+  isActive     Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive, displayOrder])
 }
 
 model HotelRateSupplement {

@@ -1887,15 +1887,117 @@ function handleHotelsSearchInput(el) {
 // DEDICATED TABBED HOTEL EDITOR (Basic / Images / Amenities / Policies / Pricing)
 // ─────────────────────────────────────────────
 let hotelEditor = { id: "", mainImage: "", gallery: [], amenities: [] };
-const HE_MARKETS = [["", "All markets"], ["EGYPTIAN", "Egyptian"], ["GULF", "Gulf"], ["FOREIGN", "Foreign"]];
-const HE_MEALS = ["", "ROOM_ONLY", "BREAKFAST", "HALF_BOARD", "FULL_BOARD", "ALL_INCLUSIVE", "ULTRA_ALL_INCLUSIVE"];
+// Every market a rate row can be priced for. A row left on "All markets" is the
+// fallback used when no market-specific row exists.
+const HE_MARKETS = [
+  ["", "All markets"],
+  ["EGYPTIAN", "Local market"],
+  ["GULF", "Gulf"],
+  ["MIDDLE_EAST", "Middle East"],
+  ["NORTH_AFRICA", "North Africa"],
+  ["ARAB_48", "Arab 48"],
+  ["FOREIGN", "Foreign"],
+  ["INTERNATIONAL", "International"],
+];
+// Meal plans are admin-managed, so this is filled from /meal-plans at load time
+// rather than hard-coded — see heLoadMealPlans().
+let HE_MEALS = [["", "—"]];
 const HE_CURRENCIES = ["EGP", "USD", "EUR", "SAR", "AED", "GBP"];
-const HE_SUPP_TYPES = ["TEXT_ONLY", "FIXED_AMOUNT", "PERCENTAGE"];
+const HE_SUPP_TYPES = ["TEXT_ONLY", "FIXED_AMOUNT", "PERCENTAGE", "TOTAL_PRICE"];
+
+/** Load the admin-managed meal plans once per editor open. */
+async function heLoadMealPlans() {
+  const res = await apiFetch("/meal-plans");
+  const plans = res?.data || [];
+  HE_MEALS = [["", "—"]].concat(
+    plans.map(p => [p.code, state.lang === "ar" ? (p.labelAr || p.labelEn) : p.labelEn]),
+  );
+}
+
+// ─────────────────────────────────────────────
+// MEAL PLANS — admin-managed list used by hotel rate rows
+// ─────────────────────────────────────────────
+
+/** Open the meal plan manager. Rows are edited in place and saved one by one. */
+async function openMealPlansManager() {
+  const res = await apiFetch("/meal-plans?includeInactive=true");
+  const plans = res?.data || [];
+  const row = (p) => `<tr data-id="${p.id}">
+    <td><code class="secondary-text">${escapeHtml(p.code)}</code></td>
+    <td><input class="mp-en" value="${escapeHtml(p.labelEn || "")}"></td>
+    <td><input class="mp-ar" value="${escapeHtml(p.labelAr || "")}" dir="rtl"></td>
+    <td style="width:80px"><input class="mp-order" type="number" value="${p.displayOrder ?? 0}"></td>
+    <td><label class="check-row"><input class="mp-active" type="checkbox" ${p.isActive ? "checked" : ""}> ${t("form.active", "Active")}</label></td>
+    <td style="display:flex;gap:4px">
+      <button class="btn btn-outline btn-sm" onclick="saveMealPlanRow('${p.id}')">${icon("save")}</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteMealPlanRow('${p.id}')">${icon("trash-2")}</button>
+    </td>
+  </tr>`;
+  const body = `
+    <div class="secondary-text" style="margin-bottom:10px">${t("mealPlanAdmin.help", "The board basis options offered on hotel rate rows. Add your own at any time.")}</div>
+    <div class="form-grid" style="grid-template-columns:1.4fr 1.4fr 0.6fr auto;gap:8px;align-items:end;margin-bottom:12px">
+      <div class="form-field"><label>${t("mealPlanAdmin.nameEn", "Name (EN)")}</label><input id="mpNewEn" placeholder="Soft All Inclusive"></div>
+      <div class="form-field"><label>${t("mealPlanAdmin.nameAr", "Name (AR)")}</label><input id="mpNewAr" dir="rtl" placeholder="شامل مخفف"></div>
+      <div class="form-field"><label>${t("mealPlanAdmin.order", "Order")}</label><input id="mpNewOrder" type="number" value="${plans.length}"></div>
+      <button class="btn btn-primary" onclick="createMealPlanRow()">${icon("plus")}${t("mealPlanAdmin.add", "Add meal plan")}</button>
+    </div>
+    <div class="table-scroll"><table class="data-table"><thead><tr>
+      <th>${t("mealPlanAdmin.code", "Code")}</th><th>${t("mealPlanAdmin.nameEn", "Name (EN)")}</th>
+      <th>${t("mealPlanAdmin.nameAr", "Name (AR)")}</th><th>${t("mealPlanAdmin.order", "Order")}</th>
+      <th>${t("th.status", "Status")}</th><th>${t("th.actions", "Actions")}</th>
+    </tr></thead><tbody id="mpTbody">${plans.map(row).join("")}</tbody></table></div>`;
+  openModal(t("mealPlanAdmin.title", "Meal plans"), body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.close", "Close")}</button>`);
+  refreshIcons(document.getElementById("mpTbody"));
+}
+
+async function createMealPlanRow() {
+  const labelEn = (document.getElementById("mpNewEn")?.value || "").trim();
+  if (!labelEn) { toast(t("mealPlanAdmin.nameRequired", "Enter an English name for the meal plan."), "error"); return; }
+  const res = await apiFetch("/meal-plans", {
+    method: "POST",
+    body: JSON.stringify({
+      labelEn,
+      labelAr: (document.getElementById("mpNewAr")?.value || "").trim() || null,
+      displayOrder: Number(document.getElementById("mpNewOrder")?.value || 0),
+    }),
+  });
+  if (res?.success) { toast(t("mealPlanAdmin.saved", "Meal plan saved"), "success"); openMealPlansManager(); }
+}
+
+async function saveMealPlanRow(id) {
+  const tr = document.querySelector(`#mpTbody tr[data-id="${id}"]`);
+  if (!tr) return;
+  const res = await apiFetch(`/meal-plans/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      labelEn: tr.querySelector(".mp-en")?.value || "",
+      labelAr: tr.querySelector(".mp-ar")?.value || null,
+      displayOrder: Number(tr.querySelector(".mp-order")?.value || 0),
+      isActive: !!tr.querySelector(".mp-active")?.checked,
+    }),
+  });
+  if (res?.success) toast(t("mealPlanAdmin.saved", "Meal plan saved"), "success");
+}
+
+async function deleteMealPlanRow(id) {
+  if (!confirm(t("confirm.delete", "Delete this item?"))) return;
+  const res = await apiFetch(`/meal-plans/${id}`, { method: "DELETE" });
+  if (res?.success) {
+    // A plan still used by a rate is deactivated rather than deleted; the API
+    // says which happened.
+    toast(res.message || t("mealPlanAdmin.removed", "Meal plan removed"), "success");
+    openMealPlansManager();
+  }
+}
 
 async function openHotelEditor(id = "") {
   let h = {};
   let rates = [];
   let destinations = [];
+  // Meal plans are configurable, so pull the current list before the rate rows
+  // are rendered — otherwise a plan the admin added would not appear.
+  await heLoadMealPlans();
   if (id) {
     const [hr, rr] = await Promise.all([
       apiFetch(`/hotels/${id}`),
@@ -2001,6 +2103,11 @@ async function openHotelEditor(id = "") {
   // ── Pricing (rate matrix)
   const pricing = `<div class="he-panel" data-panel="pricing" style="display:none">
     <div class="secondary-text" style="margin-bottom:10px">${t("hotel.rateMatrixHelp", "Each row is a room rate for one market with single / double / triple prices in an explicit currency (no FX). Market = ALL applies when no market-specific row exists. Add supplements (Sea View, Extra Bed, …) per row.")}</div>
+    <div class="secondary-text" style="margin-bottom:10px">${t("hotel.periodsHelp", "One row per period and per market: add a row for each season (Valid from / Valid to) and a row for each market you sell at a different price. Rows never overwrite each other.")}</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+      <button type="button" class="btn btn-primary btn-sm" onclick="heAddRate()">${icon("plus")}${t("hotel.addRate", "Add rate row")}</button>
+      <span class="secondary-text" id="heRatesCount"></span>
+    </div>
     <div id="heRatesBox">${rates.map(r => heRateCardHtml(r)).join("")}</div>
     <button type="button" class="btn btn-outline" onclick="heAddRate()">${icon("plus")}${t("hotel.addRate", "Add rate row")}</button>
   </div>`;
@@ -2024,6 +2131,27 @@ async function openHotelEditor(id = "") {
 function heTab(key) {
   document.querySelectorAll(".he-tabbtn").forEach(b => b.classList.toggle("active", b.dataset.tab === key));
   document.querySelectorAll(".he-panel").forEach(p => p.style.display = p.dataset.panel === key ? "" : "none");
+  if (key === "pricing") heBindRateTitles();
+}
+
+/**
+ * Keep each rate row's header in step with what the admin types, so a hotel
+ * with a season per market stays readable instead of becoming a wall of
+ * identical cards. Bound once per editor.
+ */
+function heBindRateTitles() {
+  const box = document.getElementById("heRatesBox");
+  if (!box) return;
+  if (!box.dataset.titlesBound) {
+    box.dataset.titlesBound = "1";
+    box.addEventListener("input", (e) => {
+      if (e.target.closest(".he-room, .he-vf, .he-vt")) heSyncRateTitles();
+    });
+    box.addEventListener("change", (e) => {
+      if (e.target.closest(".he-market, .he-vf, .he-vt")) heSyncRateTitles();
+    });
+  }
+  heSyncRateTitles();
 }
 
 function heMainPreviewInner() {
@@ -2133,11 +2261,15 @@ function heRateCardHtml(r) {
   r = r || {};
   const mkSel = HE_MARKETS.map(([v, l]) => `<option value="${v}" ${String(r.market || "") === v ? "selected" : ""}>${t("market." + (v || "ALL"), l)}</option>`).join("");
   const curSel = HE_CURRENCIES.map(c => `<option value="${c}" ${(r.currency || "USD") === c ? "selected" : ""}>${c}</option>`).join("");
-  const mealSel = HE_MEALS.map(m => `<option value="${m}" ${(r.mealPlan || "") === m ? "selected" : ""}>${m ? m.replace(/_/g, " ") : "—"}</option>`).join("");
+  const mealSel = HE_MEALS.map(([v, l]) => `<option value="${v}" ${(r.mealPlan || "") === v ? "selected" : ""}>${escapeHtml(l)}</option>`).join("");
   const vf = r.validFrom ? String(r.validFrom).slice(0, 10) : "";
   const vt = r.validTo ? String(r.validTo).slice(0, 10) : "";
   const supps = (r.supplements || []).map(s => heSuppHtml(s)).join("");
   return `<div class="he-rate" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">
+    <div class="he-rate-head" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+      <strong class="he-rate-title" style="font-size:13px;color:var(--text-secondary)"></strong>
+      <button type="button" class="btn btn-outline btn-sm" onclick="heDuplicateRate(this)" title="${t("hotel.duplicateRateHint", "Copy this row to price another season or market")}">${icon("copy")}${t("hotel.duplicateRate", "Duplicate")}</button>
+    </div>
     <div class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:8px">
       <div class="form-field full"><label>${t("hotel.roomName", "Room name")} <span class="required">*</span></label><input class="he-room" value="${escapeHtml(r.roomName || "")}" placeholder="e.g. Standard Room"></div>
       <div class="form-field"><label>${t("market.label", "Market")}</label><select class="he-market">${mkSel}</select></div>
@@ -2165,7 +2297,7 @@ function heRateCardHtml(r) {
 }
 function heSuppHtml(s) {
   s = s || {};
-  const typeSel = HE_SUPP_TYPES.map(x => `<option value="${x}" ${(s.type || "TEXT_ONLY") === x ? "selected" : ""}>${x.replace(/_/g, " ")}</option>`).join("");
+  const typeSel = HE_SUPP_TYPES.map(x => `<option value="${x}" ${(s.type || "TEXT_ONLY") === x ? "selected" : ""}>${t("suppType." + x, x.replace(/_/g, " "))}</option>`).join("");
   const curSel = `<option value="">—</option>` + HE_CURRENCIES.map(c => `<option value="${c}" ${(s.currency || "") === c ? "selected" : ""}>${c}</option>`).join("");
   return `<div class="he-supp" style="display:grid;grid-template-columns:1.4fr 1fr 0.9fr 0.8fr 1.4fr auto;gap:6px;align-items:end;margin-bottom:6px">
     <div class="form-field"><label>${t("hotel.suppName", "Name")}</label><input class="hs-name" value="${escapeHtml(s.name || "")}" placeholder="e.g. Sea View"></div>
@@ -2181,8 +2313,68 @@ function heAddRate() {
   if (!box) return;
   const tmp = document.createElement("div");
   tmp.innerHTML = heRateCardHtml({});
-  box.appendChild(tmp.firstElementChild);
+  const card = tmp.firstElementChild;
+  box.appendChild(card);
   refreshIcons(box);
+  heSyncRateTitles();
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+  card.querySelector(".he-room")?.focus();
+}
+
+/**
+ * Copy a row so a second season or a second market is one click rather than
+ * re-typing the room, currency, meal plan and prices. The dates are cleared —
+ * a duplicate exists precisely to carry a different period.
+ */
+function heDuplicateRate(btn) {
+  const card = btn.closest(".he-rate");
+  if (!card) return;
+  const g = sel => card.querySelector(sel);
+  const supplements = [...card.querySelectorAll(".he-supp")].map(sc => ({
+    name: sc.querySelector(".hs-name")?.value || "",
+    type: sc.querySelector(".hs-type")?.value || "TEXT_ONLY",
+    amount: sc.querySelector(".hs-amount")?.value === "" ? null : Number(sc.querySelector(".hs-amount")?.value),
+    currency: sc.querySelector(".hs-cur")?.value || null,
+    notes: sc.querySelector(".hs-notes")?.value || "",
+  }));
+  const copy = {
+    roomName: g(".he-room")?.value || "",
+    market: g(".he-market")?.value || "",
+    currency: g(".he-cur")?.value || "USD",
+    mealPlan: g(".he-meal")?.value || "",
+    singlePrice: g(".he-single")?.value === "" ? null : Number(g(".he-single").value),
+    doublePrice: g(".he-double")?.value === "" ? null : Number(g(".he-double").value),
+    triplePrice: g(".he-triple")?.value === "" ? null : Number(g(".he-triple").value),
+    validFrom: "", validTo: "",
+    notes: g(".he-rnotes")?.value || "",
+    supplements,
+  };
+  const tmp = document.createElement("div");
+  tmp.innerHTML = heRateCardHtml(copy);
+  const el = tmp.firstElementChild;
+  card.after(el);
+  refreshIcons(el);
+  heSyncRateTitles();
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.querySelector(".he-vf")?.focus();
+}
+
+/** Label each row with room · market · period so a long list stays scannable. */
+function heSyncRateTitles() {
+  const cards = [...document.querySelectorAll("#heRatesBox .he-rate")];
+  cards.forEach((card, i) => {
+    const g = sel => card.querySelector(sel);
+    const room = (g(".he-room")?.value || "").trim();
+    const marketSel = g(".he-market");
+    const market = marketSel?.options[marketSel.selectedIndex]?.textContent?.trim() || "";
+    const vf = g(".he-vf")?.value || "";
+    const vt = g(".he-vt")?.value || "";
+    const period = vf || vt ? `${vf || "…"} → ${vt || "…"}` : t("hotel.allYear", "All year");
+    const title = card.querySelector(".he-rate-title");
+    if (title) title.textContent = `${i + 1}. ${room || t("hotel.roomName", "Room name")} · ${market} · ${period}`;
+  });
+  const count = document.getElementById("heRatesCount");
+  if (count) count.textContent = `${formatNumber(cards.length)} ${t("hotel.rowsCount", "rows")}`;
 }
 function heAddSupp(btn) {
   const box = btn.closest(".he-rate").querySelector(".he-supps");
@@ -2377,7 +2569,12 @@ function drawHotelsPage(rows) {
         <button class="btn btn-outline" onclick="resetHotelFilters()">${icon("rotate-ccw")}${t("btn.reset","Reset")}</button>
       </div>
       <div style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>
-      <div class="table-toolbar"><strong id="hotelsCountText">${formatNumber(filtered.length)} / ${formatNumber(rows.length)} ${t("nav.hotels","Hotels")}</strong></div>
+      <div class="table-toolbar">
+        <strong id="hotelsCountText">${formatNumber(filtered.length)} / ${formatNumber(rows.length)} ${t("nav.hotels","Hotels")}</strong>
+        <div class="toolbar-actions">
+          <button class="btn btn-outline" onclick="openMealPlansManager()">${icon("list")}${t("mealPlanAdmin.title", "Meal plans")}</button>
+        </div>
+      </div>
       <div class="table-scroll"><table class="data-table"><thead><tr>
         <th></th><th>${t("th.name","Name")}</th><th>${t("th.stars","Stars")}</th>
         <th>${t("th.amount","Price/Night")}</th><th>${t("th.priceVisibility","Visibility")}</th>
@@ -3469,6 +3666,32 @@ function trIsAirportShaped(type, serviceMode) {
 }
 
 /**
+ * Show only the fields the chosen service mode actually uses.
+ *
+ * A transport product is one of two shapes, and the form used to show both at
+ * once: an admin adding an at-disposal package was asked for a From, a To, a
+ * bidirectional flag and two round-trip prices, none of which mean anything for
+ * a car booked by the hour — which is exactly what made the screen impossible
+ * to fill in. Route rates likewise have no service area or duration.
+ */
+function trSyncModeFields() {
+  const mode = document.getElementById("trMode")?.value || "POINT_TO_POINT";
+  const isDisposal = mode === "HOURLY_CHARTER" || mode === "DAY_USE";
+  document.querySelectorAll('[data-shape="disposal"]').forEach(el => {
+    el.style.display = isDisposal ? "" : "none";
+  });
+  document.querySelectorAll('[data-shape="route"]').forEach(el => {
+    el.style.display = isDisposal ? "none" : "";
+  });
+  const hint = document.getElementById("trModeHint");
+  if (hint) {
+    hint.textContent = isDisposal
+      ? t("transport.modeHintDisposal", "The car stays with the client inside one area for a block of time. Fill in the area and the hours — there is no From/To and no round-trip price, because coming back is already part of the package.")
+      : t("transport.modeHintRoute", "A journey from one point to another. Fill in the From and To below; the round-trip price is optional and defaults to twice the one-way.");
+  }
+}
+
+/**
  * Type or service mode changed while adding a rate: re-apply the direction
  * default, unless the admin already set the box themselves — their choice wins.
  */
@@ -3478,6 +3701,12 @@ function trSyncBidirDefault() {
   const type = document.getElementById("trType")?.value;
   const mode = document.getElementById("trMode")?.value;
   box.checked = !trIsAirportShaped(type, mode);
+}
+
+/** Mode or type changed: refresh both the visible fields and the direction default. */
+function trModeChanged() {
+  trSyncModeFields();
+  trSyncBidirDefault();
 }
 
 const TR_SERVICE_MODES = ["POINT_TO_POINT", "AIRPORT_TRANSFER", "HOURLY_CHARTER", "DAY_USE"];
@@ -3524,17 +3753,23 @@ async function openTransportRateEditor(id = "") {
     <div class="form-section">
       <div class="form-section-title">${t("transport.service", "Service")}</div>
       <div class="form-grid">
-        ${sel("trType", TR_TYPES, r.type || "PRIVATE_TRANSFER", t("th.type", "Type"), null, "trSyncBidirDefault()")}
-        ${sel("trMode", TR_SERVICE_MODES, r.serviceMode || "POINT_TO_POINT", t("transport.mode", "Service mode"), serviceModeLabel, "trSyncBidirDefault()")}
+        ${sel("trType", TR_TYPES, r.type || "PRIVATE_TRANSFER", t("th.type", "Type"), null, "trModeChanged()")}
+        ${sel("trMode", TR_SERVICE_MODES, r.serviceMode || "POINT_TO_POINT", t("transport.mode", "Service mode"), serviceModeLabel, "trModeChanged()")}
         ${sel("trVehicle", TR_VEHICLES, r.vehicleType || "SEDAN", t("form.vehicleType", "Vehicle"))}
-        ${txt("trServiceArea", r.serviceArea, t("transport.serviceArea", "Service area (e.g. Cairo)"))}
-        ${num("trDuration", r.durationHours, t("transport.durationHours", "Duration hours (disposal)"))}
+      </div>
+      <div class="secondary-text" id="trModeHint" style="margin:6px 0 12px"></div>
+      <!-- At-disposal only: the car stays in an area for a block of time. -->
+      <div class="form-grid" data-shape="disposal">
+        ${txt("trServiceArea", r.serviceArea, t("transport.serviceAreaReq", "Area the car stays in (e.g. Cairo)"))}
+        ${num("trDuration", r.durationHours, t("transport.durationHoursReq", "Hours the car is at disposal"))}
+      </div>
+      <div class="form-grid">
         ${txt("trCity", r.city, t("th.city", "City"))}
         ${txt("trServiceNameEn", r.serviceNameEn, t("transport.serviceNameEn", "Service name (EN)"))}
         ${txt("trServiceNameAr", r.serviceNameAr, t("transport.serviceNameAr", "Service name (AR)"))}
       </div>
     </div>
-    <div class="form-section">
+    <div class="form-section" data-shape="route">
       <div class="form-section-title">${t("transport.route", "Route (typed endpoints)")}</div>
       <div class="tr-ep-grid" style="gap:14px">
         ${trEpBlock("from", r, airports, destinations, hotels, t("form.from", "From"))}
@@ -3548,8 +3783,8 @@ async function openTransportRateEditor(id = "") {
       <div class="form-grid" style="grid-template-columns:repeat(4,1fr)">
         ${num("trPriceEgp", egpVal, t("transport.priceEgp", "One-way EGP"))}
         ${num("trPriceUsd", usdVal, t("transport.priceUsd", "One-way USD"))}
-        ${num("trRtEgp", rtEgpVal, t("transport.rtEgp", "Round-trip EGP"))}
-        ${num("trRtUsd", rtUsdVal, t("transport.rtUsd", "Round-trip USD"))}
+        <div class="form-field" data-shape="route"><label>${t("transport.rtEgp", "Round-trip EGP")}</label><input id="trRtEgp" type="number" step="0.01" min="0" value="${rtEgpVal != null ? escapeHtml(rtEgpVal) : ""}"></div>
+        <div class="form-field" data-shape="route"><label>${t("transport.rtUsd", "Round-trip USD")}</label><input id="trRtUsd" type="number" step="0.01" min="0" value="${rtUsdVal != null ? escapeHtml(rtUsdVal) : ""}"></div>
         ${num("trMinCap", r.minCapacity ?? 1, t("form.minPax", "Min pax"))}
         ${num("trMaxCap", r.maxCapacity, t("form.maxPax", "Max pax (blank = no limit)"))}
       </div>
@@ -3566,6 +3801,8 @@ async function openTransportRateEditor(id = "") {
   `);
   trEpInit("from");
   trEpInit("to");
+  // Show only the fields this service mode uses, before the admin sees the form.
+  trSyncModeFields();
 }
 
 function trEpBlock(side, r, airports, destinations, hotels, label) {

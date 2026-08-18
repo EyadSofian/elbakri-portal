@@ -1006,6 +1006,9 @@ function hotelRatesSection(h) {
     const supp = (r.supplements || []).map(s => {
       if (s.type === "FIXED_AMOUNT" && s.amount != null) return `${escapeHtml(s.name)} (+${formatStoredMoney(s.amount, s.currency || r.currency)})`;
       if (s.type === "PERCENTAGE" && s.amount != null) return `${escapeHtml(s.name)} (+${Number(s.amount)}%)`;
+      // A total-price supplement replaces the room price rather than adding to
+      // it, so it is shown as the price itself, with no plus sign.
+      if (s.type === "TOTAL_PRICE" && s.amount != null) return `${escapeHtml(s.name)} (${formatStoredMoney(s.amount, s.currency || r.currency)})`;
       return escapeHtml(s.name);
     }).join(" · ");
     return `<tr>
@@ -1057,6 +1060,11 @@ function hpvUpdate() {
       else note = `+${formatStoredMoney(s.amount, s.currency)} (${s.name})`;
     } else if (s.type === "PERCENTAGE" && s.amount != null) {
       total += Number(base) * Number(s.amount) / 100;
+    } else if (s.type === "TOTAL_PRICE" && s.amount != null) {
+      // This room category is sold at its own price — it replaces the row's
+      // occupancy price instead of being added on top of it.
+      if (!s.currency || s.currency === r.currency) total = Number(s.amount);
+      else note = `${formatStoredMoney(s.amount, s.currency)} (${s.name})`;
     } else { note = s.name; }
   }
   out.innerHTML = `<div class="hd-total">${formatStoredMoney(total, r.currency)} <span class="secondary-text">/ ${t("form.nights", "night")}</span></div>${note ? `<div class="secondary-text">${escapeHtml(note)}</div>` : ""}`;

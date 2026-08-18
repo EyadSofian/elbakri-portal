@@ -1266,6 +1266,75 @@
     disposalDuration: "المدة",
   });
 
+  // ── Transport rate form (mode-aware) ───────────────────────────────────────
+  Object.assign(en.transport, {
+    serviceAreaReq: "Area the car stays in (e.g. Cairo)",
+    durationHoursReq: "Hours the car is at disposal",
+    modeHintDisposal: "The car stays with the client inside one area for a block of time. Fill in the area and the hours — there is no From/To and no round-trip price, because coming back is already part of the package.",
+    modeHintRoute: "A journey from one point to another. Fill in the From and To below; the round-trip price is optional and defaults to twice the one-way.",
+  });
+  Object.assign(ar.transport, {
+    serviceAreaReq: "المنطقة اللي العربية تفضل جواها (مثال: القاهرة)",
+    durationHoursReq: "عدد الساعات اللي العربية تحت التصرف فيها",
+    modeHintDisposal: "العربية بتفضل مع العميل جوه منطقة واحدة لمدة محددة. املا المنطقة وعدد الساعات — مفيش من/إلى ومفيش سعر ذهاب وعودة، لأن الرجوع أصلاً داخل في الباقة.",
+    modeHintRoute: "رحلة من نقطة لنقطة. املا \"من\" و\"إلى\" تحت؛ سعر الذهاب والعودة اختياري ولو سيبته فاضي هيتحسب ضعف سعر الذهاب.",
+  });
+
+  // ── Hotel rate rows (seasons + markets) ────────────────────────────────────
+  Object.assign(en.hotel, {
+    periodsHelp: "One row per period and per market: add a row for each season (Valid from / Valid to) and a row for each market you sell at a different price. Rows never overwrite each other.",
+    duplicateRate: "Duplicate",
+    duplicateRateHint: "Copy this row to price another season or market",
+    allYear: "All year",
+    rowsCount: "rows",
+  });
+  Object.assign(ar.hotel, {
+    periodsHelp: "صف لكل فترة ولكل سوق: ضيف صف لكل موسم (من تاريخ / إلى تاريخ) وصف لكل سوق بتبيع له بسعر مختلف. الصفوف مش بتمسح بعضها أبداً.",
+    duplicateRate: "نسخ الصف",
+    duplicateRateHint: "انسخ الصف ده عشان تسعّر موسم تاني أو سوق تاني",
+    allYear: "طول السنة",
+    rowsCount: "صف",
+  });
+
+  // ── Markets and rate-row vocabulary ────────────────────────────────────────
+  en.market = Object.assign({}, en.market, {
+    ALL: "All markets", EGYPTIAN: "Local market", GULF: "Gulf",
+    MIDDLE_EAST: "Middle East", NORTH_AFRICA: "North Africa", ARAB_48: "Arab 48",
+    FOREIGN: "Foreign", INTERNATIONAL: "International", label: "Market",
+  });
+  ar.market = Object.assign({}, ar.market, {
+    ALL: "كل الأسواق", EGYPTIAN: "السوق المحلي", GULF: "الخليج",
+    MIDDLE_EAST: "الشرق الأوسط", NORTH_AFRICA: "شمال أفريقيا", ARAB_48: "عرب ٤٨",
+    FOREIGN: "أجنبي", INTERNATIONAL: "دولي", label: "السوق",
+  });
+
+  // What a supplement does to the room price.
+  en.suppType = Object.assign({}, en.suppType, {
+    TEXT_ONLY: "Note only (no price change)",
+    FIXED_AMOUNT: "Add an amount (+)",
+    PERCENTAGE: "Add a percentage (%)",
+    TOTAL_PRICE: "Full price for this room type",
+  });
+  ar.suppType = Object.assign({}, ar.suppType, {
+    TEXT_ONLY: "ملاحظة فقط (بدون تغيير السعر)",
+    FIXED_AMOUNT: "يضيف مبلغ (+)",
+    PERCENTAGE: "يضيف نسبة (%)",
+    TOTAL_PRICE: "السعر الكامل لنوع الغرفة ده",
+  });
+
+  en.mealPlanAdmin = {
+    title: "Meal plans", help: "The board basis options offered on hotel rate rows. Add your own at any time.",
+    add: "Add meal plan", code: "Code", nameEn: "Name (EN)", nameAr: "Name (AR)", order: "Order",
+    inUse: "in use", saved: "Meal plan saved", removed: "Meal plan removed",
+    nameRequired: "Enter an English name for the meal plan.",
+  };
+  ar.mealPlanAdmin = {
+    title: "أنظمة الوجبات", help: "الأنظمة اللي بتظهر في صفوف أسعار الفنادق. تقدر تضيف اللي إنت عايزه في أي وقت.",
+    add: "إضافة نظام وجبات", code: "الكود", nameEn: "الاسم (إنجليزي)", nameAr: "الاسم (عربي)", order: "الترتيب",
+    inUse: "مستخدم", saved: "تم حفظ نظام الوجبات", removed: "تم حذف نظام الوجبات",
+    nameRequired: "اكتب اسم إنجليزي لنظام الوجبات.",
+  };
+
   // ── Global search (top bar) ────────────────────────────────────────────────
   en.search = Object.assign({}, en.search, {
     bookings: "Bookings", transport: "Transport", invoices: "Invoices",
