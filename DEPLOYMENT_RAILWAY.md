@@ -169,18 +169,45 @@ npm i -g @railway/cli
 railway login
 railway link                 # pick the project, then the app service
 
-railway run npm run db:seed          # SuperAdmin + 2 demo companies + demo bookings
+railway run npm run db:seed          # the SuperAdmin account, and nothing else
 railway run npm run db:seed:mea      # MEA 2026 rate sheet (10 destinations, 10 hotels,
                                      # seasonal pricing, 45 activities, 102 transport rates)
 railway run npm run db:seed:hotels   # 199-hotel catalogue (no prices, quote-request only)
 ```
 
+`db:seed` creates only the SuperAdmin login — no demo companies, agents or
+bookings. Real companies and their users are created through the portal by the
+SuperAdmin, so nothing fake ever has to be told apart from real business data
+later.
+
+**The SuperAdmin password is printed once and never stored in plain text.** Copy
+it from the command output. To choose it yourself instead:
+
+```bash
+railway run --service <app> bash -c 'SEED_ADMIN_PASSWORD="…" npm run db:seed'
+```
+
+`SEED_ADMIN_EMAIL` overrides the default `admin@elbakri.com`. Re-running the
+seed never resets an existing SuperAdmin's password, so it is safe to repeat.
+
 The MEA seed is **idempotent** — re-running it refreshes hotel pricing periods,
 activities and transport rates to match the latest sheet, so it is safe to run
 again after a rate update. Source data lives in [prisma/seed-mea.ts](prisma/seed-mea.ts).
 
-> Change the seeded SuperAdmin password (`admin@elbakri.com`) immediately after
-> the first login — it is a known value committed in [prisma/seed.ts](prisma/seed.ts).
+### Removing demo data from an already-seeded database
+
+Databases seeded by an older version of `db:seed` hold two demo companies
+(Nile Travel Agency, Pyramids Tours) with six logins whose passwords are in the
+git history, plus fake bookings, invoices and wallet movements. Changing the
+seed does not remove them:
+
+```bash
+railway run npm run db:remove-demo          # preview — deletes nothing
+railway run npm run db:remove-demo -- --yes # delete
+```
+
+It removes only records belonging to those two companies, in one transaction.
+Hotels, destinations, rates and the SuperAdmin are left untouched.
 
 To connect a GUI or psql instead, use the Postgres service's **public** URL
 (`Postgres → Variables → DATABASE_PUBLIC_URL`). The private URL only resolves
@@ -208,7 +235,8 @@ them. Never run `prisma migrate dev` or `db:reset` against production —
 
 - [ ] `/api/health` returns `200`
 - [ ] `/api/health?db=1` reports `"database":"up"`
-- [ ] Login page loads at the root URL and a seeded user can log in
+- [ ] Login page loads at the root URL and the SuperAdmin can log in with the printed password
+- [ ] Logging in with the email in a different case (`ADMIN@elbakri.com`) also works
 - [ ] Hotel search returns results, including for lowercase queries (`cairo` finds `Cairo`)
 - [ ] Uploading a hotel image succeeds and the image still loads **after a redeploy** (proves the Volume works)
 - [ ] Generating an invoice PDF succeeds and the file survives a redeploy

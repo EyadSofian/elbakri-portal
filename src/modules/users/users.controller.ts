@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../../config/db';
 import { generatePassword, paginate, paginateMeta } from '../../shared/helpers';
+import { isDuplicateEmailError } from '../../shared/prisma-errors';
 
 const userSelect = {
   id: true, email: true, name: true, nameAr: true, role: true,
@@ -70,17 +71,33 @@ export async function createUser(req: Request, res: Response): Promise<void> {
   const tempPassword = body.password ?? generatePassword(12);
   const hashedPassword = await bcrypt.hash(tempPassword, 12);
 
-  const user = await prisma.user.create({
-    data: {
-      email: body.email,
-      name: body.name,
-      nameAr: body.nameAr,
-      password: hashedPassword,
-      role,
-      companyId: role === 'SUPERADMIN' ? null : body.companyId,
-    },
-    select: userSelect,
-  });
+  // The email is unique, and re-using one is the ordinary mistake when adding
+  // staff — answer it with a 409 the interface can show, not the generic 500
+  // the global handler would produce from a raw Prisma error.
+  let user;
+  try {
+    user = await prisma.user.create({
+      data: {
+        email: body.email,
+        name: body.name,
+        nameAr: body.nameAr,
+        password: hashedPassword,
+        role,
+        companyId: role === 'SUPERADMIN' ? null : body.companyId,
+      },
+      select: userSelect,
+    });
+  } catch (err) {
+    if (isDuplicateEmailError(err)) {
+      res.status(409).json({
+        success: false,
+        error: 'EMAIL_EXISTS',
+        message: `A user with the email "${body.email}" already exists.`,
+      });
+      return;
+    }
+    throw err;
+  }
 
   res.status(201).json({ success: true, data: { user, tempPassword } });
 }
@@ -119,18 +136,31 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const user = await prisma.user.update({
-    where: { id: req.params.id },
-    data: {
-      ...(body.name && { name: body.name }),
-      ...(body.nameAr !== undefined && { nameAr: body.nameAr }),
-      ...(body.email && { email: body.email }),
-      ...(body.role && { role: body.role }),
-      ...(body.companyId !== undefined || body.role ? { companyId: nextCompanyId } : {}),
-      ...(body.isActive !== undefined && { isActive: body.isActive }),
-    },
-    select: userSelect,
-  });
+  let user;
+  try {
+    user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: {
+        ...(body.name && { name: body.name }),
+        ...(body.nameAr !== undefined && { nameAr: body.nameAr }),
+        ...(body.email && { email: body.email }),
+        ...(body.role && { role: body.role }),
+        ...(body.companyId !== undefined || body.role ? { companyId: nextCompanyId } : {}),
+        ...(body.isActive !== undefined && { isActive: body.isActive }),
+      },
+      select: userSelect,
+    });
+  } catch (err) {
+    if (isDuplicateEmailError(err)) {
+      res.status(409).json({
+        success: false,
+        error: 'EMAIL_EXISTS',
+        message: `Another user already uses the email "${body.email}".`,
+      });
+      return;
+    }
+    throw err;
+  }
 
   res.json({ success: true, data: user });
 }

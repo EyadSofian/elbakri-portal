@@ -1,3 +1,4 @@
+import { randomInt } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 
 export async function generateRef(prisma: PrismaClient, prefix: string): Promise<string> {
@@ -28,11 +29,23 @@ export async function generateInvoiceNumber(prisma: PrismaClient): Promise<strin
   return `INV-${year}-${String(counter.lastSeq).padStart(4, '0')}`;
 }
 
+/**
+ * Generate a temporary password.
+ *
+ * Uses crypto.randomInt, not Math.random: these passwords are handed to real
+ * users (staff onboarding, admin password resets, the seeded SuperAdmin), and
+ * Math.random is a predictable PRNG — anyone who observes a few generated
+ * values can narrow down the rest. randomInt is also rejection-sampled, so no
+ * character is more likely than another.
+ *
+ * The alphabet deliberately omits look-alikes (I/l/1, O/0) because these get
+ * read aloud and retyped.
+ */
 export function generatePassword(length = 12): string {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
   let password = '';
   for (let i = 0; i < length; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
+    password += chars.charAt(randomInt(chars.length));
   }
   return password;
 }
