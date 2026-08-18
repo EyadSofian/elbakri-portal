@@ -274,6 +274,33 @@ The next Railway deploy runs `prisma migrate deploy` in pre-deploy and applies
 them. Never run `prisma migrate dev` or `db:reset` against production —
 `migrate dev` can drop and recreate the database.
 
+To empty the data without touching the schema — e.g. to rebuild the hotel
+catalogue from scratch — use the data reset instead. It removes rows only, so
+the tables, indexes and migration history survive and the app stays up:
+
+```bash
+railway ssh                                       # a shell INSIDE the service
+npx ts-node prisma/reset-all-data.ts              # preview, deletes nothing
+npx ts-node prisma/reset-all-data.ts --yes        # empty every table
+npm run db:seed:catalog                           # rebuild the catalogue
+```
+
+Run it from inside the service (`railway ssh`), not with `railway run`.
+`railway run` executes on your own machine with Railway's variables injected,
+and `DATABASE_URL` points at `postgres.railway.internal` — a private-network
+name that only resolves inside Railway, so the command fails to connect.
+
+To run it from your machine anyway, override the URL with the public one
+(`Postgres → Variables → DATABASE_PUBLIC_URL`, a `*.proxy.rlwy.net` host):
+
+```bash
+DATABASE_URL="$DATABASE_PUBLIC_URL" npx ts-node prisma/reset-all-data.ts --yes
+```
+
+The script prints the host and database it is about to empty before it touches
+anything — check that line matches the database you mean. The SuperAdmin login
+is preserved across the reset. See DATABASE_RESET_AR.md for the full procedure.
+
 ---
 
 ## 7. Verification checklist
