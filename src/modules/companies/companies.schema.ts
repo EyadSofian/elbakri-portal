@@ -5,8 +5,8 @@ const companyCurrencySchema = z.enum(['USD', 'EGP']);
 export const createCompanySchema = z.object({
   name: z.string().min(2),
   nameAr: z.string().optional(),
-  email: z.string().email(),
-  adminEmail: z.string().email().optional().or(z.literal('')),
+  email: z.string().trim().toLowerCase().email(),
+  adminEmail: z.string().trim().toLowerCase().email().optional().or(z.literal('')),
   adminName: z.string().optional(),
   phone: z.string().min(5),
   address: z.string().optional(),
@@ -25,7 +25,7 @@ export const createCompanySchema = z.object({
 export const updateCompanySchema = z.object({
   name: z.string().min(2).optional(),
   nameAr: z.string().optional(),
-  email: z.string().email().optional(),
+  email: z.string().trim().toLowerCase().email().optional(),
   phone: z.string().min(5).optional(),
   address: z.string().optional(),
   billingAddress: z.string().optional(),
