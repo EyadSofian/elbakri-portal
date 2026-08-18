@@ -20,6 +20,11 @@
 #   --no-volume-vars          Skip UPLOAD_DIR / PRIVATE_UPLOAD_DIR / PDF_DIR
 #                             (only if you have not attached a Volume yet).
 #   --volume-mount PATH       Volume mount path (default: /data)
+#   --domain HOST             Public hostname, when a custom domain is attached
+#                             (e.g. b2b.example.com). BASE_URL is also the allowed
+#                             CORS origin, so leaving it on the railway.app domain
+#                             makes the browser block every API call from the custom
+#                             one. Omit to use RAILWAY_PUBLIC_DOMAIN.
 
 set -euo pipefail
 
@@ -27,6 +32,7 @@ PG_SERVICE="Postgres"
 ROTATE=0
 SET_VOLUME_VARS=1
 VOLUME_MOUNT="/data"
+PUBLIC_DOMAIN=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -34,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --rotate-secrets)   ROTATE=1; shift ;;
     --no-volume-vars)   SET_VOLUME_VARS=0; shift ;;
     --volume-mount)     VOLUME_MOUNT="$2"; shift 2 ;;
+    --domain)           PUBLIC_DOMAIN="$2"; shift 2 ;;
     -h|--help)          sed -n '2,25p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
@@ -74,8 +81,13 @@ add "DATABASE_URL" "\${{ ${PG_SERVICE}.DATABASE_URL }}"
 
 # ── Runtime ─────────────────────────────────────────────────────────────────
 add "NODE_ENV" "production"
-# Public origin AND the allowed CORS origin — must match the browser's URL.
-add "BASE_URL" "https://\${{ RAILWAY_PUBLIC_DOMAIN }}"
+# Public origin AND the allowed CORS origin — must match the browser's URL
+# exactly, scheme included, or every API call is blocked before it is sent.
+if [[ -n "$PUBLIC_DOMAIN" ]]; then
+  add "BASE_URL" "https://${PUBLIC_DOMAIN}"
+else
+  add "BASE_URL" "https://\${{ RAILWAY_PUBLIC_DOMAIN }}"
+fi
 
 # ── Auth secrets ────────────────────────────────────────────────────────────
 # src/config/env.ts refuses to boot in production if these are missing, equal to

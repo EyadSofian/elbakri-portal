@@ -158,6 +158,51 @@ reachable only through the authenticated, ownership-checked route
 
 ---
 
+## 4b. Attaching a custom domain
+
+Two things have to line up, and they are set in different places.
+
+**DNS (at the registrar).** Add a **CNAME** for the subdomain pointing at the
+target Railway shows when you add the domain under
+`Settings → Networking → Custom Domain`:
+
+```
+b2b.example.com.   CNAME   <generated>.up.railway.app.
+```
+
+Use a real CNAME record, not the registrar's "domain forwarding" feature —
+forwarding answers from the registrar's own servers, which have no certificate
+for your name.
+
+**The certificate is Railway's, not the registrar's.** Railway issues and renews
+a Let's Encrypt certificate for the hostname automatically, once the CNAME
+resolves. An SSL certificate bought from the registrar plays no part: it lives
+on their servers, and the traffic no longer goes there. There is nothing to
+install, and nothing to pay for.
+
+If the browser shows "Not Secure" with `https` struck through, the certificate
+does not match the name — the page is being served, but over an invalid one:
+
+1. Check the domain's status in `Settings → Networking`. Issuance only starts
+   after the CNAME resolves and takes a few minutes.
+2. If it is still not issued well after DNS has propagated, remove the domain
+   and add it again to retrigger issuance.
+3. Check for a `CAA` record on the parent domain. A CAA that names only one
+   certificate authority forbids Let's Encrypt from issuing, and the request
+   fails silently — either remove it or add `letsencrypt.org`.
+
+**`BASE_URL` must follow the domain.** It is also the allowed CORS origin, so
+while it still points at the `railway.app` host the browser blocks every API
+call made from the custom one — the page loads and then nothing works:
+
+```bash
+./scripts/railway-setup-env.sh --domain b2b.example.com
+```
+
+or set it by hand to `https://b2b.example.com` and redeploy.
+
+---
+
 ## 5. Seeding data
 
 Seeding is a **one-time** setup step, not part of a deploy. Run it from your own
