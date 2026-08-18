@@ -257,7 +257,7 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
     pricePerNight: number; currency?: string;
     commissionPercent?: number; availableRooms?: number; maxGuestsPerRoom?: number;
     showPriceToAgents?: boolean; allowQuoteRequest?: boolean; minVisibleTier?: CompanyTier;
-    destinationId?: string;
+    destinationId?: string; area?: string | null; googleRating?: number | null; isActive?: boolean;
   } & Partial<Record<(typeof POLICY_FIELDS)[number], string>>;
 
   const imageUrl = (req.file ? `/uploads/${req.file.filename}` : body.imageUrl) ?? undefined;
@@ -290,6 +290,9 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
       allowQuoteRequest: body.allowQuoteRequest ?? true,
       minVisibleTier: body.minVisibleTier ?? null,
       destinationId: body.destinationId ?? null,
+      area: body.area ?? null,
+      googleRating: body.googleRating == null ? null : new Decimal(Number(body.googleRating)),
+      ...(body.isActive !== undefined ? { isActive: Boolean(body.isActive) } : {}),
       ...policyData,
       source: 'MANUAL',
     },
@@ -323,6 +326,8 @@ export async function updateHotel(req: Request, res: Response): Promise<void> {
   if (body.allowQuoteRequest !== undefined) data.allowQuoteRequest = Boolean(body.allowQuoteRequest);
   if (body.minVisibleTier !== undefined) data.minVisibleTier = body.minVisibleTier as CompanyTier | null;
   if (body.destinationId !== undefined) data.destinationId = body.destinationId ? String(body.destinationId) : null;
+  if (body.area !== undefined) data.area = body.area ? String(body.area) : null;
+  if (body.googleRating !== undefined) data.googleRating = body.googleRating == null ? null : new Decimal(Number(body.googleRating));
   if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
   for (const f of POLICY_FIELDS) {
     if (body[f] !== undefined) data[f] = body[f] ? String(body[f]) : null;
