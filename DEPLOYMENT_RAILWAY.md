@@ -231,9 +231,10 @@ Railway's PostgreSQL changed three things in the repo:
    `contains` matches a stored filename for an authorization check and exact
    matching is the stricter behaviour.
 
-The GoDaddy FTP workflow (`.github/workflows/deploy.yml`) and
-[DEPLOYMENT_GODADDY_CPANEL.md](DEPLOYMENT_GODADDY_CPANEL.md) describe a
-MySQL-based deployment and no longer match this schema.
+The GoDaddy FTP workflow and the Vercel configuration (`vercel.json`,
+`.vercelignore`, `api/index.ts`) have been removed — Railway is the only
+deployment target. [DEPLOYMENT_GODADDY_CPANEL.md](DEPLOYMENT_GODADDY_CPANEL.md)
+is kept as a historical record only and no longer matches this schema.
 
 ---
 

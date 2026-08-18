@@ -52,11 +52,10 @@ ensureStorageDirs();
 /**
  * Find the `public/` directory.
  *
- * Locally it is one level above dist/. Under a bundler __dirname points into
- * the bundle, and on a serverless host the deployment is unpacked somewhere
- * else again — so each candidate is probed and the first real one wins.
- * Returning a path that does not exist would make express.static silently
- * serve nothing, which looks identical to a routing bug.
+ * Normally it is one level above dist/, but the app may be started from a
+ * different working directory — so each candidate is probed and the first real
+ * one wins. Returning a path that does not exist would make express.static
+ * silently serve nothing, which looks identical to a routing bug.
  */
 function resolvePublicDir(): string {
   const candidates = [
@@ -116,8 +115,8 @@ app.get('/api/health', async (req, res) => {
 // Static files. NOTE: only PUBLIC uploads are served here; private documents
 // live in a separate, non-served directory and are only reachable via the
 // authenticated route /api/files/private/:filename.
-// Bundlers rewrite __dirname, and serverless hosts unpack the app under a
-// different root, so the static directory is located rather than assumed.
+// The static directory is located rather than assumed, so the app serves the
+// portal regardless of the working directory it was started from.
 const PUBLIC_DIR = resolvePublicDir();
 app.use(express.static(PUBLIC_DIR));
 app.use('/uploads', express.static(PUBLIC_UPLOADS_DIR));
@@ -241,15 +240,8 @@ process.on('uncaughtException', (err) => {
   console.error('⚠️  UNCAUGHT_EXCEPTION:', err);
 });
 
-// Only bind a port when we own the process. On a serverless host the platform
-// invokes the exported handler directly; calling listen() there wastes an
-// instance and can race the invocation.
-const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-
-if (!IS_SERVERLESS) {
-  app.listen(PORT, () => {
-    console.log(`🚀 Elbakri Portal running at http://localhost:${PORT}`);
-  });
-}
+app.listen(PORT, () => {
+  console.log(`🚀 Elbakri Portal running at http://localhost:${PORT}`);
+});
 
 export default app;

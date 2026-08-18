@@ -1,8 +1,10 @@
 > ⚠️ **HISTORICAL — no longer the active deployment path.** The portal now runs
 > on **Railway + PostgreSQL**; `prisma/schema.prisma` targets `postgresql`, so the
 > MySQL steps below (and `database/mysql/init.sql`) no longer match the schema.
-> Use **[DEPLOYMENT_RAILWAY.md](DEPLOYMENT_RAILWAY.md)** instead. Restoring this
-> path would mean reverting the Prisma provider back to `mysql`.
+> The FTP workflow this guide refers to (`.github/workflows/deploy.yml`) has been
+> deleted. Use **[DEPLOYMENT_RAILWAY.md](DEPLOYMENT_RAILWAY.md)** instead;
+> restoring this path would mean reverting the Prisma provider back to `mysql`
+> and recreating the workflow from git history.
 
 ---
 
