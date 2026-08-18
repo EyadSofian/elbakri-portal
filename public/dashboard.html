@@ -3322,14 +3322,6 @@ async function openActivityDetails(id) {
     `<button type="button" class="act-slot-btn ${i === 0 ? "active" : ""}" onclick="selectActSlot(this,'${escapeHtml(s)}')" data-slot="${escapeHtml(s)}">${escapeHtml(s)}</button>`
   ).join("");
   const hiddenSlot = `<input type="hidden" id="actSelectedTime" value="${escapeHtml(slots[0] || "")}">`;
-  // With no slots configured there was no way to say what time you wanted —
-  // neither picking nor typing — so a free time field stands in for the chips.
-  const timeInput = `
-    <div style="margin-top:8px">
-      <label class="secondary-text" style="display:block;margin-bottom:4px">${t("activity.preferredTime", "Preferred time")}</label>
-      <input id="actPreferredTime" type="time" style="max-width:180px" onchange="document.getElementById('actSelectedTime').value = this.value">
-      <div class="secondary-text" style="margin-top:4px">${t("activity.preferredTimeHint", "Tell us the time you would like; we will confirm availability.")}</div>
-    </div>`;
 
   const detailCard = `
     <div class="act-detail-card">
@@ -3356,7 +3348,7 @@ async function openActivityDetails(id) {
           ${a.duration ? `<div class="act-time-value">${escapeHtml(a.duration)}</div>` : ""}
           ${slots.length
             ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${slotOptions}${hiddenSlot}</div>`
-            : `${hiddenSlot}${timeInput}`}
+            : (a.duration ? "" : `<div style="color:var(--text-muted);font-size:12px">${t("activity.contactForTime","Contact us for available times")}</div>`)}
         </div>
       </div>
       ${description ? `<div class="act-description">${escapeHtml(description)}</div>` : ""}
