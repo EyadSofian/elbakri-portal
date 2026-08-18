@@ -1212,6 +1212,81 @@
 
   en.transport.serviceType = "Service Type";
   ar.transport.serviceType = "نوع الخدمة";
+
+  // ── At-disposal transport (the third trip shape) ───────────────────────────
+  // A car booked for a BLOCK OF TIME inside an area instead of for a route:
+  // the client keeps the car and driver and goes wherever they like. None of
+  // this vocabulary existed in Arabic before, so the terms are spelled out
+  // rather than transliterated: "تحت التصرف" is the phrase Egyptian operators
+  // actually use for a car placed at a client's disposal.
+  Object.assign(en.transport, {
+    atDisposal: "At Disposal",
+    atDisposalFull: "Car at your disposal",
+    atDisposalTag: "No fixed route",
+    disposalExplain: "The car and driver stay with you for the whole period inside the area you choose — you decide where to go, and there is no fixed drop-off. Ideal for a day out, shopping, meetings or sightseeing.",
+    disposalArea: "Where do you want the car?",
+    disposalAreaHint: "The city or area the car stays within.",
+    disposalPackage: "For how long?",
+    disposalPackageHint: "One price for the whole block — moving around inside it costs nothing extra.",
+    selectArea: "Choose an area...",
+    noAreas: "No at-disposal service is configured yet. Send a quote request instead.",
+    noPackages: "No package is available in this area for the chosen vehicle and passenger count.",
+    hoursUnit: "hours",
+    fullDay: "Full day",
+    perVehicle: "per vehicle",
+    disposalPickup: "Where should the driver pick you up?",
+    disposalPickupHint: "Your hotel or an address inside the area. There is no drop-off to enter — the driver brings you back.",
+    disposalNoReturn: "A return trip does not apply to an at-disposal booking: coming back is already included in the hours you booked.",
+    disposalAreaRequired: "Choose the area where you want the car",
+    disposalPackageRequired: "Choose how long you want the car for",
+    disposalSummary: "Car at disposal",
+    disposalDuration: "Duration",
+  });
+  Object.assign(ar.transport, {
+    atDisposal: "تحت التصرف",
+    atDisposalFull: "سيارة تحت تصرفك",
+    atDisposalTag: "بدون مسار محدد",
+    disposalExplain: "السيارة والسائق يفضلوا معاك طول المدة جوه المنطقة اللي تختارها — إنت اللي تحدد تروح فين، ومفيش مكان توصيل ثابت. مناسبة ليوم كامل برّه، أو تسوّق، أو اجتماعات، أو زيارة المعالم.",
+    disposalArea: "عايز العربية فين؟",
+    disposalAreaHint: "المدينة أو المنطقة اللي السيارة تفضل تلف جواها.",
+    disposalPackage: "لمدة قد إيه؟",
+    disposalPackageHint: "سعر واحد للمدة كلها — لفّك جوه المنطقة مش هيزوّد أي تكلفة.",
+    selectArea: "اختر المنطقة...",
+    noAreas: "لا توجد خدمة تحت التصرف مضافة حتى الآن. أرسل طلب سعر بدلاً من ذلك.",
+    noPackages: "لا توجد باقة متاحة في هذه المنطقة لنوع السيارة وعدد الركاب المختار.",
+    hoursUnit: "ساعات",
+    fullDay: "يوم كامل",
+    perVehicle: "للسيارة",
+    disposalPickup: "السائق يستلمك من فين؟",
+    disposalPickupHint: "فندقك أو عنوان جوه المنطقة. مش محتاج تدخل مكان توصيل — السائق هيرجّعك.",
+    disposalNoReturn: "الذهاب والعودة لا ينطبق على الحجز تحت التصرف: الرجوع أصلاً داخل ضمن الساعات اللي حجزتها.",
+    disposalAreaRequired: "اختر المنطقة اللي عايز العربية فيها",
+    disposalPackageRequired: "اختر مدة تأجير السيارة",
+    disposalSummary: "سيارة تحت التصرف",
+    disposalDuration: "المدة",
+  });
+
+  // ── Global search (top bar) ────────────────────────────────────────────────
+  en.search = Object.assign({}, en.search, {
+    bookings: "Bookings", transport: "Transport", invoices: "Invoices",
+    quotes: "Quotes", companies: "Clients", hotels: "Hotels",
+    noResults: "Nothing matched",
+  });
+  ar.search = Object.assign({}, ar.search, {
+    bookings: "الحجوزات", transport: "النقل", invoices: "الفواتير",
+    quotes: "طلبات الأسعار", companies: "العملاء", hotels: "الفنادق",
+    noResults: "لا توجد نتائج لـ",
+  });
+
+  // Service modes spelled out for people, not as raw enum names.
+  en.serviceMode = Object.assign({}, en.serviceMode, {
+    POINT_TO_POINT: "Point to point", AIRPORT_TRANSFER: "Airport transfer",
+    HOURLY_CHARTER: "At disposal — by the hour", DAY_USE: "At disposal — full day",
+  });
+  ar.serviceMode = Object.assign({}, ar.serviceMode, {
+    POINT_TO_POINT: "من نقطة إلى نقطة", AIRPORT_TRANSFER: "انتقال المطار",
+    HOURLY_CHARTER: "تحت التصرف — بالساعة", DAY_USE: "تحت التصرف — يوم كامل",
+  });
   en.pricing = Object.assign({}, en.pricing, { fixed: "fixed" });
   ar.pricing = Object.assign({}, ar.pricing, { fixed: "ثابت" });
   en.market = Object.assign({}, en.market, { INTERNATIONAL: "International" });

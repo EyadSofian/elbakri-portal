@@ -8,6 +8,7 @@ import {
   listTransportRates,
   getTransportQuote,
   getTransportLocations,
+  getTransportDisposalCatalogue,
 } from './transport.controller';
 
 const router = Router();
@@ -24,3 +25,6 @@ export const transportRatesRouter = Router();
 transportRatesRouter.get('/', listTransportRates);
 transportRatesRouter.get('/quote', getTransportQuote);
 transportRatesRouter.get('/locations', getTransportLocations);
+// At-disposal catalogue (areas + hour/day packages) — the third trip shape,
+// which the from/to dropdowns cannot express.
+transportRatesRouter.get('/disposal', getTransportDisposalCatalogue);

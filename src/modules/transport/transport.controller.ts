@@ -1,11 +1,11 @@
 import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
-import { BookingStatus, TransportType } from '@prisma/client';
+import { BookingStatus, TransportType, TransportRate } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields, escapeHtml } from '../../shared/helpers';
 import { setJsonStringArray } from '../../shared/json-array';
 import { resolvePriceContext, resolveMarketPriceMap, resolveMarketMoney } from '../../shared/pricing';
-import { resolveTransportRate, pickDualPrice, usesDualPricing } from './transport.resolve';
+import { resolveTransportRate, pickDualPrice, usesDualPricing, isDisposalMode, DISPOSAL_SERVICE_MODES } from './transport.resolve';
 import { sendEmail } from '../../shared/email.templates';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { applyGroupAdjustment, findApplicableGroupTypes } from '../group-types/group-types.service';
@@ -59,6 +59,10 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
   const fromRef = { type: str(q.fromType), id: str(q.fromId), name: str(q.fromName) || str(q.from) };
   const toRef   = { type: str(q.toType),   id: str(q.toId),   name: str(q.toName)   || str(q.to) };
 
+  // At-disposal selectors — the car stays in an area for a block of time
+  // instead of running a route, so these replace from/to entirely.
+  const durationRaw = parseInt(String(q.durationHours ?? ''), 10);
+
   const match = await resolveTransportRate({
     rateId: str(q.rateId),
     from: fromRef,
@@ -67,6 +71,9 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
     pax,
     transportType: str(q.type),
     destinationId: str(q.destinationId),
+    serviceMode: str(q.serviceMode),
+    serviceArea: str(q.serviceArea),
+    durationHours: Number.isFinite(durationRaw) ? durationRaw : null,
   });
 
   if (!match) {
@@ -118,9 +125,13 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
     roundTripIsEstimated = !rate.roundTripRate;
   }
 
+  // A disposal package is one block of time at one price — the client already
+  // returns wherever they like inside those hours, so a "round trip" flag must
+  // never double it.
+  const isDisposal = isDisposalMode(rate.serviceMode);
   const oneWayRate = adjust(oneWayBase).toDecimalPlaces(2);
-  const roundTripRate = adjust(roundTripBase).toDecimalPlaces(2);
-  const totalAmount = roundTrip ? roundTripRate : oneWayRate;
+  const roundTripRate = isDisposal ? oneWayRate : adjust(roundTripBase).toDecimalPlaces(2);
+  const totalAmount = roundTrip && !isDisposal ? roundTripRate : oneWayRate;
 
   res.json({
     success: true,
@@ -129,11 +140,16 @@ export async function getTransportQuote(req: Request, res: Response): Promise<vo
       rateId: rate.id,
       matchedDirection,
       oneWayRate,
-      roundTripRate,
-      roundTripIsEstimated,
+      roundTripRate: isDisposal ? null : roundTripRate,
+      roundTripIsEstimated: isDisposal ? false : roundTripIsEstimated,
       totalAmount,
       currency,
       serviceMode: rate.serviceMode,
+      isDisposal,
+      serviceArea: rate.serviceArea,
+      durationHours: rate.durationHours,
+      serviceNameEn: rate.serviceNameEn,
+      serviceNameAr: rate.serviceNameAr,
       vehicleType: rate.vehicleType,
       rateType: rate.type,
       groupType: groupType ?? null,
@@ -161,12 +177,85 @@ export async function getTransportLocations(_req: Request, res: Response): Promi
   res.json({ success: true, data: { fromLocations: froms, toLocations: tos, vehicleTypes: vehicles } });
 }
 
+/**
+ * GET /api/transport-rates/disposal — the at-disposal catalogue.
+ *
+ * At-disposal transport is not a route, so it cannot be offered through the
+ * from/to dropdowns: the client picks an AREA to stay inside (Cairo, Luxor …)
+ * and a PACKAGE (a block of hours, or a full day). This returns those two
+ * choices already priced in the caller's currency, grouped by area, so the
+ * booking form can render them without a second round-trip per package.
+ */
+export async function getTransportDisposalCatalogue(req: Request, res: Response): Promise<void> {
+  const pax = Math.max(1, parseInt(String(req.query.pax ?? '1'), 10));
+  const vehicleType = str(req.query.vehicleType);
+
+  const rates = await prisma.transportRate.findMany({
+    where: {
+      isActive: true,
+      serviceMode: { in: DISPOSAL_SERVICE_MODES as unknown as TransportRate['serviceMode'][] },
+      ...(vehicleType ? { vehicleType: vehicleType as TransportRate['vehicleType'] } : {}),
+      minCapacity: { lte: pax },
+      OR: [{ maxCapacity: null }, { maxCapacity: { gte: pax } }],
+    },
+    orderBy: [{ serviceArea: 'asc' }, { durationHours: 'asc' }, { rate: 'asc' }],
+  });
+
+  const { market, companyId } = await resolvePriceContext(req);
+  const priceCtx = { market, companyId, pax, date: undefined as Date | undefined };
+
+  const byArea = new Map<string, { area: string; packages: unknown[] }>();
+  for (const rate of rates) {
+    // Fall back through the legacy labels so rates imported before serviceArea
+    // existed still show up under a sensible heading.
+    const area = (rate.serviceArea || rate.city || rate.fromLocation || rate.fromName || '').trim();
+    if (!area) continue;
+
+    let price: Decimal | null = null;
+    let currency: string;
+    if (usesDualPricing(rate)) {
+      const p = pickDualPrice(rate, market);
+      price = p.oneWay;
+      currency = p.currency;
+    } else {
+      const m = await resolveMarketMoney('TRANSPORT', rate.id, priceCtx, rate.rate, rate.currency);
+      price = m.amount;
+      currency = m.currency;
+    }
+
+    const key = area.toLowerCase();
+    if (!byArea.has(key)) byArea.set(key, { area, packages: [] });
+    byArea.get(key)!.packages.push({
+      rateId: rate.id,
+      serviceMode: rate.serviceMode,
+      durationHours: rate.durationHours,
+      vehicleType: rate.vehicleType,
+      serviceNameEn: rate.serviceNameEn,
+      serviceNameAr: rate.serviceNameAr,
+      // null price = configured but not priced in this currency → the UI shows
+      // "price on request" rather than hiding the package.
+      price: price ? price.toDecimalPlaces(2) : null,
+      currency,
+      minCapacity: rate.minCapacity,
+      maxCapacity: rate.maxCapacity,
+      notes: rate.notes,
+    });
+  }
+
+  const areas = [...byArea.values()].sort((a, b) => a.area.localeCompare(b.area));
+  res.json({ success: true, data: { areas } });
+}
+
 export async function createTransportBooking(req: Request, res: Response): Promise<void> {
   const caller = req.user!;
   const body = req.body as {
     companyId?: string;
     rateId?: string;           // authoritative priced product (preferred over route match)
     serviceMode?: string;
+    // At-disposal selectors — used instead of from/to when the client books a
+    // car for a block of time inside an area rather than a route.
+    serviceArea?: string;
+    durationHours?: number;
     type: 'AIRPORT_TRANSFER' | 'PRIVATE_TRANSFER' | 'DAY_TOUR_TRANSPORT' | 'INTERCITY';
     vehicleType?: 'SEDAN' | 'SUV' | 'VAN_6' | 'VAN_12' | 'MINIBUS_20' | 'BUS_45' | 'LUXURY_LIMO';
     fromLocation?: string; toLocation?: string;
@@ -228,6 +317,9 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     pax: passengerCount,
     transportType: body.rateId ? null : body.type,
     destinationId: body.rateId ? null : body.destinationId,
+    serviceMode: body.serviceMode ?? null,
+    serviceArea: body.serviceArea ?? null,
+    durationHours: body.durationHours ?? null,
   });
   if (!match) {
     res.status(400).json({
@@ -242,7 +334,13 @@ export async function createTransportBooking(req: Request, res: Response): Promi
 
   // The rate is the priced product; its service mode drives field validation.
   const serviceMode = matchingRate.serviceMode;
-  const isDisposal = serviceMode === 'HOURLY_CHARTER' || serviceMode === 'DAY_USE';
+  const isDisposal = isDisposalMode(serviceMode);
+  // An at-disposal package is ONE block of time, not a leg of a journey: the car
+  // stays with the client for the whole period and returning to the hotel is
+  // already part of what they bought. "Round trip" therefore does not apply —
+  // the flag is dropped here so it can neither demand a return leg below nor
+  // double the price.
+  const isRoundTrip = isDisposal ? false : (body.isRoundTrip ?? false);
   const T = (t?: string | null) => String(t ?? '').toUpperCase();
   const isHotel = (t?: string | null) => T(t) === 'HOTEL';
   const fail = (message: string, error = 'VALIDATION_ERROR') =>
@@ -284,7 +382,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
 
   // ── Round-trip validation (Finding 2 / §3) — independent return leg.
   const sameRouteReversed = body.sameRouteReversed !== false; // default true
-  if (body.isRoundTrip) {
+  if (isRoundTrip) {
     if (!returnDateTime) { fail('Return date and time are required for a round trip.'); return; }
     if (returnDateTime <= pickupDateTime) { fail('Return date/time must be later than the outbound pickup date/time.', 'RETURN_BEFORE_OUTBOUND'); return; }
     if (!sameRouteReversed) {
@@ -340,9 +438,9 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   }
 
   let sourceAmountRaw = adjust(outboundOneWayAmt);
-  let pricingRule = 'ONE_WAY';
+  let pricingRule = isDisposal ? 'AT_DISPOSAL' : 'ONE_WAY';
 
-  if (body.isRoundTrip) {
+  if (isRoundTrip) {
     if (sameRouteReversed) {
       if (dual) {
         const p = pickDualPrice(matchingRate, company.market);
@@ -393,6 +491,12 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     }
   }
 
+  // Human label for an at-disposal sale, e.g. "Cairo — 8 hours".
+  const disposalLabel = [
+    matchingRate.serviceNameEn || matchingRate.serviceArea || matchingRate.city,
+    matchingRate.durationHours ? `${matchingRate.durationHours} hours` : null,
+  ].filter(Boolean).join(' — ') || 'At disposal';
+
   const charge = explicitMoney(sourceAmountRaw, priceCurrency);
   const totalAmount = charge.totalAmount;
   const currency = charge.currency;
@@ -400,7 +504,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   // Stored route summary + return leg (reversed-outbound by default; independent when unlocked).
   const fromLocationStore = pickupHotelName || pickupLocation || pickupAddress || matchingRate.serviceNameEn || matchingRate.serviceArea || matchingRate.fromLocation || 'Pickup';
   const toLocationStore = dropoffHotelName || dropoffLocation || dropoffAddress || (isDisposal ? (matchingRate.serviceNameEn || matchingRate.serviceArea || 'At disposal') : (matchingRate.toLocation || 'Drop-off'));
-  const ret = body.isRoundTrip
+  const ret = isRoundTrip
     ? (sameRouteReversed
         ? { fromLocation: toLocationStore, toLocation: fromLocationStore, fromType: dropoffType, toType: pickupType, pickupHotelName: dropoffHotelName, pickupAddress: dropoffAddress, dropoffHotelName: pickupHotelName, dropoffAddress: pickupAddress }
         : { fromLocation: body.returnFromLocation?.trim() || body.returnPickupAddress?.trim() || toLocationStore, toLocation: body.returnToLocation?.trim() || body.returnDropoffAddress?.trim() || fromLocationStore, fromType: body.returnFromType ?? null, toType: body.returnToType ?? null, pickupHotelName: body.returnPickupHotelName?.trim() || null, pickupAddress: body.returnPickupAddress?.trim() || null, dropoffHotelName: body.returnDropoffHotelName?.trim() || null, dropoffAddress: body.returnDropoffAddress?.trim() || null })
@@ -437,8 +541,8 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           dropoffHotelName,
           pickupDateTime,
           returnDateTime,
-          isRoundTrip: body.isRoundTrip ?? false,
-          sameRouteReversed: body.isRoundTrip ? sameRouteReversed : true,
+          isRoundTrip,
+          sameRouteReversed: isRoundTrip ? sameRouteReversed : true,
           returnFromLocation: ret?.fromLocation ?? null,
           returnToLocation: ret?.toLocation ?? null,
           returnFromType: ret?.fromType ?? null,
@@ -524,7 +628,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
         `🚐 Transport Booking — ${booking.refNumber}`,
         `<table style="font-family:sans-serif;font-size:14px;border-collapse:collapse">
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Ref</td><td style="padding:6px 12px">${escapeHtml(booking.refNumber)}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Route</td><td style="padding:6px 12px">${escapeHtml(fromLocationStore)} → ${escapeHtml(toLocationStore)}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">${isDisposal ? 'Service' : 'Route'}</td><td style="padding:6px 12px">${isDisposal ? escapeHtml(disposalLabel) : `${escapeHtml(fromLocationStore)} → ${escapeHtml(toLocationStore)}`}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Vehicle</td><td style="padding:6px 12px">${escapeHtml(body.vehicleType ?? 'SEDAN')}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Service Type</td><td style="padding:6px 12px">${escapeHtml(groupType?.labelEn ?? '—')}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Pickup</td><td style="padding:6px 12px">${escapeHtml(body.pickupDateTime)}</td></tr>
@@ -532,7 +636,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Lead Pax</td><td style="padding:6px 12px">${escapeHtml(body.passengerName ?? '—')}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Contact</td><td style="padding:6px 12px">${escapeHtml(body.contactNumber ?? '—')}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Flight</td><td style="padding:6px 12px">${escapeHtml(body.airlineName ?? '')} ${escapeHtml(body.flightNumber ?? '—')}</td></tr>
-          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Round Trip</td><td style="padding:6px 12px">${body.isRoundTrip ? 'Yes' : 'No'}</td></tr>
+          <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Trip Type</td><td style="padding:6px 12px">${isDisposal ? 'At disposal' : isRoundTrip ? 'Round trip' : 'One way'}</td></tr>
           <tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Total</td><td style="padding:6px 12px">${totalAmount} ${escapeHtml(currency)}</td></tr>
           ${body.notes ? `<tr><td style="padding:6px 12px;font-weight:bold;background:#f0f4f8">Notes</td><td style="padding:6px 12px">${escapeHtml(body.notes)}</td></tr>` : ''}
         </table>`,

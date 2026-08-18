@@ -28,11 +28,17 @@
     .tf-ep-type.on { background:var(--brand-accent); color:#fff; border-color:var(--brand-accent); }
     @media (max-width:640px){ .hd-preview-grid{ grid-template-columns:1fr; } }
   </style>
-  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+  <!-- Icon font. It is a third-party CDN: if unpkg is blocked, slow, or
+       refused by a CSP, every icon would otherwise paint as an empty box
+       and the buttons look broken. onerror marks the failure so the icon
+       layer can fall back to text-only buttons. -->
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css"
+        onerror="document.documentElement.classList.add('icons-unavailable')" />
   <script src="/assets/icons.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="/assets/i18n.js"></script>
   <script src="/assets/responsive-tables.js" defer></script>
+  <script src="/assets/global-search.js" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -145,6 +151,9 @@ const state = {
   wizard: { step: 1, type: "HOTEL", payload: {} },
   fxRates: null,          // { base, rates:{USD,EUR,EGP,...}, lastUpdated }
   displayCurrency: "USD", // company's display currency (derived from market/company.currency)
+  // Mirrors the document language so the "show the Arabic label" checks
+  // throughout this file actually answer yes when the portal is in Arabic.
+  lang: document.documentElement.lang || localStorage.getItem("lang") || "en",
 };
 
 // Default display currency by market when the company has no explicit currency set.
@@ -2149,6 +2158,7 @@ function renderTransportForm() {
         <div class="tr-toggle-group">
           <button type="button" class="tr-toggle active" id="trOneWayBtn" onclick="setTripType('ONE_WAY')">${icon("arrow-right")}&nbsp;${t("transport.oneWay","One Way")}</button>
           <button type="button" class="tr-toggle"        id="trRoundBtn"  onclick="setTripType('ROUND_TRIP')">${icon("arrow-left-right")}&nbsp;${t("form.roundTrip","Round Trip")}</button>
+          <button type="button" class="tr-toggle"        id="trDisposalBtn" onclick="setTripType('AT_DISPOSAL')">${icon("clock")}&nbsp;${t("transport.atDisposal","At Disposal")}<span class="tr-toggle-tag">${t("transport.atDisposalTag","No fixed route")}</span></button>
         </div>
         <input type="hidden" id="trTripType" value="ONE_WAY">
       </div>
@@ -2176,19 +2186,45 @@ function renderTransportForm() {
         </div>
       </div>
 
-      <!-- ③ Route -->
-      <div class="tr-section">
-        <div class="tr-section-title">${icon("map-pin")}&nbsp;${t("transport.route","Route")}</div>
+      <!-- ③ Route (point-to-point trips) -->
+      <div class="tr-section" id="trRouteSection">
+        <div class="tr-section-title">${icon("map-pin")}&nbsp;<span id="trRouteTitle">${t("transport.route","Route")}</span></div>
         <div class="form-grid">
           <div class="form-field">
-            <label>${t("form.from","From")} <span class="required">*</span></label>
+            <label><span id="trFromLabel">${t("form.from","From")}</span> <span class="required">*</span></label>
             ${trEpField("from", "AIRPORT")}
+            <small class="field-hint" id="trFromHint" style="display:none">${t("transport.disposalPickupHint","Your hotel or an address inside the area.")}</small>
           </div>
-          <div class="form-field">
+          <div class="form-field" id="trToField">
             <label>${t("form.to","To")} <span class="required">*</span></label>
             ${trEpField("to", "DESTINATION")}
           </div>
         </div>
+      </div>
+
+      <!-- ③b At Disposal — an area + a block of time instead of a route -->
+      <div class="tr-section" id="trDisposalSection" style="display:none">
+        <div class="tr-section-title">${icon("clock")}&nbsp;${t("transport.atDisposalFull","Car at your disposal")}</div>
+        <div class="tr-disposal-intro">
+          ${icon("info")}
+          <div>
+            <strong>${t("transport.atDisposalFull","Car at your disposal")}</strong>
+            ${t("transport.disposalExplain","The car and driver stay with you for the whole period inside the area you choose.")}
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="form-field">
+            <label>${t("transport.disposalArea","Where do you want the car?")} <span class="required">*</span></label>
+            <select id="trDisposalArea" onchange="trAreaChanged()"><option value="">${t("transport.selectArea","Choose an area...")}</option></select>
+            <small class="field-hint">${t("transport.disposalAreaHint","The city or area the car stays within.")}</small>
+          </div>
+        </div>
+        <div class="form-field" style="margin-top:14px">
+          <label>${t("transport.disposalPackage","For how long?")} <span class="required">*</span></label>
+          <div id="trDisposalPackages" class="tr-pkg-grid"></div>
+          <small class="field-hint">${t("transport.disposalPackageHint","One price for the whole block.")}</small>
+        </div>
+        <input type="hidden" id="trDisposalRateId" value="">
       </div>
 
       <!-- ④ Return Trip (shown if round trip) -->
@@ -2258,11 +2294,11 @@ function renderTransportForm() {
           </div>
           <div class="form-field">
             <label>${t("form.passengers","No. of Passengers")} <span class="required">*</span></label>
-            <input id="trPax" type="number" min="1" max="45" value="2" required oninput="trUpdateQuote()">
+            <input id="trPax" type="number" min="1" max="45" value="2" required oninput="trDisposalInputsChanged()">
           </div>
           <div class="form-field">
             <label>${t("form.vehicleType","Vehicle Category")} <span class="required">*</span></label>
-            <select id="trVehicle" required onchange="trUpdateQuote()">
+            <select id="trVehicle" required onchange="trDisposalInputsChanged()">
               <option value="">${t("transport.selectVehicle","Select vehicle...")}</option>
               ${vehicleOpts}
             </select>
@@ -2356,9 +2392,138 @@ function setTripType(type) {
   document.getElementById("trTripType").value = type;
   document.getElementById("trOneWayBtn").classList.toggle("active", type === "ONE_WAY");
   document.getElementById("trRoundBtn").classList.toggle("active", type === "ROUND_TRIP");
+  document.getElementById("trDisposalBtn")?.classList.toggle("active", type === "AT_DISPOSAL");
+
+  const isDisposal = type === "AT_DISPOSAL";
   const returnSec = document.getElementById("trReturnSection");
+  // A return leg is meaningless when the car is already yours for the period.
   if (returnSec) returnSec.style.display = type === "ROUND_TRIP" ? "" : "none";
+
+  const dispSec = document.getElementById("trDisposalSection");
+  if (dispSec) dispSec.style.display = isDisposal ? "" : "none";
+
+  // At disposal there is no destination to enter — only a pickup point, so the
+  // route section stays but sheds its "To" half and is relabelled accordingly.
+  const toField = document.getElementById("trToField");
+  if (toField) toField.style.display = isDisposal ? "none" : "";
+  const routeTitle = document.getElementById("trRouteTitle");
+  if (routeTitle) routeTitle.textContent = isDisposal
+    ? t("transport.disposalPickup", "Where should the driver pick you up?")
+    : t("transport.route", "Route");
+  const fromLabel = document.getElementById("trFromLabel");
+  if (fromLabel) fromLabel.textContent = isDisposal
+    ? t("transport.disposalPickup", "Where should the driver pick you up?")
+    : t("form.from", "From");
+  const fromHint = document.getElementById("trFromHint");
+  if (fromHint) fromHint.style.display = isDisposal ? "" : "none";
+
+  if (isDisposal) trLoadDisposalCatalogue();
+  else {
+    // Leaving disposal drops the package so a later quote cannot reuse it.
+    const rid = document.getElementById("trDisposalRateId");
+    if (rid) rid.value = "";
+  }
   trTypeChanged();
+}
+
+/** True when the customer is booking a car for a block of time, not a route. */
+function trIsDisposal() {
+  return document.getElementById("trTripType")?.value === "AT_DISPOSAL";
+}
+
+/**
+ * Load the at-disposal catalogue for the chosen vehicle / pax and fill the area
+ * dropdown. Packages are held in state so switching area re-renders without a
+ * second request.
+ */
+async function trLoadDisposalCatalogue() {
+  const areaSel = document.getElementById("trDisposalArea");
+  const pkgBox = document.getElementById("trDisposalPackages");
+  if (!areaSel || !pkgBox) return;
+
+  const vehicle = document.getElementById("trVehicle")?.value || "";
+  const pax = parseInt(document.getElementById("trPax")?.value || "1");
+  const params = new URLSearchParams({ pax: String(pax) });
+  if (vehicle) params.set("vehicleType", vehicle);
+
+  pkgBox.innerHTML = `<div class="skeleton" style="height:64px"></div><div class="skeleton" style="height:64px"></div>`;
+  const res = await apiFetch(`/transport-rates/disposal?${params}`);
+  const areas = res?.data?.areas || [];
+  state.transportDisposal = areas;
+
+  const previous = areaSel.value;
+  areaSel.innerHTML = `<option value="">${t("transport.selectArea", "Choose an area...")}</option>` +
+    areas.map(a => `<option value="${escapeHtml(a.area)}">${escapeHtml(a.area)}</option>`).join("");
+  if (previous && areas.some(a => a.area === previous)) areaSel.value = previous;
+  else if (areas.length === 1) areaSel.value = areas[0].area;
+
+  if (!areas.length) {
+    pkgBox.innerHTML = `<div class="tr-disposal-empty">${t("transport.noAreas", "No at-disposal service is configured yet.")}</div>`;
+    return;
+  }
+
+  // A package the new vehicle / pax no longer offers must not stay selected.
+  const ridEl = document.getElementById("trDisposalRateId");
+  if (ridEl?.value) {
+    const stillThere = areas.some(a => a.packages.some(p => p.rateId === ridEl.value));
+    if (!stillThere) ridEl.value = "";
+  }
+  trRenderDisposalPackages();
+}
+
+/** Area changed → show that area's packages and drop any stale selection. */
+function trAreaChanged() {
+  const rid = document.getElementById("trDisposalRateId");
+  if (rid) rid.value = "";
+  trRenderDisposalPackages();
+  trUpdateQuote();
+}
+
+/** Render the duration packages for the selected area. */
+function trRenderDisposalPackages() {
+  const pkgBox = document.getElementById("trDisposalPackages");
+  if (!pkgBox) return;
+  const area = document.getElementById("trDisposalArea")?.value || "";
+  const areas = state.transportDisposal || [];
+  const entry = areas.find(a => a.area === area);
+  const packages = entry?.packages || [];
+  const selectedId = document.getElementById("trDisposalRateId")?.value || "";
+
+  if (!area) {
+    pkgBox.innerHTML = `<div class="tr-disposal-empty">${t("transport.selectArea", "Choose an area...")}</div>`;
+    return;
+  }
+  if (!packages.length) {
+    pkgBox.innerHTML = `<div class="tr-disposal-empty">${t("transport.noPackages", "No package is available in this area.")}</div>`;
+    return;
+  }
+
+  pkgBox.innerHTML = packages.map(p => {
+    // A full-day package is named by the day, an hourly one by its hours.
+    const dur = p.serviceMode === "DAY_USE"
+      ? t("transport.fullDay", "Full day")
+      : `${p.durationHours || ""} ${t("transport.hoursUnit", "hours")}`.trim();
+    const name = state.lang === "ar" ? (p.serviceNameAr || p.serviceNameEn || "") : (p.serviceNameEn || "");
+    const price = p.price != null
+      ? `<div class="tr-pkg-price">${formatStoredMoney(p.price, p.currency)} <span class="tr-pkg-unit">${t("transport.perVehicle", "per vehicle")}</span></div>`
+      : `<div class="tr-pkg-price on-request">${t("hotel.priceOnRequest", "Price on request")}</div>`;
+    return `
+      <button type="button" class="tr-pkg ${p.rateId === selectedId ? "active" : ""}" data-rate-id="${p.rateId}" onclick="trPickPackage('${p.rateId}')">
+        <span class="tr-pkg-dur">${escapeHtml(dur)}</span>
+        ${name ? `<span class="tr-pkg-name">${escapeHtml(name)}</span>` : ""}
+        ${price}
+      </button>`;
+  }).join("");
+}
+
+/** Choose one duration package and re-price. */
+function trPickPackage(rateId) {
+  const rid = document.getElementById("trDisposalRateId");
+  if (rid) rid.value = rateId;
+  document.querySelectorAll("#trDisposalPackages .tr-pkg").forEach(el => {
+    el.classList.toggle("active", el.dataset.rateId === rateId);
+  });
+  trUpdateQuote();
 }
 
 /** Endpoint visibility is handled by trEpType; this only re-quotes. */
@@ -2390,6 +2555,12 @@ function trUpdateQuote() {
   _trQuoteTimer = setTimeout(_doTransportQuote, 420);
 }
 
+/** Vehicle / pax changed: those decide which disposal packages exist at all. */
+function trDisposalInputsChanged() {
+  if (trIsDisposal()) trLoadDisposalCatalogue();
+  trUpdateQuote();
+}
+
 function trGetFrom() { return (trReadEndpoint("from").name || "").trim(); }
 function trGetTo() { return (trReadEndpoint("to").name || "").trim(); }
 
@@ -2406,10 +2577,17 @@ function trAllVehicleOptions() {
 async function trLoadRouteOptions() {
   const sel = document.getElementById("trVehicle");
   if (!sel) return;
-  const from = trGetFrom(), to = trGetTo();
-  if (!from || !to) { sel.innerHTML = trAllVehicleOptions(); return; }
-
+  // Rebuilding the list must never silently discard the vehicle the customer
+  // already picked — losing it blocks the quote with nothing on screen to
+  // explain why.
   const prev = sel.value;
+  const restore = () => { if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev; };
+
+  const from = trGetFrom(), to = trGetTo();
+  // At disposal there is no route to look tiers up by: the area's packages are
+  // what narrow the choice, so the full vehicle catalogue stays on offer.
+  if (trIsDisposal() || !from || !to) { sel.innerHTML = trAllVehicleOptions(); restore(); return; }
+
   const res = await apiFetch(`/transport-rates?${new URLSearchParams({ from, to })}`);
   const available = [...new Set((res?.data || []).map(r => r.vehicleType).filter(Boolean))];
 
@@ -2421,7 +2599,7 @@ async function trLoadRouteOptions() {
     sel.innerHTML = `<option value="">${t("transport.selectVehicle","Select vehicle...")}</option>` +
       opts.map(v => `<option value="${v.value}">${escapeHtml(v.label)}${v.hint ? " — " + v.hint : ""}</option>`).join("");
   }
-  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+  restore();
 }
 
 // Route changed → refresh available tiers, then re-quote.
@@ -2490,11 +2668,17 @@ async function _doTransportQuote() {
   const vehicle    = document.getElementById("trVehicle")?.value || "";
   const pax        = parseInt(document.getElementById("trPax")?.value || "1");
   const isRoundTrip = document.getElementById("trTripType")?.value === "ROUND_TRIP";
+  const isDisposal = trIsDisposal();
+  const disposalArea = document.getElementById("trDisposalArea")?.value || "";
+  const disposalRateId = document.getElementById("trDisposalRateId")?.value || "";
   const summaryEl  = document.getElementById("trPriceSummary");
   const bodyEl     = document.getElementById("trPriceBody");
   const actionsEl  = document.getElementById("trBookingActions");
 
-  if (!from || !to || !vehicle || !summaryEl) return;
+  // At disposal there is no "to" to wait for — the area and the chosen block of
+  // time are what make the request priceable.
+  if (!vehicle || !summaryEl) return;
+  if (isDisposal ? (!disposalArea || !disposalRateId) : (!from || !to)) return;
 
   summaryEl.style.display = "";
   if (bodyEl) bodyEl.innerHTML = `<div class="skeleton" style="height:14px;width:60%"></div><div class="skeleton" style="height:28px;width:40%;margin-top:10px"></div>`;
@@ -2505,12 +2689,18 @@ async function _doTransportQuote() {
   const selectedGroupTypeId = document.querySelector('input[name="trGroupType"]:checked')?.value || "";
   const date = document.getElementById("trDate")?.value || "";
   const params = new URLSearchParams({ vehicleType: vehicle, pax: String(pax), roundTrip: String(isRoundTrip) });
-  if (fromEp.type) params.set("fromType", fromEp.type);
-  if (fromEp.id) params.set("fromId", fromEp.id);
-  if (fromEp.name) params.set("fromName", fromEp.name);
-  if (toEp.type) params.set("toType", toEp.type);
-  if (toEp.id) params.set("toId", toEp.id);
-  if (toEp.name) params.set("toName", toEp.name);
+  if (isDisposal) {
+    // The package IS the product — the endpoints play no part in resolving it.
+    params.set("rateId", disposalRateId);
+    params.set("serviceArea", disposalArea);
+  } else {
+    if (fromEp.type) params.set("fromType", fromEp.type);
+    if (fromEp.id) params.set("fromId", fromEp.id);
+    if (fromEp.name) params.set("fromName", fromEp.name);
+    if (toEp.type) params.set("toType", toEp.type);
+    if (toEp.id) params.set("toId", toEp.id);
+    if (toEp.name) params.set("toName", toEp.name);
+  }
   if (selectedGroupTypeId) params.set("groupTypeId", selectedGroupTypeId);
   if (date) params.set("date", date);
   const res = await apiFetch(`/transport-rates/quote?${params}`);
@@ -2533,11 +2723,14 @@ async function _doTransportQuote() {
       <button class="btn btn-outline" onclick="trSendQuoteRequest()">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`;
   } else {
     if (bodyEl) bodyEl.innerHTML = `
-      <div class="tr-price-row"><span>${t("form.from","From")} → ${t("form.to","To")}</span><span class="tr-price-route">${escapeHtml(from)} → ${escapeHtml(to)}</span></div>
+      ${q.isDisposal
+        ? `<div class="tr-price-row"><span>${t("transport.disposalSummary","Car at disposal")}</span><span class="tr-price-route">${escapeHtml([q.serviceArea || disposalArea, q.durationHours ? `${q.durationHours} ${t("transport.hoursUnit","hours")}` : (q.serviceMode === "DAY_USE" ? t("transport.fullDay","Full day") : "")].filter(Boolean).join(" · "))}</span></div>
+           <div class="tr-price-row"><span>${t("transport.disposalPickup","Pickup")}</span><span class="tr-price-route">${escapeHtml(from || "—")}</span></div>`
+        : `<div class="tr-price-row"><span>${t("form.from","From")} → ${t("form.to","To")}</span><span class="tr-price-route">${escapeHtml(from)} → ${escapeHtml(to)}</span></div>`}
       <div class="tr-price-row"><span>${t("form.vehicleType","Vehicle")}</span><span>${escapeHtml(vehicle.replace(/_/g," "))}</span></div>
       <div class="tr-price-row"><span>${t("transport.serviceType","Service Type")}</span><span>${escapeHtml(state.lang === "ar" ? (q.groupType?.labelAr || q.groupType?.labelEn || "—") : (q.groupType?.labelEn || "—"))}</span></div>
       <div class="tr-price-row"><span>${t("form.passengers","Passengers")}</span><span>${pax}</span></div>
-      <div class="tr-price-row"><span>${t("form.roundTrip","Trip Type")}</span><span>${isRoundTrip ? t("form.roundTrip","Round Trip") : t("transport.oneWay","One Way")}</span></div>
+      <div class="tr-price-row"><span>${t("transport.tripType","Trip Type")}</span><span>${q.isDisposal ? t("transport.atDisposal","At Disposal") : isRoundTrip ? t("form.roundTrip","Round Trip") : t("transport.oneWay","One Way")}</span></div>
       <div class="tr-price-total">
         <span>${t("th.total","Total")}</span>
         <span class="tr-price-amount" id="trLivePrice">${formatStoredMoney(q.totalAmount, q.currency)}</span>
@@ -2586,10 +2779,17 @@ async function trConfirmBooking() {
   const retTo        = document.getElementById("trReturnTo")?.value.trim();
   const retPickupHotel  = document.getElementById("trReturnPickupHotel")?.value.trim();
   const retDropoffHotel = document.getElementById("trReturnDropoffHotel")?.value.trim();
+  const isDisposal   = trIsDisposal();
   const serviceMode  = state.transportQuote?.serviceMode;
-  const isDisposal   = serviceMode === "HOURLY_CHARTER" || serviceMode === "DAY_USE";
+  const disposalArea = document.getElementById("trDisposalArea")?.value || "";
+  const disposalRateId = document.getElementById("trDisposalRateId")?.value || "";
   const isAddr = (ty) => ty === "ADDRESS" || ty === "LANDMARK";
 
+  // At disposal the area and the block of time stand in for the destination.
+  if (isDisposal) {
+    if (!disposalArea) { toast(t("transport.disposalAreaRequired","Choose the area where you want the car"), "error"); return; }
+    if (!disposalRateId) { toast(t("transport.disposalPackageRequired","Choose how long you want the car for"), "error"); return; }
+  }
   if (!from || !date || !paxName || !contact || !vehicle || (!isDisposal && !to) || (isRoundTrip && !retDate)) {
     toast(t("transport.requiredFields","Please fill all required fields: route, date, lead name, contact, vehicle"), "error");
     return;
@@ -2614,21 +2814,27 @@ async function trConfirmBooking() {
   }
 
   const payload = {
-    rateId: state.transportQuote?.rateId || undefined,
+    rateId: (isDisposal ? disposalRateId : state.transportQuote?.rateId) || undefined,
     serviceMode,
+    serviceArea: isDisposal ? disposalArea : undefined,
     type: state.transportQuote?.rateType || (fromType === "AIRPORT" ? "AIRPORT_TRANSFER" : "PRIVATE_TRANSFER"),
     vehicleType: vehicle,
-    fromLocation: from, toLocation: isDisposal ? (to || from) : to,
+    // At disposal there is no destination. Leaving "to" empty lets the server
+    // label the booking with the package itself ("Cairo at disposal 8 hours")
+    // instead of echoing the pickup back as a fake drop-off.
+    fromLocation: from, toLocation: isDisposal ? undefined : to,
     fromType, fromId: fromEp.id || undefined, fromName: from,
-    toType, toId: toEp.id || undefined, toName: isDisposal ? (to || from) : to,
-    pickupType: fromType, dropoffType: toType,
+    toType: isDisposal ? undefined : toType, toId: isDisposal ? undefined : (toEp.id || undefined), toName: isDisposal ? undefined : to,
+    pickupType: fromType, dropoffType: isDisposal ? undefined : toType,
     pickupLocation: from || undefined,
     pickupHotelName: fromType === "HOTEL" ? (pickupHotel || undefined) : undefined,
     dropoffLocation: isDisposal ? undefined : (to || undefined),
-    dropoffHotelName: toType === "HOTEL" ? (dropoffHotel || undefined) : undefined,
+    dropoffHotelName: (!isDisposal && toType === "HOTEL") ? (dropoffHotel || undefined) : undefined,
     pickupDateTime,
     returnDateTime,
-    isRoundTrip,
+    // A disposal block already includes coming back — sending the round-trip
+    // flag here would ask the server to bill the same car twice.
+    isRoundTrip: isDisposal ? false : isRoundTrip,
     sameRouteReversed,
     returnFromType: (isRoundTrip && !sameRouteReversed) ? retFromType : undefined,
     returnToType:   (isRoundTrip && !sameRouteReversed) ? retToType : undefined,
@@ -2693,15 +2899,31 @@ async function trSendQuoteRequest() {
   const airline     = document.getElementById("trAirline")?.value.trim();
   const flightNo    = document.getElementById("trFlightNo")?.value.trim();
 
-  const serviceName = `Transport: ${from} → ${to}${isRoundTrip ? " (Round Trip)" : ""}${vehicle ? " · " + vehicle.replace(/_/g," ") : ""}`;
+  // An at-disposal request has no destination to quote — what the operator
+  // needs to see is the area, the block of time and where to collect the client.
+  const isDisposal   = trIsDisposal();
+  const disposalArea = document.getElementById("trDisposalArea")?.value || "";
+  const pkg = (state.transportDisposal || [])
+    .find(a => a.area === disposalArea)?.packages
+    .find(p => p.rateId === (document.getElementById("trDisposalRateId")?.value || ""));
+  const disposalDuration = pkg
+    ? (pkg.serviceMode === "DAY_USE" ? "Full day" : `${pkg.durationHours} hours`)
+    : "";
+  const disposalLabel = [disposalArea, disposalDuration].filter(Boolean).join(" · ");
+
+  const serviceName = isDisposal
+    ? `Transport: Car at disposal — ${disposalLabel || "area to confirm"}${vehicle ? " · " + vehicle.replace(/_/g," ") : ""}`
+    : `Transport: ${from} → ${to}${isRoundTrip ? " (Round Trip)" : ""}${vehicle ? " · " + vehicle.replace(/_/g," ") : ""}`;
   const payload = {
     serviceType: "MULTI_SERVICE",
     serviceName,
     adultsCount: pax,
     checkIn: date || undefined,
     customerNotes: [
-      notes, `From: ${from}`, `To: ${to}`,
-      isRoundTrip ? "Round Trip" : "",
+      notes,
+      ...(isDisposal
+        ? [`At disposal area: ${disposalArea || "—"}`, disposalDuration ? `Duration: ${disposalDuration}` : "", `Pickup: ${from || "—"}`]
+        : [`From: ${from}`, `To: ${to}`, isRoundTrip ? "Round Trip" : ""]),
       paxName ? `Pax: ${paxName}` : "",
       contact ? `Contact: ${contact}` : "",
       airline ? `Airline: ${airline}` : "",
@@ -2714,7 +2936,14 @@ async function trSendQuoteRequest() {
   const res = await apiFetch("/quote-requests", { method: "POST", body: JSON.stringify(payload) });
   if (res?.success) {
     const ref = res.data.refNumber;
-    const waUrl = buildWhatsAppQuoteUrl({ ref, serviceType: "TRANSPORT", serviceName, from, to, checkIn: date, checkInTime: time, adults: pax, isRoundTrip: isRoundTrip || undefined, notes: notes || undefined });
+    const waUrl = buildWhatsAppQuoteUrl({
+      ref, serviceType: "TRANSPORT", serviceName,
+      from: isDisposal ? (from || disposalArea) : from,
+      to: isDisposal ? disposalLabel : to,
+      checkIn: date, checkInTime: time, adults: pax,
+      isRoundTrip: (!isDisposal && isRoundTrip) || undefined,
+      notes: notes || undefined,
+    });
     toast(`✅ ${t("toast.quoteSubmitted","Quote submitted")} — ${ref}`, "success");
     loadMyQuotesBadge();
     redirectToWhatsApp(waUrl, waWindow);
@@ -4463,7 +4692,11 @@ const pageLoaders = {
   "my-quotes": renderMyQuotes,
 };
 
-document.addEventListener("portal:lang", () => { closeSidebar(); setPage(state.page); });
+document.addEventListener("portal:lang", (e) => {
+  state.lang = e.detail?.lang || document.documentElement.lang || "en";
+  closeSidebar();
+  setPage(state.page);
+});
 
 (async function init() {
   initI18n();

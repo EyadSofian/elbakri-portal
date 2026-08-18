@@ -41,11 +41,17 @@
     .tr-ep-grid { display:grid; grid-template-columns:1fr 1.4fr; gap:8px; }
     @media (max-width:640px){ .he-tabbtn{ padding:8px 10px; font-size:12px; } .he-main-preview{ width:100%; } .he-supp{ grid-template-columns:1fr 1fr !important; } .tr-ep-grid{ grid-template-columns:1fr; } }
   </style>
-  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+  <!-- Icon font. It is a third-party CDN: if unpkg is blocked, slow, or
+       refused by a CSP, every icon would otherwise paint as an empty box
+       and the buttons look broken. onerror marks the failure so the icon
+       layer can fall back to text-only buttons. -->
+  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css"
+        onerror="document.documentElement.classList.add('icons-unavailable')" />
   <script src="/assets/icons.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="/assets/i18n.js"></script>
   <script src="/assets/responsive-tables.js" defer></script>
+  <script src="/assets/global-search.js" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -171,6 +177,9 @@ const state = {
   currentCompany: null,
   cache: {},
   sort: {},
+  // Mirrors the document language so the "show the Arabic label" checks
+  // in this file actually answer yes when the portal is in Arabic.
+  lang: document.documentElement.lang || localStorage.getItem("lang") || "en",
 };
 
 const COMPANY_DISPLAY_CURRENCIES = ["USD", "EGP"];
@@ -3418,7 +3427,11 @@ async function openTransportRateEditor(id = "") {
   const rtEgpVal = r.roundTripPriceEgp != null ? r.roundTripPriceEgp : (legacyCur === "EGP" ? r.roundTripRate : null);
   const rtUsdVal = r.roundTripPriceUsd != null ? r.roundTripPriceUsd : (legacyCur === "USD" ? r.roundTripRate : null);
 
-  const sel = (id2, opts, val, label) => `<div class="form-field"><label>${label}</label><select id="${id2}">${opts.map(o => `<option value="${o}" ${o === val ? "selected" : ""}>${escapeHtml(String(o).replace(/_/g, " "))}</option>`).join("")}</select></div>`;
+  // optLabel lets a dropdown show a human phrase instead of the raw enum name
+  // (service modes especially — "HOURLY CHARTER" means nothing to an operator,
+  // least of all in Arabic).
+  const sel = (id2, opts, val, label, optLabel) => `<div class="form-field"><label>${label}</label><select id="${id2}">${opts.map(o => `<option value="${o}" ${o === val ? "selected" : ""}>${escapeHtml(optLabel ? optLabel(o) : String(o).replace(/_/g, " "))}</option>`).join("")}</select></div>`;
+  const serviceModeLabel = (m) => t(`serviceMode.${m}`, String(m).replace(/_/g, " "));
   const num = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" type="number" step="0.01" min="0" value="${val != null ? escapeHtml(val) : ""}" placeholder="${escapeHtml(ph)}"></div>`;
   const txt = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" value="${escapeHtml(val ?? "")}" placeholder="${escapeHtml(ph)}"></div>`;
 
@@ -3427,7 +3440,7 @@ async function openTransportRateEditor(id = "") {
       <div class="form-section-title">${t("transport.service", "Service")}</div>
       <div class="form-grid">
         ${sel("trType", TR_TYPES, r.type || "PRIVATE_TRANSFER", t("th.type", "Type"))}
-        ${sel("trMode", TR_SERVICE_MODES, r.serviceMode || "POINT_TO_POINT", t("transport.mode", "Service mode"))}
+        ${sel("trMode", TR_SERVICE_MODES, r.serviceMode || "POINT_TO_POINT", t("transport.mode", "Service mode"), serviceModeLabel)}
         ${sel("trVehicle", TR_VEHICLES, r.vehicleType || "SEDAN", t("form.vehicleType", "Vehicle"))}
         ${txt("trServiceArea", r.serviceArea, t("transport.serviceArea", "Service area (e.g. Cairo)"))}
         ${num("trDuration", r.durationHours, t("transport.durationHours", "Duration hours (disposal)"))}
@@ -6045,7 +6058,11 @@ const pageLoaders = {
   calculators: renderCalculators,
 };
 
-document.addEventListener("portal:lang", () => { closeSidebar(); setPage(state.page); });
+document.addEventListener("portal:lang", (e) => {
+  state.lang = e.detail?.lang || document.documentElement.lang || "en";
+  closeSidebar();
+  setPage(state.page);
+});
 
 (function init() {
   const token = localStorage.getItem("accessToken");

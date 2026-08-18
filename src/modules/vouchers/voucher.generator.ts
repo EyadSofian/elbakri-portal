@@ -387,7 +387,7 @@ function transportSections(d: TransportVoucherData): { title: string; sections: 
     fields: [
       row('Client Name', d.clientName),
       row('Service', serviceLabel),
-      row('Trip Type', round ? 'Round Trip' : 'One Way'),
+      row('Trip Type', isDisposal ? (d.durationHours ? `At Disposal – ${d.durationHours} Hours` : 'At Disposal') : round ? 'Round Trip' : 'One Way'),
       row('Vehicle Type', titleCase(d.vehicleType)),
       row('Passengers', d.passengerCount),
     ],

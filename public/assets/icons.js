@@ -152,6 +152,15 @@
   window.lucide = { createIcons: function (opts) { paint(opts && opts.root); } };
   window.PortalIcons = { map: MAP, paint: paint, missing: function () { return Object.keys(missing); } };
 
+  /* The glyphs come from a third-party CDN (see the stylesheet link in the page
+     head). If that request is blocked, refused by a CSP, or otherwise fails,
+     the link's onerror marks the document `icons-unavailable` and the CSS drops
+     the icon elements, so a toolbar degrades to clean text-only buttons rather
+     than a row of empty boxes. Detection deliberately relies on that load
+     failure alone: probing the font with document.fonts.check() reports a
+     miss for an icon font whose glyphs sit in the private use area, which
+     would hide the icons even when they had loaded perfectly well. */
+
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () { paint(); });
   } else {
