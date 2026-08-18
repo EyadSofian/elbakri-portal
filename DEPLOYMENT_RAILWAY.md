@@ -282,8 +282,12 @@ the tables, indexes and migration history survive and the app stays up:
 railway ssh                                       # a shell INSIDE the service
 npx ts-node prisma/reset-all-data.ts              # preview, deletes nothing
 npx ts-node prisma/reset-all-data.ts --yes        # empty every table
-npm run db:seed:catalog                           # rebuild the catalogue
 ```
+
+That is the whole procedure — the database is now empty and staff enter hotels
+and rates through the portal. Do not follow it with `npm run db:seed:catalog`
+unless you specifically want the shipped starter catalogue back: that seeds 209
+hotels with their rates and destinations, which undoes the wipe.
 
 Run it from inside the service (`railway ssh`), not with `railway run`.
 `railway run` executes on your own machine with Railway's variables injected,

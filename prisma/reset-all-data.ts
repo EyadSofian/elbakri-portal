@@ -44,13 +44,14 @@ import {
  *   npx ts-node prisma/reset-all-data.ts --yes --files
  *   npx ts-node prisma/reset-all-data.ts --yes --wipe-superadmin
  *
- * AFTER THE WIPE, rebuild the catalogue (each seed is idempotent):
- *   npm run db:seed              # SuperAdmin (only needed with --wipe-superadmin)
- *   npm run db:seed:hotels       # hotel catalogue
- *   npm run db:seed:mea          # destinations, rates, activities, transport
- *   npm run db:seed:airports     # Egyptian airports
- *   npm run db:seed:destinations # destination hero images
- *   npm run db:apply:images      # hotel hero images
+ * AFTER THE WIPE, nothing else has to run. The database is empty and staff
+ * enter hotels, rates and the rest through the portal. The only exception is
+ * --wipe-superadmin, which needs `npm run db:seed` to recreate a login.
+ *
+ * Do NOT reach for `npm run db:seed:catalog` out of habit: it re-creates 209
+ * hotels with their rates, destinations, activities and transport from the
+ * shipped seed files, which undoes the wipe you just did. Run it only when you
+ * actually want that starter catalogue back.
  */
 
 const prisma = new PrismaClient();
@@ -203,13 +204,19 @@ async function main() {
   console.log('\nAfter:');
   printCounts(await countRows(tables));
 
-  console.log('Now rebuild the catalogue:');
-  if (WIPE_SUPERADMIN) console.log('   npm run db:seed              # SuperAdmin login');
-  console.log('   npm run db:seed:hotels       # hotel catalogue');
-  console.log('   npm run db:seed:mea          # destinations, rates, activities, transport');
-  console.log('   npm run db:seed:airports     # Egyptian airports');
-  console.log('   npm run db:seed:destinations # destination hero images');
-  console.log('   npm run db:apply:images      # hotel hero images');
+  console.log('The database is now empty. Staff can enter hotels and the rest');
+  console.log('through the portal — nothing further needs to be run.\n');
+
+  if (WIPE_SUPERADMIN) {
+    console.log('You do need a login, though:');
+    console.log('   npm run db:seed              # creates the SuperAdmin\n');
+  }
+
+  // OPTIONAL. Only if you want the shipped seed data back — these RE-CREATE
+  // 209 hotels and their rates, which is the opposite of an empty database.
+  console.log('Optional — ONLY if you want the shipped catalogue back (this puts');
+  console.log('209 hotels and their rates into the database again):');
+  console.log('   npm run db:seed:catalog');
   console.log('\n✅ Reset complete.\n');
 }
 
