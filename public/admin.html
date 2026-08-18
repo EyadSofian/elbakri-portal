@@ -41,11 +41,11 @@
     .tr-ep-grid { display:grid; grid-template-columns:1fr 1.4fr; gap:8px; }
     @media (max-width:640px){ .he-tabbtn{ padding:8px 10px; font-size:12px; } .he-main-preview{ width:100%; } .he-supp{ grid-template-columns:1fr 1fr !important; } .tr-ep-grid{ grid-template-columns:1fr; } }
   </style>
-  <!-- Icon font. It is a third-party CDN: if unpkg is blocked, slow, or
-       refused by a CSP, every icon would otherwise paint as an empty box
-       and the buttons look broken. onerror marks the failure so the icon
+  <!-- Icon font, served from our own origin. It used to come from unpkg: a
+       blocked, slow or CSP-refused CDN painted every icon as an empty box and
+       the buttons read as broken. onerror still marks a failure so the icon
        layer can fall back to text-only buttons. -->
-  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css"
+  <link rel="stylesheet" href="/assets/vendor/phosphor/style.css"
         onerror="document.documentElement.classList.add('icons-unavailable')" />
   <script src="/assets/icons.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -523,15 +523,21 @@ function exportRows(filename, rows) {
     XLSX.utils.book_append_sheet(wb, ws, "Export");
     XLSX.writeFile(wb, `${filename}.xlsx`);
   } else {
+    // The spreadsheet library is a third-party CDN; when it does not load, the
+    // browser builds the file itself. The UTF-8 BOM is what makes Excel read
+    // Arabic names correctly instead of as mojibake.
     const headers = Object.keys(rows[0]);
-    const csv = [headers.join(","), ...rows.map(row => headers.map(h => `"${String(row[h] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
+    const cell = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csv = [headers.join(","), ...rows.map(row => headers.map(h => cell(row[h])).join(","))].join("\n");
+    const url = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = `${filename}.csv`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    // Revoking in the same tick can cancel the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   toast(t("toast.exported"), "success");
 }
