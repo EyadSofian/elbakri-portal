@@ -39,3 +39,18 @@ export function isDuplicateEmailError(err: unknown): boolean {
 export function isRecordNotFoundError(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as KnownRequestErrorLike).code === 'P2025';
 }
+
+/**
+ * A duplicate-email violation, tagged with which record it came from.
+ *
+ * Company.email and User.email are both unique columns named `email`, so the
+ * P2002 they raise is indistinguishable by column name alone. Throwing this
+ * from the failing create lets the route say which of the two addresses is
+ * already taken instead of a generic conflict.
+ */
+export class DuplicateEmailError extends Error {
+  constructor(readonly scope: 'company' | 'user', readonly email: string) {
+    super(`Duplicate ${scope} email: ${email}`);
+    this.name = 'DuplicateEmailError';
+  }
+}

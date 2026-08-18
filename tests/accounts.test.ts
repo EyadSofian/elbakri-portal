@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { asyncHandler } from '../src/middleware/async';
-import { isDuplicateEmailError, isUniqueConstraintError, uniqueConstraintFields } from '../src/shared/prisma-errors';
+import { DuplicateEmailError, isDuplicateEmailError, isUniqueConstraintError, uniqueConstraintFields } from '../src/shared/prisma-errors';
 import { generatePassword } from '../src/shared/helpers';
 import { createUserSchema, updateUserSchema } from '../src/modules/users/users.schema';
 import { loginSchema } from '../src/modules/auth/auth.schema';
@@ -99,4 +99,26 @@ test('generated passwords are the requested length and avoid look-alike characte
 test('generated passwords do not repeat', () => {
   const seen = new Set(Array.from({ length: 200 }, () => generatePassword(12)));
   assert.equal(seen.size, 200, 'every generated password should be distinct');
+});
+
+// ── Which email clashed ─────────────────────────────────────────────────────
+// Company.email and User.email are both unique columns named "email", so the
+// P2002 alone cannot say which one it was. createCompany tags the failing
+// create so the caller is told the right thing to change.
+
+test('DuplicateEmailError carries the scope and the address that clashed', () => {
+  const company = new DuplicateEmailError('company', 'ops@agency.com');
+  const user = new DuplicateEmailError('user', 'admin@agency.com');
+
+  assert.equal(company.scope, 'company');
+  assert.equal(company.email, 'ops@agency.com');
+  assert.equal(user.scope, 'user');
+  assert.equal(user.email, 'admin@agency.com');
+});
+
+test('DuplicateEmailError is distinguishable from any other thrown value', () => {
+  assert.ok(new DuplicateEmailError('user', 'a@b.com') instanceof DuplicateEmailError);
+  assert.ok(new DuplicateEmailError('user', 'a@b.com') instanceof Error);
+  assert.equal(new Error('boom') instanceof DuplicateEmailError, false);
+  assert.equal({ code: 'P2002' } instanceof DuplicateEmailError, false);
 });
