@@ -253,6 +253,7 @@ them. Never run `prisma migrate dev` or `db:reset` against production —
 | `❌ [env] Refusing to start with an invalid production configuration.` | A required variable is missing, or a secret is still a placeholder, or the two secrets are identical. The log lines above it name the variable — values are never printed. |
 | Browser console shows CORS errors | `BASE_URL` does not exactly match the domain in use. Update it and redeploy. |
 | Uploaded images 404 after a deploy | No Volume, or `UPLOAD_DIR`/`PRIVATE_UPLOAD_DIR`/`PDF_DIR` are not pointing inside the mount. Files written before the Volume existed are already gone. |
+| Build fails with `sh: 1: tsc: not found` (exit code 127) | `NODE_ENV=production` makes npm omit devDependencies, and `typescript` is one. The committed [`.npmrc`](.npmrc) sets `include=dev` to override this — if you see it, that file is missing or was emptied. Do **not** fix it by unsetting `NODE_ENV`: the app needs it to enforce its production config checks. |
 | Build fails fetching `xlsx` | `xlsx` is installed from `https://cdn.sheetjs.com/…`, not the npm registry. It needs outbound access to that host at build time. |
 | Health check times out on first deploy | Increase `healthcheckTimeout` in `railway.json`, or check the deploy logs — a crash at boot shows up there. |
 
