@@ -39,7 +39,9 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand-block">
         <div class="brand-row">
-          <!-- Real brand artwork. Falls back to the placeholder until the PNG is dropped in. -->
+          <!-- The SVG is the shipped artwork. The .png is tried first purely as an
+               override hook: drop an official raster at that exact path and it wins,
+               with no code change. -->
           <img src="/assets/brand/elbakri-logo-white.png" onerror="this.onerror=null;this.src='/assets/brand/elbakri-logo-white.svg'" class="brand-logo" alt="Elbakri Overseas" />
           <button class="icon-button sidebar-close" onclick="closeSidebar()" aria-label="Close menu"><i data-lucide="x"></i></button>
         </div>

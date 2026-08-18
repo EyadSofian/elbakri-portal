@@ -19,7 +19,9 @@
   <main class="login-shell">
     <section class="login-panel">
       <div class="login-brand">
-        <!-- Real brand artwork. Falls back to the placeholder until the PNG is dropped in. -->
+        <!-- The SVG is the shipped artwork. The .png is tried first purely as an
+               override hook: drop an official raster at that exact path and it wins,
+               with no code change. -->
         <img src="/assets/brand/elbakri-logo-white.png" onerror="this.onerror=null;this.src='/assets/brand/elbakri-logo-white.svg'" class="login-logo-img" alt="Elbakri Overseas" />
       </div>
 
@@ -48,6 +50,11 @@
     <section class="login-card" aria-labelledby="loginTitle">
       <div class="login-card-head">
         <div>
+          <!-- Phone only: the branded panel beside this card is hidden below
+               860px, so without this the sign-in screen carries no logo at all. -->
+          <img src="/assets/brand/elbakri-logo.png"
+               onerror="this.onerror=null;this.src='/assets/brand/elbakri-logo.svg'"
+               class="login-card-logo" alt="Elbakri Overseas" />
           <p class="eyebrow" data-i18n="login.workspace">Workspace Login</p>
           <h2 id="loginTitle" data-i18n="login.cardTitle">Agent Portal</h2>
         </div>
