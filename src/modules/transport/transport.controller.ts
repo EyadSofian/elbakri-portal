@@ -13,6 +13,7 @@ import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 import { debitWallet, refundWallet } from '../../shared/wallet';
+import { contains } from '../../shared/search';
 
 const transportInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -686,8 +687,8 @@ export async function listTransportRates(req: Request, res: Response): Promise<v
   const where = {
     isActive: true,
     ...(req.query.type && { type: req.query.type as TransportType }),
-    ...(req.query.from && { fromLocation: { contains: String(req.query.from) } }),
-    ...(req.query.to && { toLocation: { contains: String(req.query.to) } }),
+    ...(req.query.from && { fromLocation: contains(String(req.query.from)) }),
+    ...(req.query.to && { toLocation: contains(String(req.query.to)) }),
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
   };
 

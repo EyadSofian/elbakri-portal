@@ -1,13 +1,14 @@
 generator client {
   provider = "prisma-client-js"
-  // Ship engines for both the CI build host (Debian/Ubuntu) and typical GoDaddy
-  // cPanel hosts (CloudLinux/CentOS = rhel). `node_modules` is built in CI and
-  // FTP-uploaded, so the runtime engine must match the *server* OS, not the CI OS.
+  // Railway builds and runs on the same Debian image, so "native" is what
+  // actually loads there. The extra targets stay because the repo is also
+  // built in CI (Ubuntu) and FTP-uploaded to a CloudLinux/CentOS cPanel host,
+  // where the runtime engine must match the *server* OS, not the build OS.
   binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

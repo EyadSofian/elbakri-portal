@@ -21,6 +21,11 @@ const CONTENT_TYPES: Record<string, string> = {
  * AirportReception (flight ticket). We match on the stored URL containing the
  * filename and scope the lookup to the caller's company, so a company user can
  * only pull files that belong to their own bookings.
+ *
+ * These `contains` filters stay case-SENSITIVE on purpose — unlike the search
+ * boxes elsewhere, which use the `contains()` helper from shared/search. This is
+ * an authorization check against an exact stored filename on a case-sensitive
+ * filesystem, so widening it to ILIKE would only ever grant more matches.
  */
 async function companyOwnsFile(companyId: string, filename: string): Promise<boolean> {
   const [visa, reception] = await Promise.all([

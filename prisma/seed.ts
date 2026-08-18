@@ -14,7 +14,7 @@ async function main() {
   console.log('Seeding database...');
 
   // 1. Super admin
-  const superAdmin = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: 'admin@elbakri.com' },
     update: {},
     create: {

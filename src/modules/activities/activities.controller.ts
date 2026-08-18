@@ -12,6 +12,7 @@ import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 import { debitWallet, refundWallet } from '../../shared/wallet';
+import { contains } from '../../shared/search';
 
 const activityInclude = {
   activity: { select: { id: true, name: true, city: true, category: true } },
@@ -27,7 +28,7 @@ export async function listActivities(req: Request, res: Response): Promise<void>
   const where = {
     isActive: true,
     // city is now a free-text field (case-insensitive contains)
-    ...(req.query.city && { city: { contains: String(req.query.city) } }),
+    ...(req.query.city && { city: contains(String(req.query.city)) }),
     ...(req.query.category && { category: req.query.category as ActivityCategory }),
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
     ...(req.query.confirmableOnly && { isConfirmableInApp: true }),

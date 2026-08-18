@@ -10,6 +10,7 @@ import fs from 'fs';
 
 import { validateEnvOrExit } from './config/env';
 import { PUBLIC_UPLOADS_DIR, GENERATED_DIR, ensureStorageDirs } from './config/paths';
+import { prisma } from './config/db';
 import { DEMO_MODE, createDemoRouter } from './demo/demo.router';
 import { authenticate } from './middleware/auth';
 
@@ -100,6 +101,38 @@ const PUBLIC_DIR = resolvePublicDir();
 app.use(express.static(PUBLIC_DIR));
 app.use('/uploads', express.static(PUBLIC_UPLOADS_DIR));
 app.use('/generated', express.static(GENERATED_DIR));
+
+/**
+ * Health probe. Railway polls this after each deploy and only routes traffic to
+ * the new container once it answers 200 — so it must not depend on anything
+ * that is allowed to be slow or absent. `?db=1` additionally round-trips the
+ * database, which is useful for debugging by hand but deliberately NOT what the
+ * platform health check hits: a brief database blip would otherwise roll back a
+ * perfectly good deploy.
+ */
+app.get('/api/health', async (req, res) => {
+  const body: Record<string, unknown> = {
+    status: 'ok',
+    uptime: Math.round(process.uptime()),
+    env: process.env.NODE_ENV ?? 'development',
+    demoMode: DEMO_MODE,
+  };
+
+  if (req.query.db === '1' && !DEMO_MODE) {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      body.database = 'up';
+    } catch (err) {
+      body.status = 'degraded';
+      body.database = 'down';
+      console.error('[health] database check failed:', err);
+      res.status(503).json(body);
+      return;
+    }
+  }
+
+  res.json(body);
+});
 
 app.get('/media/hotel-image', async (req, res) => {
   try {

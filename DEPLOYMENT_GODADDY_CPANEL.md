@@ -6,8 +6,12 @@ shared/business hosting using **Setup Node.js App** (Phusion Passenger) with a
 **phpMyAdmin** (GoDaddy shared hosting has no reliable SSH/terminal), and code is
 shipped by **GitHub Actions over FTP**. VPS notes are at the end.
 
-> The database is now **MySQL/MariaDB** (previously PostgreSQL). There is no data
-> to migrate — the old DB is retired and master data is re-imported from Excel/Sheets.
+> ⚠️ **HISTORICAL.** The active deployment target is now **Railway + PostgreSQL** —
+> see **[DEPLOYMENT_RAILWAY.md](DEPLOYMENT_RAILWAY.md)**. `prisma/schema.prisma`
+> declares `provider = "postgresql"`, so the Prisma steps below no longer apply
+> as written. Following this guide requires switching the datasource back to
+> `mysql` first; the MySQL schema dump is kept at `database/mysql/init.sql` and
+> the old Prisma MySQL migration at `prisma/migrations_mysql_backup/`.
 
 ---
 

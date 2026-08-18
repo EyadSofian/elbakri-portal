@@ -15,6 +15,7 @@ scripts/*.png
 scripts/audit.js
 scripts/datacheck.js
 
-# PostgreSQL schema backup (superseded by MySQL; retained locally only —
-# old Postgres migrations are preserved under prisma/migrations_postgres_backup/)
+# Local-only schema scratch copy kept from the MySQL round-trip. The active
+# schema is PostgreSQL again; the MySQL migration is preserved in-tree under
+# prisma/migrations_mysql_backup/ and the raw dump at database/mysql/init.sql.
 prisma/schema.prisma.postgres.bak

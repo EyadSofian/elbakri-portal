@@ -9,6 +9,7 @@ import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 import { debitWallet, refundWallet } from '../../shared/wallet';
+import { contains } from '../../shared/search';
 
 // ─── Packages (admin managed) ────────────────────────────────────────────────
 
@@ -120,9 +121,9 @@ export async function listRequests(req: Request, res: Response) {
     if (status) where.status = status;
     if (search) {
       where.OR = [
-        { refNumber: { contains: search } },
-        { clientName: { contains: search } },
-        { phone: { contains: search } },
+        { refNumber: contains(search) },
+        { clientName: contains(search) },
+        { phone: contains(search) },
       ];
     }
 

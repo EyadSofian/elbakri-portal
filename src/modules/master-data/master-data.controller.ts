@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
+import { contains } from '../../shared/search';
 
 type ModelKey = 'transportRate' | 'visaFee' | 'receptionServiceRate';
 
@@ -72,7 +73,7 @@ export async function listTransportRates(req: Request, res: Response): Promise<v
   await listMaster(req, res, 'transportRate', {
     ...(req.query.type && { type: enumValue(req.query.type, transportTypes, 'PRIVATE_TRANSFER') }),
     ...(req.query.vehicleType && { vehicleType: enumValue(req.query.vehicleType, vehicleTypes, 'SEDAN') }),
-    ...(req.query.city && { city: { contains: String(req.query.city) } }),
+    ...(req.query.city && { city: contains(String(req.query.city)) }),
   });
 }
 
@@ -168,7 +169,7 @@ export async function deleteTransportRate(req: Request, res: Response): Promise<
 export async function listVisaFees(req: Request, res: Response): Promise<void> {
   await listMaster(req, res, 'visaFee', {
     ...(req.query.visaType && { visaType: enumValue(req.query.visaType, visaTypes, 'TOURIST') }),
-    ...(req.query.destinationCountry && { destinationCountry: { contains: String(req.query.destinationCountry) } }),
+    ...(req.query.destinationCountry && { destinationCountry: contains(String(req.query.destinationCountry)) }),
   });
 }
 

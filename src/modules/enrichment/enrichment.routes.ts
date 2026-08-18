@@ -17,6 +17,7 @@ import {
   apifyErrorCode,
   type BookingMatchInput,
 } from './apify.client';
+import { contains } from '../../shared/search';
 
 export const enrichRouter = Router();
 
@@ -38,19 +39,19 @@ const DEFAULT_MAX_PHOTOS = 10; // intentionally 10, not 20 (cost control)
 
 // ─── City configs ─────────────────────────────────────────────────────────────
 const CITY_MAP: Record<string, { en: string; ar: string; where: Prisma.HotelWhereInput; strip: string[] }> = {
-  sharm:         { en: 'Sharm El Sheikh', ar: 'شرم الشيخ',     where: { OR: [{ city: { contains: 'Sharm' } }, { cityAr: { contains: 'شرم' } }, { name: { contains: 'Sharm' } }] }, strip: ['sharm','el','sheikh'] },
-  hurghada:      { en: 'Hurghada',        ar: 'الغردقة',        where: { OR: [{ city: { contains: 'Hurghada' } }, { cityAr: { contains: 'الغردقة' } }] }, strip: ['hurghada'] },
-  'marsa-alam':  { en: 'Marsa Alam',      ar: 'مرسى علم',       where: { OR: [{ city: { contains: 'Marsa' } }, { cityAr: { contains: 'مرسى' } }] }, strip: ['marsa','alam'] },
-  dahab:         { en: 'Dahab',           ar: 'دهب',            where: { OR: [{ city: { contains: 'Dahab' } }, { cityAr: { contains: 'دهب' } }] }, strip: ['dahab'] },
-  'ain-sokhna':  { en: 'Ain Sokhna',      ar: 'العين السخنة',   where: { OR: [{ city: { contains: 'Sokhna' } }, { cityAr: { contains: 'السخنة' } }] }, strip: ['ain','sokhna'] },
-  'sahl-hasheesh':{ en: 'Sahl Hasheesh',  ar: 'سهل حشيش',      where: { OR: [{ city: { contains: 'Sahl' } }, { cityAr: { contains: 'سهل' } }] }, strip: ['sahl','hasheesh','hashish'] },
-  safaga:        { en: 'Safaga',          ar: 'سفاجا',          where: { OR: [{ city: { contains: 'Safaga' } }, { cityAr: { contains: 'سفاجا' } }] }, strip: ['safaga'] },
-  'north-coast': { en: 'North Coast',     ar: 'الساحل الشمالي', where: { OR: [{ city: { contains: 'North' } }, { cityAr: { contains: 'الساحل' } }] }, strip: ['north','coast'] },
-  'el-gouna':    { en: 'El Gouna',        ar: 'الجونة',         where: { OR: [{ city: { contains: 'Gouna' } }, { cityAr: { contains: 'الجونة' } }] }, strip: ['el','gouna'] },
-  cairo:         { en: 'Cairo',           ar: 'القاهرة',        where: { OR: [{ city: { contains: 'Cairo' } }, { cityAr: { contains: 'القاهرة' } }] }, strip: ['cairo'] },
-  nuweiba:       { en: 'Nuweiba',         ar: 'نويبع',          where: { OR: [{ city: { contains: 'Nuweiba' } }, { cityAr: { contains: 'نويبع' } }] }, strip: ['nuweiba'] },
-  luxor:         { en: 'Luxor',           ar: 'الأقصر',         where: { OR: [{ city: { contains: 'Luxor' } }, { cityAr: { contains: 'الأقصر' } }] }, strip: ['luxor'] },
-  aswan:         { en: 'Aswan',           ar: 'أسوان',          where: { OR: [{ city: { contains: 'Aswan' } }, { cityAr: { contains: 'أسوان' } }] }, strip: ['aswan'] },
+  sharm:         { en: 'Sharm El Sheikh', ar: 'شرم الشيخ',     where: { OR: [{ city: contains('Sharm') }, { cityAr: contains('شرم') }, { name: contains('Sharm') }] }, strip: ['sharm','el','sheikh'] },
+  hurghada:      { en: 'Hurghada',        ar: 'الغردقة',        where: { OR: [{ city: contains('Hurghada') }, { cityAr: contains('الغردقة') }] }, strip: ['hurghada'] },
+  'marsa-alam':  { en: 'Marsa Alam',      ar: 'مرسى علم',       where: { OR: [{ city: contains('Marsa') }, { cityAr: contains('مرسى') }] }, strip: ['marsa','alam'] },
+  dahab:         { en: 'Dahab',           ar: 'دهب',            where: { OR: [{ city: contains('Dahab') }, { cityAr: contains('دهب') }] }, strip: ['dahab'] },
+  'ain-sokhna':  { en: 'Ain Sokhna',      ar: 'العين السخنة',   where: { OR: [{ city: contains('Sokhna') }, { cityAr: contains('السخنة') }] }, strip: ['ain','sokhna'] },
+  'sahl-hasheesh':{ en: 'Sahl Hasheesh',  ar: 'سهل حشيش',      where: { OR: [{ city: contains('Sahl') }, { cityAr: contains('سهل') }] }, strip: ['sahl','hasheesh','hashish'] },
+  safaga:        { en: 'Safaga',          ar: 'سفاجا',          where: { OR: [{ city: contains('Safaga') }, { cityAr: contains('سفاجا') }] }, strip: ['safaga'] },
+  'north-coast': { en: 'North Coast',     ar: 'الساحل الشمالي', where: { OR: [{ city: contains('North') }, { cityAr: contains('الساحل') }] }, strip: ['north','coast'] },
+  'el-gouna':    { en: 'El Gouna',        ar: 'الجونة',         where: { OR: [{ city: contains('Gouna') }, { cityAr: contains('الجونة') }] }, strip: ['el','gouna'] },
+  cairo:         { en: 'Cairo',           ar: 'القاهرة',        where: { OR: [{ city: contains('Cairo') }, { cityAr: contains('القاهرة') }] }, strip: ['cairo'] },
+  nuweiba:       { en: 'Nuweiba',         ar: 'نويبع',          where: { OR: [{ city: contains('Nuweiba') }, { cityAr: contains('نويبع') }] }, strip: ['nuweiba'] },
+  luxor:         { en: 'Luxor',           ar: 'الأقصر',         where: { OR: [{ city: contains('Luxor') }, { cityAr: contains('الأقصر') }] }, strip: ['luxor'] },
+  aswan:         { en: 'Aswan',           ar: 'أسوان',          where: { OR: [{ city: contains('Aswan') }, { cityAr: contains('أسوان') }] }, strip: ['aswan'] },
 };
 
 // ─── Known Apify actors ───────────────────────────────────────────────────────

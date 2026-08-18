@@ -3,6 +3,7 @@ import { DestinationType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
 import { setJsonStringArray } from '../../shared/json-array';
+import { contains } from '../../shared/search';
 
 export async function listDestinations(req: Request, res: Response): Promise<void> {
   const page = parseInt(String(req.query.page ?? '1'));
@@ -15,9 +16,9 @@ export async function listDestinations(req: Request, res: Response): Promise<voi
     ...(req.query.type && { type: req.query.type as DestinationType }),
     ...(req.query.q && {
       OR: [
-        { name: { contains: String(req.query.q) } },
-        { nameAr: { contains: String(req.query.q) } },
-        { slug: { contains: String(req.query.q) } },
+        { name: contains(String(req.query.q)) },
+        { nameAr: contains(String(req.query.q)) },
+        { slug: contains(String(req.query.q)) },
       ],
     }),
   };

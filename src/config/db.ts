@@ -8,7 +8,7 @@ const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 // something syntactically valid to hold. Any real query against it would fail,
 // which is correct: it means preview mode failed to intercept a route.
 if (!process.env.DATABASE_URL && (process.env.DEMO_MODE === '1' || process.env.DEMO_MODE === 'true')) {
-  process.env.DATABASE_URL = 'mysql://demo:demo@127.0.0.1:3306/demo_unused';
+  process.env.DATABASE_URL = 'postgresql://demo:demo@127.0.0.1:5432/demo_unused';
 }
 
 export const prisma =

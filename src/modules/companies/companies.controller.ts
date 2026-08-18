@@ -6,6 +6,7 @@ import { prisma } from '../../config/db';
 import { generatePassword, paginate, paginateMeta } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
 import { welcomeEmail, walletTopupEmail } from '../../shared/email.templates';
+import { contains } from '../../shared/search';
 
 function nullable(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
@@ -44,10 +45,10 @@ export async function listCompanies(req: Request, res: Response): Promise<void> 
   const where: Prisma.CompanyWhereInput = {
     ...(search && {
       OR: [
-        { name: { contains: search } },
-        { nameAr: { contains: search } },
-        { email: { contains: search } },
-        { phone: { contains: search } },
+        { name: contains(search) },
+        { nameAr: contains(search) },
+        { email: contains(search) },
+        { phone: contains(search) },
       ],
     }),
     ...(tier && { tier: tier as 'STANDARD' | 'SILVER' | 'GOLD' | 'PLATINUM' }),
