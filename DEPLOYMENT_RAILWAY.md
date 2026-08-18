@@ -274,6 +274,19 @@ The next Railway deploy runs `prisma migrate deploy` in pre-deploy and applies
 them. Never run `prisma migrate dev` or `db:reset` against production —
 `migrate dev` can drop and recreate the database.
 
+To empty the data without touching the schema — e.g. to rebuild the hotel
+catalogue from scratch — use the data reset instead. It removes rows only, so
+the tables, indexes and migration history survive and the app stays up:
+
+```bash
+railway run npx ts-node prisma/reset-all-data.ts          # preview, deletes nothing
+railway run npx ts-node prisma/reset-all-data.ts --yes    # empty every table
+railway run npm run db:seed:catalog                       # rebuild the catalogue
+```
+
+The SuperAdmin login is preserved across the reset. See DATABASE_RESET_AR.md
+for the full procedure.
+
 ---
 
 ## 7. Verification checklist

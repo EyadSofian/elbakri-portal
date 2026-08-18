@@ -16,6 +16,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
+    "db:reset:data": "ts-node prisma/reset-all-data.ts",
     "db:seed": "ts-node prisma/seed.ts",
     "db:remove-demo": "ts-node prisma/remove-demo-data.ts",
     "db:seed:mea": "ts-node prisma/seed-mea.ts",
@@ -24,6 +25,7 @@
     "db:apply:images": "ts-node prisma/apply-hotel-images.ts",
     "db:seed:destinations": "ts-node prisma/seed-destination-images.ts",
     "db:seed:airports": "ts-node prisma/seed-airports.ts",
+    "db:seed:catalog": "npm run db:seed:hotels && npm run db:seed:mea && npm run db:seed:airports && npm run db:seed:destinations && npm run db:apply:images",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate"
   },
