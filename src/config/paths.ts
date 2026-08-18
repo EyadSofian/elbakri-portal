@@ -22,15 +22,13 @@ import path from 'path';
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 /**
- * Serverless hosts (Vercel, Lambda) mount the deployment read-only; only /tmp
- * is writable, and it is per-instance and short-lived. Storage therefore
- * defaults there so writes succeed, but nothing written survives — a serverless
- * deploy needs object storage (S3/R2/Blob) before uploads and generated PDFs
- * can be relied on. See DEPLOYMENT_VERCEL.md.
+ * Storage is resolved against the project root. On Railway the container
+ * filesystem is recreated on every deploy, so UPLOAD_DIR / PRIVATE_UPLOAD_DIR /
+ * PDF_DIR must be pointed at absolute paths inside an attached Volume — see
+ * DEPLOYMENT_RAILWAY.md — otherwise uploads and generated PDFs do not survive
+ * the next deploy.
  */
-export const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-
-const STORAGE_ROOT = IS_SERVERLESS ? '/tmp' : PROJECT_ROOT;
+const STORAGE_ROOT = PROJECT_ROOT;
 
 function resolveDir(envValue: string | undefined, fallbackRelative: string): string {
   const target = envValue && envValue.trim() ? envValue.trim() : fallbackRelative;

@@ -686,8 +686,8 @@ export async function listTransportRates(req: Request, res: Response): Promise<v
   const where = {
     isActive: true,
     ...(req.query.type && { type: req.query.type as TransportType }),
-    ...(req.query.from && { fromLocation: { contains: String(req.query.from) } }),
-    ...(req.query.to && { toLocation: { contains: String(req.query.to) } }),
+    ...(req.query.from && { fromLocation: { contains: String(req.query.from), mode: 'insensitive' as const } }),
+    ...(req.query.to && { toLocation: { contains: String(req.query.to), mode: 'insensitive' as const } }),
     ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
   };
 

@@ -15,9 +15,9 @@ export async function listDestinations(req: Request, res: Response): Promise<voi
     ...(req.query.type && { type: req.query.type as DestinationType }),
     ...(req.query.q && {
       OR: [
-        { name: { contains: String(req.query.q) } },
-        { nameAr: { contains: String(req.query.q) } },
-        { slug: { contains: String(req.query.q) } },
+        { name: { contains: String(req.query.q), mode: 'insensitive' as const } },
+        { nameAr: { contains: String(req.query.q), mode: 'insensitive' as const } },
+        { slug: { contains: String(req.query.q), mode: 'insensitive' as const } },
       ],
     }),
   };
