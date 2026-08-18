@@ -7207,3 +7207,245 @@ td .row-actions { min-width: max-content; }
   #rememberMe,
   #invSelectAll { width: 24px; height: 24px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE LAYOUT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Topbar: reclaim the dead space on the wrapped bar ─────────────────
+   `.wallet-pill` carries `margin-inline-start: auto` so it sits right on the
+   desktop bar. Once the bar wraps, that auto margin became a real 89px hole
+   between the menu button and the pill, and the controls bunched against the
+   far edge with nothing on the left. On a wrapped bar the row should simply
+   read left to right. */
+@media (max-width: 860px) {
+  .wallet-pill {
+    margin-inline-start: 0;
+  }
+
+  /* Which page you are on is worth more than the section label on a phone,
+     and the bar has room for it now. */
+  .breadcrumb {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .breadcrumb-label {
+    display: none;
+  }
+
+  .breadcrumb-title {
+    font-size: 15px;
+    line-height: 20px;
+  }
+
+  /* Push the controls to the end of the row, so the title owns the left. */
+  .topbar .wallet-pill {
+    margin-inline-start: auto;
+  }
+}
+
+/* ── 2. Phone: tables as cards ────────────────────────────────────────────
+   Below this width a row cannot be read across. The bookings table is 1015px
+   against a 368px viewport, so two thirds of every row sits off-screen behind
+   a sideways drag — and because the header scrolls away with the columns,
+   there is nothing left to say which number is the amount and which the date.
+
+   Each row becomes a card and each cell becomes a "label: value" line, with
+   the label taken from that cell's column header by assets/responsive-tables.js.
+   Nothing is hidden: every column that existed still reads, vertically.
+
+   Kept as a separate tier from the 860px tablet rules — a tablet in landscape
+   still reads a real table fine, and only the phone needs the rewrite. */
+@media (max-width: 720px) {
+  /* The horizontal scroller has nothing left to scroll. */
+  .table-scroll {
+    overflow: visible;
+    max-width: 100%;
+  }
+
+  /* `min-width: 760px` from the tablet tier is what forced the sideways drag. */
+  .data-table {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    font-size: 13px;
+  }
+
+  /* The column names now live on the cells themselves. */
+  .data-table thead {
+    display: none;
+  }
+
+  .data-table tbody {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .data-table tbody tr {
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: var(--r-8);
+    background: var(--surface);
+    box-shadow: var(--shadow-subtle);
+    overflow: hidden;
+  }
+
+  /* Hover and selection styling was written for full-width rows; on a card the
+     tint belongs to the whole card, not to each line inside it.
+
+     The hover tint is dropped outright: a touch screen has no hover, so it
+     only ever appears as a stain left on whichever card was tapped last, which
+     reads as "this one is selected" when nothing is. */
+  .data-table tbody tr:hover {
+    background: var(--surface);
+  }
+
+  .data-table tbody tr:hover td,
+  .data-table tbody tr.selected td,
+  .data-table tbody tr.is-selected td {
+    background: transparent;
+  }
+
+  .data-table tbody tr.selected,
+  .data-table tbody tr.is-selected {
+    border-color: var(--brand-cyan);
+    background: var(--accent-tint);
+  }
+
+  .data-table tbody td {
+    display: grid;
+    grid-template-columns: minmax(84px, 34%) 1fr;
+    align-items: baseline;
+    gap: 10px;
+    height: auto;
+    min-height: 0;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .data-table tbody td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-weight: 900;
+    line-height: 1.5;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  html[lang="ar"] .data-table tbody td::before {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 11.5px;
+  }
+
+  .data-table tbody tr td:last-child {
+    border-bottom: 0;
+  }
+
+  /* A cell with no value would otherwise render as a label pointing at nothing.
+     `:empty` does not catch these on its own: an absent value still renders as
+     an empty <span>, so assets/responsive-tables.js marks them instead. */
+  .data-table tbody td:empty,
+  .data-table tbody td[data-cell="blank"] {
+    display: none;
+  }
+
+  /* Numbers align with their label rather than against a right edge that no
+     longer exists, but keep the tabular figures and weight that mark them out. */
+  .data-table .numeric,
+  .data-table td.numeric {
+    text-align: start;
+  }
+
+  /* Empty states and loading skeletons span the table and name nothing. */
+  .data-table tbody td[data-cell="wide"] {
+    display: block;
+    padding: 14px 12px;
+    text-align: center;
+  }
+
+  .data-table tbody td[data-cell="wide"]::before {
+    content: none;
+  }
+
+  /* The row checkbox reads as the card's own control, at the top. */
+  .data-table tbody td[data-cell="select"] {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--surface-raised);
+  }
+
+  .data-table tbody td[data-cell="select"]::before {
+    content: none;
+  }
+
+  /* Actions become a full-width strip of real tap targets at the foot of the
+     card, instead of icons crushed into a 40px column. */
+  .data-table tbody td[data-cell="actions"] {
+    display: block;
+    padding: 10px 12px;
+    background: var(--surface-raised);
+  }
+
+  .data-table tbody td[data-cell="actions"]::before {
+    content: none;
+  }
+
+  .data-table td[data-cell="actions"] .row-actions {
+    display: flex;
+    /* The base rule is inline-flex, which lets the cell's own alignment centre
+       the strip; on a card the actions should start where the values do. */
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+    white-space: normal;
+  }
+
+  .data-table td[data-cell="actions"] .row-actions > * {
+    min-height: 36px;
+  }
+
+  /* The card carries the border now; the wrapper's own frame would double it. */
+  .table-card .table-scroll {
+    border: 0;
+  }
+
+  /* Sticky headers have nothing to stick to once the header is gone. */
+  .data-table thead th {
+    position: static;
+  }
+}
+
+/* ── 3. Phone: the surrounding page ──────────────────────────────────────── */
+@media (max-width: 720px) {
+  /* Toolbar controls were sharing a row with the title and each ended up too
+     narrow to read; stacked, each gets the full width. */
+  .table-toolbar {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .table-toolbar > * {
+    min-width: 0;
+  }
+
+  /* A pager that scrolls sideways is easy to miss entirely. */
+  .table-foot {
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  .pager {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+}
