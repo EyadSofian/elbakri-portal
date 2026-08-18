@@ -7449,3 +7449,32 @@ td .row-actions { min-width: max-content; }
     flex-wrap: wrap;
   }
 }
+
+/* ── 4. Phone: the sign-in screen keeps its logo ──────────────────────────
+   The branded panel that carries the logo is hidden below 860px, so on a phone
+   the sign-in screen showed an unbranded form. This is the navy logo on the
+   white card, shown only where the panel is gone. */
+.login-card-logo {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .login-card-logo {
+    display: block;
+    height: 34px;
+    width: auto;
+    max-width: min(210px, 60vw);
+    margin-bottom: 14px;
+    object-fit: contain;
+    object-position: left center;
+  }
+
+  [dir="rtl"] .login-card-logo {
+    object-position: right center;
+  }
+}
+
+:root[data-theme="dark"] .login-card-logo {
+  /* The card goes dark too, and a navy logo on it would disappear. */
+  filter: brightness(0) invert(1);
+}
