@@ -3,6 +3,7 @@ import { requireRole } from '../../middleware/role';
 import { validate } from '../../middleware/validate';
 import { transportRateSchema, visaFeeSchema, receptionRateSchema } from './master-data.schema';
 import {
+  bulkSetTransportDirection,
   createReceptionServiceRate,
   createTransportRate,
   createVisaFee,
@@ -21,6 +22,9 @@ const router = Router();
 
 router.get('/transport-rates', listTransportRates);
 router.post('/transport-rates', requireRole('SUPERADMIN'), validate(transportRateSchema), createTransportRate);
+// Must precede '/transport-rates/:id': Express matches in order, and the
+// parameterised route would otherwise capture "bulk-direction" as a rate id.
+router.patch('/transport-rates/bulk-direction', requireRole('SUPERADMIN'), bulkSetTransportDirection);
 router.patch('/transport-rates/:id', requireRole('SUPERADMIN'), validate(transportRateSchema), updateTransportRate);
 router.delete('/transport-rates/:id', requireRole('SUPERADMIN'), deleteTransportRate);
 

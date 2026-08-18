@@ -160,6 +160,33 @@ export async function updateTransportRate(req: Request, res: Response): Promise<
   res.json({ success: true, data: rate });
 }
 
+/**
+ * PATCH /api/transport-rates/bulk-direction — turn the reverse direction on or
+ * off for a set of rates at once.
+ *
+ * A rate prices one direction only unless it is flagged bidirectional, so a
+ * "Cairo → Sahel" row leaves "Sahel → Cairo" unpriced. Most intercity transfers
+ * cost the same both ways, and re-opening every row to tick one box is the kind
+ * of chore that leaves a catalogue half-done — so the admin selects the rows and
+ * flips them together. Airport transfers are deliberately NOT excluded here:
+ * an arrival often costs more than a departure, but only the operator knows
+ * which of their routes are symmetric, so the choice stays theirs.
+ */
+export async function bulkSetTransportDirection(req: Request, res: Response): Promise<void> {
+  const body = req.body as { ids?: unknown; isBidirectional?: unknown };
+  const ids = Array.isArray(body.ids) ? body.ids.filter((v): v is string => typeof v === 'string' && !!v) : [];
+  if (!ids.length) {
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Select at least one rate.' });
+    return;
+  }
+  const isBidirectional = body.isBidirectional !== false;
+  const result = await prisma.transportRate.updateMany({
+    where: { id: { in: ids } },
+    data: { isBidirectional },
+  });
+  res.json({ success: true, data: { updated: result.count, isBidirectional } });
+}
+
 export async function deleteTransportRate(req: Request, res: Response): Promise<void> {
   await prisma.transportRate.update({ where: { id: req.params.id }, data: { isActive: false } });
   res.json({ success: true, data: null });

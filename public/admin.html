@@ -174,6 +174,7 @@ const state = {
   companyFilters: { page: 1, limit: 20, search: "", tier: "", isActive: "", country: "" },
   userFilters: { includeInactive: false },
   selectedCompanies: new Set(),
+  selectedTransportRates: new Set(),
   currentCompany: null,
   cache: {},
   sort: {},
@@ -3404,6 +3405,81 @@ async function adminCancelActivity(id) {
 // ─────────────────────────────────────────────
 // TYPED TRANSPORT RATE EDITOR (endpoints + dual EGP/USD + bidirectional)
 // ─────────────────────────────────────────────
+/**
+ * Is this rate an airport run? Those are the ones whose two directions are
+ * commonly priced differently — an arrival includes meet-and-greet and waiting
+ * on a delayed flight, a departure does not — so they are the exception to
+ * "the reverse costs the same".
+ */
+/** Which rates the bulk direction action applies to. */
+function trToggleRateSelection(id, checked) {
+  if (checked) state.selectedTransportRates.add(id);
+  else state.selectedTransportRates.delete(id);
+  renderTransportRatesTable();
+}
+
+function trToggleAllRates(checked) {
+  const rates = state.cache.transportRows || [];
+  if (checked) rates.forEach(r => state.selectedTransportRates.add(r.id));
+  else state.selectedTransportRates.clear();
+  renderTransportRatesTable();
+}
+
+/** Show the bulk buttons only when there is a selection to act on. */
+function trUpdateRatesBulkBar() {
+  const count = state.selectedTransportRates.size;
+  const label = document.getElementById("trRatesSelectedCount");
+  const bidir = document.getElementById("trBulkBidirBtn");
+  const oneWay = document.getElementById("trBulkOneWayBtn");
+  if (label) {
+    label.style.display = count ? "" : "none";
+    label.textContent = `${formatNumber(count)} ${t("invoice.selected", "selected")}`;
+  }
+  if (bidir) bidir.style.display = count ? "" : "none";
+  if (oneWay) oneWay.style.display = count ? "" : "none";
+  const all = document.getElementById("trRatesSelectAll");
+  const rates = state.cache.transportRows || [];
+  if (all) all.checked = rates.length > 0 && rates.every(r => state.selectedTransportRates.has(r.id));
+}
+
+/**
+ * Flip the reverse direction for every selected rate in one call, so a
+ * catalogue entered one-way does not have to be reopened row by row.
+ */
+async function trBulkSetDirection(isBidirectional) {
+  const ids = Array.from(state.selectedTransportRates);
+  if (!ids.length) return;
+  const res = await apiFetch("/transport-rates/bulk-direction", {
+    method: "PATCH",
+    body: JSON.stringify({ ids, isBidirectional }),
+  });
+  if (!res?.success) return;
+  state.selectedTransportRates.clear();
+  toast(
+    isBidirectional
+      ? `${t("transport.madeBidir", "Now priced in both directions")}: ${formatNumber(res.data.updated)}`
+      : `${t("transport.madeOneWay", "Now priced one way only")}: ${formatNumber(res.data.updated)}`,
+    "success",
+  );
+  renderTransport();
+}
+
+function trIsAirportShaped(type, serviceMode) {
+  return type === "AIRPORT_TRANSFER" || serviceMode === "AIRPORT_TRANSFER";
+}
+
+/**
+ * Type or service mode changed while adding a rate: re-apply the direction
+ * default, unless the admin already set the box themselves — their choice wins.
+ */
+function trSyncBidirDefault() {
+  const box = document.getElementById("trBidir");
+  if (!box || box.dataset.touched === "1" || box.dataset.existing === "1") return;
+  const type = document.getElementById("trType")?.value;
+  const mode = document.getElementById("trMode")?.value;
+  box.checked = !trIsAirportShaped(type, mode);
+}
+
 const TR_SERVICE_MODES = ["POINT_TO_POINT", "AIRPORT_TRANSFER", "HOURLY_CHARTER", "DAY_USE"];
 const TR_TYPES = ["AIRPORT_TRANSFER", "PRIVATE_TRANSFER", "DAY_TOUR_TRANSPORT", "INTERCITY"];
 const TR_VEHICLES = ["SEDAN", "SUV", "VAN_6", "VAN_12", "MINIBUS_20", "BUS_45", "LUXURY_LIMO"];
@@ -3430,8 +3506,17 @@ async function openTransportRateEditor(id = "") {
   // optLabel lets a dropdown show a human phrase instead of the raw enum name
   // (service modes especially — "HOURLY CHARTER" means nothing to an operator,
   // least of all in Arabic).
-  const sel = (id2, opts, val, label, optLabel) => `<div class="form-field"><label>${label}</label><select id="${id2}">${opts.map(o => `<option value="${o}" ${o === val ? "selected" : ""}>${escapeHtml(optLabel ? optLabel(o) : String(o).replace(/_/g, " "))}</option>`).join("")}</select></div>`;
+  const sel = (id2, opts, val, label, optLabel, onChange) => `<div class="form-field"><label>${label}</label><select id="${id2}"${onChange ? ` onchange="${onChange}"` : ""}>${opts.map(o => `<option value="${o}" ${o === val ? "selected" : ""}>${escapeHtml(optLabel ? optLabel(o) : String(o).replace(/_/g, " "))}</option>`).join("")}</select></div>`;
   const serviceModeLabel = (m) => t(`serviceMode.${m}`, String(m).replace(/_/g, " "));
+
+  // A rate prices one direction only unless it is flagged bidirectional, which
+  // is why "Cairo → Sahel" used to leave "Sahel → Cairo" unpriced. A new
+  // city-to-city transfer is almost always symmetric, so it starts ticked;
+  // an airport transfer does not, because an arrival carries meet-and-greet and
+  // waiting time that a departure does not. An existing rate always shows what
+  // was actually saved.
+  const isNewRate = !id;
+  const trBidirDefault = isNewRate ? !trIsAirportShaped(r.type, r.serviceMode) : !!r.isBidirectional;
   const num = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" type="number" step="0.01" min="0" value="${val != null ? escapeHtml(val) : ""}" placeholder="${escapeHtml(ph)}"></div>`;
   const txt = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" value="${escapeHtml(val ?? "")}" placeholder="${escapeHtml(ph)}"></div>`;
 
@@ -3439,8 +3524,8 @@ async function openTransportRateEditor(id = "") {
     <div class="form-section">
       <div class="form-section-title">${t("transport.service", "Service")}</div>
       <div class="form-grid">
-        ${sel("trType", TR_TYPES, r.type || "PRIVATE_TRANSFER", t("th.type", "Type"))}
-        ${sel("trMode", TR_SERVICE_MODES, r.serviceMode || "POINT_TO_POINT", t("transport.mode", "Service mode"), serviceModeLabel)}
+        ${sel("trType", TR_TYPES, r.type || "PRIVATE_TRANSFER", t("th.type", "Type"), null, "trSyncBidirDefault()")}
+        ${sel("trMode", TR_SERVICE_MODES, r.serviceMode || "POINT_TO_POINT", t("transport.mode", "Service mode"), serviceModeLabel, "trSyncBidirDefault()")}
         ${sel("trVehicle", TR_VEHICLES, r.vehicleType || "SEDAN", t("form.vehicleType", "Vehicle"))}
         ${txt("trServiceArea", r.serviceArea, t("transport.serviceArea", "Service area (e.g. Cairo)"))}
         ${num("trDuration", r.durationHours, t("transport.durationHours", "Duration hours (disposal)"))}
@@ -3455,7 +3540,8 @@ async function openTransportRateEditor(id = "") {
         ${trEpBlock("from", r, airports, destinations, hotels, t("form.from", "From"))}
         ${trEpBlock("to", r, airports, destinations, hotels, t("form.to", "To"))}
       </div>
-      <label class="check-row" style="margin-top:12px"><input id="trBidir" type="checkbox" ${r.isBidirectional ? "checked" : ""}> ${t("transport.bidirectional", "Bidirectional — also prices the reverse route (B → A) at the same price")}</label>
+      <label class="check-row" style="margin-top:12px"><input id="trBidir" type="checkbox" ${trBidirDefault ? "checked" : ""} ${isNewRate ? "" : 'data-existing="1"'} onchange="this.dataset.touched='1'"> ${t("transport.bidirectional", "Bidirectional — also prices the reverse route (B → A) at the same price")}</label>
+      <div class="secondary-text" id="trBidirHint" style="margin-top:4px">${t("transport.bidirAirportHint", "Left on for a normal city-to-city transfer, which usually costs the same both ways. Airport transfers start off, because an arrival often costs more than a departure — tick it yourself when the two directions are priced alike.")}</div>
     </div>
     <div class="form-section">
       <div class="form-section-title">${t("transport.pricingDual", "Pricing (explicit, no FX — Egyptian sees EGP, others USD)")}</div>
@@ -3616,6 +3702,45 @@ async function deleteAirport(id) {
   });
 }
 
+/** Paint the rates table from the cached rows (used on load and after a
+    selection change, so toggling a checkbox costs no network call). */
+function renderTransportRatesTable() {
+  const rates = state.cache.transportRows || [];
+  const rTbody = document.getElementById("trRatesTbody");
+  const rMeta = document.getElementById("trRatesMeta");
+  if (rMeta) rMeta.textContent = `${formatNumber(rates.length)} rates`;
+  if (rTbody) {
+    const dualOneWay = r => {
+      const parts = [];
+      if (r.priceEgp != null) parts.push(`${formatNumber(r.priceEgp)} EGP`);
+      if (r.priceUsd != null) parts.push(`${formatNumber(r.priceUsd)} USD`);
+      return parts.length ? parts.join("<div></div>") : formatMoney(r.rate, r.currency);
+    };
+    const dualRt = r => {
+      const parts = [];
+      if (r.roundTripPriceEgp != null) parts.push(`${formatNumber(r.roundTripPriceEgp)} EGP`);
+      if (r.roundTripPriceUsd != null) parts.push(`${formatNumber(r.roundTripPriceUsd)} USD`);
+      if (parts.length) return parts.join("<div></div>");
+      return r.roundTripRate ? formatMoney(r.roundTripRate, r.currency) : "<span style='color:var(--text-muted)'>2×</span>";
+    };
+    const arrow = r => r.isBidirectional ? "⇄" : "→";
+    rTbody.innerHTML = rates.length ? rates.map(r => `<tr class="${state.selectedTransportRates.has(r.id) ? "selected" : ""}">
+      <td><input type="checkbox" ${state.selectedTransportRates.has(r.id) ? "checked" : ""} onchange="trToggleRateSelection('${r.id}', this.checked)" aria-label="Select rate"></td>
+      <td>${escapeHtml(r.type?.replace(/_/g," ")||"—")}${r.isBidirectional ? `<div class="secondary-text">${t("transport.bidirShort","bidirectional")}</div>` : ""}</td>
+      <td><strong>${escapeHtml(r.vehicleType?.replace(/_/g," ")||"—")}</strong></td>
+      <td>${escapeHtml(r.fromName||r.fromLocation||"—")} ${arrow(r)} ${escapeHtml(r.toName||r.toLocation||"—")}${r.city ? `<div class="secondary-text">${escapeHtml(r.city)}</div>` : ""}</td>
+      <td class="numeric">${dualOneWay(r)}</td>
+      <td class="numeric">${dualRt(r)}</td>
+      <td>${r.minCapacity||1}${r.maxCapacity ? "–"+r.maxCapacity : "+"}</td>
+      <td>${statusBadge(r.isActive ? "ACTIVE" : "INACTIVE")}</td>
+      <td>${masterRowActions("transport", r)}</td>
+    </tr>`).join("") : `<tr><td colspan="9">${emptyBlock("empty.noData")}</td></tr>`;
+    trUpdateRatesBulkBar();
+    refreshIcons(rTbody);
+  }
+}
+
+
 async function renderTransport() {
   state.page = "transport";
   const capturedToken = state.renderToken;
@@ -3629,10 +3754,15 @@ async function renderTransport() {
     </div>
     <div id="trRatesSection">
       <section class="table-card">
-        <div class="table-toolbar"><div><strong>Transport Rates</strong><div class="secondary-text" id="trRatesMeta">Loading…</div></div><div class="toolbar-actions"><button class="btn btn-outline" onclick="renderTransport()">${icon("refresh-cw")}${t("btn.refresh")}</button></div></div>
+        <div class="table-toolbar"><div><strong>Transport Rates</strong><div class="secondary-text" id="trRatesMeta">Loading…</div></div><div class="toolbar-actions">
+          <span class="secondary-text" id="trRatesSelectedCount" style="display:none"></span>
+          <button class="btn btn-outline" id="trBulkBidirBtn" style="display:none" onclick="trBulkSetDirection(true)">${icon("repeat")}${t("transport.makeBidir", "Make selected two-way")}</button>
+          <button class="btn btn-outline" id="trBulkOneWayBtn" style="display:none" onclick="trBulkSetDirection(false)">${icon("arrow-right")}${t("transport.makeOneWay", "Make selected one-way")}</button>
+          <button class="btn btn-outline" onclick="renderTransport()">${icon("refresh-cw")}${t("btn.refresh")}</button>
+        </div></div>
         <div class="table-scroll"><table class="data-table"><thead><tr>
-          <th>Type</th><th>Vehicle</th><th>Route</th><th>One-Way</th><th>Round-Trip</th><th>Pax</th><th>Status</th><th>Actions</th>
-        </tr></thead><tbody id="trRatesTbody">${skeletonRows(8, 8)}</tbody></table></div>
+          <th style="width:32px"><input type="checkbox" id="trRatesSelectAll" onchange="trToggleAllRates(this.checked)" aria-label="Select all rates"></th><th>Type</th><th>Vehicle</th><th>Route</th><th>One-Way</th><th>Round-Trip</th><th>Pax</th><th>Status</th><th>Actions</th>
+        </tr></thead><tbody id="trRatesTbody">${skeletonRows(9, 8)}</tbody></table></div>
       </section>
     </div>
     <div id="trBookingsSection" style="display:none">
@@ -3677,36 +3807,7 @@ async function renderTransport() {
   if (state.renderToken !== capturedToken) return;
   const rates = ratesRes?.data || [];
   state.cache.transportRows = rates;
-  const rTbody = document.getElementById("trRatesTbody");
-  const rMeta = document.getElementById("trRatesMeta");
-  if (rMeta) rMeta.textContent = `${formatNumber(rates.length)} rates`;
-  if (rTbody) {
-    const dualOneWay = r => {
-      const parts = [];
-      if (r.priceEgp != null) parts.push(`${formatNumber(r.priceEgp)} EGP`);
-      if (r.priceUsd != null) parts.push(`${formatNumber(r.priceUsd)} USD`);
-      return parts.length ? parts.join("<div></div>") : formatMoney(r.rate, r.currency);
-    };
-    const dualRt = r => {
-      const parts = [];
-      if (r.roundTripPriceEgp != null) parts.push(`${formatNumber(r.roundTripPriceEgp)} EGP`);
-      if (r.roundTripPriceUsd != null) parts.push(`${formatNumber(r.roundTripPriceUsd)} USD`);
-      if (parts.length) return parts.join("<div></div>");
-      return r.roundTripRate ? formatMoney(r.roundTripRate, r.currency) : "<span style='color:var(--text-muted)'>2×</span>";
-    };
-    const arrow = r => r.isBidirectional ? "⇄" : "→";
-    rTbody.innerHTML = rates.length ? rates.map(r => `<tr>
-      <td>${escapeHtml(r.type?.replace(/_/g," ")||"—")}${r.isBidirectional ? `<div class="secondary-text">${t("transport.bidirShort","bidirectional")}</div>` : ""}</td>
-      <td><strong>${escapeHtml(r.vehicleType?.replace(/_/g," ")||"—")}</strong></td>
-      <td>${escapeHtml(r.fromName||r.fromLocation||"—")} ${arrow(r)} ${escapeHtml(r.toName||r.toLocation||"—")}${r.city ? `<div class="secondary-text">${escapeHtml(r.city)}</div>` : ""}</td>
-      <td class="numeric">${dualOneWay(r)}</td>
-      <td class="numeric">${dualRt(r)}</td>
-      <td>${r.minCapacity||1}${r.maxCapacity ? "–"+r.maxCapacity : "+"}</td>
-      <td>${statusBadge(r.isActive ? "ACTIVE" : "INACTIVE")}</td>
-      <td>${masterRowActions("transport", r)}</td>
-    </tr>`).join("") : `<tr><td colspan="8">${emptyBlock("empty.noData")}</td></tr>`;
-    refreshIcons(rTbody);
-  }
+  renderTransportRatesTable();
 }
 
 function trShowTab(tab) {

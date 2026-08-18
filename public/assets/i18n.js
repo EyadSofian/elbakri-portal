@@ -1278,6 +1278,22 @@
     noResults: "لا توجد نتائج لـ",
   });
 
+  // ── Route direction (one-way vs two-way rates) ─────────────────────────────
+  Object.assign(en.transport, {
+    bidirAirportHint: "Left on for a normal city-to-city transfer, which usually costs the same both ways. Airport transfers start off, because an arrival often costs more than a departure — tick it yourself when the two directions are priced alike.",
+    makeBidir: "Make selected two-way",
+    makeOneWay: "Make selected one-way",
+    madeBidir: "Now priced in both directions",
+    madeOneWay: "Now priced one way only",
+  });
+  Object.assign(ar.transport, {
+    bidirAirportHint: "بتفضل مفتوحة في الانتقالات العادية بين المدن، لأنها غالباً بنفس السعر رايح جاي. انتقالات المطار بتبدأ مقفولة، لأن الاستقبال عادةً أغلى من التوصيل — افتحها بنفسك لو الاتجاهين بنفس السعر.",
+    makeBidir: "خلي المحدد اتجاهين",
+    makeOneWay: "خلي المحدد اتجاه واحد",
+    madeBidir: "اتسعّرت في الاتجاهين",
+    madeOneWay: "اتسعّرت في اتجاه واحد بس",
+  });
+
   // Service modes spelled out for people, not as raw enum names.
   en.serviceMode = Object.assign({}, en.serviceMode, {
     POINT_TO_POINT: "Point to point", AIRPORT_TRANSFER: "Airport transfer",
