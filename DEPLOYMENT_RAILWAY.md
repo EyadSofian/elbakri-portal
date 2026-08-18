@@ -54,6 +54,26 @@ Set these on the **app service** → `Variables`. Values written as `${{ … }}`
 Railway *reference variables*: type them literally, Railway substitutes them at
 deploy time and keeps them correct if the database credentials or domain change.
 
+### The quick way
+
+[`scripts/railway-setup-env.sh`](scripts/railway-setup-env.sh) sets every
+variable below in one command, generating the two JWT secrets on first run:
+
+```bash
+npm i -g @railway/cli
+railway login
+railway link                        # pick the project, then the APP service
+./scripts/railway-setup-env.sh
+```
+
+It is safe to re-run — existing secrets are kept unless you pass
+`--rotate-secrets`, so a second run never logs everyone out. Use
+`--postgres-service NAME` if the database service is not called `Postgres`, and
+`--no-volume-vars` if you have not attached a Volume yet.
+
+The rest of this section is what the script sets, for setting it by hand or
+checking what is already there.
+
 ### Required — the app refuses to start in production without these
 
 | Variable | Value |
@@ -200,7 +220,8 @@ them. Never run `prisma migrate dev` or `db:reset` against production —
 
 | Symptom | Cause / fix |
 |---|---|
-| Deploy fails on `prisma migrate deploy` | `DATABASE_URL` unset or pointing at a database the service cannot reach. Confirm it is `${{ Postgres.DATABASE_URL }}` and that both services are in the same project. |
+| `P1012 … Environment variable not found: DATABASE_URL` in pre-deploy, then `Stopping Container` | `DATABASE_URL` is not set on the app service at all — usually because the Postgres service has not been added yet, or the variable was set on the wrong service. Add PostgreSQL to the project, then set `DATABASE_URL` to `${{ Postgres.DATABASE_URL }}` on the **app** service (or run `scripts/railway-setup-env.sh`). |
+| Deploy fails on `prisma migrate deploy` | `DATABASE_URL` set but pointing at a database the service cannot reach. Confirm both services are in the same project and the reference name matches the database service's actual name. |
 | `❌ [env] Refusing to start with an invalid production configuration.` | A required variable is missing, or a secret is still a placeholder, or the two secrets are identical. The log lines above it name the variable — values are never printed. |
 | Browser console shows CORS errors | `BASE_URL` does not exactly match the domain in use. Update it and redeploy. |
 | Uploaded images 404 after a deploy | No Volume, or `UPLOAD_DIR`/`PRIVATE_UPLOAD_DIR`/`PDF_DIR` are not pointing inside the mount. Files written before the Volume existed are already gone. |
