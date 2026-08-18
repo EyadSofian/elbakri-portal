@@ -1122,8 +1122,16 @@ model Activity {
   includes           Json?
   excludes           Json?
   imageUrl           String?               @db.Text
-  priceAdult         Decimal               @db.Decimal(10, 2)
-  priceChild         Decimal               @db.Decimal(10, 2)
+  // An excursion is quoted either per person (adult / child) or per party
+  // (single / double / triple — a private tour for one, two or three people).
+  // Which of these carry a price is up to the operator: an activity sold only
+  // as a private tour leaves the per-person fields empty, and vice versa. All
+  // are nullable so a blank field means "not sold this way", not "free".
+  priceAdult         Decimal?              @db.Decimal(10, 2)
+  priceChild         Decimal?              @db.Decimal(10, 2)
+  priceSingle        Decimal?              @db.Decimal(10, 2)
+  priceDouble        Decimal?              @db.Decimal(10, 2)
+  priceTriple        Decimal?              @db.Decimal(10, 2)
   currency           String                @default("USD")
   sheetsRowId        String?
   minPax             Int                   @default(1)

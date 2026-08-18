@@ -1266,6 +1266,18 @@
     disposalDuration: "المدة",
   });
 
+  // ── Activity detail (time, description, excludes) ──────────────────────────
+  Object.assign(en.activity, {
+    preferredTime: "Preferred time",
+    preferredTimeHint: "Tell us the time you would like; we will confirm availability.",
+  });
+  Object.assign(ar.activity, {
+    preferredTime: "الميعاد اللي يناسبك",
+    preferredTimeHint: "اكتب الميعاد اللي عايزه وإحنا هنأكدلك التوفر.",
+  });
+  en.form = Object.assign({}, en.form, { excludes: "Not included" });
+  ar.form = Object.assign({}, ar.form, { excludes: "غير شامل" });
+
   // ── Transport rate form (mode-aware) ───────────────────────────────────────
   Object.assign(en.transport, {
     serviceAreaReq: "Area the car stays in (e.g. Cairo)",

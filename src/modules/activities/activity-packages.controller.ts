@@ -205,9 +205,19 @@ export async function createActivityPackage(req: Request, res: Response): Promis
       : applicableTypes[0];
 
     const linePriceCtx = { market: company.market, companyId, pax: adults + children, date: activityDate };
+    // A blank price means the activity is not sold that way — pricing the line
+    // at zero would quietly give it away, so the package is refused instead.
+    if (adults > 0 && activity.priceAdult == null) {
+      res.status(400).json({ success: false, error: 'PRICE_ON_REQUEST', message: `"${activity.name}" has no per-adult price configured. Please submit a quote request.` });
+      return;
+    }
+    if (children > 0 && activity.priceChild == null) {
+      res.status(400).json({ success: false, error: 'PRICE_ON_REQUEST', message: `"${activity.name}" has no per-child price configured. Please submit a quote request.` });
+      return;
+    }
     const [adultPrice, childPrice] = await Promise.all([
-      resolveMarketMoney('ACTIVITY_ADULT', activity.id, linePriceCtx, activity.priceAdult, activity.currency),
-      resolveMarketMoney('ACTIVITY_CHILD', activity.id, linePriceCtx, activity.priceChild, activity.currency),
+      resolveMarketMoney('ACTIVITY_ADULT', activity.id, linePriceCtx, activity.priceAdult ?? new Decimal(0), activity.currency),
+      resolveMarketMoney('ACTIVITY_CHILD', activity.id, linePriceCtx, activity.priceChild ?? new Decimal(0), activity.currency),
     ]);
     // No silent FX (Finding 5/§6): every line — and the whole package — must share ONE currency.
     const lineCurrency = adultPrice.currency;

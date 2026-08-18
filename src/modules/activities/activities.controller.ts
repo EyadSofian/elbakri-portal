@@ -50,16 +50,26 @@ export async function listActivities(req: Request, res: Response): Promise<void>
   res.json({ success: true, data: activities });
 }
 
+/** Every way an excursion can be priced. A blank field means "not sold this
+ *  way" — it must stay null rather than becoming a zero, or the activity would
+ *  read as free. */
+const ACTIVITY_PRICE_FIELDS = ['priceAdult', 'priceChild', 'priceSingle', 'priceDouble', 'priceTriple'] as const;
+
+function priceOrNull(v: unknown): Decimal | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? new Decimal(n) : null;
+}
+
 export async function createActivity(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
   // Normalize — city is now a plain string
-  const data = {
+  const data: Record<string, unknown> = {
     ...body,
     city: String(body.city ?? ''),
-    priceAdult: new Decimal(Number(body.priceAdult ?? 0)),
-    priceChild: new Decimal(Number(body.priceChild ?? body.priceAdult ?? 0)),
     isConfirmableInApp: body.isConfirmableInApp !== undefined ? Boolean(body.isConfirmableInApp) : true,
   };
+  for (const f of ACTIVITY_PRICE_FIELDS) data[f] = priceOrNull(body[f]);
   const activity = await prisma.activity.create({ data: data as Parameters<typeof prisma.activity.create>[0]['data'] });
   res.status(201).json({ success: true, data: activity });
 }
@@ -67,8 +77,9 @@ export async function createActivity(req: Request, res: Response): Promise<void>
 export async function updateActivity(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const data: Record<string, unknown> = { ...body };
-  if (body.priceAdult !== undefined) data.priceAdult = new Decimal(Number(body.priceAdult));
-  if (body.priceChild !== undefined) data.priceChild = new Decimal(Number(body.priceChild));
+  for (const f of ACTIVITY_PRICE_FIELDS) {
+    if (body[f] !== undefined) data[f] = priceOrNull(body[f]);
+  }
   if (body.city !== undefined) data.city = String(body.city);
   if (body.isConfirmableInApp !== undefined) data.isConfirmableInApp = Boolean(body.isConfirmableInApp);
 
@@ -176,9 +187,28 @@ export async function createActivityBooking(req: Request, res: Response): Promis
   const pax = adultsCount + childrenCount;
   // Full pricing context — company override beats market row beats default (Finding 6)
   const priceCtx = { market: company.market, companyId, pax, date: activityDate };
+  // A price left blank means the activity is not sold that way. Booking adults
+  // against an activity with no adult price would otherwise charge zero, so it
+  // is refused and routed to a quote request instead.
+  if (adultsCount > 0 && activity.priceAdult == null) {
+    res.status(400).json({
+      success: false,
+      error: 'PRICE_ON_REQUEST',
+      message: 'This activity has no per-adult price configured. Please submit a quote request.',
+    });
+    return;
+  }
+  if (childrenCount > 0 && activity.priceChild == null) {
+    res.status(400).json({
+      success: false,
+      error: 'PRICE_ON_REQUEST',
+      message: 'This activity has no per-child price configured. Please submit a quote request.',
+    });
+    return;
+  }
   const [adultPrice, childPrice] = await Promise.all([
-    resolveMarketMoney('ACTIVITY_ADULT', body.activityId, priceCtx, activity.priceAdult, activity.currency),
-    resolveMarketMoney('ACTIVITY_CHILD', body.activityId, priceCtx, activity.priceChild, activity.currency),
+    resolveMarketMoney('ACTIVITY_ADULT', body.activityId, priceCtx, activity.priceAdult ?? new Decimal(0), activity.currency),
+    resolveMarketMoney('ACTIVITY_CHILD', body.activityId, priceCtx, activity.priceChild ?? new Decimal(0), activity.currency),
   ]);
   // Explicit admin prices are used verbatim — the sale price is NEVER FX-converted (Finding 5).
   if (childrenCount > 0 && adultPrice.currency !== childPrice.currency) {

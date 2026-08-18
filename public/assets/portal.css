@@ -3609,6 +3609,66 @@ html[lang="ar"] .tr-section-title {
    ACTIVITY DETAILS POPUP
    ═══════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════
+   ACTIVITY DETAIL — description, includes / excludes, prices
+   Operators paste their write-up with real line breaks; HTML
+   collapses those, which turned a tidy list of lines into one
+   unreadable run-on. pre-line keeps their formatting.
+   ═══════════════════════════════════════════════════════════ */
+
+.act-description {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--r-10);
+  background: var(--surface-raised);
+  border-inline-start: 3px solid var(--brand-accent);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.75;
+  white-space: pre-line;      /* keep the author's own line breaks */
+  overflow-wrap: anywhere;    /* never let a long word push the modal wide */
+}
+
+.act-list-block { margin-top: 12px; }
+
+.act-list-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+html[lang="ar"] .act-list-title { text-transform: none; letter-spacing: 0; }
+
+.act-list-title svg { width: 14px; height: 14px; }
+.act-list-title.act-inc { color: var(--success); }
+.act-list-title.act-exc { color: var(--text-muted); }
+
+.act-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Party prices (1 / 2 / 3 people) beside the per-person price. */
+.act-party-prices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.act-party-prices b {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
 /* Duration / Time card */
 .act-time-card {
   display: flex;

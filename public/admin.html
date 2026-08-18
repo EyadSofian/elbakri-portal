@@ -1036,8 +1036,13 @@ const masterConfigs = {
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
       { name: "includes", label: "form.includes", fallback: "Includes", type: "list", cls: "full" },
       { name: "excludes", label: "form.excludes", fallback: "Excludes", type: "list", cls: "full" },
-      { name: "priceAdult", label: "form.priceAdult", fallback: "Adult Price", type: "number", required: true, default: 1 },
-      { name: "priceChild", label: "form.priceChild", fallback: "Child Price", type: "number", required: true, default: 1 },
+      // An excursion is sold per person, per party, or both. Leave a field blank
+      // when the activity is not sold that way — blank is not zero.
+      { name: "priceAdult", label: "form.priceAdult", fallback: "Adult Price", type: "number", help: "Leave blank if this trip is not sold per person" },
+      { name: "priceChild", label: "form.priceChild", fallback: "Child Price", type: "number" },
+      { name: "priceSingle", label: "hotel.single", fallback: "Single (1 person)", type: "number", help: "Private-tour price for one person" },
+      { name: "priceDouble", label: "hotel.double", fallback: "Double (2 people)", type: "number" },
+      { name: "priceTriple", label: "hotel.triple", fallback: "Triple (3 people)", type: "number" },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
       { name: "minPax", label: "form.minPax", fallback: "Min Pax", type: "number", default: 1 },
       { name: "maxPax", label: "form.maxPax", fallback: "Max Pax", type: "number", default: 20 },

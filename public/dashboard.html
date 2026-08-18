@@ -3307,11 +3307,29 @@ async function openActivityDetails(id) {
   const groupTypes = groupRes?.data || [];
   state.activityGroupTypes = groupTypes;
 
+  // Show the Arabic write-up when the portal is in Arabic and one exists.
+  const description = (state.lang === "ar" ? (a.descriptionAr || a.description) : a.description) || "";
+  // Whichever ways this trip is actually sold — a blank price means "not sold
+  // that way", so it is left out rather than shown as zero.
+  const partyPrices = [
+    ["hotel.single", "1 person", a.priceSingle],
+    ["hotel.double", "2 people", a.priceDouble],
+    ["hotel.triple", "3 people", a.priceTriple],
+  ].filter(([, , v]) => v != null);
+
   const slots = Array.isArray(a.timeSlots) ? a.timeSlots : [];
   const slotOptions = slots.map((s, i) =>
     `<button type="button" class="act-slot-btn ${i === 0 ? "active" : ""}" onclick="selectActSlot(this,'${escapeHtml(s)}')" data-slot="${escapeHtml(s)}">${escapeHtml(s)}</button>`
   ).join("");
   const hiddenSlot = `<input type="hidden" id="actSelectedTime" value="${escapeHtml(slots[0] || "")}">`;
+  // With no slots configured there was no way to say what time you wanted —
+  // neither picking nor typing — so a free time field stands in for the chips.
+  const timeInput = `
+    <div style="margin-top:8px">
+      <label class="secondary-text" style="display:block;margin-bottom:4px">${t("activity.preferredTime", "Preferred time")}</label>
+      <input id="actPreferredTime" type="time" style="max-width:180px" onchange="document.getElementById('actSelectedTime').value = this.value">
+      <div class="secondary-text" style="margin-top:4px">${t("activity.preferredTimeHint", "Tell us the time you would like; we will confirm availability.")}</div>
+    </div>`;
 
   const detailCard = `
     <div class="act-detail-card">
@@ -3322,8 +3340,12 @@ async function openActivityDetails(id) {
           <div style="color:var(--text-muted);font-size:12px;margin-top:2px">${icon("map-pin")}&nbsp;${escapeHtml(a.city)}${a.category ? ` · ${escapeHtml(a.category.replace(/_/g," "))}` : ""}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-weight:800;font-size:16px;color:var(--brand-navy-2)">${formatPrice(priceAdult, currency)}</div>
-          <div style="font-size:11px;color:var(--text-muted)">${t("form.priceAdult","per adult")}</div>
+          ${a.priceAdult != null ? `
+            <div style="font-weight:800;font-size:16px;color:var(--brand-navy-2)">${formatPrice(priceAdult, currency)}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${t("form.priceAdult","per adult")}</div>` : ""}
+          ${partyPrices.length ? `<div class="act-party-prices">${partyPrices.map(([k, fb, v]) =>
+            `<span><b>${formatPrice(Number(v), currency)}</b> ${escapeHtml(t(k, fb))}</span>`).join("")}</div>` : ""}
+          ${a.priceAdult == null && !partyPrices.length ? `<div style="font-size:12px;color:var(--text-muted)">${t("hotel.priceOnRequest","Price on request")}</div>` : ""}
         </div>
       </div>
       <!-- Duration / Time Card -->
@@ -3332,11 +3354,14 @@ async function openActivityDetails(id) {
         <div>
           <div class="act-time-label">${t("activity.duration","Duration / Time")}</div>
           ${a.duration ? `<div class="act-time-value">${escapeHtml(a.duration)}</div>` : ""}
-          ${slots.length ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${slotOptions}${hiddenSlot}</div>` : (a.duration ? "" : `<div style="color:var(--text-muted);font-size:12px">${t("activity.contactForTime","Contact us for available times")}</div>`)}
+          ${slots.length
+            ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${slotOptions}${hiddenSlot}</div>`
+            : `${hiddenSlot}${timeInput}`}
         </div>
       </div>
-      ${a.description ? `<p style="color:var(--text-secondary);font-size:12px;line-height:1.6;margin:12px 0 0">${escapeHtml(a.description)}</p>` : ""}
-      ${a.includes?.length ? `<div style="margin-top:10px"><div style="font-size:11px;font-weight:700;color:var(--success);text-transform:uppercase;margin-bottom:4px">✓ ${t("form.includes","Includes")}</div><div style="display:flex;flex-wrap:wrap;gap:4px">${a.includes.map(x => `<span class="badge badge-confirmed">${escapeHtml(x)}</span>`).join("")}</div></div>` : ""}
+      ${description ? `<div class="act-description">${escapeHtml(description)}</div>` : ""}
+      ${a.includes?.length ? `<div class="act-list-block"><div class="act-list-title act-inc">${icon("check")} ${t("form.includes","Includes")}</div><div class="act-chips">${a.includes.map(x => `<span class="badge badge-confirmed">${escapeHtml(x)}</span>`).join("")}</div></div>` : ""}
+      ${a.excludes?.length ? `<div class="act-list-block"><div class="act-list-title act-exc">${icon("x")} ${t("form.excludes","Not included")}</div><div class="act-chips">${a.excludes.map(x => `<span class="badge badge-outline">${escapeHtml(x)}</span>`).join("")}</div></div>` : ""}
     </div>`;
 
   const requestForm = `
