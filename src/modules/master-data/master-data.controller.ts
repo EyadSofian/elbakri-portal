@@ -78,11 +78,45 @@ async function listMaster(req: Request, res: Response, model: ModelKey, filters:
   res.json({ success: true, data: rows, meta: paginateMeta(total, page, limit) });
 }
 
+/**
+ * Match one endpoint by its display label, across both the typed name and the
+ * legacy free-text column — rates imported before typed endpoints existed only
+ * ever filled the latter.
+ */
+function endpointNamed(side: 'from' | 'to', name: string) {
+  return {
+    OR: [
+      { [`${side}Name`]: { equals: name, mode: 'insensitive' as const } },
+      { [`${side}Location`]: { equals: name, mode: 'insensitive' as const } },
+    ],
+  } as Prisma.TransportRateWhereInput;
+}
+
+/**
+ * Rates for one route, in the direction asked for OR its reverse when the rate
+ * is two-way. The customer form calls this to build the vehicle list, so a
+ * route priced only as "Cairo → North Coast" must still offer its vehicles to
+ * someone travelling North Coast → Cairo — otherwise the reverse direction
+ * looks unpriced in the picker even though the resolver would price it.
+ */
+function routeFilter(from: string, to: string): Prisma.TransportRateWhereInput {
+  return {
+    OR: [
+      { AND: [endpointNamed('from', from), endpointNamed('to', to)] },
+      { AND: [{ isBidirectional: true }, endpointNamed('from', to), endpointNamed('to', from)] },
+    ],
+  };
+}
+
 export async function listTransportRates(req: Request, res: Response): Promise<void> {
+  const from = stringValue(req.query.from);
+  const to = stringValue(req.query.to);
   await listMaster(req, res, 'transportRate', {
     ...(req.query.type && { type: enumValue(req.query.type, transportTypes, 'PRIVATE_TRANSFER') }),
     ...(req.query.vehicleType && { vehicleType: enumValue(req.query.vehicleType, vehicleTypes, 'SEDAN') }),
     ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' as const } }),
+    // Both endpoints are needed to name a route; one alone is not a filter.
+    ...(from && to ? routeFilter(from, to) : {}),
   });
 }
 
