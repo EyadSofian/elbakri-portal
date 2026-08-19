@@ -1301,6 +1301,24 @@
     modeHintRoute: "رحلة من نقطة لنقطة. املا \"من\" و\"إلى\" تحت؛ سعر الذهاب والعودة اختياري ولو سيبته فاضي هيتحسب ضعف سعر الذهاب.",
   });
 
+  // ── Base price vs the per-market rate rows ─────────────────────────────────
+  // The English labels carried "(fallback)"; the Arabic ones said only
+  // "المبلغ" / "العملة", so an Arabic admin read them as the hotel's real price.
+  Object.assign(en.hotel, {
+    basePrice: "Base price / night (fallback)",
+    baseCurrency: "Base currency (fallback)",
+    basePriceHelp: "This pair is only a fallback. A client sees the Pricing tab's rate for their own market — Gulf, Local, Middle East and so on, each with its own currency. The base price is shown only when no rate row matches that client's market.",
+    noMarketRates: "No market rates yet — every client sees the base price above.",
+    marketCoverage: "Priced for",
+  });
+  Object.assign(ar.hotel, {
+    basePrice: "السعر الأساسي / الليلة (احتياطي)",
+    baseCurrency: "العملة الأساسية (احتياطي)",
+    basePriceHelp: "الخانتين دول احتياطي بس. العميل بيشوف السعر بتاع سوقه من تبويب التسعير — خليج، محلي، شرق أوسط وهكذا، وكل سوق بعملته. السعر الأساسي ده مبيظهرش غير لما مايكونش في صف سعر مطابق لسوق العميل.",
+    noMarketRates: "لسه مفيش أسعار أسواق — كل العملاء هيشوفوا السعر الأساسي اللي فوق.",
+    marketCoverage: "متسعّر لـ",
+  });
+
   // ── Hotel rate rows (seasons + markets) ────────────────────────────────────
   Object.assign(en.hotel, {
     periodsHelp: "One row per period and per market: add a row for each season (Valid from / Valid to) and a row for each market you sell at a different price. Rows never overwrite each other.",

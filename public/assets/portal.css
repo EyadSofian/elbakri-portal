@@ -3605,6 +3605,40 @@ html[lang="ar"] .tr-section-title {
   .tr-pkg-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
 
+/* The hotel Basic tab's price/currency pair is only a fallback — the real
+   money lives in the per-market rate rows. This note says so, and lists the
+   markets that actually carry a rate, so an admin can see at a glance whether
+   a Gulf or Local client would be quoted from a row or from the fallback. */
+.he-fallback-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--r-10);
+  background: var(--brand-accent-soft);
+  border-inline-start: 3px solid var(--brand-accent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.he-fallback-note svg {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--brand-accent);
+}
+
+.he-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.he-coverage-none { color: var(--text-muted); font-style: italic; }
+
 /* ═══════════════════════════════════════════════════════════
    ACTIVITY DETAILS POPUP
    ═══════════════════════════════════════════════════════════ */

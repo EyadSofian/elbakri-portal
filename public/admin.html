@@ -183,6 +183,19 @@ const state = {
   lang: document.documentElement.lang || localStorage.getItem("lang") || "en",
 };
 
+// Currencies a PRICE can be entered in. Deliberately wider than
+// COMPANY_DISPLAY_CURRENCIES below: a company's wallet is billed in USD or EGP,
+// but a supplier contract can be written in any of these — a Gulf hotel quoting
+// SAR, a Jordanian transfer in JOD. The list used to be copy-pasted in seven
+// places and had drifted apart (some copies were missing GBP), so every price
+// dropdown now reads from here.
+const PORTAL_CURRENCIES = [
+  "EGP", "USD", "EUR", "GBP",
+  "SAR", "AED", "KWD", "QAR", "BHD", "OMR",  // Gulf
+  "JOD", "ILS",                               // Middle East / Arab 48
+  "MAD", "TND", "DZD", "LYD",                 // North Africa
+];
+
 const COMPANY_DISPLAY_CURRENCIES = ["USD", "EGP"];
 
 function companyDefaultCurrency(market) {
@@ -996,7 +1009,7 @@ const masterConfigs = {
       { name: "imageUrl", label: "form.logo", fallback: "Main Image URL" },
       { name: "galleryUrls", label: "form.gallery", fallback: "Gallery image URLs", type: "list", cls: "full", help: "One image URL per line — shown to agents as a gallery." },
       { name: "pricePerNight", label: "th.amount", type: "number", required: true, default: 1 },
-      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
       { name: "commissionPercent", label: "form.commissionPercent", fallback: "Hotel commission %", type: "number", default: 0, help: "Added to the hotel base price for client bookings" },
       { name: "availableRooms", label: "form.availableRooms", fallback: "Available rooms", type: "number", default: 0, help: "0 means no inventory cap" },
       { name: "maxGuestsPerRoom", label: "form.maxGuestsPerRoom", fallback: "Guests per room", type: "number", default: 2 },
@@ -1022,7 +1035,7 @@ const masterConfigs = {
       { name: "duration", label: "form.duration", fallback: "Duration", type: "number", default: 4 },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
       { name: "priceFrom", label: "th.amount", type: "number", required: true, default: 1 },
-      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
       { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
     ],
     marketPrices: [{ entityType: "CRUISE", baseField: "priceFrom", label: "Price From" }],
@@ -1049,7 +1062,7 @@ const masterConfigs = {
       { name: "priceSingle", label: "hotel.single", fallback: "Single (1 person)", type: "number", help: "Private-tour price for one person" },
       { name: "priceDouble", label: "hotel.double", fallback: "Double (2 people)", type: "number" },
       { name: "priceTriple", label: "hotel.triple", fallback: "Triple (3 people)", type: "number" },
-      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
       { name: "minPax", label: "form.minPax", fallback: "Min Pax", type: "number", default: 1 },
       { name: "maxPax", label: "form.maxPax", fallback: "Max Pax", type: "number", default: 20 },
       { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
@@ -1074,7 +1087,7 @@ const masterConfigs = {
       { name: "roundTripRate", label: "transport.returnDetails", fallback: "Round-Trip Rate (blank = 2×one-way)", type: "number" },
       { name: "minCapacity", label: "form.minPax", fallback: "Min Pax", type: "number", default: 1 },
       { name: "maxCapacity", label: "form.maxPax", fallback: "Max Pax (blank = no limit)", type: "number" },
-      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
       { name: "notes", label: "placeholder.notes", type: "textarea", cls: "full" },
     ],
     marketPrices: [
@@ -1092,7 +1105,7 @@ const masterConfigs = {
       { name: "destinationCountry", label: "th.country", required: true, default: "Egypt" },
       { name: "processingType", label: "form.processingType", fallback: "Processing", type: "select", default: "NORMAL", options: ["NORMAL", "EXPRESS", "URGENT"] },
       { name: "fee", label: "th.amount", type: "number", required: true, default: 1 },
-      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
       { name: "notes", label: "placeholder.notes", type: "textarea", cls: "full" },
     ],
   },
@@ -1105,7 +1118,7 @@ const masterConfigs = {
       { name: "serviceType", label: "th.service", type: "select", default: "MEET_AND_GREET", options: ["MEET_AND_GREET", "AHLAN_SERVICE", "VIP_LOUNGE", "FULL_ASSISTANCE"] },
       { name: "airport", label: "th.route", type: "select", default: "CAI", options: ["CAI", "HRG", "SSH", "LXR", "ASW", "HBE", "MHH"] },
       { name: "rate", label: "th.amount", type: "number", required: true, default: 1 },
-      { name: "currency", label: "form.currency", type: "select", default: "USD", options: ["USD", "EGP", "EUR", "SAR", "AED"] },
+      { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
       { name: "notes", label: "placeholder.notes", type: "textarea", cls: "full" },
     ],
   },
@@ -1913,7 +1926,7 @@ const HE_MARKETS = [
 // Meal plans are admin-managed, so this is filled from /meal-plans at load time
 // rather than hard-coded — see heLoadMealPlans().
 let HE_MEALS = [["", "—"]];
-const HE_CURRENCIES = ["EGP", "USD", "EUR", "SAR", "AED", "GBP"];
+const HE_CURRENCIES = PORTAL_CURRENCIES;
 const HE_SUPP_TYPES = ["TEXT_ONLY", "FIXED_AMOUNT", "PERCENTAGE", "TOTAL_PRICE"];
 
 /** Load the admin-managed meal plans once per editor open. */
@@ -2049,8 +2062,17 @@ async function openHotelEditor(id = "") {
       ${fullFld(t("form.address", "Address") + ' <span class="required">*</span>', inp("heAddress", h.address))}
       ${fld(t("th.stars", "Stars"), `<select id="heStars">${[1,2,3,4,5,6,7].map(s => `<option value="${s}" ${(h.stars||3)===s?"selected":""}>${s}★</option>`).join("")}</select>`)}
       ${fld(t("hotel.rating", "Rating (0-5)"), inp("heRating", h.googleRating, "number", 'step="0.1" min="0" max="5"'))}
-      ${fld(t("th.amount", "Base Price / Night (fallback)"), inp("hePrice", h.pricePerNight, "number", 'step="0.01" min="0"'))}
-      ${fld(t("form.currency", "Base currency"), `<select id="heCurrency">${["USD","EGP","EUR","SAR","AED"].map(c => `<option value="${c}" ${(h.currency||"USD")===c?"selected":""}>${c}</option>`).join("")}</select>`)}
+      ${fld(t("hotel.basePrice", "Base Price / Night (fallback)"), inp("hePrice", h.pricePerNight, "number", 'step="0.01" min="0"'))}
+      ${fld(t("hotel.baseCurrency", "Base currency (fallback)"), `<select id="heCurrency">${PORTAL_CURRENCIES.map(c => `<option value="${c}" ${(h.currency||"USD")===c?"selected":""}>${c}</option>`).join("")}</select>`)}
+      <div class="form-field full">
+        <div class="he-fallback-note">
+          ${icon("info")}
+          <div>
+            ${t("hotel.basePriceHelp", "This pair is only a fallback. A client sees the Pricing tab's rate for their own market — Gulf, Local, Middle East and so on, each with its own currency. The base price is shown only when no rate row matches that client's market.")}
+            <div id="heMarketCoverage" class="he-coverage"></div>
+          </div>
+        </div>
+      </div>
       ${fld(t("form.commissionPercent", "Commission %"), inp("heCommission", h.commissionPercent ?? 0, "number", 'step="0.01" min="0"'))}
       ${fld(t("form.availableRooms", "Available rooms"), inp("heRooms", h.availableRooms ?? 0, "number", 'min="0"'))}
       ${fld(t("form.maxGuestsPerRoom", "Guests per room"), inp("heMaxGuests", h.maxGuestsPerRoom ?? 2, "number", 'min="1"'))}
@@ -2137,6 +2159,10 @@ async function openHotelEditor(id = "") {
     <button class="btn btn-primary" id="heSaveBtn" onclick="heSave()">${icon("save")}${t("btn.save", "Save")}</button>
   `);
   heTab("basic");
+  // The coverage summary lives on the Basic tab but is computed from the rate
+  // rows, so bind and paint it up front rather than waiting for a visit to the
+  // Pricing tab.
+  heBindRateTitles();
 }
 
 function heTab(key) {
@@ -2386,6 +2412,7 @@ function heSyncRateTitles() {
   });
   const count = document.getElementById("heRatesCount");
   if (count) count.textContent = `${formatNumber(cards.length)} ${t("hotel.rowsCount", "rows")}`;
+  heSyncMarketCoverage();
 }
 function heAddSupp(btn) {
   const box = btn.closest(".he-rate").querySelector(".he-supps");
@@ -3948,6 +3975,35 @@ async function deleteAirport(id) {
     const res = await apiFetch(`/airports/${id}`, { method: "DELETE" });
     if (res?.success) { toast(t("toast.deleted", "Deleted"), "success"); loadAirportsAdmin(); }
   });
+}
+
+/**
+ * Summarise which markets the hotel is actually priced for, next to the base
+ * price. Without this an admin fills in one price and one currency on the Basic
+ * tab and has no way to tell that a Gulf client is quoted from a different row
+ * — or that no row covers them at all and the fallback is what they will see.
+ */
+function heSyncMarketCoverage() {
+  const box = document.getElementById("heMarketCoverage");
+  if (!box) return;
+  const cards = [...document.querySelectorAll("#heRatesBox .he-rate")];
+  const priced = new Map();
+  cards.forEach(card => {
+    const room = (card.querySelector(".he-room")?.value || "").trim();
+    if (!room) return;                       // an unnamed row is never saved
+    const sel = card.querySelector(".he-market");
+    const label = sel?.options[sel.selectedIndex]?.textContent?.trim() || "";
+    const cur = card.querySelector(".he-cur")?.value || "";
+    const key = label + "|" + cur;
+    priced.set(key, { label, cur, n: (priced.get(key)?.n || 0) + 1 });
+  });
+  if (!priced.size) {
+    box.innerHTML = `<span class="he-coverage-none">${escapeHtml(t("hotel.noMarketRates", "No market rates yet — every client sees the base price above."))}</span>`;
+    return;
+  }
+  box.innerHTML = [...priced.values()]
+    .map(m => `<span class="badge badge-outline">${escapeHtml(m.label)} · ${escapeHtml(m.cur)}${m.n > 1 ? ` × ${m.n}` : ""}</span>`)
+    .join("");
 }
 
 /** Paint the rates table from the cached rows (used on load and after a
