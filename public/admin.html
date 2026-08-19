@@ -1960,7 +1960,7 @@ const HE_MARKETS = [
 // rather than hard-coded — see heLoadMealPlans().
 let HE_MEALS = [["", "—"]];
 const HE_CURRENCIES = PORTAL_CURRENCIES;
-const HE_SUPP_TYPES = ["TEXT_ONLY", "FIXED_AMOUNT", "PERCENTAGE", "TOTAL_PRICE"];
+const HE_SUPP_TYPES = ["FIXED_AMOUNT", "TOTAL_PRICE", "PERCENTAGE", "TEXT_ONLY"];
 
 /** Load the admin-managed meal plans once per editor open. */
 async function heLoadMealPlans() {
@@ -2168,7 +2168,7 @@ async function openHotelEditor(id = "") {
 
   // ── Pricing (rate matrix)
   const pricing = `<div class="he-panel" data-panel="pricing" style="display:none">
-    <div class="secondary-text" style="margin-bottom:10px">${t("hotel.rateMatrixHelp", "Each row is a room rate for one market with single / double / triple prices in an explicit currency (no FX). Market = ALL applies when no market-specific row exists. Add supplements (Sea View, Extra Bed, …) per row.")}</div>
+    <div class="secondary-text" style="margin-bottom:10px">${t("hotel.rateMatrixHelp", "Each row is a room rate for one market with single / double / triple prices in an explicit currency (no FX). Market = ALL applies when no market-specific row exists. Under each row, add your own room types and extras — Suite, Sea View, Extra Bed — each either priced on its own or adding to the room price.")}</div>
     <div class="secondary-text" style="margin-bottom:10px">${t("hotel.periodsHelp", "One row per period and per market: add a row for each season (Valid from / Valid to) and a row for each market you sell at a different price. Rows never overwrite each other.")}</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       <button type="button" class="btn btn-primary btn-sm" onclick="heAddRate()">${icon("plus")}${t("hotel.addRate", "Add rate row")}</button>
@@ -2220,8 +2220,14 @@ function heBindRateTitles() {
     box.addEventListener("change", (e) => {
       if (e.target.closest(".he-market, .he-vf, .he-vt")) heSyncRateTitles();
     });
+    // A rate row's currency is what an empty supplement currency falls back to,
+    // so changing it re-words every sentence underneath.
+    box.addEventListener("change", (e) => {
+      if (e.target.closest(".he-cur")) heSyncAllSupps(e.target.closest(".he-rate"));
+    });
   }
   heSyncRateTitles();
+  heSyncAllSupps(box);
 }
 
 function heMainPreviewInner() {
@@ -2354,8 +2360,8 @@ function heRateCardHtml(r) {
     </div>
     <div style="margin-top:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <strong style="font-size:13px">${t("hotel.supplements", "Supplements")}</strong>
-        <button type="button" class="btn btn-outline btn-sm" onclick="heAddSupp(this)">+ ${t("hotel.addSupplement", "Add supplement")}</button>
+        <strong style="font-size:13px">${t("hotel.supplements", "Room types & extras")}</strong>
+        <button type="button" class="btn btn-outline btn-sm" onclick="heAddSupp(this)">+ ${t("hotel.addSupplement", "Add room type or extra")}</button>
       </div>
       <div class="he-supps">${supps}</div>
     </div>
@@ -2365,18 +2371,83 @@ function heRateCardHtml(r) {
     </div>
   </div>`;
 }
+/**
+ * One room type or extra on a rate row.
+ *
+ * This is where an operator writes their own room category — "Suite", "Sea
+ * View", "Extra Bed" — and says what it costs. The two things they reach for
+ * are "this category has its own price" and "this adds so much on top", so the
+ * row is built around that choice and then spells the result back out in a
+ * sentence: the enum names alone ("FIXED AMOUNT", "TOTAL PRICE") never told
+ * anyone which of the two they had picked.
+ *
+ * A new row starts as "adds an amount", the common case. A saved row always
+ * shows the type it was saved with.
+ */
 function heSuppHtml(s) {
   s = s || {};
-  const typeSel = HE_SUPP_TYPES.map(x => `<option value="${x}" ${(s.type || "TEXT_ONLY") === x ? "selected" : ""}>${t("suppType." + x, x.replace(/_/g, " "))}</option>`).join("");
+  const current = s.type || "FIXED_AMOUNT";
+  const typeSel = HE_SUPP_TYPES.map(x => `<option value="${x}" ${current === x ? "selected" : ""}>${t("suppType." + x, x.replace(/_/g, " "))}</option>`).join("");
   const curSel = `<option value="">—</option>` + HE_CURRENCIES.map(c => `<option value="${c}" ${(s.currency || "") === c ? "selected" : ""}>${c}</option>`).join("");
-  return `<div class="he-supp" style="display:grid;grid-template-columns:1.4fr 1fr 0.9fr 0.8fr 1.4fr auto;gap:6px;align-items:end;margin-bottom:6px">
-    <div class="form-field"><label>${t("hotel.suppName", "Name")}</label><input class="hs-name" value="${escapeHtml(s.name || "")}" placeholder="e.g. Sea View"></div>
-    <div class="form-field"><label>${t("hotel.suppType", "Type")}</label><select class="hs-type">${typeSel}</select></div>
-    <div class="form-field"><label>${t("form.amount", "Amount")}</label><input class="hs-amount" type="number" step="0.01" min="0" value="${s.amount != null ? escapeHtml(s.amount) : ""}"></div>
-    <div class="form-field"><label>${t("form.currency", "Cur")}</label><select class="hs-cur">${curSel}</select></div>
+  return `<div class="he-supp" style="display:grid;grid-template-columns:1.4fr 1.3fr 0.9fr 0.7fr 1.2fr auto;gap:6px;align-items:end;margin-bottom:10px">
+    <div class="form-field"><label>${t("hotel.suppName", "Room type / extra")}</label><input class="hs-name" oninput="heSyncSupp(this)" value="${escapeHtml(s.name || "")}" placeholder="${escapeHtml(t("hotel.suppNamePh", "e.g. Suite, Sea View, Extra Bed"))}"></div>
+    <div class="form-field"><label>${t("hotel.suppType", "What it does to the price")}</label><select class="hs-type" onchange="heSyncSupp(this)">${typeSel}</select></div>
+    <div class="form-field hs-amount-field"><label class="hs-amount-label">${t("form.amount", "Amount")}</label><input class="hs-amount" type="number" step="0.01" min="0" oninput="heSyncSupp(this)" value="${s.amount != null ? escapeHtml(s.amount) : ""}"></div>
+    <div class="form-field hs-cur-field"><label>${t("form.currency", "Cur")}</label><select class="hs-cur" onchange="heSyncSupp(this)">${curSel}</select></div>
     <div class="form-field"><label>${t("placeholder.notes", "Notes")}</label><input class="hs-notes" value="${escapeHtml(s.notes || "")}"></div>
     <button type="button" class="icon-button btn-icon" title="${t("btn.remove", "Remove")}" onclick="this.closest('.he-supp').remove()">${icon("x")}</button>
+    <div class="hs-effect secondary-text" style="grid-column:1/-1;margin-top:-2px"></div>
   </div>`;
+}
+
+/**
+ * Say back what this row will charge, in a sentence naming the operator's own
+ * room type and their own number — and show only the fields that choice uses,
+ * so a note-only row does not sit there asking for an amount it will ignore.
+ */
+function heSyncSupp(el) {
+  const row = el.closest ? el.closest(".he-supp") : el;
+  if (!row) return;
+  const type = row.querySelector(".hs-type")?.value || "FIXED_AMOUNT";
+  const amountEl = row.querySelector(".hs-amount");
+  const raw = amountEl?.value;
+  const name = (row.querySelector(".hs-name")?.value || "").trim();
+  const priced = type !== "TEXT_ONLY";
+  const pct = type === "PERCENTAGE";
+  // A percentage carries no currency, and a note carries neither.
+  row.querySelector(".hs-amount-field").style.display = priced ? "" : "none";
+  row.querySelector(".hs-cur-field").style.display = (priced && !pct) ? "" : "none";
+
+  const label = row.querySelector(".hs-amount-label");
+  if (label) {
+    label.textContent = type === "TOTAL_PRICE" ? t("hotel.suppAmountTotal", "Price per night")
+      : pct ? t("hotel.suppAmountPct", "Percent to add")
+      : t("hotel.suppAmountAdd", "Amount to add");
+  }
+
+  // Fall back to the rate row's own currency, which is what an empty cell means.
+  const cur = row.querySelector(".hs-cur")?.value || row.closest(".he-rate")?.querySelector(".he-cur")?.value || "";
+  const subject = name ? `«${escapeHtml(name)}»` : t("hotel.suppThisRow", "This row");
+  const out = row.querySelector(".hs-effect");
+  if (!out) return;
+
+  if (!priced) {
+    out.innerHTML = `${subject} — ${t("hotel.suppNoteOnly", "a note only, nothing is added to the price")}`;
+    return;
+  }
+  if (raw === "" || raw == null) {
+    out.innerHTML = `${subject} — ${t("hotel.suppNeedAmount", "enter an amount so it is priced")}`;
+    return;
+  }
+  const money = pct ? `${formatNumber(raw)}%` : `${formatNumber(raw)}${cur ? " " + escapeHtml(cur) : ""}`;
+  out.innerHTML = type === "TOTAL_PRICE"
+    ? `${subject} = <strong>${money}</strong> ${t("hotel.suppPerNightInstead", "per night — instead of the room price")}`
+    : `${subject} = ${t("hotel.suppRoomPrice", "room price")} + <strong>${money}</strong>`;
+}
+
+/** Paint every supplement sentence in a freshly rendered container. */
+function heSyncAllSupps(scope) {
+  (scope || document).querySelectorAll(".he-supp").forEach(row => heSyncSupp(row));
 }
 function heAddRate() {
   const box = document.getElementById("heRatesBox");
@@ -2387,6 +2458,7 @@ function heAddRate() {
   box.appendChild(card);
   refreshIcons(box);
   heSyncRateTitles();
+  heSyncAllSupps(card);
   card.scrollIntoView({ behavior: "smooth", block: "center" });
   card.querySelector(".he-room")?.focus();
 }
@@ -2402,7 +2474,7 @@ function heDuplicateRate(btn) {
   const g = sel => card.querySelector(sel);
   const supplements = [...card.querySelectorAll(".he-supp")].map(sc => ({
     name: sc.querySelector(".hs-name")?.value || "",
-    type: sc.querySelector(".hs-type")?.value || "TEXT_ONLY",
+    type: sc.querySelector(".hs-type")?.value || "FIXED_AMOUNT",
     amount: sc.querySelector(".hs-amount")?.value === "" ? null : Number(sc.querySelector(".hs-amount")?.value),
     currency: sc.querySelector(".hs-cur")?.value || null,
     notes: sc.querySelector(".hs-notes")?.value || "",
@@ -2425,6 +2497,7 @@ function heDuplicateRate(btn) {
   card.after(el);
   refreshIcons(el);
   heSyncRateTitles();
+  heSyncAllSupps(el);
   el.scrollIntoView({ behavior: "smooth", block: "center" });
   el.querySelector(".he-vf")?.focus();
 }
@@ -2451,8 +2524,11 @@ function heAddSupp(btn) {
   const box = btn.closest(".he-rate").querySelector(".he-supps");
   const tmp = document.createElement("div");
   tmp.innerHTML = heSuppHtml({});
-  box.appendChild(tmp.firstElementChild);
+  const row = tmp.firstElementChild;
+  box.appendChild(row);
   refreshIcons(box);
+  heSyncSupp(row);
+  row.querySelector(".hs-name")?.focus();
 }
 function heCollectRates() {
   const out = [];
@@ -2467,7 +2543,7 @@ function heCollectRates() {
       if (!name) return null;
       return {
         name,
-        type: sg(".hs-type")?.value || "TEXT_ONLY",
+        type: sg(".hs-type")?.value || "FIXED_AMOUNT",
         amount: sg(".hs-amount")?.value !== "" ? Number(sg(".hs-amount").value) : null,
         currency: sg(".hs-cur")?.value || null,
         notes: (sg(".hs-notes")?.value || "").trim() || null,

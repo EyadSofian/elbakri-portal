@@ -1366,18 +1366,52 @@
     FOREIGN: "أجنبي", INTERNATIONAL: "دولي", label: "السوق",
   });
 
-  // What a supplement does to the room price.
+  // What a room type or extra does to the room price.
   en.suppType = Object.assign({}, en.suppType, {
-    TEXT_ONLY: "Note only (no price change)",
-    FIXED_AMOUNT: "Add an amount (+)",
-    PERCENTAGE: "Add a percentage (%)",
-    TOTAL_PRICE: "Full price for this room type",
+    FIXED_AMOUNT: "Adds an amount to the room price",
+    TOTAL_PRICE: "Has its own price per night",
+    PERCENTAGE: "Adds a percentage to the room price",
+    TEXT_ONLY: "No price — a note only",
   });
   ar.suppType = Object.assign({}, ar.suppType, {
-    TEXT_ONLY: "ملاحظة فقط (بدون تغيير السعر)",
-    FIXED_AMOUNT: "يضيف مبلغ (+)",
-    PERCENTAGE: "يضيف نسبة (%)",
-    TOTAL_PRICE: "السعر الكامل لنوع الغرفة ده",
+    FIXED_AMOUNT: "بتزوّد مبلغ على سعر الأوضة",
+    TOTAL_PRICE: "ليها سعرها الخاص في الليلة",
+    PERCENTAGE: "بتزوّد نسبة على سعر الأوضة",
+    TEXT_ONLY: "من غير سعر — ملاحظة بس",
+  });
+
+  // ── Room types & extras on a rate row ──────────────────────────────────────
+  // Worded as what the operator is doing — writing their own room category and
+  // saying what it costs — rather than as the name of a database field.
+  Object.assign(en.hotel, {
+    supplements: "Room types & extras",
+    addSupplement: "Add room type or extra",
+    suppName: "Room type / extra",
+    suppNamePh: "e.g. Suite, Sea View, Extra Bed",
+    suppType: "What it does to the price",
+    suppAmountTotal: "Price per night",
+    suppAmountAdd: "Amount to add",
+    suppAmountPct: "Percent to add",
+    suppRoomPrice: "room price",
+    suppPerNightInstead: "per night — instead of the room price",
+    suppNoteOnly: "a note only, nothing is added to the price",
+    suppNeedAmount: "enter an amount so it is priced",
+    suppThisRow: "This row",
+  });
+  Object.assign(ar.hotel, {
+    supplements: "أنواع الأوض والإضافات",
+    addSupplement: "زوّد نوع أوضة أو إضافة",
+    suppName: "نوع الأوضة أو الإضافة",
+    suppNamePh: "مثلاً: سويت، سي فيو، سرير زيادة",
+    suppType: "بتعمل إيه في السعر",
+    suppAmountTotal: "السعر في الليلة",
+    suppAmountAdd: "المبلغ المضاف",
+    suppAmountPct: "النسبة المضافة %",
+    suppRoomPrice: "سعر الأوضة",
+    suppPerNightInstead: "في الليلة — بدل سعر الأوضة",
+    suppNoteOnly: "ملاحظة بس، مش هيتضاف أي سعر",
+    suppNeedAmount: "اكتب المبلغ علشان تتسعّر",
+    suppThisRow: "السطر ده",
   });
 
   en.mealPlanAdmin = {
@@ -1585,7 +1619,6 @@
           importantNotes: "Important notes", importantNotesAr: "Important notes (AR)",
           rateMatrixHelp: "Each row is a room rate for one market with single / double / triple prices in an explicit currency (no FX). Market = ALL applies when no market-specific row exists. Add supplements per row.",
           addRate: "Add rate row", roomName: "Room name", mealPlan: "Meal plan", single: "Single", double: "Double", triple: "Triple",
-          supplements: "Supplements", addSupplement: "Add supplement", suppName: "Name", suppType: "Type",
           rates: "Room Rates", occupancy: "Occupancy", supplement: "Supplement", noSupplement: "None",
           pricePreview: "Price preview", occNotAvailable: "Not available for this occupancy", policies: "Hotel policies",
         },
@@ -1636,7 +1669,6 @@
           importantNotes: "ملاحظات هامة", importantNotesAr: "ملاحظات هامة (عربي)",
           rateMatrixHelp: "كل صف هو سعر غرفة لسوق معيّن بأسعار فردي / مزدوج / ثلاثي بعملة صريحة (بدون تحويل). السوق = الكل يُطبّق عند عدم وجود صف خاص بالسوق. أضف الإضافات لكل صف.",
           addRate: "إضافة صف سعر", roomName: "اسم الغرفة", mealPlan: "نظام الوجبات", single: "فردي", double: "مزدوج", triple: "ثلاثي",
-          supplements: "الإضافات", addSupplement: "إضافة مكمل", suppName: "الاسم", suppType: "النوع",
           rates: "أسعار الغرف", occupancy: "الإشغال", supplement: "الإضافة", noSupplement: "بدون",
           pricePreview: "معاينة السعر", occNotAvailable: "غير متاح لهذا الإشغال", policies: "سياسات الفندق",
         },
