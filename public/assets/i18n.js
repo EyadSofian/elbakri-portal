@@ -1646,5 +1646,143 @@
     if (dict.ar) merge(dict.ar, add.ar);
   })();
 
+  // ── Activities organised by destination, with uploaded photos, and the
+  //    admin's full control over security approvals. ──────────────────────
+  (function () {
+    const en = dict.en, ar = dict.ar;
+    Object.assign(en.form, {
+      pickDestination: "Pick a destination",
+      newDestinationHint: "Add a destination that is missing — it is saved to the Destinations page too.",
+      noPhotosYet: "No photos yet",
+      photo: "Photo",
+      duration: "Duration / Slots",
+      approvalLocation: "Approval location",
+      processing: "Processing",
+      passportNumber: "Passport number",
+      passportExpiry: "Passport expiry",
+      travelDate: "Travel date",
+      hotelName: "Hotel",
+      comingFrom: "Coming from",
+      flightNumber: "Flight number",
+    });
+    Object.assign(ar.form, {
+      pickDestination: "اختر الوجهة",
+      newDestinationHint: "أضف وجهة غير موجودة — سيتم حفظها في صفحة الوجهات أيضًا.",
+      noPhotosYet: "لا توجد صور بعد",
+      photo: "الصورة",
+      duration: "المدة / المواعيد",
+      approvalLocation: "مكان الموافقة",
+      processing: "سرعة الإنجاز",
+      passportNumber: "رقم جواز السفر",
+      passportExpiry: "تاريخ انتهاء الجواز",
+      travelDate: "تاريخ السفر",
+      hotelName: "الفندق",
+      comingFrom: "قادم من",
+      flightNumber: "رقم الرحلة",
+    });
+    Object.assign(en.btn, {
+      addPhotos: "Add photos",
+      upload: "Upload",
+      uploading: "Uploading…",
+      remove: "Remove",
+      addDestination: "Add Destination",
+      editDestination: "Edit Destination",
+      newApproval: "New approval",
+    });
+    Object.assign(ar.btn, {
+      addPhotos: "إضافة صور",
+      upload: "رفع",
+      uploading: "جاري الرفع…",
+      remove: "حذف",
+      addDestination: "إضافة وجهة",
+      editDestination: "تعديل الوجهة",
+      newApproval: "موافقة جديدة",
+    });
+    Object.assign(en.filter, { all: "All" });
+    Object.assign(ar.filter, { all: "الكل" });
+    en.activity = en.activity || {}; ar.activity = ar.activity || {};
+    Object.assign(en.activity, {
+      catalog: "Activity Catalog",
+      byDestination: "Trips by destination",
+      byDestinationHelp: "Pick a destination to see only its trips — anything you add from there is filed under it.",
+      noDestination: "No destination",
+      showInactive: "Show hidden",
+      noTimeSet: "No time set",
+      noPrice: "No price set",
+      prices: "Prices",
+      mainPhoto: "Main photo",
+      photos: "More photos",
+      destination: "Destination",
+      cityLabel: "City label (optional)",
+    });
+    Object.assign(ar.activity, {
+      catalog: "قائمة الرحلات",
+      byDestination: "الرحلات حسب الوجهة",
+      byDestinationHelp: "اختر وجهة لعرض رحلاتها فقط — وأي رحلة تضيفها من هنا تُسجَّل تحتها.",
+      noDestination: "بدون وجهة",
+      showInactive: "إظهار المخفية",
+      noTimeSet: "لا يوجد موعد",
+      noPrice: "لا يوجد سعر",
+      prices: "الأسعار",
+      mainPhoto: "الصورة الرئيسية",
+      photos: "صور إضافية",
+      destination: "الوجهة",
+      cityLabel: "اسم المدينة (اختياري)",
+    });
+    // Hint lines under the master-form fields.
+    en.help = en.help || {}; ar.help = ar.help || {};
+    Object.assign(en.help, {
+      cityExample: "Example: Sharm El Sheikh, Dahab, Hurghada, Marsa Alam",
+      commaSeparated: "Separate values with commas",
+      galleryUrls: "One image URL per line — shown to agents as a gallery.",
+      commission: "Added to the hotel base price for client bookings",
+      noRoomCap: "0 means no inventory cap",
+      daysExample: "Example: Monday, Thursday",
+      activityDestination: "Where this trip runs. The list is the Destinations page — use ＋ to add a new one.",
+      cityFollowsDestination: "Leave blank to use the destination name",
+      timeSlots: "Comma-separated, e.g. 09:00 AM, 02:00 PM, 06:00 PM",
+      blankNotSold: "Leave blank if this trip is not sold per person",
+      privateTourOne: "Private-tour price for one person",
+    });
+    Object.assign(ar.help, {
+      cityExample: "مثال: شرم الشيخ، دهب، الغردقة، مرسى علم",
+      commaSeparated: "افصل بين القيم بفاصلة",
+      galleryUrls: "رابط صورة في كل سطر — تظهر للوكلاء كمعرض صور.",
+      commission: "تُضاف إلى سعر الفندق الأساسي في حجوزات العملاء",
+      noRoomCap: "صفر يعني بدون حد أقصى للغرف",
+      daysExample: "مثال: الاثنين، الخميس",
+      activityDestination: "المكان الذي تُنفَّذ فيه الرحلة. القائمة هي نفسها صفحة الوجهات — استخدم ＋ لإضافة وجهة جديدة.",
+      cityFollowsDestination: "اتركه فارغًا ليأخذ اسم الوجهة تلقائيًا",
+      timeSlots: "مفصولة بفاصلة، مثال: ٠٩:٠٠ ص، ٠٢:٠٠ م، ٠٦:٠٠ م",
+      blankNotSold: "اتركه فارغًا إذا كانت الرحلة لا تُباع بسعر الفرد",
+      privateTourOne: "سعر الرحلة الخاصة لشخص واحد",
+    });
+    en.securityAdmin = en.securityAdmin || {}; ar.securityAdmin = ar.securityAdmin || {};
+    Object.assign(en.securityAdmin, {
+      newTitle: "New security approval",
+      editTitle: "Edit security approval",
+      company: "Company",
+      pickCompany: "Pick a company",
+      deleteConfirm: "Delete this security approval and its invoice? This cannot be undone.",
+      deleteBlockedPaid: "This approval is already paid — cancel it instead of deleting it.",
+      repriced: "Saved. The fee was recalculated.",
+      priceMissing: "No active approval fee is configured for this location and type.",
+      repriceHint: "Changing the location, type, processing speed or passenger count recalculates the fee and the invoice.",
+      noAirports: "No airports yet — add one on the Airports page first.",
+    });
+    Object.assign(ar.securityAdmin, {
+      newTitle: "موافقة أمنية جديدة",
+      editTitle: "تعديل الموافقة الأمنية",
+      company: "الشركة",
+      pickCompany: "اختر الشركة",
+      deleteConfirm: "حذف هذه الموافقة الأمنية وفاتورتها؟ لا يمكن التراجع.",
+      deleteBlockedPaid: "هذه الموافقة مدفوعة بالفعل — قم بإلغائها بدلًا من حذفها.",
+      repriced: "تم الحفظ وإعادة حساب الرسوم.",
+      priceMissing: "لا توجد رسوم مفعّلة لهذا المكان ونوع الموافقة.",
+      repriceHint: "تغيير المكان أو النوع أو سرعة الإنجاز أو عدد الركاب يعيد حساب الرسوم والفاتورة.",
+      noAirports: "لا توجد مطارات بعد — أضف مطارًا من صفحة المطارات أولًا.",
+    });
+  })();
+
   window.PortalI18n = { dict, t, setLang, initI18n, applyTranslations, formatNumber, formatMoney, formatDate };
 })();

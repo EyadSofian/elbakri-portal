@@ -1112,6 +1112,8 @@ model Activity {
   includes           Json?
   excludes           Json?
   imageUrl           String?               @db.Text
+  // Extra photos for the activity gallery, in display order.
+  galleryUrls        Json?
   // An excursion is quoted either per person (adult / child) or per party
   // (single / double / triple — a private tour for one, two or three people).
   // Which of these carry a price is up to the operator: an activity sold only

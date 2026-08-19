@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { requireRole } from '../../middleware/role';
+import { validate } from '../../middleware/validate';
+import { createActivitySchema, updateActivitySchema } from './activities.schema';
 import {
   listActivities, createActivity, updateActivity, deleteActivity,
   listActivityBookings, createActivityBooking, confirmActivityBooking, cancelActivityBooking,
@@ -12,8 +14,8 @@ import {
 const router = Router();
 
 router.get('/activities', listActivities);
-router.post('/activities', requireRole('SUPERADMIN'), createActivity);
-router.patch('/activities/:id', requireRole('SUPERADMIN'), updateActivity);
+router.post('/activities', requireRole('SUPERADMIN'), validate(createActivitySchema), createActivity);
+router.patch('/activities/:id', requireRole('SUPERADMIN'), validate(updateActivitySchema), updateActivity);
 router.delete('/activities/:id', requireRole('SUPERADMIN'), deleteActivity);
 
 router.get('/activity-bookings', listActivityBookings);

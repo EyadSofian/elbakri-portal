@@ -15,6 +15,7 @@ import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
+import { UpdateVisaApplicationInput } from './visa.schema';
 
 const visaInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -265,13 +266,149 @@ export async function createVisaApplication(req: Request, res: Response): Promis
   }
 }
 
+/** Editing any of these changes what the approval costs, so the fee and the
+ *  invoice behind it have to be recalculated rather than left stale. */
+const REPRICING_FIELDS = ['visaType', 'destinationCountry', 'processingType', 'paxCount'] as const;
+
 export async function updateVisaApplication(req: Request, res: Response): Promise<void> {
+  const body = req.body as UpdateVisaApplicationInput;
+  const existing = await prisma.visaApplication.findUnique({
+    where: { id: req.params.id },
+    include: { invoice: { select: { id: true, status: true } } },
+  });
+  if (!existing) {
+    res.status(404).json({ success: false, error: 'NOT_FOUND' });
+    return;
+  }
+
+  const data: Record<string, unknown> = { ...body };
+  // Dates arrive as strings from the form; Prisma wants real Dates.
+  for (const key of ['passportExpiry', 'travelDate', 'arrivalTime'] as const) {
+    if (body[key] === undefined) continue;
+    const raw = body[key];
+    if (!raw) { data[key] = key === 'arrivalTime' ? null : undefined; continue; }
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: `${key} is not a valid date` });
+      return;
+    }
+    data[key] = parsed;
+  }
+  // passportExpiry and travelDate are NOT NULL — a blank one means "unchanged".
+  for (const key of ['passportExpiry', 'travelDate'] as const) {
+    if (data[key] === undefined) delete data[key];
+  }
+
+  // Reprice when a pricing input moved — but never rewrite an invoice that has
+  // already been paid, since the money on it has moved.
+  const repriced = REPRICING_FIELDS.some((f) => body[f] !== undefined && body[f] !== (existing as Record<string, unknown>)[f]);
+  let didReprice = false;
+  if (repriced) {
+    if (existing.invoice && existing.invoice.status === 'PAID') {
+      res.status(400).json({
+        success: false,
+        error: 'INVOICE_ALREADY_PAID',
+        message: 'This approval is already paid — its price can no longer be changed',
+      });
+      return;
+    }
+    const paxCount = Number(body.paxCount ?? existing.paxCount);
+    try {
+      const sourcePrice = await resolveVisaFee(
+        (body.visaType ?? existing.visaType) as VisaType,
+        body.destinationCountry ?? existing.destinationCountry,
+        (body.processingType ?? existing.processingType) as ProcessingType,
+        paxCount,
+      );
+      const charge = explicitMoney(sourcePrice.amount, sourcePrice.currency);
+      Object.assign(data, {
+        totalAmount: charge.totalAmount,
+        currency: charge.currency,
+        sourceAmount: charge.sourceAmount,
+        sourceCurrency: charge.sourceCurrency,
+        exchangeRate: charge.exchangeRate,
+        exchangeRateAt: charge.exchangeRateAt,
+      });
+      if (existing.invoice) {
+        const invoiceTotals = buildInvoiceTotals(charge.totalAmount);
+        await prisma.invoice.update({
+          where: { id: existing.invoice.id },
+          data: {
+            ...invoiceTotals,
+            currency: charge.currency,
+            ...invoiceMoneySnapshotData(charge),
+            // The stored PDF shows the old total, so drop it and let it regenerate.
+            pdfPath: null,
+          },
+        });
+      }
+      didReprice = true;
+    } catch (error) {
+      if (String((error as Error).message) === 'PRICE_NOT_CONFIGURED') {
+        res.status(400).json({
+          success: false,
+          error: 'PRICE_NOT_CONFIGURED',
+          message: 'No active security approval fee is configured for this location and type',
+        });
+        return;
+      }
+      throw error;
+    }
+  }
+
   const application = await prisma.visaApplication.update({
     where: { id: req.params.id },
-    data: req.body,
+    data,
     include: visaInclude,
   });
-  res.json({ success: true, data: application });
+  if (didReprice && application.invoice) {
+    generateVisaInvoicePdf(application.invoice.id).catch(console.error);
+  }
+  res.json({ success: true, data: application, repriced: didReprice });
+}
+
+/**
+ * Remove an approval outright. Its invoice and voucher are `onDelete: Restrict`
+ * relations, so they have to go first — inside one transaction, so a failure
+ * halfway cannot leave an invoice pointing at a row that no longer exists. A
+ * paid or already-invoiced-onto-a-statement approval is refused: money has
+ * moved against it, and the honest action there is to cancel, not to erase.
+ */
+export async function deleteVisaApplication(req: Request, res: Response): Promise<void> {
+  const existing = await prisma.visaApplication.findUnique({
+    where: { id: req.params.id },
+    select: {
+      id: true,
+      voucher: { select: { id: true } },
+      invoice: { select: { id: true, status: true, consolidatedLine: { select: { id: true } } } },
+    },
+  });
+  if (!existing) {
+    res.status(404).json({ success: false, error: 'NOT_FOUND' });
+    return;
+  }
+  if (existing.invoice?.status === 'PAID') {
+    res.status(400).json({
+      success: false,
+      error: 'INVOICE_ALREADY_PAID',
+      message: 'This approval is already paid — cancel it instead of deleting it',
+    });
+    return;
+  }
+  if (existing.invoice?.consolidatedLine) {
+    res.status(400).json({
+      success: false,
+      error: 'INVOICE_ON_STATEMENT',
+      message: 'This approval is on a consolidated statement — remove it from the statement first',
+    });
+    return;
+  }
+  await prisma.$transaction(async (tx) => {
+    if (existing.voucher) await tx.voucher.delete({ where: { id: existing.voucher.id } });
+    if (existing.invoice) await tx.invoice.delete({ where: { id: existing.invoice.id } });
+    await tx.visaApplication.delete({ where: { id: existing.id } });
+  });
+  res.json({ success: true });
 }
 
 export async function submitVisa(req: Request, res: Response): Promise<void> {

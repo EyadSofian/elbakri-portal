@@ -204,6 +204,26 @@ async function ensureAirportOptions(force = false) {
   return state.cache.airportOptions;
 }
 
+/**
+ * The destination list every "where does this belong?" dropdown is built from,
+ * so an activity, a hotel and a transfer all offer exactly the destinations the
+ * Destinations page manages — add one there (or inline) and it shows up here.
+ * Cached for the session; pass force after creating a destination.
+ */
+async function ensureDestinationOptions(force = false) {
+  if (!force && state.cache.destinationOptions) return state.cache.destinationOptions;
+  const res = await apiFetch("/destinations?limit=300");
+  state.cache.destinationOptions = (res?.data || []).filter(d => d && d.id);
+  return state.cache.destinationOptions;
+}
+
+/** Label a destination in the reader's language, keeping the other name visible. */
+function destinationLabel(d) {
+  const primary = state.lang === "ar" ? (d.nameAr || d.name) : d.name;
+  const secondary = state.lang === "ar" ? (d.nameAr ? d.name : "") : (d.nameAr || "");
+  return secondary ? `${primary} · ${secondary}` : primary;
+}
+
 /** [code, label] pairs for a <select>, falling back to the code alone. */
 function airportSelectOptions() {
   return (state.cache.airportOptions || []).map(a => [a.code, a.label]);
@@ -1023,19 +1043,19 @@ const masterConfigs = {
     fields: [
       { name: "name", label: "form.name", required: true },
       { name: "nameAr", label: "form.nameAr" },
-      { name: "city", label: "form.destination", fallback: "Destination / Area", required: true, help: "Example: Sharm El Sheikh, Dahab, Hurghada, Marsa Alam" },
+      { name: "city", label: "form.destination", fallback: "Destination / Area", required: true, helpKey: "help.cityExample", help: "Example: Sharm El Sheikh, Dahab, Hurghada, Marsa Alam" },
       { name: "cityAr", label: "form.cityAr", fallback: "Arabic City" },
       { name: "country", label: "form.country", required: true, default: "EG" },
       { name: "stars", label: "th.stars", type: "number", required: true, default: 5 },
       { name: "address", label: "form.address", required: true, cls: "full" },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
-      { name: "amenities", label: "form.amenities", fallback: "Amenities", type: "list", cls: "full", help: "Separate values with commas" },
+      { name: "amenities", label: "form.amenities", fallback: "Amenities", type: "list", cls: "full", helpKey: "help.commaSeparated", help: "Separate values with commas" },
       { name: "imageUrl", label: "form.logo", fallback: "Main Image URL" },
-      { name: "galleryUrls", label: "form.gallery", fallback: "Gallery image URLs", type: "list", cls: "full", help: "One image URL per line — shown to agents as a gallery." },
+      { name: "galleryUrls", label: "form.gallery", fallback: "Gallery image URLs", type: "list", cls: "full", helpKey: "help.galleryUrls", help: "One image URL per line — shown to agents as a gallery." },
       { name: "pricePerNight", label: "th.amount", type: "number", required: true, default: 1 },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
-      { name: "commissionPercent", label: "form.commissionPercent", fallback: "Hotel commission %", type: "number", default: 0, help: "Added to the hotel base price for client bookings" },
-      { name: "availableRooms", label: "form.availableRooms", fallback: "Available rooms", type: "number", default: 0, help: "0 means no inventory cap" },
+      { name: "commissionPercent", label: "form.commissionPercent", fallback: "Hotel commission %", type: "number", default: 0, helpKey: "help.commission", help: "Added to the hotel base price for client bookings" },
+      { name: "availableRooms", label: "form.availableRooms", fallback: "Available rooms", type: "number", default: 0, helpKey: "help.noRoomCap", help: "0 means no inventory cap" },
       { name: "maxGuestsPerRoom", label: "form.maxGuestsPerRoom", fallback: "Guests per room", type: "number", default: 2 },
       { name: "showPriceToAgents", label: "hotel.showPriceToAgents", fallback: "Show Prices to Agents", type: "checkbox" },
       { name: "allowQuoteRequest", label: "hotel.allowQuoteRequest", fallback: "Allow Quote Request", type: "checkbox" },
@@ -1055,7 +1075,7 @@ const masterConfigs = {
       { name: "operator", label: "form.operator", fallback: "Operator" },
       { name: "cabins", label: "form.cabins", fallback: "Cabins", type: "number", default: 40 },
       { name: "route", label: "th.route", type: "select", default: "LUXOR_ASWAN", options: ["LUXOR_ASWAN", "ASWAN_LUXOR", "LUXOR_ASWAN_LUXOR"] },
-      { name: "departureDays", label: "form.departureDays", fallback: "Departure Days", type: "list", cls: "full", help: "Example: Monday, Thursday" },
+      { name: "departureDays", label: "form.departureDays", fallback: "Departure Days", type: "list", cls: "full", helpKey: "help.daysExample", help: "Example: Monday, Thursday" },
       { name: "duration", label: "form.duration", fallback: "Duration", type: "number", default: 4 },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
       { name: "priceFrom", label: "th.amount", type: "number", required: true, default: 1 },
@@ -1072,24 +1092,32 @@ const masterConfigs = {
     fields: [
       { name: "name", label: "form.name", required: true },
       { name: "nameAr", label: "form.nameAr" },
-      { name: "city", label: "th.city", fallback: "City (free text)", help: "e.g. Cairo, Sharm El Sheikh, Dahab, Hurghada" },
+      // The destination is what files the excursion under Cairo / Hurghada /…
+      // on the catalogue screen; the city label follows it unless overridden.
+      // Required in the form so the catalogue always has somewhere to file the
+      // trip. The API stays looser — it accepts a bare city — so rows imported
+      // from Sheets before destinations existed still save.
+      { name: "destinationId", label: "activity.destination", fallback: "Destination", type: "destinationSelect", required: true,
+        helpKey: "help.activityDestination", help: "Where this trip runs. The list is the Destinations page — use ＋ to add a new one." },
+      { name: "city", label: "activity.cityLabel", fallback: "City label (optional)", helpKey: "help.cityFollowsDestination", help: "Leave blank to use the destination name" },
       { name: "category", label: "th.type", type: "select", default: "SIGHTSEEING", options: ["SIGHTSEEING", "DIVING", "SNORKELING", "DESERT_SAFARI", "WATER_SPORTS", "CULTURAL", "FOOD_TOUR", "ADVENTURE", "RELAXATION"] },
       { name: "duration", label: "form.duration", fallback: "Duration (e.g. 4 hours, Full day)" },
-      { name: "timeSlots", label: "activity.timeSlot", fallback: "Time Slots", type: "list", cls: "full", help: "Comma-separated, e.g. 09:00 AM, 02:00 PM, 06:00 PM" },
+      { name: "timeSlots", label: "activity.timeSlot", fallback: "Time Slots", type: "list", cls: "full", helpKey: "help.timeSlots", help: "Comma-separated, e.g. 09:00 AM, 02:00 PM, 06:00 PM" },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
       { name: "includes", label: "form.includes", fallback: "Includes", type: "list", cls: "full" },
       { name: "excludes", label: "form.excludes", fallback: "Excludes", type: "list", cls: "full" },
       // An excursion is sold per person, per party, or both. Leave a field blank
       // when the activity is not sold that way — blank is not zero.
-      { name: "priceAdult", label: "form.priceAdult", fallback: "Adult Price", type: "number", help: "Leave blank if this trip is not sold per person" },
-      { name: "priceChild", label: "form.priceChild", fallback: "Child Price", type: "number" },
-      { name: "priceSingle", label: "hotel.single", fallback: "Single (1 person)", type: "number", help: "Private-tour price for one person" },
-      { name: "priceDouble", label: "hotel.double", fallback: "Double (2 people)", type: "number" },
-      { name: "priceTriple", label: "hotel.triple", fallback: "Triple (3 people)", type: "number" },
+      { name: "priceAdult", label: "form.priceAdult", fallback: "Adult Price", type: "number", nullable: true, helpKey: "help.blankNotSold", help: "Leave blank if this trip is not sold per person" },
+      { name: "priceChild", label: "form.priceChild", fallback: "Child Price", type: "number", nullable: true },
+      { name: "priceSingle", label: "hotel.single", fallback: "Single (1 person)", type: "number", nullable: true, helpKey: "help.privateTourOne", help: "Private-tour price for one person" },
+      { name: "priceDouble", label: "hotel.double", fallback: "Double (2 people)", type: "number", nullable: true },
+      { name: "priceTriple", label: "hotel.triple", fallback: "Triple (3 people)", type: "number", nullable: true },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
       { name: "minPax", label: "form.minPax", fallback: "Min Pax", type: "number", default: 1 },
       { name: "maxPax", label: "form.maxPax", fallback: "Max Pax", type: "number", default: 20 },
-      { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
+      { name: "imageUrl", label: "activity.mainPhoto", fallback: "Main photo", type: "image", cls: "full" },
+      { name: "galleryUrls", label: "activity.photos", fallback: "More photos", type: "gallery", cls: "full" },
     ],
     marketPrices: [
       { entityType: "ACTIVITY_ADULT", baseField: "priceAdult", label: "Adult Price" },
@@ -1251,7 +1279,10 @@ function masterField(entity, fieldDef, row) {
   const raw = row?.[fieldDef.name] ?? fieldDef.default ?? "";
   const value = Array.isArray(raw) ? raw.join(fieldDef.name === "galleryUrls" ? "\n" : ", ") : (fieldDef.type === "date" && raw ? String(raw).slice(0, 10) : raw);
   const required = fieldDef.required ? '<span class="required">*</span>' : "";
-  const help = fieldDef.help ? `<div class="secondary-text" style="margin-top:4px">${escapeHtml(fieldDef.help)}</div>` : "";
+  // Hint lines are shown to Arabic-speaking admins too, so they go through the
+  // dictionary when the field names a key, falling back to the English text.
+  const helpText = fieldDef.helpKey ? t(fieldDef.helpKey, fieldDef.help) : fieldDef.help;
+  const help = helpText ? `<div class="secondary-text" style="margin-top:4px">${escapeHtml(helpText)}</div>` : "";
   const label = `${t(fieldDef.label, fieldDef.fallback || fieldDef.name)} ${required}`;
 
   if (fieldDef.type === "textarea" || fieldDef.type === "list") {
@@ -1274,7 +1305,171 @@ function masterField(entity, fieldDef, row) {
   if (fieldDef.type === "checkbox") {
     return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><label class="check-row"><input id="${id}" type="checkbox" ${value ? "checked" : ""}> ${t("status.ACTIVE")}</label>${help}</div>`;
   }
-  return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><input id="${id}" type="${fieldDef.type || "text"}" value="${escapeHtml(value)}" ${fieldDef.type === "number" ? 'step="0.01" min="0"' : ""}>${help}</div>`;
+  // The destination this record belongs to, drawn from the Destinations page —
+  // one list, so a destination added there is instantly offered here. The ＋
+  // button adds a missing destination without losing the half-filled form.
+  if (fieldDef.type === "destinationSelect") {
+    const list = state.cache.destinationOptions || [];
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label>
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="${id}" style="flex:1">
+          <option value="">— ${t("form.pickDestination", "Pick a destination")} —</option>
+          ${list.map(d => `<option value="${escapeHtml(d.id)}" ${d.id === value ? "selected" : ""}>${escapeHtml(destinationLabel(d))}</option>`).join("")}
+        </select>
+        <button type="button" class="btn btn-outline" title="${escapeHtml(t("btn.addDestination", "Add Destination"))}" onclick="masterAddDestination('${id}')">${icon("plus")}</button>
+      </div>
+      <div id="${id}_new" style="display:none;margin-top:8px;padding:10px;border:1px dashed var(--border);border-radius:8px">
+        <div class="secondary-text" style="margin-bottom:6px">${t("form.newDestinationHint", "Add a destination that is missing — it is saved to the Destinations page too.")}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <input id="${id}_newName" style="flex:1;min-width:140px" placeholder="${escapeHtml(t("form.name", "Name"))}">
+          <input id="${id}_newNameAr" dir="rtl" style="flex:1;min-width:140px" placeholder="${escapeHtml(t("form.nameAr", "Arabic Name"))}">
+          <button type="button" class="btn btn-primary" id="${id}_newSave" onclick="masterSaveNewDestination('${id}')">${t("btn.save", "Save")}</button>
+        </div>
+      </div>${help}</div>`;
+  }
+  // One uploaded picture: the URL lives in a hidden input so the existing form
+  // collector still just reads .value, while the admin only ever sees a preview.
+  if (fieldDef.type === "image") {
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label>
+      <input type="hidden" id="${id}" value="${escapeHtml(value)}">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <img id="${id}_preview" src="${escapeHtml(value)}" alt="" style="height:64px;width:96px;object-fit:cover;border-radius:8px;border:1px solid var(--border);${value ? "" : "display:none"}" onerror="this.style.display='none'">
+        <button type="button" class="btn btn-outline" id="${id}_btn" onclick="document.getElementById('${id}_file').click()">${icon("upload")}${t("btn.upload", "Upload")}</button>
+        <input type="file" id="${id}_file" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" onchange="masterPickImage('${id}', this)">
+        <button type="button" class="btn btn-danger-ghost" onclick="masterClearImage('${id}')">${icon("trash-2")}${t("btn.remove", "Remove")}</button>
+      </div>${help}</div>`;
+  }
+  // Several pictures. Same trick — a hidden newline-separated list, rendered as
+  // thumbnails the admin can drop one by one.
+  if (fieldDef.type === "gallery") {
+    const urls = Array.isArray(raw) ? raw : String(value || "").split(/\n+/).map(u => u.trim()).filter(Boolean);
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label>
+      <input type="hidden" id="${id}" value="${escapeHtml(urls.join("\n"))}">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+        <button type="button" class="btn btn-outline" id="${id}_btn" onclick="document.getElementById('${id}_file').click()">${icon("image-plus")}${t("btn.addPhotos", "Add photos")}</button>
+        <input type="file" id="${id}_file" accept="image/jpeg,image/png,image/gif,image/webp" multiple style="display:none" onchange="masterPickGallery('${id}', this)">
+      </div>
+      <div id="${id}_strip" style="display:flex;gap:8px;flex-wrap:wrap">${masterGalleryThumbs(id, urls)}</div>${help}</div>`;
+  }
+  return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><input id="${id}" type="${fieldDef.type || "text"}" value="${escapeHtml(value)}" ${fieldDef.type === "number" ? 'step="0.01" min="0"' : ""} ${fieldDef.placeholder ? `placeholder="${escapeHtml(fieldDef.placeholder)}"` : ""}>${help}</div>`;
+}
+
+/** Thumbnails for a gallery field, each with its own remove button. */
+function masterGalleryThumbs(id, urls) {
+  if (!urls.length) return `<div class="secondary-text">${t("form.noPhotosYet", "No photos yet")}</div>`;
+  return urls.map((url, i) => `<div style="position:relative">
+    <img src="${escapeHtml(url)}" alt="" style="height:64px;width:96px;object-fit:cover;border-radius:8px;border:1px solid var(--border)" onerror="this.style.opacity=0.3">
+    <button type="button" class="btn btn-danger btn-sm" title="${escapeHtml(t("btn.remove", "Remove"))}" style="position:absolute;inset-block-start:2px;inset-inline-end:2px;padding:2px 6px;line-height:1" onclick="masterRemoveGalleryPhoto('${id}', ${i})">×</button>
+  </div>`).join("");
+}
+
+function masterReadGallery(id) {
+  const el = document.getElementById(id);
+  return String(el?.value || "").split(/\n+/).map(u => u.trim()).filter(Boolean);
+}
+
+function masterWriteGallery(id, urls) {
+  const el = document.getElementById(id);
+  if (el) el.value = urls.join("\n");
+  const strip = document.getElementById(`${id}_strip`);
+  if (strip) { strip.innerHTML = masterGalleryThumbs(id, urls); refreshIcons(strip); }
+}
+
+async function masterPickImage(id, input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  const btn = document.getElementById(`${id}_btn`);
+  setBtnLoading(btn, true, "btn.uploading");
+  const url = await uploadImageToServer(file);
+  setBtnLoading(btn, false);
+  input.value = "";
+  if (!url) return;
+  const hidden = document.getElementById(id);
+  if (hidden) hidden.value = url;
+  const preview = document.getElementById(`${id}_preview`);
+  if (preview) { preview.src = url; preview.style.display = ""; }
+}
+
+function masterClearImage(id) {
+  const hidden = document.getElementById(id);
+  if (hidden) hidden.value = "";
+  const preview = document.getElementById(`${id}_preview`);
+  if (preview) { preview.src = ""; preview.style.display = "none"; }
+}
+
+async function masterPickGallery(id, input) {
+  const files = Array.from(input?.files || []);
+  if (!files.length) return;
+  const btn = document.getElementById(`${id}_btn`);
+  setBtnLoading(btn, true, "btn.uploading");
+  // Upload one at a time so a single rejected file does not lose the others.
+  const urls = masterReadGallery(id);
+  for (const file of files) {
+    const url = await uploadImageToServer(file);
+    if (url) urls.push(url);
+  }
+  setBtnLoading(btn, false);
+  input.value = "";
+  masterWriteGallery(id, urls);
+}
+
+function masterRemoveGalleryPhoto(id, index) {
+  const urls = masterReadGallery(id);
+  urls.splice(index, 1);
+  masterWriteGallery(id, urls);
+}
+
+/** Repaint a destination dropdown from the cache, keeping `chosen` selected. */
+function masterFillDestinationSelect(selectId, chosen) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const list = state.cache.destinationOptions || [];
+  const keep = chosen ?? select.value;
+  select.innerHTML = `<option value="">— ${escapeHtml(t("form.pickDestination", "Pick a destination"))} —</option>`
+    + list.map(d => `<option value="${escapeHtml(d.id)}" ${d.id === keep ? "selected" : ""}>${escapeHtml(destinationLabel(d))}</option>`).join("");
+}
+
+/**
+ * Add a destination without leaving the form. A modal REPLACES whatever modal
+ * is open, so opening the Destinations editor here would throw away everything
+ * already typed — instead a two-field row unfolds under the dropdown, and the
+ * new destination is selected the moment it saves.
+ */
+function masterAddDestination(selectId) {
+  const row = document.getElementById(`${selectId}_new`);
+  if (!row) return;
+  const opening = row.style.display === "none";
+  row.style.display = opening ? "" : "none";
+  if (opening) document.getElementById(`${selectId}_newName`)?.focus();
+}
+
+async function masterSaveNewDestination(selectId) {
+  const nameEl = document.getElementById(`${selectId}_newName`);
+  const nameArEl = document.getElementById(`${selectId}_newNameAr`);
+  const name = String(nameEl?.value || "").trim();
+  if (!name) { toast(t("validation.required", "Name is required"), "error"); nameEl?.focus(); return; }
+  const btn = document.getElementById(`${selectId}_newSave`);
+  setBtnLoading(btn, true);
+  const res = await apiFetch("/destinations", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      nameAr: String(nameArEl?.value || "").trim() || null,
+      slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+      country: "EG",
+      type: "CITY",
+      isActive: true,
+    }),
+  });
+  setBtnLoading(btn, false);
+  if (!res?.success) return;
+  await ensureDestinationOptions(true);
+  masterFillDestinationSelect(selectId, res.data.id);
+  if (nameEl) nameEl.value = "";
+  if (nameArEl) nameArEl.value = "";
+  const row = document.getElementById(`${selectId}_new`);
+  if (row) row.style.display = "none";
+  toast(t("toast.saved", "Saved"), "success");
 }
 
 async function ensureHotelOptions() {
@@ -1293,6 +1488,9 @@ async function showMasterModal(entity, id = "") {
   // The reception form's airport list is admin-managed, so load it before the
   // dropdown is built — otherwise it renders empty on first open.
   if (entity === "reception") await ensureAirportOptions();
+  // The destination dropdown is built from admin-managed data, so load it
+  // before the markup is generated — otherwise it renders empty on first open.
+  if (masterConfigs[entity].fields.some(f => f.type === "destinationSelect")) await ensureDestinationOptions();
   const rows = state.cache[entity + "Rows"] || [];
   const row = id ? rows.find(item => item.id === id) : null;
   const title = `${id ? t("btn.edit") : t("btn.addNew")} ${t(cfg.titleKey)}`;
@@ -1426,10 +1624,14 @@ function collectMasterPayload(entity) {
     if (!el) continue;
     let value = fieldDef.type === "checkbox" ? el.checked : el.value.trim();
     if (fieldDef.required && (value === "" || value === null || value === undefined)) valid = false;
-    if (fieldDef.type === "number") value = value === "" ? 0 : Number(value);
+    // A blank number is only a zero when the field must carry one. Where blank
+    // means "not sold this way" — an excursion with no triple price, say — it
+    // has to reach the API as null, or the record would advertise it as free.
+    if (fieldDef.type === "number") value = value === "" ? (fieldDef.nullable ? null : 0) : Number(value);
     if (fieldDef.type === "list") value = String(value || "").split(/[\n,]+/).map(item => item.trim()).filter(Boolean);
+    if (fieldDef.type === "gallery") value = String(value || "").split(/\n+/).map(item => item.trim()).filter(Boolean);
     if (fieldDef.nullable && value === "") value = null;
-    if (value !== "" || value === null || fieldDef.required || fieldDef.type === "number" || fieldDef.type === "list") {
+    if (value !== "" || value === null || fieldDef.required || fieldDef.type === "number" || fieldDef.type === "list" || fieldDef.type === "gallery") {
       payload[fieldDef.name] = value;
     }
   }
@@ -2899,7 +3101,7 @@ async function renderDestinations() {
   content(pageHeader(`<button class="btn btn-primary" onclick="openAddDestinationModal()">${icon("plus")}${t("btn.addDestination","Add Destination")}</button>`) + tableHtml);
 }
 
-function openAddDestinationModal(dest = null) {
+function openAddDestinationModal(dest = null, onSaved = null) {
   const title = dest ? t("btn.editDestination","Edit Destination") : t("btn.addDestination","Add Destination");
   const body = `
     <div class="form-grid">
@@ -2930,15 +3132,18 @@ function openAddDestinationModal(dest = null) {
     </div>`;
   openModal(title, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
-    <button class="btn btn-primary" onclick="saveDestination(${dest ? `'${dest.id}'` : "null"})">${t("btn.save","Save")}</button>
+    <button class="btn btn-primary" id="destSaveBtn">${t("btn.save","Save")}</button>
   `);
+  // Wired as a handler rather than an inline onclick so the caller's callback
+  // survives — it cannot be serialised into an attribute.
+  document.getElementById("destSaveBtn").onclick = () => saveDestination(dest ? dest.id : null, onSaved);
   document.getElementById("destName").addEventListener("input", function() {
     const slugEl = document.getElementById("destSlug");
     if (!dest) slugEl.value = this.value.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
   });
 }
 
-async function saveDestination(id) {
+async function saveDestination(id, onSaved = null) {
   const name = document.getElementById("destName").value.trim();
   const slug = document.getElementById("destSlug").value.trim();
   if (!name || !slug) { toast(t("validation.required","Name and slug are required"), "error"); return; }
@@ -2960,7 +3165,10 @@ async function saveDestination(id) {
   if (res?.success) {
     closeModal();
     toast(t("toast.saved","Saved"), "success");
-    renderDestinations();
+    // A caller that opened this from another screen decides what to refresh —
+    // only the Destinations page itself should redraw the Destinations page.
+    if (onSaved) { state.cache.destinationOptions = null; await onSaved(res.data); }
+    else renderDestinations();
   }
 }
 
@@ -3508,6 +3716,11 @@ async function renderCruises() {
   ], masterActions("cruises"));
 }
 
+// Which destination the catalogue is filtered to ("" = all, "__none__" = the
+// trips not filed under any destination), and whether hidden trips are shown.
+let actDestFilter = "";
+let actShowInactive = false;
+
 async function renderActivities() {
   state.page = "activities";
   const capturedToken = state.renderToken;
@@ -3520,10 +3733,27 @@ async function renderActivities() {
       <button class="btn btn-outline" id="actTabTypes" onclick="actShowTab('types')">${icon("users")}&nbsp;Service Types</button>
     </div>
     <div id="actCatalogSection">
+      <section class="panel" style="margin-bottom:14px">
+        <div class="panel-body">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+            <strong>${t("activity.byDestination", "Trips by destination")}</strong>
+            <button class="btn btn-outline btn-sm" onclick="actNewDestination()">${icon("plus")}${t("btn.addDestination", "Add Destination")}</button>
+          </div>
+          <div class="secondary-text" style="margin-bottom:10px">${t("activity.byDestinationHelp", "Pick a destination to see only its trips — anything you add from there is filed under it.")}</div>
+          <div id="actDestChips" style="display:flex;gap:8px;flex-wrap:wrap">${skeletonRows(1, 1)}</div>
+        </div>
+      </section>
       <section class="table-card">
-        <div class="table-toolbar"><div><strong>Activity Catalog</strong><div class="secondary-text" id="actCatalogMeta">Loading…</div></div><div class="toolbar-actions"><button class="btn btn-outline" onclick="renderActivities()">${icon("refresh-cw")}${t("btn.refresh")}</button></div></div>
+        <div class="table-toolbar">
+          <div><strong id="actCatalogTitle">${t("activity.catalog", "Activity Catalog")}</strong><div class="secondary-text" id="actCatalogMeta">Loading…</div></div>
+          <div class="toolbar-actions">
+            <label class="check-row" style="margin-inline-end:8px"><input type="checkbox" id="actShowInactive" onchange="renderActivities()" ${actShowInactive ? "checked" : ""}> ${t("activity.showInactive", "Show hidden")}</label>
+            <button class="btn btn-outline" onclick="renderActivities()">${icon("refresh-cw")}${t("btn.refresh")}</button>
+            <button class="btn btn-primary" id="actAddBtn" onclick="actAddHere()">${icon("plus")}${t("btn.addNew")}</button>
+          </div>
+        </div>
         <div class="table-scroll"><table class="data-table"><thead><tr>
-          <th>Name</th><th>City</th><th>Duration / Slots</th><th>Adult Price</th><th>Status</th><th>Actions</th>
+          <th>${t("form.photo", "Photo")}</th><th>${t("form.name", "Name")}</th><th>${t("activity.destination", "Destination")}</th><th>${t("form.duration", "Duration / Slots")}</th><th>${t("activity.prices", "Prices")}</th><th>${t("th.status", "Status")}</th><th>${t("th.actions", "Actions")}</th>
         </tr></thead><tbody id="actCatalogTbody">${skeletonRows(6, 8)}</tbody></table></div>
       </section>
     </div>
@@ -3558,28 +3788,115 @@ async function renderActivities() {
       </section>
     </div>`);
 
-  const catalogRes = await apiFetch("/activities?limit=200");
+  actShowInactive = !!document.getElementById("actShowInactive")?.checked;
+  const [catalogRes] = await Promise.all([
+    apiFetch(`/activities?limit=200${actShowInactive ? "&includeInactive=true" : ""}`),
+    ensureDestinationOptions(),
+  ]);
   if (state.renderToken !== capturedToken) return;
   const activities = catalogRes?.data || [];
   state.cache.activitiesRows = activities;
-  const cTbody = document.getElementById("actCatalogTbody");
-  const cMeta  = document.getElementById("actCatalogMeta");
-  if (cMeta) cMeta.textContent = `${formatNumber(activities.length)} activities`;
-  if (cTbody) {
-    cTbody.innerHTML = activities.length ? activities.map(a => `<tr>
+  actRenderDestChips(activities);
+  actRenderCatalogRows(activities);
+}
+
+/** One chip per destination, plus "All" and a bucket for the unfiled ones. */
+function actRenderDestChips(activities) {
+  const host = document.getElementById("actDestChips");
+  if (!host) return;
+  const counts = new Map();
+  let unfiled = 0;
+  for (const a of activities) {
+    if (a.destinationId) counts.set(a.destinationId, (counts.get(a.destinationId) || 0) + 1);
+    else unfiled += 1;
+  }
+  // Every destination is offered, even an empty one — that is how the admin
+  // opens a brand-new destination and starts filling it with trips.
+  const chips = [[ "", t("filter.all", "All"), activities.length ]];
+  for (const d of (state.cache.destinationOptions || [])) {
+    chips.push([d.id, destinationLabel(d), counts.get(d.id) || 0]);
+  }
+  if (unfiled) chips.push(["__none__", t("activity.noDestination", "No destination"), unfiled]);
+  host.innerHTML = chips.map(([id, label, count]) =>
+    `<button class="btn btn-sm ${actDestFilter === id ? "btn-primary" : "btn-outline"}" onclick="actPickDestination(${inlineJsonArg(id)})">${escapeHtml(label)}<span style="margin-inline-start:6px;opacity:.75;font-variant-numeric:tabular-nums">(${formatNumber(count)})</span></button>`
+  ).join("");
+  refreshIcons(host);
+}
+
+function actRenderCatalogRows(activities) {
+  const rows = activities.filter(a =>
+    !actDestFilter ? true : (actDestFilter === "__none__" ? !a.destinationId : a.destinationId === actDestFilter));
+  const chosen = (state.cache.destinationOptions || []).find(d => d.id === actDestFilter);
+  const title = document.getElementById("actCatalogTitle");
+  if (title) {
+    title.textContent = chosen ? destinationLabel(chosen)
+      : (actDestFilter === "__none__" ? t("activity.noDestination", "No destination") : t("activity.catalog", "Activity Catalog"));
+  }
+  const addBtn = document.getElementById("actAddBtn");
+  if (addBtn) {
+    addBtn.innerHTML = `${icon("plus")}${chosen ? `${t("btn.addNew")} · ${escapeHtml(destinationLabel(chosen))}` : t("btn.addNew")}`;
+    refreshIcons(addBtn);
+  }
+  const meta = document.getElementById("actCatalogMeta");
+  if (meta) meta.textContent = `${formatNumber(rows.length)} ${t("nav.activities", "activities")}`;
+  const tbody = document.getElementById("actCatalogTbody");
+  if (!tbody) return;
+  // Only the ways this trip is actually sold — a blank price means "not sold
+  // this way" and must stay invisible rather than reading as zero.
+  const priceBits = a => [
+    [t("form.priceAdult", "Adult"), a.priceAdult],
+    [t("form.priceChild", "Child"), a.priceChild],
+    [t("hotel.single", "Single"), a.priceSingle],
+    [t("hotel.double", "Double"), a.priceDouble],
+    [t("hotel.triple", "Triple"), a.priceTriple],
+  ].filter(([, v]) => v !== null && v !== undefined && v !== "");
+  tbody.innerHTML = rows.length ? rows.map(a => {
+    const photos = (a.galleryUrls || []).length;
+    const bits = priceBits(a);
+    return `<tr>
+      <td>${a.imageUrl
+        ? `<img src="${escapeHtml(a.imageUrl)}" alt="" style="height:44px;width:64px;object-fit:cover;border-radius:6px" onerror="this.style.display='none'">`
+        : `<span class="secondary-text">—</span>`}${photos ? `<div class="secondary-text" style="font-size:10px">+${formatNumber(photos)}</div>` : ""}</td>
       <td class="primary-text">${escapeHtml(a.name)}${a.nameAr ? `<div class="secondary-text">${escapeHtml(a.nameAr)}</div>` : ""}</td>
-      <td>${escapeHtml(a.city||"—")}</td>
+      <td>${a.destination ? escapeHtml(destinationLabel(a.destination)) : `<span class="secondary-text">${escapeHtml(a.city || "—")}</span>`}</td>
       <td>
         ${a.duration ? `<div style="font-size:12px;color:var(--info)">${icon("clock")}&nbsp;${escapeHtml(a.duration)}</div>` : ""}
-        ${(a.timeSlots||[]).length ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">${a.timeSlots.slice(0,3).map(s=>`<span class="badge badge-outline" style="font-size:10px">${escapeHtml(s)}</span>`).join("")}${a.timeSlots.length>3?`<span class="badge badge-outline" style="font-size:10px">+${a.timeSlots.length-3}</span>`:""}</div>` : ""}
-        ${(!a.duration && !a.timeSlots?.length) ? `<span style="color:var(--text-muted);font-size:11px">No time set</span>` : ""}
+        ${(a.timeSlots||[]).length ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">${a.timeSlots.slice(0,3).map(x=>`<span class="badge badge-outline" style="font-size:10px">${escapeHtml(x)}</span>`).join("")}${a.timeSlots.length>3?`<span class="badge badge-outline" style="font-size:10px">+${a.timeSlots.length-3}</span>`:""}</div>` : ""}
+        ${(!a.duration && !a.timeSlots?.length) ? `<span style="color:var(--text-muted);font-size:11px">${t("activity.noTimeSet", "No time set")}</span>` : ""}
       </td>
-      <td class="numeric">${formatMoney(a.priceAdult, a.currency)}</td>
+      <td>${bits.length
+        ? bits.map(([lbl, v]) => `<div style="font-size:11px"><span class="secondary-text">${escapeHtml(lbl)}</span> ${formatMoney(v, a.currency)}</div>`).join("")
+        : `<span class="secondary-text">${t("activity.noPrice", "No price set")}</span>`}</td>
       <td>${statusBadge(a.isActive ? "ACTIVE" : "INACTIVE")}</td>
       <td>${masterRowActions("activities", a)}</td>
-    </tr>`).join("") : `<tr><td colspan="6">${emptyBlock("empty.noData")}</td></tr>`;
-    refreshIcons(cTbody);
+    </tr>`;
+  }).join("") : `<tr><td colspan="7">${emptyBlock("empty.noData")}</td></tr>`;
+  refreshIcons(tbody);
+}
+
+function actPickDestination(id) {
+  actDestFilter = id;
+  const rows = state.cache.activitiesRows || [];
+  actRenderDestChips(rows);
+  actRenderCatalogRows(rows);
+}
+
+/** New trip, already filed under whichever destination is being browsed. */
+async function actAddHere() {
+  await showMasterModal("activities");
+  if (actDestFilter && actDestFilter !== "__none__") {
+    const select = document.getElementById("m_activities_destinationId");
+    if (select) select.value = actDestFilter;
   }
+}
+
+/** Add a destination from the activities screen, then reopen on it. */
+function actNewDestination() {
+  openAddDestinationModal(null, async (created) => {
+    await ensureDestinationOptions(true);
+    if (created?.id) actDestFilter = created.id;
+    renderActivities();
+  });
 }
 
 function actShowTab(tab) {
@@ -4674,6 +4991,8 @@ async function renderSecurityApproval() {
       ${v.flightTicketUrl ? `<button type="button" onclick="openPrivateDoc(${inlineJsonArg(v.flightTicketUrl)},'ticket')" class="btn btn-outline btn-sm">${icon("ticket")} Ticket</button>` : ""}
       ${["PENDING","SUBMITTED"].includes(v.status) ? `<button class="btn btn-success btn-sm" onclick="adminApproveVisa('${v.id}')">${icon("check")} Approve</button>` : ""}
       ${["PENDING","SUBMITTED"].includes(v.status) ? `<button class="btn btn-danger btn-sm" onclick="adminRejectVisa('${v.id}')">${icon("x")} Reject</button>` : ""}
+      <button class="icon-button btn-icon" title="${escapeHtml(t("btn.edit"))}" onclick="openSecurityApprovalModal('${v.id}')">${icon("pencil")}</button>
+      <button class="icon-button btn-icon" title="${escapeHtml(t("btn.delete"))}" onclick="deleteSecurityApproval('${v.id}')">${icon("trash-2")}</button>
       ${v.invoice?.id ? `<button class="btn btn-outline btn-sm" title="Invoice" onclick="downloadInvoicePdf('${v.invoice.id}')">${icon("file-down")}</button>` : ""}
       ${v.voucher?.id ? `<button class="btn btn-teal btn-sm" title="Voucher" onclick="downloadVoucherPdf('${v.voucher.id}')">${icon("ticket")}</button>` : ""}
       ${v.voucher?.id ? `<button class="btn btn-outline btn-sm" title="Regenerate" onclick="regenerateVoucher('${v.voucher.id}')">${icon("refresh-cw")}</button>` : ""}
@@ -4681,6 +5000,127 @@ async function renderSecurityApproval() {
   ], {
     filters: [["status","form.status",["","PENDING","SUBMITTED","APPROVED","REJECTED"]]],
     beforeContent: securityTabs("requests"),
+    toolbarActions: `<button class="btn btn-primary" onclick="openSecurityApprovalModal()">${icon("plus")}${t("btn.newApproval", "New approval")}</button>`,
+  });
+}
+
+/** Jump to where airports are managed — the Airports tab on the Transport page. */
+async function openAirportsTab() {
+  setPage("transport");
+  // setPage kicks off an async render, so wait for the tab bar to exist.
+  for (let i = 0; i < 20 && !document.getElementById("trTabAirports"); i++) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (typeof trShowTab === "function") trShowTab("airports");
+}
+
+// ─── Security approval editor ────────────────────────────────────────────────
+// The admin files approvals on a company's behalf and fixes what an agency got
+// wrong, so the whole record is editable here — not just approve/reject.
+
+/** The approval's own fields, in the order they are asked for. */
+function saField(id, label, input, cls = "") {
+  return `<div class="form-field ${cls}"><label>${escapeHtml(label)}</label>${input}</div>`;
+}
+
+async function openSecurityApprovalModal(id = "") {
+  const [companies] = await Promise.all([
+    id ? Promise.resolve(null) : apiFetch("/admin/companies?limit=300"),
+    ensureAirportOptions(),
+  ]);
+  const rows = window._adminListState["security-approval"]?.rows || [];
+  const v = id ? rows.find(r => r.id === id) : null;
+  if (id && !v) { toast(t("toast.notFound", "Record not found — refresh and try again"), "error"); return; }
+  const airports = state.cache.airportOptions || [];
+  const day = value => (value ? String(value).slice(0, 10) : "");
+  const opts = (list, current) => list.map(([value, label]) =>
+    `<option value="${escapeHtml(value)}" ${value === current ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+
+  // The company can only be chosen while creating — moving an existing approval
+  // between companies would strand its invoice on the old one.
+  const companyField = id
+    ? saField("saCompany", t("securityAdmin.company", "Company"), `<input value="${escapeHtml(v.company?.name || "—")}" disabled>`)
+    : saField("saCompany", t("securityAdmin.company", "Company"), `<select id="saCompanyId"><option value="">— ${escapeHtml(t("securityAdmin.pickCompany", "Pick a company"))} —</option>${
+        (companies?.data || []).map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("")}</select>`);
+
+  // With no airports configured there is nothing to approve against, and an
+  // empty dropdown gives no clue why — say so, and point at the page that fixes it.
+  const locationField = airports.length
+    ? saField("saLoc", t("form.approvalLocation", "Approval location"), `<select id="saDestination">${opts(airports.map(a => [a.code, a.label]), v?.destinationCountry)}</select>`)
+    : saField("saLoc", t("form.approvalLocation", "Approval location"),
+        `<input id="saDestination" value="${escapeHtml(v?.destinationCountry || "")}" disabled>
+         <div class="secondary-text" style="margin-top:4px">${t("securityAdmin.noAirports", "No airports yet — add one on the Airports page first.")}
+         <button type="button" class="btn btn-outline btn-sm" style="margin-inline-start:6px" onclick="closeModal(); openAirportsTab()">${t("nav.airports", "Airports")}</button></div>`);
+
+  const body = `<div class="form-grid">
+    ${companyField}
+    ${locationField}
+    ${saField("saType", t("form.type", "Type"), `<select id="saVisaType">${opts(["TOURIST","BUSINESS","TRANSIT","STUDENT","MEDICAL","UMRAH","HAJJ"].map(x => [x, x]), v?.visaType || "TOURIST")}</select>`)}
+    ${saField("saProc", t("form.processing", "Processing"), `<select id="saProcessing">${opts(["NORMAL","EXPRESS","URGENT"].map(x => [x, x]), v?.processingType || "NORMAL")}</select>`)}
+    ${saField("saName", `${t("th.name", "Client name")} *`, `<input id="saApplicantName" value="${escapeHtml(v?.applicantName || "")}">`)}
+    ${saField("saNat", `${t("form.nationality", "Nationality")} *`, `<input id="saNationality" value="${escapeHtml(v?.nationality || "")}">`)}
+    ${saField("saPass", `${t("form.passportNumber", "Passport number")} *`, `<input id="saPassportNumber" value="${escapeHtml(v?.passportNumber || "")}">`)}
+    ${saField("saExp", `${t("form.passportExpiry", "Passport expiry")} *`, `<input id="saPassportExpiry" type="date" value="${day(v?.passportExpiry)}">`)}
+    ${saField("saTravel", `${t("form.travelDate", "Travel date")} *`, `<input id="saTravelDate" type="date" value="${day(v?.travelDate)}">`)}
+    ${saField("saPax", t("form.pax", "Passengers"), `<input id="saPaxCount" type="number" min="1" value="${escapeHtml(String(v?.paxCount ?? 1))}">`)}
+    ${saField("saPhone", t("form.phone", "Phone"), `<input id="saPhone" value="${escapeHtml(v?.phone || "")}">`)}
+    ${saField("saHotel", t("form.hotelName", "Hotel"), `<input id="saHotelName" value="${escapeHtml(v?.hotelName || "")}">`)}
+    ${saField("saFrom", t("form.comingFrom", "Coming from"), `<input id="saComingFrom" value="${escapeHtml(v?.comingFrom || "")}">`)}
+    ${saField("saFlight", t("form.flightNumber", "Flight number"), `<input id="saFlightNumber" value="${escapeHtml(v?.flightNumber || "")}">`)}
+    ${saField("saNotes", t("form.notes", "Notes"), `<textarea id="saNotes" rows="3">${escapeHtml(v?.notes || "")}</textarea>`, "full")}
+    <div class="form-field full secondary-text">${t("securityAdmin.repriceHint", "Changing the location, type, processing speed or passenger count recalculates the fee and the invoice.")}</div>
+  </div>`;
+
+  openModal(id ? t("securityAdmin.editTitle", "Edit security approval") : t("securityAdmin.newTitle", "New security approval"), body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" id="saSaveBtn">${t("btn.save", "Save")}</button>
+  `);
+  document.getElementById("saSaveBtn").onclick = () => saveSecurityApproval(id);
+}
+
+async function saveSecurityApproval(id) {
+  const val = elId => document.getElementById(elId)?.value.trim() || "";
+  const payload = {
+    destinationCountry: val("saDestination"),
+    visaType: val("saVisaType"),
+    processingType: val("saProcessing"),
+    applicantName: val("saApplicantName"),
+    nationality: val("saNationality"),
+    passportNumber: val("saPassportNumber"),
+    passportExpiry: val("saPassportExpiry"),
+    travelDate: val("saTravelDate"),
+    paxCount: Number(val("saPaxCount") || 1),
+    phone: val("saPhone") || null,
+    hotelName: val("saHotelName") || null,
+    comingFrom: val("saComingFrom") || null,
+    flightNumber: val("saFlightNumber") || null,
+    notes: val("saNotes") || null,
+  };
+  const missing = ["applicantName","nationality","passportNumber","passportExpiry","travelDate","destinationCountry"]
+    .filter(k => !payload[k]);
+  if (missing.length) { toast(t("toast.validationError", "Fill in the required fields"), "error"); return; }
+  if (!id) {
+    const companyId = document.getElementById("saCompanyId")?.value;
+    if (!companyId) { toast(t("securityAdmin.pickCompany", "Pick a company"), "error"); return; }
+    payload.companyId = companyId;
+  }
+  const btn = document.getElementById("saSaveBtn");
+  setBtnLoading(btn, true);
+  const res = await apiFetch(id ? `/visa-applications/${id}` : "/visa-applications", {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify(payload),
+  });
+  setBtnLoading(btn, false);
+  if (!res?.success) return;
+  closeModal();
+  toast(res.repriced ? t("securityAdmin.repriced", "Saved. The fee was recalculated.") : t("toast.saved", "Saved"), "success");
+  adminReloadList("security-approval");
+}
+
+function deleteSecurityApproval(id) {
+  confirmAction(t("securityAdmin.deleteConfirm", "Delete this security approval and its invoice? This cannot be undone."), async () => {
+    const res = await apiFetch(`/visa-applications/${id}`, { method: "DELETE" });
+    if (res?.success) { toast(t("toast.deleted", "Deleted"), "success"); adminReloadList("security-approval"); }
   });
 }
 
@@ -4973,6 +5413,7 @@ async function renderAdminList(page, endpoint, columns, options = {}) {
             <div class="secondary-text" id="${page}Meta">Loading…</div></div>
           <div class="toolbar-actions">
             <button class="btn btn-outline" onclick="adminReloadList('${page}')">${icon("refresh-cw")}${t("btn.refresh")}</button>
+            ${options.toolbarActions || ""}
           </div>
         </div>
         <div class="table-scroll"><table class="data-table">
@@ -5003,6 +5444,9 @@ async function adminReloadList(page) {
   });
   const res = await apiFetch(`${endpoint}?${params}`);
   const rows = res?.data || [];
+  // Keep the loaded rows so a row action can open an editor on the full record
+  // without refetching it one at a time.
+  cfg.rows = rows;
   const meta = res?.meta || { total: rows.length };
   const tbody = document.getElementById(`${page}Tbody`);
   if (tbody) {

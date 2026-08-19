@@ -24,8 +24,12 @@ const activityInclude = {
 };
 
 export async function listActivities(req: Request, res: Response): Promise<void> {
+  // An admin managing the catalogue must be able to see (and reinstate) the
+  // rows they deactivated — deleteActivity only flips isActive, so without this
+  // a "deleted" excursion would vanish from the admin screen for good.
+  const wantsInactive = req.query.includeInactive === 'true' && req.user?.role === 'SUPERADMIN';
   const where = {
-    isActive: true,
+    ...(wantsInactive ? {} : { isActive: true }),
     // city is now a free-text field (case-insensitive contains)
     ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' as const } }),
     ...(req.query.category && { category: req.query.category as ActivityCategory }),
@@ -61,16 +65,58 @@ function priceOrNull(v: unknown): Decimal | null {
   return Number.isFinite(n) && n >= 0 ? new Decimal(n) : null;
 }
 
+/** Array-like fields the form sends as a list (or as delimited text). */
+const ACTIVITY_LIST_FIELDS = ['timeSlots', 'includes', 'excludes', 'galleryUrls'] as const;
+
+/**
+ * The catalogue is organised by destination, so `destinationId` is the field
+ * that decides where an excursion appears. `city` stays as the human label and
+ * is kept in step with the chosen destination — it is what the agency search,
+ * the vouchers and the older imported rows all read. Picking "Cairo" therefore
+ * files the activity under Cairo AND labels it "Cairo", with no second field to
+ * fill in by hand; clearing the destination leaves the last label in place.
+ */
+async function syncDestinationCity(
+  data: Record<string, unknown>,
+  destinationId: unknown,
+): Promise<void> {
+  if (destinationId === undefined) return;
+  if (!destinationId) { data.destinationId = null; return; }
+  const destination = await prisma.destination.findUnique({
+    where: { id: String(destinationId) },
+    select: { id: true, name: true },
+  });
+  if (!destination) throw new Error('DESTINATION_NOT_FOUND');
+  data.destinationId = destination.id;
+  // An explicitly typed city wins; otherwise the destination names the row.
+  if (!String(data.city ?? '').trim()) data.city = destination.name;
+}
+
 export async function createActivity(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
-  // Normalize — city is now a plain string
-  const data: Record<string, unknown> = {
-    ...body,
-    city: String(body.city ?? ''),
-    isConfirmableInApp: body.isConfirmableInApp !== undefined ? Boolean(body.isConfirmableInApp) : true,
-  };
+  const data: Record<string, unknown> = { ...body };
   for (const f of ACTIVITY_PRICE_FIELDS) data[f] = priceOrNull(body[f]);
-  const activity = await prisma.activity.create({ data: data as Parameters<typeof prisma.activity.create>[0]['data'] });
+  for (const f of ACTIVITY_LIST_FIELDS) {
+    if (body[f] !== undefined) data[f] = setJsonStringArray(body[f]);
+  }
+  data.isConfirmableInApp = body.isConfirmableInApp !== undefined && body.isConfirmableInApp !== null
+    ? Boolean(body.isConfirmableInApp)
+    : true;
+  try {
+    await syncDestinationCity(data, body.destinationId);
+  } catch {
+    res.status(400).json({ success: false, error: 'DESTINATION_NOT_FOUND', message: 'Unknown destination' });
+    return;
+  }
+  data.city = String(data.city ?? '').trim();
+  if (!data.city) {
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Pick a destination or type a city' });
+    return;
+  }
+  const activity = await prisma.activity.create({
+    data: data as Parameters<typeof prisma.activity.create>[0]['data'],
+    include: { destination: { select: { id: true, name: true, nameAr: true } } },
+  });
   res.status(201).json({ success: true, data: activity });
 }
 
@@ -80,10 +126,26 @@ export async function updateActivity(req: Request, res: Response): Promise<void>
   for (const f of ACTIVITY_PRICE_FIELDS) {
     if (body[f] !== undefined) data[f] = priceOrNull(body[f]);
   }
-  if (body.city !== undefined) data.city = String(body.city);
+  for (const f of ACTIVITY_LIST_FIELDS) {
+    if (body[f] !== undefined) data[f] = setJsonStringArray(body[f]);
+  }
   if (body.isConfirmableInApp !== undefined) data.isConfirmableInApp = Boolean(body.isConfirmableInApp);
-
-  const activity = await prisma.activity.update({ where: { id: req.params.id }, data });
+  if (body.isActive !== undefined && body.isActive !== null) data.isActive = Boolean(body.isActive);
+  try {
+    await syncDestinationCity(data, body.destinationId);
+  } catch {
+    res.status(400).json({ success: false, error: 'DESTINATION_NOT_FOUND', message: 'Unknown destination' });
+    return;
+  }
+  if (data.city !== undefined) {
+    const city = String(data.city ?? '').trim();
+    if (!city) { delete data.city; } else { data.city = city; }
+  }
+  const activity = await prisma.activity.update({
+    where: { id: req.params.id },
+    data,
+    include: { destination: { select: { id: true, name: true, nameAr: true } } },
+  });
   res.json({ success: true, data: activity });
 }
 
