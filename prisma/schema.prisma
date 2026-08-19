@@ -217,16 +217,6 @@ enum ReceptionType {
   FULL_ASSISTANCE
 }
 
-enum EgyptAirport {
-  CAI
-  HRG
-  SSH
-  LXR
-  ASW
-  HBE
-  MHH
-}
-
 // ─────────────────────────────────────────────
 // NEW ENUMS (B2B Refactor)
 // ─────────────────────────────────────────────
@@ -1396,7 +1386,7 @@ model AirportReception {
   createdById     String
   createdBy       User          @relation("ReceptionCreatedBy", fields: [createdById], references: [id])
   serviceType     ReceptionType
-  airport         EgyptAirport
+  airport         String // Airport.code — admin-managed, not a fixed enum
   flightNumber    String
   flightDateTime  DateTime
   guestName       String
@@ -1436,7 +1426,7 @@ model ReceptionServiceRate {
   id          String        @id @default(cuid())
   sheetsRowId String?
   serviceType ReceptionType
-  airport     EgyptAirport?
+  airport     String? // Airport.code — admin-managed, not a fixed enum
   rate        Decimal       @db.Decimal(10, 2)
   currency    String        @default("USD")
   notes       String?       @db.Text

@@ -13,7 +13,17 @@ const endpointTypes = ['AIRPORT', 'HOTEL', 'DESTINATION'] as const;
 const visaTypes = ['TOURIST', 'BUSINESS', 'TRANSIT', 'STUDENT', 'MEDICAL', 'UMRAH', 'HAJJ'] as const;
 const processingTypes = ['NORMAL', 'EXPRESS', 'URGENT'] as const;
 const receptionTypes = ['MEET_AND_GREET', 'AHLAN_SERVICE', 'VIP_LOUNGE', 'FULL_ASSISTANCE'] as const;
-const airports = ['CAI', 'HRG', 'SSH', 'LXR', 'ASW', 'HBE', 'MHH'] as const;
+/**
+ * Airports come from the admin-managed Airport table, so a reception rate may
+ * name any code an admin has added. An unknown code is rejected rather than
+ * silently coerced to CAI, which is what a fixed list used to do.
+ */
+async function resolveAirportCode(value: unknown): Promise<string | null> {
+  const code = String(value ?? '').trim().toUpperCase();
+  if (!code) return null;
+  const found = await prisma.airport.findUnique({ where: { code }, select: { code: true } });
+  return found?.code ?? null;
+}
 
 function enumValue<T extends readonly string[]>(value: unknown, allowed: T, fallback: T[number]): T[number] {
   const normalized = String(value ?? '').trim().toUpperCase();
@@ -237,16 +247,24 @@ export async function deleteVisaFee(req: Request, res: Response): Promise<void> 
 export async function listReceptionServiceRates(req: Request, res: Response): Promise<void> {
   await listMaster(req, res, 'receptionServiceRate', {
     ...(req.query.serviceType && { serviceType: enumValue(req.query.serviceType, receptionTypes, 'MEET_AND_GREET') }),
-    ...(req.query.airport && { airport: enumValue(req.query.airport, airports, 'CAI') }),
+    ...(req.query.airport && { airport: String(req.query.airport).trim().toUpperCase() }),
   });
 }
 
 export async function createReceptionServiceRate(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
+  let airport: string | null = null;
+  if (body.airport) {
+    airport = await resolveAirportCode(body.airport);
+    if (!airport) {
+      res.status(400).json({ success: false, error: 'UNKNOWN_AIRPORT', message: 'That airport is not in the airport list. Add it under Transport → Airports first.' });
+      return;
+    }
+  }
   const rate = await prisma.receptionServiceRate.create({
     data: {
       serviceType: enumValue(body.serviceType, receptionTypes, 'MEET_AND_GREET'),
-      airport: body.airport ? enumValue(body.airport, airports, 'CAI') : undefined,
+      airport: airport ?? undefined,
       rate: decimalValue(body.rate),
       currency: stringValue(body.currency)?.toUpperCase() ?? 'USD',
       notes: stringValue(body.notes),
@@ -260,7 +278,18 @@ export async function updateReceptionServiceRate(req: Request, res: Response): P
   const body = req.body as Record<string, unknown>;
   const data: Record<string, unknown> = {};
   if (body.serviceType !== undefined) data.serviceType = enumValue(body.serviceType, receptionTypes, 'MEET_AND_GREET');
-  if (body.airport !== undefined) data.airport = stringValue(body.airport) ? enumValue(body.airport, airports, 'CAI') : null;
+  if (body.airport !== undefined) {
+    if (stringValue(body.airport)) {
+      const code = await resolveAirportCode(body.airport);
+      if (!code) {
+        res.status(400).json({ success: false, error: 'UNKNOWN_AIRPORT', message: 'That airport is not in the airport list. Add it under Transport → Airports first.' });
+        return;
+      }
+      data.airport = code;
+    } else {
+      data.airport = null;
+    }
+  }
   if (body.rate !== undefined) data.rate = decimalValue(body.rate);
   if (body.currency !== undefined) data.currency = stringValue(body.currency)?.toUpperCase() ?? 'USD';
   if (body.notes !== undefined) data.notes = stringValue(body.notes) ?? null;

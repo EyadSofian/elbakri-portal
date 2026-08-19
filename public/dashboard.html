@@ -3707,12 +3707,23 @@ async function loadMyQuotesBadge() {
 }
 
 // ─── Security Approval (renamed from Visa) ───────────────────────────────────
-function renderSecurityApproval() {
-  const APPROVAL_TYPES = [
-    { label: t("securityApproval.sharm","Sharm El Sheikh"), dest: "SSH" },
-    { label: t("securityApproval.cairo","Cairo"),           dest: "CAI" },
-    { label: t("securityApproval.borgElArab","Borg El Arab"), dest: "HBE" },
-  ];
+/**
+ * The airports an admin has configured. Security approval locations and airport
+ * assist both pick from this list, so adding one under Transport → Airports is
+ * enough to offer it — no code change, and no list to keep in step here.
+ */
+async function ensureAirportList() {
+  if (state.cache.airports) return state.cache.airports;
+  const res = await apiFetch("/airports");
+  state.cache.airports = (res?.data || []).map(a => ({
+    dest: a.code,
+    label: `${a.code} · ${state.lang === "ar" ? (a.nameAr || a.nameEn) : a.nameEn}`,
+  }));
+  return state.cache.airports;
+}
+
+async function renderSecurityApproval() {
+  const APPROVAL_TYPES = await ensureAirportList();
 
   renderListPage("security-approval", "/visa-applications", [
     ["th.ref",    v => `<span class="primary-text">${escapeHtml(v.refNumber)}</span>`],
@@ -3737,11 +3748,7 @@ async function openSecurityApprovalForm() {
   const rfTpl = await rfLoadTemplate("security_approval");
   if (rfTpl) return rfOpenModal("security_approval", rfTpl, {});
 
-  const types = [
-    { label: t("securityApproval.sharm","Sharm El Sheikh"), dest: "SSH" },
-    { label: t("securityApproval.cairo","Cairo"),           dest: "CAI" },
-    { label: t("securityApproval.borgElArab","Borg El Arab"), dest: "HBE" },
-  ];
+  const types = await ensureAirportList();
   const body = `
     ${nationalityDatalist()}
     <div class="form-grid">
@@ -3871,7 +3878,7 @@ async function openAirportAssistForm() {
   const rfTpl = await rfLoadTemplate("airport_assist");
   if (rfTpl) return rfOpenModal("airport_assist", rfTpl, {});
 
-  const airports = ["CAI","HRG","SSH","LXR","ASW","HBE","MHH"];
+  const airports = (await ensureAirportList()).map(a => a.dest);
   const serviceTypes = ["MEET_AND_GREET","AHLAN_SERVICE","VIP_LOUNGE","FULL_ASSISTANCE"];
   const body = `
     <div class="form-grid">

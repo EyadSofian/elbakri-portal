@@ -189,6 +189,26 @@ const state = {
 // SAR, a Jordanian transfer in JOD. The list used to be copy-pasted in seven
 // places and had drifted apart (some copies were missing GBP), so every price
 // dropdown now reads from here.
+/**
+ * Airports come from the admin-managed Airport table, so any code an admin adds
+ * under Transport → Airports is immediately offered everywhere an airport is
+ * picked. Cached for the session; ensureAirportOptions() refreshes it.
+ */
+async function ensureAirportOptions(force = false) {
+  if (!force && state.cache.airportOptions) return state.cache.airportOptions;
+  const res = await apiFetch("/airports");
+  state.cache.airportOptions = (res?.data || []).map(a => ({
+    code: a.code,
+    label: `${a.code} · ${state.lang === "ar" ? (a.nameAr || a.nameEn) : a.nameEn}`,
+  }));
+  return state.cache.airportOptions;
+}
+
+/** [code, label] pairs for a <select>, falling back to the code alone. */
+function airportSelectOptions() {
+  return (state.cache.airportOptions || []).map(a => [a.code, a.label]);
+}
+
 const PORTAL_CURRENCIES = [
   "EGP", "USD", "EUR", "GBP",
   "SAR", "AED", "KWD", "QAR", "BHD", "OMR",  // Gulf
@@ -1120,7 +1140,7 @@ const masterConfigs = {
     syncEntity: "reception-services",
     fields: [
       { name: "serviceType", label: "th.service", type: "select", default: "MEET_AND_GREET", options: ["MEET_AND_GREET", "AHLAN_SERVICE", "VIP_LOUNGE", "FULL_ASSISTANCE"] },
-      { name: "airport", label: "th.route", type: "select", default: "CAI", options: ["CAI", "HRG", "SSH", "LXR", "ASW", "HBE", "MHH"] },
+      { name: "airport", label: "th.route", type: "select", default: "CAI", options: airportSelectOptions, nullable: true },
       { name: "rate", label: "th.amount", type: "number", required: true, default: 1 },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
       { name: "notes", label: "placeholder.notes", type: "textarea", cls: "full" },
@@ -1239,7 +1259,13 @@ function masterField(entity, fieldDef, row) {
   }
   if (fieldDef.type === "select") {
     const emptyOpt = fieldDef.nullable ? `<option value="" ${!value ? "selected" : ""}>— None —</option>` : "";
-    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><select id="${id}">${emptyOpt}${fieldDef.options.map(opt => `<option value="${opt}" ${opt === value ? "selected" : ""}>${escapeHtml(opt.replace(/_/g, " "))}</option>`).join("")}</select>${help}</div>`;
+    // options may be a plain array or a function, so a field can be built from
+    // admin-managed data (airports) instead of a list frozen in the source.
+    const opts = typeof fieldDef.options === "function" ? fieldDef.options() : fieldDef.options;
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><select id="${id}">${emptyOpt}${opts.map(opt => {
+      const [v, lbl] = Array.isArray(opt) ? opt : [opt, String(opt).replace(/_/g, " ")];
+      return `<option value="${escapeHtml(v)}" ${v === value ? "selected" : ""}>${escapeHtml(lbl)}</option>`;
+    }).join("")}</select>${help}</div>`;
   }
   if (fieldDef.type === "hotelSelect") {
     const hotels = state.cache.hotelOptions || [];
@@ -1264,6 +1290,9 @@ async function showMasterModal(entity, id = "") {
   if (entity === "transport") return openTransportRateEditor(id);
   const cfg = masterConfigs[entity];
   if (!cfg) return;
+  // The reception form's airport list is admin-managed, so load it before the
+  // dropdown is built — otherwise it renders empty on first open.
+  if (entity === "reception") await ensureAirportOptions();
   const rows = state.cache[entity + "Rows"] || [];
   const row = id ? rows.find(item => item.id === id) : null;
   const title = `${id ? t("btn.edit") : t("btn.addNew")} ${t(cfg.titleKey)}`;
@@ -4623,11 +4652,10 @@ function airportAssistTabs(current) {
 }
 
 async function renderSecurityApproval() {
-  const APPROVAL_TYPES = [
-    { label: "Sharm El Sheikh", dest: "SSH" },
-    { label: "Cairo", dest: "CAI" },
-    { label: "Borg El Arab", dest: "HBE" },
-  ];
+  // Locations come from the admin-managed airport list; an approval stores the
+  // code as free text, so adding an airport is all it takes to offer a new one.
+  await ensureAirportOptions();
+  const APPROVAL_TYPES = (state.cache.airportOptions || []).map(a => ({ label: a.label, dest: a.code }));
   return renderAdminList("security-approval", "/visa-applications", [
     ["th.ref",    v => `<span class="primary-text">${escapeHtml(v.refNumber)}</span>`],
     ["th.name",   v => escapeHtml(v.applicantName)],
@@ -5265,7 +5293,7 @@ const RF_DEFAULTS = {
   transport_booking: () => ([]),  // base booking fields live on the transport page; add extras here
   security_approval: () => ([
     rfbField({ key:"approvalType", type:"select", label:"Approval Type", labelAr:"نوع الموافقة", required:true, width:"full", order:1,
-      options:[{value:"SSH",label:"Sharm El Sheikh"},{value:"CAI",label:"Cairo"},{value:"HBE",label:"Borg El Arab"}] }),
+      options:(state.cache.airportOptions||[]).map(a=>({value:a.code,label:a.label})) }),
     rfbField({ key:"applicantName", type:"text", label:"Client Name", labelAr:"اسم العميل", required:true, order:2 }),
     rfbField({ key:"phone", type:"text", label:"Phone", labelAr:"الهاتف", required:true, order:3 }),
     rfbField({ key:"nationality", type:"nationality-select", label:"Nationality", labelAr:"الجنسية", required:true, order:4 }),
@@ -5281,7 +5309,7 @@ const RF_DEFAULTS = {
     rfbField({ key:"serviceType", type:"select", label:"Service Type", labelAr:"نوع الخدمة", required:true, order:3,
       options:[{value:"MEET_AND_GREET",label:"Meet & Greet"},{value:"AHLAN_SERVICE",label:"Ahlan Service"},{value:"VIP_LOUNGE",label:"VIP Lounge"},{value:"FULL_ASSISTANCE",label:"Full Assistance"}] }),
     rfbField({ key:"airport", type:"select", label:"Airport", labelAr:"المطار", required:true, order:4,
-      options:["CAI","HRG","SSH","LXR","ASW","HBE","MHH"].map(a=>({value:a,label:a})) }),
+      options:(state.cache.airportOptions||[]).map(a=>({value:a.code,label:a.label})) }),
     rfbField({ key:"flightNumber", type:"text", label:"Flight Number", labelAr:"رقم الرحلة", required:true, order:5 }),
     rfbField({ key:"flightDateTime", type:"datetime", label:"Flight Date & Time", labelAr:"موعد الرحلة", required:true, order:6 }),
     rfbField({ key:"guestCount", type:"number", label:"Guests", labelAr:"عدد الضيوف", defaultValue:1, order:7 }),

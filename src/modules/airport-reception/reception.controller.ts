@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
-import { BookingStatus, ReceptionType, EgyptAirport } from '@prisma/client';
+import { BookingStatus, ReceptionType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { generateRef, generateInvoiceNumber, paginate, paginateMeta, sanitizeCustomFields, escapeHtml } from '../../shared/helpers';
 import { setJsonStringArray } from '../../shared/json-array';
@@ -28,7 +28,7 @@ const receptionInclude = {
  */
 async function resolveReceptionRate(
   serviceType: ReceptionType,
-  airport: EgyptAirport,
+  airport: string, // Airport.code
   guestCount: number,
 ): Promise<{ found: boolean; unitPrice: Decimal; total: Decimal; currency: string }> {
   const rates = await prisma.receptionServiceRate.findMany({
@@ -73,7 +73,7 @@ export async function listReceptions(req: Request, res: Response): Promise<void>
 /** GET /api/airport-receptions/quote — server-authoritative price preview. */
 export async function getReceptionQuote(req: Request, res: Response): Promise<void> {
   const serviceType = String(req.query.serviceType ?? '') as ReceptionType;
-  const airport = String(req.query.airport ?? '') as EgyptAirport;
+  const airport = String(req.query.airport ?? '').trim().toUpperCase();
   const pax = Math.max(1, parseInt(String(req.query.pax ?? '1'), 10));
 
   if (!serviceType || !airport) {
@@ -101,7 +101,7 @@ export async function createReception(req: Request, res: Response): Promise<void
   const body = req.body as {
     companyId?: string;
     serviceType: 'MEET_AND_GREET' | 'AHLAN_SERVICE' | 'VIP_LOUNGE' | 'FULL_ASSISTANCE';
-    airport: 'CAI' | 'HRG' | 'SSH' | 'LXR' | 'ASW' | 'HBE' | 'MHH';
+    airport: string; // Airport.code — validated against the airport list
     flightNumber: string; flightDateTime: string;
     guestName: string; guestCount?: number;
     passengerNames?: string[]; signboardName?: string;

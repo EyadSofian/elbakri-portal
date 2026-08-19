@@ -13,6 +13,12 @@ import { z } from 'zod';
 //   - unknown keys are stripped (z.object default), never rejected.
 
 /** Optional, nullable enum that tolerates case and maps '' → null. Rejects junk. */
+/** An uppercase reference code (e.g. Airport.code) — open-ended by design. */
+const codeField = z.preprocess(
+  (v) => (v === '' ? null : typeof v === 'string' ? v.trim().toUpperCase() : v),
+  z.string().min(2).max(10).nullable().optional(),
+);
+
 function enumField<T extends readonly [string, ...string[]]>(values: T) {
   return z.preprocess(
     (v) => (v === '' ? null : typeof v === 'string' ? v.toUpperCase() : v),
@@ -41,7 +47,10 @@ const ENDPOINT_TYPES = ['AIRPORT', 'HOTEL', 'DESTINATION'] as const;
 const VISA_TYPES = ['TOURIST', 'BUSINESS', 'TRANSIT', 'STUDENT', 'MEDICAL', 'UMRAH', 'HAJJ'] as const;
 const PROCESSING_TYPES = ['NORMAL', 'EXPRESS', 'URGENT'] as const;
 const RECEPTION_TYPES = ['MEET_AND_GREET', 'AHLAN_SERVICE', 'VIP_LOUNGE', 'FULL_ASSISTANCE'] as const;
-const AIRPORTS = ['CAI', 'HRG', 'SSH', 'LXR', 'ASW', 'HBE', 'MHH'] as const;
+// Airports are admin-managed (the Airport table), so a rate must accept any
+// code the admin has added. The code is checked against that table in the
+// controller — validating it here against a frozen list is what made a newly
+// added airport unusable.
 
 // One lenient-but-validating schema for both create and update (the transport rate
 // editor always PATCHes the full payload). Unknown keys are stripped.
@@ -88,7 +97,7 @@ export const visaFeeSchema = z.object({
 
 export const receptionRateSchema = z.object({
   serviceType: enumField(RECEPTION_TYPES),
-  airport: enumField(AIRPORTS),
+  airport: codeField, // any Airport.code — existence is checked in the controller
   rate: numField,
   currency: strField,
   notes: strField,
