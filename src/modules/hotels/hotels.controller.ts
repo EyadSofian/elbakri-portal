@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
-import { CompanyTier, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
 import { setJsonStringArray } from '../../shared/json-array';
@@ -19,22 +19,17 @@ const POLICY_FIELDS = [
   'importantNotes', 'importantNotesAr',
 ] as const;
 
-const TIER_ORDER: Record<CompanyTier, number> = {
-  STANDARD: 0,
-  SILVER: 1,
-  GOLD: 2,
-  PLATINUM: 3,
-};
-
-/** Determine if a company can see this hotel's price */
-function canSeePrices(hotel: {
-  showPriceToAgents: boolean;
-  minVisibleTier: CompanyTier | null;
-}, companyTier: CompanyTier, override?: { canViewPrice: boolean } | null): boolean {
+/**
+ * Determine if a company can see this hotel's price.
+ *
+ * Two controls, in order: an explicit per-company decision wins, otherwise the
+ * hotel's own switch. A company's tier used to gate this as well, which meant a
+ * hotel could be hidden from an agent by a setting nobody could see on the
+ * company — the per-company table says the same thing where it can be read.
+ */
+function canSeePrices(hotel: { showPriceToAgents: boolean }, override?: { canViewPrice: boolean } | null): boolean {
   if (override) return override.canViewPrice;
-  if (!hotel.showPriceToAgents) return false;
-  if (!hotel.minVisibleTier) return true;
-  return TIER_ORDER[companyTier] >= TIER_ORDER[hotel.minVisibleTier];
+  return hotel.showPriceToAgents;
 }
 
 export async function listHotels(req: Request, res: Response): Promise<void> {
@@ -120,15 +115,13 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
     prisma.hotel.count({ where }),
   ]);
 
-  // For non-admin users, determine price visibility based on company tier + market
-  let companyTier: CompanyTier = 'STANDARD';
+  // For non-admin users, prices resolve against the company's own market.
   let companyMarket: import('@prisma/client').Market | null = null;
   if (caller.role !== 'SUPERADMIN' && caller.companyId) {
     const company = await prisma.company.findUnique({
       where: { id: caller.companyId },
-      select: { tier: true, market: true },
+      select: { market: true },
     });
-    companyTier = company?.tier ?? 'STANDARD';
     companyMarket = company?.market ?? null;
   }
 
@@ -145,7 +138,7 @@ export async function listHotels(req: Request, res: Response): Promise<void> {
       return hotel; // Admin sees everything (base/Foreign price)
     }
     const visibilityOverride = 'companyVisibility' in hotel ? hotel.companyVisibility[0] : null;
-    const showPrice = canSeePrices(hotel, companyTier, visibilityOverride);
+    const showPrice = canSeePrices(hotel, visibilityOverride);
     const { companyVisibility: _companyVisibility, ...hotelData } = hotel as typeof hotel & { companyVisibility?: unknown };
     const ov = marketOverrides.get(hotel.id);
     const rateInfo = rateMap.get(hotel.id) as { fromPrice: Decimal | null; currency: string | null } | undefined;
@@ -214,11 +207,10 @@ export async function getHotel(req: Request, res: Response): Promise<void> {
   }
 
   const company = caller.companyId
-    ? await prisma.company.findUnique({ where: { id: caller.companyId }, select: { tier: true, market: true } })
+    ? await prisma.company.findUnique({ where: { id: caller.companyId }, select: { market: true } })
     : null;
-  const companyTier: CompanyTier = company?.tier ?? 'STANDARD';
   const visibilityOverride = 'companyVisibility' in hotel ? hotel.companyVisibility[0] : null;
-  const showPrice = canSeePrices(hotel, companyTier, visibilityOverride);
+  const showPrice = canSeePrices(hotel, visibilityOverride);
   const { companyVisibility: _companyVisibility, ...hotelData } = hotel as typeof hotel & { companyVisibility?: unknown };
   const ov = (await resolveMarketPriceMap('HOTEL', [hotel.id], { market: company?.market ?? null, companyId: caller.companyId ?? null })).get(hotel.id);
   const marketPrice = ov?.amount ?? hotel.pricePerNight;
@@ -255,8 +247,7 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
     description?: string; descriptionAr?: string;
     amenities?: string[]; imageUrl?: string; galleryUrls?: string[];
     pricePerNight: number; currency?: string;
-    commissionPercent?: number; availableRooms?: number; maxGuestsPerRoom?: number;
-    showPriceToAgents?: boolean; allowQuoteRequest?: boolean; minVisibleTier?: CompanyTier;
+    showPriceToAgents?: boolean; allowQuoteRequest?: boolean;
     destinationId?: string; area?: string | null; googleRating?: number | null; isActive?: boolean;
   } & Partial<Record<(typeof POLICY_FIELDS)[number], string>>;
 
@@ -283,12 +274,8 @@ export async function createHotel(req: Request, res: Response): Promise<void> {
       galleryUrls: setJsonStringArray(body.galleryUrls),
       pricePerNight: new Decimal(body.pricePerNight),
       currency: body.currency ?? 'USD',
-      commissionPercent: new Decimal(body.commissionPercent ?? 0),
-      availableRooms: body.availableRooms ?? 0,
-      maxGuestsPerRoom: body.maxGuestsPerRoom ?? 2,
       showPriceToAgents: body.showPriceToAgents ?? false,
       allowQuoteRequest: body.allowQuoteRequest ?? true,
-      minVisibleTier: body.minVisibleTier ?? null,
       destinationId: body.destinationId ?? null,
       area: body.area ?? null,
       googleRating: body.googleRating == null ? null : new Decimal(Number(body.googleRating)),
@@ -319,12 +306,8 @@ export async function updateHotel(req: Request, res: Response): Promise<void> {
   if (body.imageUrl !== undefined) data.imageUrl = body.imageUrl ? String(body.imageUrl) : null;
   if (body.pricePerNight !== undefined) data.pricePerNight = new Decimal(Number(body.pricePerNight));
   if (body.currency) data.currency = String(body.currency);
-  if (body.commissionPercent !== undefined) data.commissionPercent = new Decimal(Number(body.commissionPercent));
-  if (body.availableRooms !== undefined) data.availableRooms = Number(body.availableRooms);
-  if (body.maxGuestsPerRoom !== undefined) data.maxGuestsPerRoom = Number(body.maxGuestsPerRoom);
   if (body.showPriceToAgents !== undefined) data.showPriceToAgents = Boolean(body.showPriceToAgents);
   if (body.allowQuoteRequest !== undefined) data.allowQuoteRequest = Boolean(body.allowQuoteRequest);
-  if (body.minVisibleTier !== undefined) data.minVisibleTier = body.minVisibleTier as CompanyTier | null;
   if (body.destinationId !== undefined) data.destinationId = body.destinationId ? String(body.destinationId) : null;
   if (body.area !== undefined) data.area = body.area ? String(body.area) : null;
   if (body.googleRating !== undefined) data.googleRating = body.googleRating == null ? null : new Decimal(Number(body.googleRating));
@@ -349,17 +332,11 @@ export async function deleteHotel(req: Request, res: Response): Promise<void> {
 
 /** Toggle price visibility for a hotel (admin shortcut) */
 export async function toggleHotelPriceVisibility(req: Request, res: Response): Promise<void> {
-  const { showPriceToAgents, minVisibleTier } = req.body as {
-    showPriceToAgents?: boolean;
-    minVisibleTier?: CompanyTier | null;
-  };
+  const { showPriceToAgents } = req.body as { showPriceToAgents?: boolean };
 
   const hotel = await prisma.hotel.update({
     where: { id: req.params.id },
-    data: {
-      ...(showPriceToAgents !== undefined && { showPriceToAgents }),
-      ...(minVisibleTier !== undefined && { minVisibleTier: minVisibleTier ?? null }),
-    },
+    data: { ...(showPriceToAgents !== undefined && { showPriceToAgents }) },
   });
 
   res.json({ success: true, data: hotel });

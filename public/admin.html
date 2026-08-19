@@ -1054,12 +1054,8 @@ const masterConfigs = {
       { name: "galleryUrls", label: "form.gallery", fallback: "Gallery image URLs", type: "list", cls: "full", helpKey: "help.galleryUrls", help: "One image URL per line — shown to agents as a gallery." },
       { name: "pricePerNight", label: "th.amount", type: "number", required: true, default: 1 },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
-      { name: "commissionPercent", label: "form.commissionPercent", fallback: "Hotel commission %", type: "number", default: 0, helpKey: "help.commission", help: "Added to the hotel base price for client bookings" },
-      { name: "availableRooms", label: "form.availableRooms", fallback: "Available rooms", type: "number", default: 0, helpKey: "help.noRoomCap", help: "0 means no inventory cap" },
-      { name: "maxGuestsPerRoom", label: "form.maxGuestsPerRoom", fallback: "Guests per room", type: "number", default: 2 },
       { name: "showPriceToAgents", label: "hotel.showPriceToAgents", fallback: "Show Prices to Agents", type: "checkbox" },
       { name: "allowQuoteRequest", label: "hotel.allowQuoteRequest", fallback: "Allow Quote Request", type: "checkbox" },
-      { name: "minVisibleTier", label: "hotel.minVisibleTier", fallback: "Min Visible Tier", type: "select", nullable: true, options: ["STANDARD", "SILVER", "GOLD", "PLATINUM"] },
     ],
     marketPrices: [{ entityType: "HOTEL", baseField: "pricePerNight", label: "Price / Night" }],
   },
@@ -2162,7 +2158,7 @@ const HE_MARKETS = [
 // rather than hard-coded — see heLoadMealPlans().
 let HE_MEALS = [["", "—"]];
 const HE_CURRENCIES = PORTAL_CURRENCIES;
-const HE_SUPP_TYPES = ["TEXT_ONLY", "FIXED_AMOUNT", "PERCENTAGE", "TOTAL_PRICE"];
+const HE_SUPP_TYPES = ["FIXED_AMOUNT", "TOTAL_PRICE", "PERCENTAGE", "TEXT_ONLY"];
 
 /** Load the admin-managed meal plans once per editor open. */
 async function heLoadMealPlans() {
@@ -2308,10 +2304,6 @@ async function openHotelEditor(id = "") {
           </div>
         </div>
       </div>
-      ${fld(t("form.commissionPercent", "Commission %"), inp("heCommission", h.commissionPercent ?? 0, "number", 'step="0.01" min="0"'))}
-      ${fld(t("form.availableRooms", "Available rooms"), inp("heRooms", h.availableRooms ?? 0, "number", 'min="0"'))}
-      ${fld(t("form.maxGuestsPerRoom", "Guests per room"), inp("heMaxGuests", h.maxGuestsPerRoom ?? 2, "number", 'min="1"'))}
-      ${fld(t("hotel.minVisibleTier", "Min visible tier"), `<select id="heMinTier"><option value="">— None —</option>${["STANDARD","SILVER","GOLD","PLATINUM"].map(x => `<option value="${x}" ${h.minVisibleTier===x?"selected":""}>${x}</option>`).join("")}</select>`)}
       ${fullFld(t("form.description", "Description (EN)"), ta("heDesc", h.description))}
       ${fullFld(t("form.descriptionAr", "Description (AR)"), ta("heDescAr", h.descriptionAr))}
     </div>
@@ -2370,7 +2362,7 @@ async function openHotelEditor(id = "") {
 
   // ── Pricing (rate matrix)
   const pricing = `<div class="he-panel" data-panel="pricing" style="display:none">
-    <div class="secondary-text" style="margin-bottom:10px">${t("hotel.rateMatrixHelp", "Each row is a room rate for one market with single / double / triple prices in an explicit currency (no FX). Market = ALL applies when no market-specific row exists. Add supplements (Sea View, Extra Bed, …) per row.")}</div>
+    <div class="secondary-text" style="margin-bottom:10px">${t("hotel.rateMatrixHelp", "Each row is a room rate for one market with single / double / triple prices in an explicit currency (no FX). Market = ALL applies when no market-specific row exists. Under each row, add your own room types and extras — Suite, Sea View, Extra Bed — each either priced on its own or adding to the room price.")}</div>
     <div class="secondary-text" style="margin-bottom:10px">${t("hotel.periodsHelp", "One row per period and per market: add a row for each season (Valid from / Valid to) and a row for each market you sell at a different price. Rows never overwrite each other.")}</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       <button type="button" class="btn btn-primary btn-sm" onclick="heAddRate()">${icon("plus")}${t("hotel.addRate", "Add rate row")}</button>
@@ -2422,8 +2414,14 @@ function heBindRateTitles() {
     box.addEventListener("change", (e) => {
       if (e.target.closest(".he-market, .he-vf, .he-vt")) heSyncRateTitles();
     });
+    // A rate row's currency is what an empty supplement currency falls back to,
+    // so changing it re-words every sentence underneath.
+    box.addEventListener("change", (e) => {
+      if (e.target.closest(".he-cur")) heSyncAllSupps(e.target.closest(".he-rate"));
+    });
   }
   heSyncRateTitles();
+  heSyncAllSupps(box);
 }
 
 function heMainPreviewInner() {
@@ -2556,8 +2554,8 @@ function heRateCardHtml(r) {
     </div>
     <div style="margin-top:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <strong style="font-size:13px">${t("hotel.supplements", "Supplements")}</strong>
-        <button type="button" class="btn btn-outline btn-sm" onclick="heAddSupp(this)">+ ${t("hotel.addSupplement", "Add supplement")}</button>
+        <strong style="font-size:13px">${t("hotel.supplements", "Room types & extras")}</strong>
+        <button type="button" class="btn btn-outline btn-sm" onclick="heAddSupp(this)">+ ${t("hotel.addSupplement", "Add room type or extra")}</button>
       </div>
       <div class="he-supps">${supps}</div>
     </div>
@@ -2567,18 +2565,83 @@ function heRateCardHtml(r) {
     </div>
   </div>`;
 }
+/**
+ * One room type or extra on a rate row.
+ *
+ * This is where an operator writes their own room category — "Suite", "Sea
+ * View", "Extra Bed" — and says what it costs. The two things they reach for
+ * are "this category has its own price" and "this adds so much on top", so the
+ * row is built around that choice and then spells the result back out in a
+ * sentence: the enum names alone ("FIXED AMOUNT", "TOTAL PRICE") never told
+ * anyone which of the two they had picked.
+ *
+ * A new row starts as "adds an amount", the common case. A saved row always
+ * shows the type it was saved with.
+ */
 function heSuppHtml(s) {
   s = s || {};
-  const typeSel = HE_SUPP_TYPES.map(x => `<option value="${x}" ${(s.type || "TEXT_ONLY") === x ? "selected" : ""}>${t("suppType." + x, x.replace(/_/g, " "))}</option>`).join("");
+  const current = s.type || "FIXED_AMOUNT";
+  const typeSel = HE_SUPP_TYPES.map(x => `<option value="${x}" ${current === x ? "selected" : ""}>${t("suppType." + x, x.replace(/_/g, " "))}</option>`).join("");
   const curSel = `<option value="">—</option>` + HE_CURRENCIES.map(c => `<option value="${c}" ${(s.currency || "") === c ? "selected" : ""}>${c}</option>`).join("");
-  return `<div class="he-supp" style="display:grid;grid-template-columns:1.4fr 1fr 0.9fr 0.8fr 1.4fr auto;gap:6px;align-items:end;margin-bottom:6px">
-    <div class="form-field"><label>${t("hotel.suppName", "Name")}</label><input class="hs-name" value="${escapeHtml(s.name || "")}" placeholder="e.g. Sea View"></div>
-    <div class="form-field"><label>${t("hotel.suppType", "Type")}</label><select class="hs-type">${typeSel}</select></div>
-    <div class="form-field"><label>${t("form.amount", "Amount")}</label><input class="hs-amount" type="number" step="0.01" min="0" value="${s.amount != null ? escapeHtml(s.amount) : ""}"></div>
-    <div class="form-field"><label>${t("form.currency", "Cur")}</label><select class="hs-cur">${curSel}</select></div>
+  return `<div class="he-supp" style="display:grid;grid-template-columns:1.4fr 1.3fr 0.9fr 0.7fr 1.2fr auto;gap:6px;align-items:end;margin-bottom:10px">
+    <div class="form-field"><label>${t("hotel.suppName", "Room type / extra")}</label><input class="hs-name" oninput="heSyncSupp(this)" value="${escapeHtml(s.name || "")}" placeholder="${escapeHtml(t("hotel.suppNamePh", "e.g. Suite, Sea View, Extra Bed"))}"></div>
+    <div class="form-field"><label>${t("hotel.suppType", "What it does to the price")}</label><select class="hs-type" onchange="heSyncSupp(this)">${typeSel}</select></div>
+    <div class="form-field hs-amount-field"><label class="hs-amount-label">${t("form.amount", "Amount")}</label><input class="hs-amount" type="number" step="0.01" min="0" oninput="heSyncSupp(this)" value="${s.amount != null ? escapeHtml(s.amount) : ""}"></div>
+    <div class="form-field hs-cur-field"><label>${t("form.currency", "Cur")}</label><select class="hs-cur" onchange="heSyncSupp(this)">${curSel}</select></div>
     <div class="form-field"><label>${t("placeholder.notes", "Notes")}</label><input class="hs-notes" value="${escapeHtml(s.notes || "")}"></div>
     <button type="button" class="icon-button btn-icon" title="${t("btn.remove", "Remove")}" onclick="this.closest('.he-supp').remove()">${icon("x")}</button>
+    <div class="hs-effect secondary-text" style="grid-column:1/-1;margin-top:-2px"></div>
   </div>`;
+}
+
+/**
+ * Say back what this row will charge, in a sentence naming the operator's own
+ * room type and their own number — and show only the fields that choice uses,
+ * so a note-only row does not sit there asking for an amount it will ignore.
+ */
+function heSyncSupp(el) {
+  const row = el.closest ? el.closest(".he-supp") : el;
+  if (!row) return;
+  const type = row.querySelector(".hs-type")?.value || "FIXED_AMOUNT";
+  const amountEl = row.querySelector(".hs-amount");
+  const raw = amountEl?.value;
+  const name = (row.querySelector(".hs-name")?.value || "").trim();
+  const priced = type !== "TEXT_ONLY";
+  const pct = type === "PERCENTAGE";
+  // A percentage carries no currency, and a note carries neither.
+  row.querySelector(".hs-amount-field").style.display = priced ? "" : "none";
+  row.querySelector(".hs-cur-field").style.display = (priced && !pct) ? "" : "none";
+
+  const label = row.querySelector(".hs-amount-label");
+  if (label) {
+    label.textContent = type === "TOTAL_PRICE" ? t("hotel.suppAmountTotal", "Price per night")
+      : pct ? t("hotel.suppAmountPct", "Percent to add")
+      : t("hotel.suppAmountAdd", "Amount to add");
+  }
+
+  // Fall back to the rate row's own currency, which is what an empty cell means.
+  const cur = row.querySelector(".hs-cur")?.value || row.closest(".he-rate")?.querySelector(".he-cur")?.value || "";
+  const subject = name ? `«${escapeHtml(name)}»` : t("hotel.suppThisRow", "This row");
+  const out = row.querySelector(".hs-effect");
+  if (!out) return;
+
+  if (!priced) {
+    out.innerHTML = `${subject} — ${t("hotel.suppNoteOnly", "a note only, nothing is added to the price")}`;
+    return;
+  }
+  if (raw === "" || raw == null) {
+    out.innerHTML = `${subject} — ${t("hotel.suppNeedAmount", "enter an amount so it is priced")}`;
+    return;
+  }
+  const money = pct ? `${formatNumber(raw)}%` : `${formatNumber(raw)}${cur ? " " + escapeHtml(cur) : ""}`;
+  out.innerHTML = type === "TOTAL_PRICE"
+    ? `${subject} = <strong>${money}</strong> ${t("hotel.suppPerNightInstead", "per night — instead of the room price")}`
+    : `${subject} = ${t("hotel.suppRoomPrice", "room price")} + <strong>${money}</strong>`;
+}
+
+/** Paint every supplement sentence in a freshly rendered container. */
+function heSyncAllSupps(scope) {
+  (scope || document).querySelectorAll(".he-supp").forEach(row => heSyncSupp(row));
 }
 function heAddRate() {
   const box = document.getElementById("heRatesBox");
@@ -2589,6 +2652,7 @@ function heAddRate() {
   box.appendChild(card);
   refreshIcons(box);
   heSyncRateTitles();
+  heSyncAllSupps(card);
   card.scrollIntoView({ behavior: "smooth", block: "center" });
   card.querySelector(".he-room")?.focus();
 }
@@ -2604,7 +2668,7 @@ function heDuplicateRate(btn) {
   const g = sel => card.querySelector(sel);
   const supplements = [...card.querySelectorAll(".he-supp")].map(sc => ({
     name: sc.querySelector(".hs-name")?.value || "",
-    type: sc.querySelector(".hs-type")?.value || "TEXT_ONLY",
+    type: sc.querySelector(".hs-type")?.value || "FIXED_AMOUNT",
     amount: sc.querySelector(".hs-amount")?.value === "" ? null : Number(sc.querySelector(".hs-amount")?.value),
     currency: sc.querySelector(".hs-cur")?.value || null,
     notes: sc.querySelector(".hs-notes")?.value || "",
@@ -2627,6 +2691,7 @@ function heDuplicateRate(btn) {
   card.after(el);
   refreshIcons(el);
   heSyncRateTitles();
+  heSyncAllSupps(el);
   el.scrollIntoView({ behavior: "smooth", block: "center" });
   el.querySelector(".he-vf")?.focus();
 }
@@ -2653,8 +2718,11 @@ function heAddSupp(btn) {
   const box = btn.closest(".he-rate").querySelector(".he-supps");
   const tmp = document.createElement("div");
   tmp.innerHTML = heSuppHtml({});
-  box.appendChild(tmp.firstElementChild);
+  const row = tmp.firstElementChild;
+  box.appendChild(row);
   refreshIcons(box);
+  heSyncSupp(row);
+  row.querySelector(".hs-name")?.focus();
 }
 function heCollectRates() {
   const out = [];
@@ -2669,7 +2737,7 @@ function heCollectRates() {
       if (!name) return null;
       return {
         name,
-        type: sg(".hs-type")?.value || "TEXT_ONLY",
+        type: sg(".hs-type")?.value || "FIXED_AMOUNT",
         amount: sg(".hs-amount")?.value !== "" ? Number(sg(".hs-amount").value) : null,
         currency: sg(".hs-cur")?.value || null,
         notes: (sg(".hs-notes")?.value || "").trim() || null,
@@ -2713,10 +2781,6 @@ async function heSave() {
     googleRating: ratingRaw === "" ? null : Number(ratingRaw),
     pricePerNight: Number(val("hePrice") || 0) || 1,
     currency: document.getElementById("heCurrency")?.value || "USD",
-    commissionPercent: Number(val("heCommission") || 0),
-    availableRooms: Number(val("heRooms") || 0),
-    maxGuestsPerRoom: Number(val("heMaxGuests") || 2),
-    minVisibleTier: document.getElementById("heMinTier")?.value || null,
     description: val("heDesc") || null,
     descriptionAr: val("heDescAr") || null,
     isActive: document.getElementById("heActive")?.checked !== false,
@@ -2926,9 +2990,6 @@ async function showHotelDetails(id) {
     ${h.amenities?.length ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>` : ""}
     <div class="info-grid" style="margin-top:16px">
       <div class="info-item"><div class="info-label">${t("th.amount","Price/Night")}</div><div class="info-value">${Number(h.pricePerNight||0) > 0 ? formatMoney(h.pricePerNight, h.currency) : t("hotel.priceOnRequest","On request")}</div></div>
-      <div class="info-item"><div class="info-label">${t("form.commissionPercent","Commission %")}</div><div class="info-value">${Number(h.commissionPercent||0).toFixed(2)}%</div></div>
-      <div class="info-item"><div class="info-label">${t("form.availableRooms","Available rooms")}</div><div class="info-value">${formatNumber(h.availableRooms||0)}</div></div>
-      <div class="info-item"><div class="info-label">${t("form.maxGuestsPerRoom","Guests per room")}</div><div class="info-value">${formatNumber(h.maxGuestsPerRoom||2)}</div></div>
     </div>
     ${pricingEditor}
     </div>`;
@@ -4091,10 +4152,46 @@ function trSyncBidirDefault() {
   box.checked = !trIsAirportShaped(type, mode);
 }
 
+/**
+ * Spell out, in the operator's own terms, what the direction box will do to
+ * THIS rate — naming the actual return trip and the actual price rather than
+ * describing the setting in the abstract. "Bidirectional" tells someone
+ * entering a Cairo → North Coast rate nothing about whether a customer coming
+ * back from the coast will see a price.
+ */
+function trSyncBidirHint() {
+  const hint = document.getElementById("trBidirHint");
+  const box = document.getElementById("trBidir");
+  if (!hint || !box) return;
+  const from = trCollectEp("from").name;
+  const to = trCollectEp("to").name;
+  const egp = document.getElementById("trPriceEgp")?.value;
+  const usd = document.getElementById("trPriceUsd")?.value;
+  const money = [egp ? `${formatNumber(egp)} EGP` : "", usd ? `${formatNumber(usd)} USD` : ""].filter(Boolean).join(" / ");
+  // Until both ends are chosen there is no return trip to name.
+  // Isolated as LTR so the route reads the same way round in an Arabic sentence.
+  const back = (from && to) ? `<strong dir="ltr">${escapeHtml(to)} → ${escapeHtml(from)}</strong>` : "";
+
+  if (box.checked) {
+    hint.innerHTML = back
+      ? `${t("transport.bidirOnRoute", "The return trip is priced too:")} ${back}${money ? ` — ${escapeHtml(money)}` : ""}`
+      : t("transport.bidirOn", "The return trip is priced at the same price. Choose From and To to see it.");
+  } else {
+    hint.innerHTML = back
+      ? `${t("transport.bidirOffRoute", "The return trip has no price — a customer travelling")} ${back} ${t("transport.bidirOffTail", "sees \"Price on request\".")}`
+      : t("transport.bidirOff", "The return trip has no price. A customer travelling the other way sees \"Price on request\".");
+  }
+  // The airport nuance only matters on an airport rate, so it is only said there.
+  if (trIsAirportShaped(document.getElementById("trType")?.value, document.getElementById("trMode")?.value)) {
+    hint.innerHTML += `<div style="margin-top:4px">${t("transport.bidirAirportHint", "Airport transfers start off, because meeting an arrival usually costs more than dropping off a departure. Tick it when both directions really are the same price.")}</div>`;
+  }
+}
+
 /** Mode or type changed: refresh both the visible fields and the direction default. */
 function trModeChanged() {
   trSyncModeFields();
   trSyncBidirDefault();
+  trSyncBidirHint();
 }
 
 const TR_SERVICE_MODES = ["POINT_TO_POINT", "AIRPORT_TRANSFER", "HOURLY_CHARTER", "DAY_USE"];
@@ -4134,7 +4231,7 @@ async function openTransportRateEditor(id = "") {
   // was actually saved.
   const isNewRate = !id;
   const trBidirDefault = isNewRate ? !trIsAirportShaped(r.type, r.serviceMode) : !!r.isBidirectional;
-  const num = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" type="number" step="0.01" min="0" value="${val != null ? escapeHtml(val) : ""}" placeholder="${escapeHtml(ph)}"></div>`;
+  const num = (id2, val, label, ph = "", onInput = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" type="number" step="0.01" min="0"${onInput ? ` oninput="${onInput}"` : ""} value="${val != null ? escapeHtml(val) : ""}" placeholder="${escapeHtml(ph)}"></div>`;
   const txt = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" value="${escapeHtml(val ?? "")}" placeholder="${escapeHtml(ph)}"></div>`;
 
   const body = `
@@ -4163,14 +4260,14 @@ async function openTransportRateEditor(id = "") {
         ${trEpBlock("from", r, airports, destinations, hotels, t("form.from", "From"))}
         ${trEpBlock("to", r, airports, destinations, hotels, t("form.to", "To"))}
       </div>
-      <label class="check-row" style="margin-top:12px"><input id="trBidir" type="checkbox" ${trBidirDefault ? "checked" : ""} ${isNewRate ? "" : 'data-existing="1"'} onchange="this.dataset.touched='1'"> ${t("transport.bidirectional", "Bidirectional — also prices the reverse route (B → A) at the same price")}</label>
-      <div class="secondary-text" id="trBidirHint" style="margin-top:4px">${t("transport.bidirAirportHint", "Left on for a normal city-to-city transfer, which usually costs the same both ways. Airport transfers start off, because an arrival often costs more than a departure — tick it yourself when the two directions are priced alike.")}</div>
+      <label class="check-row" style="margin-top:12px"><input id="trBidir" type="checkbox" ${trBidirDefault ? "checked" : ""} ${isNewRate ? "" : 'data-existing="1"'} onchange="this.dataset.touched='1';trSyncBidirHint()"> ${t("transport.bidirectional", "Charge the return trip the same")}</label>
+      <div class="secondary-text" id="trBidirHint" style="margin-top:4px"></div>
     </div>
     <div class="form-section">
       <div class="form-section-title">${t("transport.pricingDual", "Pricing (explicit, no FX — Egyptian sees EGP, others USD)")}</div>
       <div class="form-grid" style="grid-template-columns:repeat(4,1fr)">
-        ${num("trPriceEgp", egpVal, t("transport.priceEgp", "One-way EGP"))}
-        ${num("trPriceUsd", usdVal, t("transport.priceUsd", "One-way USD"))}
+        ${num("trPriceEgp", egpVal, t("transport.priceEgp", "One-way EGP"), "", "trSyncBidirHint()")}
+        ${num("trPriceUsd", usdVal, t("transport.priceUsd", "One-way USD"), "", "trSyncBidirHint()")}
         <div class="form-field" data-shape="route"><label>${t("transport.rtEgp", "Round-trip EGP")}</label><input id="trRtEgp" type="number" step="0.01" min="0" value="${rtEgpVal != null ? escapeHtml(rtEgpVal) : ""}"></div>
         <div class="form-field" data-shape="route"><label>${t("transport.rtUsd", "Round-trip USD")}</label><input id="trRtUsd" type="number" step="0.01" min="0" value="${rtUsdVal != null ? escapeHtml(rtUsdVal) : ""}"></div>
         ${num("trMinCap", r.minCapacity ?? 1, t("form.minPax", "Min pax"))}
@@ -4191,6 +4288,7 @@ async function openTransportRateEditor(id = "") {
   trEpInit("to");
   // Show only the fields this service mode uses, before the admin sees the form.
   trSyncModeFields();
+  trSyncBidirHint();
 }
 
 function trEpBlock(side, r, airports, destinations, hotels, label) {
@@ -4210,10 +4308,10 @@ function trEpBlock(side, r, airports, destinations, hotels, label) {
         <option value="DESTINATION" ${curType === "DESTINATION" ? "selected" : ""}>${t("transport.destination", "Destination")}</option>
       </select>
     </div>
-    <div class="form-field tr-ep-pick" data-kind="AIRPORT" style="display:none"><label>${t("transport.airport", "Airport")}</label><select class="tr-ep-airport">${airOpts}</select></div>
-    <div class="form-field tr-ep-pick" data-kind="DESTINATION" style="display:none"><label>${t("transport.destination", "Destination")}</label><select class="tr-ep-dest">${destOpts}</select></div>
-    <div class="form-field tr-ep-pick" data-kind="HOTEL" style="display:none"><label>${t("transport.hotel", "Hotel")}</label><select class="tr-ep-hotel">${hotOpts}</select></div>
-    <div class="form-field"><label>${t("transport.endpointName", "Display name (optional override)")}</label><input class="tr-ep-name" value="${escapeHtml(r[`${side}Name`] || r[`${side}Location`] || "")}" placeholder="${escapeHtml(t("transport.endpointNamePh", "Auto from selection, or type a name"))}"></div>
+    <div class="form-field tr-ep-pick" data-kind="AIRPORT" style="display:none"><label>${t("transport.airport", "Airport")}</label><select class="tr-ep-airport" onchange="trSyncBidirHint()">${airOpts}</select></div>
+    <div class="form-field tr-ep-pick" data-kind="DESTINATION" style="display:none"><label>${t("transport.destination", "Destination")}</label><select class="tr-ep-dest" onchange="trSyncBidirHint()">${destOpts}</select></div>
+    <div class="form-field tr-ep-pick" data-kind="HOTEL" style="display:none"><label>${t("transport.hotel", "Hotel")}</label><select class="tr-ep-hotel" onchange="trSyncBidirHint()">${hotOpts}</select></div>
+    <div class="form-field"><label>${t("transport.endpointName", "Display name (optional override)")}</label><input class="tr-ep-name" oninput="trSyncBidirHint()" value="${escapeHtml(r[`${side}Name`] || r[`${side}Location`] || "")}" placeholder="${escapeHtml(t("transport.endpointNamePh", "Auto from selection, or type a name"))}"></div>
   </div>`;
 }
 function trEpTypeChange(side) {
@@ -4380,9 +4478,12 @@ function renderTransportRatesTable() {
     const arrow = r => r.isBidirectional ? "⇄" : "→";
     rTbody.innerHTML = rates.length ? rates.map(r => `<tr class="${state.selectedTransportRates.has(r.id) ? "selected" : ""}">
       <td><input type="checkbox" ${state.selectedTransportRates.has(r.id) ? "checked" : ""} onchange="trToggleRateSelection('${r.id}', this.checked)" aria-label="Select rate"></td>
-      <td>${escapeHtml(r.type?.replace(/_/g," ")||"—")}${r.isBidirectional ? `<div class="secondary-text">${t("transport.bidirShort","bidirectional")}</div>` : ""}</td>
+      <td>${escapeHtml(r.type?.replace(/_/g," ")||"—")}</td>
       <td><strong>${escapeHtml(r.vehicleType?.replace(/_/g," ")||"—")}</strong></td>
-      <td>${escapeHtml(r.fromName||r.fromLocation||"—")} ${arrow(r)} ${escapeHtml(r.toName||r.toLocation||"—")}${r.city ? `<div class="secondary-text">${escapeHtml(r.city)}</div>` : ""}</td>
+      <td>${escapeHtml(r.fromName||r.fromLocation||"—")} ${arrow(r)} ${escapeHtml(r.toName||r.toLocation||"—")}
+        <div class="secondary-text">${r.isBidirectional
+          ? t("transport.returnPriced", "return trip priced the same")
+          : t("transport.returnUnpriced", "return trip has no price")}${r.city ? ` · ${escapeHtml(r.city)}` : ""}</div></td>
       <td class="numeric">${dualOneWay(r)}</td>
       <td class="numeric">${dualRt(r)}</td>
       <td>${r.minCapacity||1}${r.maxCapacity ? "–"+r.maxCapacity : "+"}</td>

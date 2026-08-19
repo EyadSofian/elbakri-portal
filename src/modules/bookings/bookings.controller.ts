@@ -12,7 +12,7 @@ import { debitWallet, refundWallet } from '../../shared/wallet';
 
 const bookingInclude = {
   company: { select: { id: true, name: true, email: true } },
-  hotel: { select: { id: true, name: true, city: true, country: true, commissionPercent: true } },
+  hotel: { select: { id: true, name: true, city: true, country: true } },
   room: { select: { id: true, type: true, pricePerNight: true } },
   createdBy: { select: { id: true, name: true } },
   confirmedBy: { select: { id: true, name: true } },
@@ -114,8 +114,6 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
     let roomsCount = body.roomsCount ?? 1;
     let sourceBaseAmount = new Decimal(0);
     let sourceCurrency = String(body.currency ?? 'USD').toUpperCase();
-    let commissionPercent = new Decimal(0);
-    let availableRooms = 0;
 
     if (body.type === 'HOTEL') {
       if (!hotelId) throw new Error('HOTEL_REQUIRED');
@@ -126,9 +124,6 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
           id: true,
           pricePerNight: true,
           currency: true,
-          commissionPercent: true,
-          availableRooms: true,
-          maxGuestsPerRoom: true,
           isActive: true,
         },
       });
@@ -143,10 +138,9 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
         orderBy: { pricePerNight: 'asc' },
       });
       nights = nightsBetween(checkIn, checkOut);
-      roomsCount = Math.max(
-        1,
-        Math.ceil(Math.max(1, adultsCount + childrenCount) / Math.max(1, hotel.maxGuestsPerRoom || 2)),
-      );
+      // How many rooms a party needs is the booker's call — the rate rows are
+      // priced per occupancy, so it cannot be derived from a number on the hotel.
+      roomsCount = Math.max(1, roomsCount);
       const marketMoney = await resolveMarketMoney(
         'HOTEL',
         hotel.id,
@@ -156,14 +150,13 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
       );
       sourceBaseAmount = marketMoney.amount.mul(nights).mul(roomsCount);
       sourceCurrency = marketMoney.currency;
-      commissionPercent = hotel.commissionPercent ?? new Decimal(0);
-      availableRooms = hotel.availableRooms ?? 0;
     } else {
       if (!body.baseAmount || body.baseAmount <= 0) throw new Error('BASE_AMOUNT_REQUIRED');
       sourceBaseAmount = new Decimal(body.baseAmount);
     }
 
-    const sourceCommission = sourceBaseAmount.mul(commissionPercent).div(100);
+    // The rate rows carry the selling price, so nothing is marked up on top.
+    const sourceCommission = new Decimal(0);
     const sourceDiscount = new Decimal(body.discount ?? 0);
     const sourceTotal = sourceBaseAmount.add(sourceCommission).sub(sourceDiscount);
     if (sourceTotal.lte(0)) throw new Error('INVALID_TOTAL');
@@ -175,21 +168,6 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
     const refNumber = await generateBookingRef(prisma);
 
     result = await prisma.$transaction(async (tx) => {
-      if (body.type === 'HOTEL' && hotelId && checkIn && checkOut && availableRooms > 0) {
-        const occupied = await tx.booking.aggregate({
-          _sum: { roomsCount: true },
-          where: {
-            hotelId,
-            status: { in: ['PENDING', 'CONFIRMED', 'COMPLETED'] },
-            checkIn: { lt: checkOut },
-            checkOut: { gt: checkIn },
-          },
-        });
-        if ((occupied._sum.roomsCount ?? 0) + roomsCount > availableRooms) {
-          throw new Error('HOTEL_NOT_AVAILABLE');
-        }
-      }
-
       const booking = await tx.booking.create({
         data: {
           refNumber,
@@ -214,7 +192,7 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
           infantsCount,
           roomsCount,
           baseAmount,
-          commissionPercent,
+          commissionPercent: new Decimal(0),
           commissionAmount,
           discount,
           totalAmount: charge.totalAmount,
@@ -235,7 +213,7 @@ export async function createBooking(req: Request, res: Response): Promise<void> 
     } else if (['HOTEL_REQUIRED', 'INVALID_DATE', 'INVALID_HOTEL_DATES', 'BASE_AMOUNT_REQUIRED', 'INVALID_TOTAL'].includes(message)) {
       res.status(400).json({ success: false, error: message, message: 'Please complete the booking details' });
     } else if (message === 'HOTEL_NOT_AVAILABLE') {
-      res.status(400).json({ success: false, error: 'HOTEL_NOT_AVAILABLE', message: 'Hotel is not available for the selected dates and guests' });
+      res.status(400).json({ success: false, error: 'HOTEL_NOT_AVAILABLE', message: 'This hotel is not currently bookable' });
     } else {
       console.error(err);
       res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
@@ -283,27 +261,6 @@ export async function confirmBooking(req: Request, res: Response): Promise<void>
 
       if (booking.status !== 'PENDING') throw new Error('INVALID_STATUS');
       if (!booking.company.isActive) throw new Error('COMPANY_INACTIVE');
-
-      if (booking.hotelId && booking.checkIn && booking.checkOut) {
-        const hotel = await tx.hotel.findUnique({
-          where: { id: booking.hotelId },
-          select: { availableRooms: true },
-        });
-        if ((hotel?.availableRooms ?? 0) > 0) {
-          const occupied = await tx.booking.aggregate({
-            _sum: { roomsCount: true },
-            where: {
-              id: { not: booking.id },
-              hotelId: booking.hotelId,
-              status: { in: ['CONFIRMED', 'COMPLETED'] },
-              checkIn: { lt: booking.checkOut },
-              checkOut: { gt: booking.checkIn },
-            },
-          });
-          const occupiedRooms = occupied._sum.roomsCount ?? 0;
-          if (occupiedRooms + booking.roomsCount > (hotel?.availableRooms ?? 0)) throw new Error('HOTEL_NOT_AVAILABLE');
-        }
-      }
 
       if (!booking.invoice) {
         await debitWallet(tx, {
@@ -353,8 +310,6 @@ export async function confirmBooking(req: Request, res: Response): Promise<void>
       res.status(400).json({ success: false, error: 'COMPANY_INACTIVE', message: 'Company account is inactive' });
     } else if (message === 'INSUFFICIENT_BALANCE') {
       res.status(400).json({ success: false, error: 'INSUFFICIENT_BALANCE', message: 'Insufficient wallet balance' });
-    } else if (message === 'HOTEL_NOT_AVAILABLE') {
-      res.status(400).json({ success: false, error: 'HOTEL_NOT_AVAILABLE', message: 'Hotel is not available for the selected dates and guests' });
     } else {
       console.error(err);
       res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
