@@ -3774,10 +3774,46 @@ function trSyncBidirDefault() {
   box.checked = !trIsAirportShaped(type, mode);
 }
 
+/**
+ * Spell out, in the operator's own terms, what the direction box will do to
+ * THIS rate — naming the actual return trip and the actual price rather than
+ * describing the setting in the abstract. "Bidirectional" tells someone
+ * entering a Cairo → North Coast rate nothing about whether a customer coming
+ * back from the coast will see a price.
+ */
+function trSyncBidirHint() {
+  const hint = document.getElementById("trBidirHint");
+  const box = document.getElementById("trBidir");
+  if (!hint || !box) return;
+  const from = trCollectEp("from").name;
+  const to = trCollectEp("to").name;
+  const egp = document.getElementById("trPriceEgp")?.value;
+  const usd = document.getElementById("trPriceUsd")?.value;
+  const money = [egp ? `${formatNumber(egp)} EGP` : "", usd ? `${formatNumber(usd)} USD` : ""].filter(Boolean).join(" / ");
+  // Until both ends are chosen there is no return trip to name.
+  // Isolated as LTR so the route reads the same way round in an Arabic sentence.
+  const back = (from && to) ? `<strong dir="ltr">${escapeHtml(to)} → ${escapeHtml(from)}</strong>` : "";
+
+  if (box.checked) {
+    hint.innerHTML = back
+      ? `${t("transport.bidirOnRoute", "The return trip is priced too:")} ${back}${money ? ` — ${escapeHtml(money)}` : ""}`
+      : t("transport.bidirOn", "The return trip is priced at the same price. Choose From and To to see it.");
+  } else {
+    hint.innerHTML = back
+      ? `${t("transport.bidirOffRoute", "The return trip has no price — a customer travelling")} ${back} ${t("transport.bidirOffTail", "sees \"Price on request\".")}`
+      : t("transport.bidirOff", "The return trip has no price. A customer travelling the other way sees \"Price on request\".");
+  }
+  // The airport nuance only matters on an airport rate, so it is only said there.
+  if (trIsAirportShaped(document.getElementById("trType")?.value, document.getElementById("trMode")?.value)) {
+    hint.innerHTML += `<div style="margin-top:4px">${t("transport.bidirAirportHint", "Airport transfers start off, because meeting an arrival usually costs more than dropping off a departure. Tick it when both directions really are the same price.")}</div>`;
+  }
+}
+
 /** Mode or type changed: refresh both the visible fields and the direction default. */
 function trModeChanged() {
   trSyncModeFields();
   trSyncBidirDefault();
+  trSyncBidirHint();
 }
 
 const TR_SERVICE_MODES = ["POINT_TO_POINT", "AIRPORT_TRANSFER", "HOURLY_CHARTER", "DAY_USE"];
@@ -3817,7 +3853,7 @@ async function openTransportRateEditor(id = "") {
   // was actually saved.
   const isNewRate = !id;
   const trBidirDefault = isNewRate ? !trIsAirportShaped(r.type, r.serviceMode) : !!r.isBidirectional;
-  const num = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" type="number" step="0.01" min="0" value="${val != null ? escapeHtml(val) : ""}" placeholder="${escapeHtml(ph)}"></div>`;
+  const num = (id2, val, label, ph = "", onInput = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" type="number" step="0.01" min="0"${onInput ? ` oninput="${onInput}"` : ""} value="${val != null ? escapeHtml(val) : ""}" placeholder="${escapeHtml(ph)}"></div>`;
   const txt = (id2, val, label, ph = "") => `<div class="form-field"><label>${label}</label><input id="${id2}" value="${escapeHtml(val ?? "")}" placeholder="${escapeHtml(ph)}"></div>`;
 
   const body = `
@@ -3846,14 +3882,14 @@ async function openTransportRateEditor(id = "") {
         ${trEpBlock("from", r, airports, destinations, hotels, t("form.from", "From"))}
         ${trEpBlock("to", r, airports, destinations, hotels, t("form.to", "To"))}
       </div>
-      <label class="check-row" style="margin-top:12px"><input id="trBidir" type="checkbox" ${trBidirDefault ? "checked" : ""} ${isNewRate ? "" : 'data-existing="1"'} onchange="this.dataset.touched='1'"> ${t("transport.bidirectional", "Bidirectional — also prices the reverse route (B → A) at the same price")}</label>
-      <div class="secondary-text" id="trBidirHint" style="margin-top:4px">${t("transport.bidirAirportHint", "Left on for a normal city-to-city transfer, which usually costs the same both ways. Airport transfers start off, because an arrival often costs more than a departure — tick it yourself when the two directions are priced alike.")}</div>
+      <label class="check-row" style="margin-top:12px"><input id="trBidir" type="checkbox" ${trBidirDefault ? "checked" : ""} ${isNewRate ? "" : 'data-existing="1"'} onchange="this.dataset.touched='1';trSyncBidirHint()"> ${t("transport.bidirectional", "Charge the return trip the same")}</label>
+      <div class="secondary-text" id="trBidirHint" style="margin-top:4px"></div>
     </div>
     <div class="form-section">
       <div class="form-section-title">${t("transport.pricingDual", "Pricing (explicit, no FX — Egyptian sees EGP, others USD)")}</div>
       <div class="form-grid" style="grid-template-columns:repeat(4,1fr)">
-        ${num("trPriceEgp", egpVal, t("transport.priceEgp", "One-way EGP"))}
-        ${num("trPriceUsd", usdVal, t("transport.priceUsd", "One-way USD"))}
+        ${num("trPriceEgp", egpVal, t("transport.priceEgp", "One-way EGP"), "", "trSyncBidirHint()")}
+        ${num("trPriceUsd", usdVal, t("transport.priceUsd", "One-way USD"), "", "trSyncBidirHint()")}
         <div class="form-field" data-shape="route"><label>${t("transport.rtEgp", "Round-trip EGP")}</label><input id="trRtEgp" type="number" step="0.01" min="0" value="${rtEgpVal != null ? escapeHtml(rtEgpVal) : ""}"></div>
         <div class="form-field" data-shape="route"><label>${t("transport.rtUsd", "Round-trip USD")}</label><input id="trRtUsd" type="number" step="0.01" min="0" value="${rtUsdVal != null ? escapeHtml(rtUsdVal) : ""}"></div>
         ${num("trMinCap", r.minCapacity ?? 1, t("form.minPax", "Min pax"))}
@@ -3874,6 +3910,7 @@ async function openTransportRateEditor(id = "") {
   trEpInit("to");
   // Show only the fields this service mode uses, before the admin sees the form.
   trSyncModeFields();
+  trSyncBidirHint();
 }
 
 function trEpBlock(side, r, airports, destinations, hotels, label) {
@@ -3893,10 +3930,10 @@ function trEpBlock(side, r, airports, destinations, hotels, label) {
         <option value="DESTINATION" ${curType === "DESTINATION" ? "selected" : ""}>${t("transport.destination", "Destination")}</option>
       </select>
     </div>
-    <div class="form-field tr-ep-pick" data-kind="AIRPORT" style="display:none"><label>${t("transport.airport", "Airport")}</label><select class="tr-ep-airport">${airOpts}</select></div>
-    <div class="form-field tr-ep-pick" data-kind="DESTINATION" style="display:none"><label>${t("transport.destination", "Destination")}</label><select class="tr-ep-dest">${destOpts}</select></div>
-    <div class="form-field tr-ep-pick" data-kind="HOTEL" style="display:none"><label>${t("transport.hotel", "Hotel")}</label><select class="tr-ep-hotel">${hotOpts}</select></div>
-    <div class="form-field"><label>${t("transport.endpointName", "Display name (optional override)")}</label><input class="tr-ep-name" value="${escapeHtml(r[`${side}Name`] || r[`${side}Location`] || "")}" placeholder="${escapeHtml(t("transport.endpointNamePh", "Auto from selection, or type a name"))}"></div>
+    <div class="form-field tr-ep-pick" data-kind="AIRPORT" style="display:none"><label>${t("transport.airport", "Airport")}</label><select class="tr-ep-airport" onchange="trSyncBidirHint()">${airOpts}</select></div>
+    <div class="form-field tr-ep-pick" data-kind="DESTINATION" style="display:none"><label>${t("transport.destination", "Destination")}</label><select class="tr-ep-dest" onchange="trSyncBidirHint()">${destOpts}</select></div>
+    <div class="form-field tr-ep-pick" data-kind="HOTEL" style="display:none"><label>${t("transport.hotel", "Hotel")}</label><select class="tr-ep-hotel" onchange="trSyncBidirHint()">${hotOpts}</select></div>
+    <div class="form-field"><label>${t("transport.endpointName", "Display name (optional override)")}</label><input class="tr-ep-name" oninput="trSyncBidirHint()" value="${escapeHtml(r[`${side}Name`] || r[`${side}Location`] || "")}" placeholder="${escapeHtml(t("transport.endpointNamePh", "Auto from selection, or type a name"))}"></div>
   </div>`;
 }
 function trEpTypeChange(side) {
@@ -4063,9 +4100,12 @@ function renderTransportRatesTable() {
     const arrow = r => r.isBidirectional ? "⇄" : "→";
     rTbody.innerHTML = rates.length ? rates.map(r => `<tr class="${state.selectedTransportRates.has(r.id) ? "selected" : ""}">
       <td><input type="checkbox" ${state.selectedTransportRates.has(r.id) ? "checked" : ""} onchange="trToggleRateSelection('${r.id}', this.checked)" aria-label="Select rate"></td>
-      <td>${escapeHtml(r.type?.replace(/_/g," ")||"—")}${r.isBidirectional ? `<div class="secondary-text">${t("transport.bidirShort","bidirectional")}</div>` : ""}</td>
+      <td>${escapeHtml(r.type?.replace(/_/g," ")||"—")}</td>
       <td><strong>${escapeHtml(r.vehicleType?.replace(/_/g," ")||"—")}</strong></td>
-      <td>${escapeHtml(r.fromName||r.fromLocation||"—")} ${arrow(r)} ${escapeHtml(r.toName||r.toLocation||"—")}${r.city ? `<div class="secondary-text">${escapeHtml(r.city)}</div>` : ""}</td>
+      <td>${escapeHtml(r.fromName||r.fromLocation||"—")} ${arrow(r)} ${escapeHtml(r.toName||r.toLocation||"—")}
+        <div class="secondary-text">${r.isBidirectional
+          ? t("transport.returnPriced", "return trip priced the same")
+          : t("transport.returnUnpriced", "return trip has no price")}${r.city ? ` · ${escapeHtml(r.city)}` : ""}</div></td>
       <td class="numeric">${dualOneWay(r)}</td>
       <td class="numeric">${dualRt(r)}</td>
       <td>${r.minCapacity||1}${r.maxCapacity ? "–"+r.maxCapacity : "+"}</td>

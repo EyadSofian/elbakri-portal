@@ -1405,20 +1405,37 @@
     noResults: "لا توجد نتائج لـ",
   });
 
-  // ── Route direction (one-way vs two-way rates) ─────────────────────────────
+  // ── Route direction ────────────────────────────────────────────────────────
+  // Worded as what happens to the customer's return trip, not as a property of
+  // the row: an operator entering "Cairo → North Coast" needs to know whether
+  // someone coming back from the coast will see a price.
   Object.assign(en.transport, {
-    bidirAirportHint: "Left on for a normal city-to-city transfer, which usually costs the same both ways. Airport transfers start off, because an arrival often costs more than a departure — tick it yourself when the two directions are priced alike.",
-    makeBidir: "Make selected two-way",
-    makeOneWay: "Make selected one-way",
-    madeBidir: "Now priced in both directions",
-    madeOneWay: "Now priced one way only",
+    bidirAirportHint: "Airport transfers start off, because meeting an arrival usually costs more than dropping off a departure. Tick it when both directions really are the same price.",
+    bidirOn: "The return trip is priced at the same price. Choose From and To to see it.",
+    bidirOnRoute: "The return trip is priced too:",
+    bidirOff: "The return trip has no price. A customer travelling the other way sees \"Price on request\".",
+    bidirOffRoute: "The return trip has no price — a customer travelling",
+    bidirOffTail: "sees \"Price on request\".",
+    returnPriced: "return trip priced the same",
+    returnUnpriced: "return trip has no price",
+    makeBidir: "Price the return trip too",
+    makeOneWay: "Leave the return trip unpriced",
+    madeBidir: "Return trip now priced the same",
+    madeOneWay: "Return trip left unpriced",
   });
   Object.assign(ar.transport, {
-    bidirAirportHint: "بتفضل مفتوحة في الانتقالات العادية بين المدن، لأنها غالباً بنفس السعر رايح جاي. انتقالات المطار بتبدأ مقفولة، لأن الاستقبال عادةً أغلى من التوصيل — افتحها بنفسك لو الاتجاهين بنفس السعر.",
-    makeBidir: "خلي المحدد اتجاهين",
-    makeOneWay: "خلي المحدد اتجاه واحد",
-    madeBidir: "اتسعّرت في الاتجاهين",
-    madeOneWay: "اتسعّرت في اتجاه واحد بس",
+    bidirAirportHint: "انتقالات المطار بتبدأ مقفولة، لأن استقبال حد واصل عادةً أغلى من توصيل حد مسافر. افتحها لما الاتجاهين يكونوا فعلاً بنفس السعر.",
+    bidirOn: "الرحلة الراجعة هتتحسب بنفس السعر. اختار «من» و«إلى» علشان تشوفها.",
+    bidirOnRoute: "الرحلة الراجعة كمان متسعّرة:",
+    bidirOff: "الرحلة الراجعة من غير سعر. العميل اللي رايح في الاتجاه التاني هيشوف «السعر عند الطلب».",
+    bidirOffRoute: "الرحلة الراجعة من غير سعر — العميل الرايح",
+    bidirOffTail: "هيشوف «السعر عند الطلب».",
+    returnPriced: "الرجوع بنفس السعر",
+    returnUnpriced: "الرجوع من غير سعر",
+    makeBidir: "سعّر الرجوع كمان",
+    makeOneWay: "سيب الرجوع من غير سعر",
+    madeBidir: "الرجوع بقى بنفس السعر",
+    madeOneWay: "الرجوع بقى من غير سعر",
   });
 
   // Service modes spelled out for people, not as raw enum names.
@@ -1543,7 +1560,7 @@
           airport: "Airport", destination: "Destination", route: "Route", service: "Service", mode: "Service mode",
           serviceArea: "Service area (e.g. Cairo)", durationHours: "Duration hours (disposal)",
           serviceNameEn: "Service name (EN)", serviceNameAr: "Service name (AR)",
-          bidirectional: "Bidirectional — also prices the reverse route (B → A) at the same price", bidirShort: "bidirectional",
+          bidirectional: "Charge the return trip the same",
           pricingDual: "Pricing (explicit, no FX — Egyptian sees EGP, others USD)",
           priceEgp: "One-way EGP", priceUsd: "One-way USD", rtEgp: "Round-trip EGP", rtUsd: "Round-trip USD",
           priceHint: "Leave a currency blank to show 'Price on request' for that market. Round-trip blank = 2 × one-way.",
@@ -1594,7 +1611,7 @@
           airport: "مطار", destination: "وجهة", route: "المسار", service: "الخدمة", mode: "نوع الخدمة",
           serviceArea: "منطقة الخدمة (مثال: القاهرة)", durationHours: "عدد الساعات (التأجير)",
           serviceNameEn: "اسم الخدمة (إنجليزي)", serviceNameAr: "اسم الخدمة (عربي)",
-          bidirectional: "اتجاهين — يسعّر المسار العكسي (ب ← أ) بنفس السعر", bidirShort: "اتجاهين",
+          bidirectional: "احسب الرحلة الراجعة بنفس السعر",
           pricingDual: "التسعير (صريح، بدون تحويل عملة — المصري يرى الجنيه، الآخرون الدولار)",
           priceEgp: "ذهاب بالجنيه", priceUsd: "ذهاب بالدولار", rtEgp: "ذهاب وعودة بالجنيه", rtUsd: "ذهاب وعودة بالدولار",
           priceHint: "اترك العملة فارغة لإظهار 'السعر عند الطلب' لهذا السوق. الذهاب والعودة فارغ = ضعف سعر الذهاب.",
