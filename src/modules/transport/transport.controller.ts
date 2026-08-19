@@ -190,25 +190,34 @@ export async function getTransportDisposalCatalogue(req: Request, res: Response)
   const pax = Math.max(1, parseInt(String(req.query.pax ?? '1'), 10));
   const vehicleType = str(req.query.vehicleType);
 
+  // The destination the client is actually going to. Without this every area
+  // in the country came back, so a car parked in Cairo was offered to someone
+  // travelling to Marsa Alam.
+  const destinationId = str(req.query.destinationId);
+
   const rates = await prisma.transportRate.findMany({
     where: {
       isActive: true,
       serviceMode: { in: DISPOSAL_SERVICE_MODES as unknown as TransportRate['serviceMode'][] },
       ...(vehicleType ? { vehicleType: vehicleType as TransportRate['vehicleType'] } : {}),
+      ...(destinationId ? { destinationId } : {}),
       minCapacity: { lte: pax },
       OR: [{ maxCapacity: null }, { maxCapacity: { gte: pax } }],
     },
+    include: { destination: { select: { id: true, name: true, nameAr: true } } },
     orderBy: [{ serviceArea: 'asc' }, { durationHours: 'asc' }, { rate: 'asc' }],
   });
 
   const { market, companyId } = await resolvePriceContext(req);
   const priceCtx = { market, companyId, pax, date: undefined as Date | undefined };
 
-  const byArea = new Map<string, { area: string; packages: unknown[] }>();
+  const byArea = new Map<string, {
+    area: string; areaAr: string | null; destinationId: string | null; packages: unknown[];
+  }>();
   for (const rate of rates) {
-    // Fall back through the legacy labels so rates imported before serviceArea
-    // existed still show up under a sensible heading.
-    const area = (rate.serviceArea || rate.city || rate.fromLocation || rate.fromName || '').trim();
+    // The linked destination names the group. Fall back through the legacy
+    // labels so rates imported before destinations existed still show up.
+    const area = (rate.destination?.name || rate.serviceArea || rate.city || rate.fromLocation || rate.fromName || '').trim();
     if (!area) continue;
 
     let price: Decimal | null = null;
@@ -223,8 +232,18 @@ export async function getTransportDisposalCatalogue(req: Request, res: Response)
       currency = m.currency;
     }
 
-    const key = area.toLowerCase();
-    if (!byArea.has(key)) byArea.set(key, { area, packages: [] });
+    // Group by destination when there is one, so two rates on the same
+    // destination never split across two headings because of a typo in the
+    // free-text area, and an area typed twice never merges two destinations.
+    const key = rate.destinationId ?? `area:${area.toLowerCase()}`;
+    if (!byArea.has(key)) {
+      byArea.set(key, {
+        area,
+        areaAr: rate.destination?.nameAr ?? null,
+        destinationId: rate.destinationId ?? null,
+        packages: [],
+      });
+    }
     byArea.get(key)!.packages.push({
       rateId: rate.id,
       serviceMode: rate.serviceMode,
@@ -367,18 +386,20 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   );
   const pickupIsJustLabel = !!pickupLocation && rateLabels.has(pickupLocation.trim().toLowerCase());
   const effectivePickupLoc = isDisposal ? (pickupIsJustLabel ? null : pickupLocation) : pickupLocation;
-  const hasRealPickup = isHotel(pickupType) ? !!pickupHotelName : !!(pickupAddress || effectivePickupLoc);
+  // A hotel is no longer a kind of endpoint — it is asked for underneath the
+  // destination — so a named hotel counts as a real pickup whatever the type
+  // says, alongside an address or a location that is more than the rate's own
+  // label.
+  const hasRealPickup = !!(pickupHotelName || pickupAddress || effectivePickupLoc);
   if (isDisposal && !hasRealPickup) {
     fail('A real pickup location (hotel, address, airport or landmark) is required for hourly / day-use transport.', 'PICKUP_REQUIRED');
     return;
   }
   if (!isDisposal) {
     if (!hasRealPickup) { fail('A pickup location is required.', 'PICKUP_REQUIRED'); return; }
-    const hasRealDropoff = isHotel(dropoffType) ? !!dropoffHotelName : !!(dropoffAddress || dropoffLocation);
+    const hasRealDropoff = !!(dropoffHotelName || dropoffAddress || dropoffLocation);
     if (!hasRealDropoff) { fail('A drop-off location is required.', 'DROPOFF_REQUIRED'); return; }
   }
-  if (isHotel(pickupType) && !pickupHotelName) { fail('Pickup hotel name is required when the pickup is a hotel.'); return; }
-  if (isHotel(dropoffType) && !dropoffHotelName) { fail('Drop-off hotel name is required when the destination is a hotel.'); return; }
 
   // ── Round-trip validation (Finding 2 / §3) — independent return leg.
   const sameRouteReversed = body.sameRouteReversed !== false; // default true
@@ -502,8 +523,18 @@ export async function createTransportBooking(req: Request, res: Response): Promi
   const currency = charge.currency;
 
   // Stored route summary + return leg (reversed-outbound by default; independent when unlocked).
-  const fromLocationStore = pickupHotelName || pickupLocation || pickupAddress || matchingRate.serviceNameEn || matchingRate.serviceArea || matchingRate.fromLocation || 'Pickup';
-  const toLocationStore = dropoffHotelName || dropoffLocation || dropoffAddress || (isDisposal ? (matchingRate.serviceNameEn || matchingRate.serviceArea || 'At disposal') : (matchingRate.toLocation || 'Drop-off'));
+  // The hotel now travels WITH the destination rather than instead of it, so
+  // the driver reads both: "Rixos Sharm, Sharm El Sheikh" rather than a hotel
+  // name with no town, or a town with no building.
+  const withPlace = (hotel: string | null, place: string | null) => {
+    if (!hotel) return place;
+    if (!place || hotel.toLowerCase().includes(place.toLowerCase())) return hotel;
+    return `${hotel}, ${place}`;
+  };
+  const fromLocationStore = withPlace(pickupHotelName, pickupLocation || pickupAddress)
+    || pickupLocation || pickupAddress || matchingRate.serviceNameEn || matchingRate.serviceArea || matchingRate.fromLocation || 'Pickup';
+  const toLocationStore = (isDisposal ? null : withPlace(dropoffHotelName, dropoffLocation || dropoffAddress))
+    || dropoffLocation || dropoffAddress || (isDisposal ? (matchingRate.serviceNameEn || matchingRate.serviceArea || 'At disposal') : (matchingRate.toLocation || 'Drop-off'));
   const ret = isRoundTrip
     ? (sameRouteReversed
         ? { fromLocation: toLocationStore, toLocation: fromLocationStore, fromType: dropoffType, toType: pickupType, pickupHotelName: dropoffHotelName, pickupAddress: dropoffAddress, dropoffHotelName: pickupHotelName, dropoffAddress: pickupAddress }
@@ -522,8 +553,11 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           refNumber,
           companyId,
           createdById: caller.id,
-          type: body.type,
-          vehicleType: body.vehicleType ?? 'SEDAN',
+          // The priced rate already knows what kind of transport it is, so fall
+          // back to it: a caller that books by rateId alone should not get a
+          // 500 from Prisma for omitting a field the rate can answer.
+          type: body.type ?? matchingRate.type,
+          vehicleType: body.vehicleType ?? matchingRate.vehicleType,
           rateId: matchingRate.id,
           matchedDirection,
           serviceMode,

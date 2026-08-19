@@ -4123,9 +4123,24 @@ function trIsAirportShaped(type, serviceMode) {
  * a car booked by the hour — which is exactly what made the screen impossible
  * to fill in. Route rates likewise have no service area or duration.
  */
+/** True for the service modes sold as a block of time rather than a route. */
+function trIsDisposalMode(mode) {
+  return mode === "HOURLY_CHARTER" || mode === "DAY_USE";
+}
+
+/** The area label follows the destination unless the admin typed their own. */
+function trDisposalDestChanged() {
+  const select = document.getElementById("trDisposalDest");
+  const areaEl = document.getElementById("trServiceArea");
+  if (!select || !areaEl) return;
+  const chosen = select.options[select.selectedIndex]?.text || "";
+  // Only the destination's English name, not the " · Arabic" suffix.
+  areaEl.placeholder = chosen && select.value ? chosen.split(" · ")[0] : t("transport.serviceAreaPlaceholder", "Leave blank to use the destination name");
+}
+
 function trSyncModeFields() {
   const mode = document.getElementById("trMode")?.value || "POINT_TO_POINT";
-  const isDisposal = mode === "HOURLY_CHARTER" || mode === "DAY_USE";
+  const isDisposal = trIsDisposalMode(mode);
   document.querySelectorAll('[data-shape="disposal"]').forEach(el => {
     el.style.display = isDisposal ? "" : "none";
   });
@@ -4245,8 +4260,16 @@ async function openTransportRateEditor(id = "") {
       <div class="secondary-text" id="trModeHint" style="margin:6px 0 12px"></div>
       <!-- At-disposal only: the car stays in an area for a block of time. -->
       <div class="form-grid" data-shape="disposal">
-        ${txt("trServiceArea", r.serviceArea, t("transport.serviceAreaReq", "Area the car stays in (e.g. Cairo)"))}
+        <div class="form-field">
+          <label>${t("transport.disposalDestination", "Destination the car stays in")} <span class="required">*</span></label>
+          <select id="trDisposalDest" onchange="trDisposalDestChanged()">
+            <option value="">— ${escapeHtml(t("form.pickDestination", "Pick a destination"))} —</option>
+            ${destinations.map(d => `<option value="${escapeHtml(d.id)}" ${d.id === r.destinationId ? "selected" : ""}>${escapeHtml(d.name)}${d.nameAr ? " · " + escapeHtml(d.nameAr) : ""}</option>`).join("")}
+          </select>
+          <div class="secondary-text" style="margin-top:4px">${t("transport.disposalDestinationHint", "Agents only see this car when they are travelling to this destination.")}</div>
+        </div>
         ${num("trDuration", r.durationHours, t("transport.durationHoursReq", "Hours the car is at disposal"))}
+        ${txt("trServiceArea", r.serviceArea, t("transport.serviceAreaLabel", "Area label (optional)"), t("transport.serviceAreaPlaceholder", "Leave blank to use the destination name"))}
       </div>
       <div class="form-grid">
         ${txt("trCity", r.city, t("th.city", "City"))}
@@ -4338,9 +4361,17 @@ async function saveTransportRateEditor(id = "") {
   const to = trCollectEp("to");
   const v = id2 => document.getElementById(id2)?.value;
   const numOrNull = id2 => { const x = v(id2); return x === "" || x == null ? null : Number(x); };
+  if (trIsDisposalMode(v("trMode")) && !v("trDisposalDest")) {
+    toast(t("transport.disposalDestinationRequired", "Choose the destination this car serves"), "error");
+    document.getElementById("trDisposalDest")?.focus();
+    return;
+  }
   const payload = {
     type: v("trType"), serviceMode: v("trMode"), vehicleType: v("trVehicle"),
     serviceArea: v("trServiceArea") || null, durationHours: numOrNull("trDuration"),
+    // An at-disposal car belongs to a destination; a routed rate takes its
+    // destination from the endpoints instead, so only send it for disposal.
+    ...(trIsDisposalMode(v("trMode")) ? { destinationId: v("trDisposalDest") || null } : {}),
     city: v("trCity") || null, serviceNameEn: v("trServiceNameEn") || null, serviceNameAr: v("trServiceNameAr") || null,
     fromType: from.type, fromId: from.id, fromName: from.name,
     toType: to.type, toId: to.id, toName: to.name,

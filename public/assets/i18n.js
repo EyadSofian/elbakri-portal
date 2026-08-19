@@ -1826,5 +1826,32 @@
     });
   })();
 
+  // ── A transfer runs airport ⇄ destination, with the hotel asked for inside
+  //    the destination; an at-disposal car belongs to a destination. ────────
+  (function () {
+    const en = dict.en, ar = dict.ar;
+    en.transport = en.transport || {}; ar.transport = ar.transport || {};
+    Object.assign(en.transport, {
+      whichHotel: "Which hotel?",
+      typeHotelNoList: "Type the hotel or address in this destination",
+      disposalDestination: "Destination the car stays in",
+      disposalDestinationHint: "Agents only see this car when they are travelling to this destination.",
+      serviceAreaLabel: "Area label (optional)",
+      serviceAreaPlaceholder: "Leave blank to use the destination name",
+      disposalDestinationRequired: "Choose the destination this car serves",
+      disposalPickupHotel: "Which hotel should the driver collect you from?",
+    });
+    Object.assign(ar.transport, {
+      whichHotel: "أي فندق؟",
+      typeHotelNoList: "اكتب اسم الفندق أو العنوان داخل هذه الوجهة",
+      disposalDestination: "الوجهة التي تبقى فيها السيارة",
+      disposalDestinationHint: "الوكيل لن يرى هذه السيارة إلا عندما تكون وجهته هي هذه الوجهة.",
+      serviceAreaLabel: "اسم المنطقة (اختياري)",
+      serviceAreaPlaceholder: "اتركه فارغًا ليأخذ اسم الوجهة",
+      disposalDestinationRequired: "اختر الوجهة التي تخدمها هذه السيارة",
+      disposalPickupHotel: "من أي فندق يقلّك السائق؟",
+    });
+  })();
+
   window.PortalI18n = { dict, t, setLang, initI18n, applyTranslations, formatNumber, formatMoney, formatDate };
 })();

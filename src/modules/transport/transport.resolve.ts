@@ -100,6 +100,16 @@ function disposalMatches(rate: TransportRate, q: RouteQuery): boolean {
   if (!isDisposalMode(rate.serviceMode)) return false;
   // An explicit mode (hourly vs full day) narrows the match when given.
   if (q.serviceMode && norm(q.serviceMode) !== norm(rate.serviceMode)) return false;
+  // The destination the client is travelling to is the strongest signal: a car
+  // put at disposal in Cairo must never price a day in Marsa Alam. A rate with
+  // no destination yet (imported before they existed) still matches on area.
+  if (q.destinationId && rate.destinationId) {
+    if (rate.destinationId !== q.destinationId) return false;
+    // The destination already settled it — the free-text area is only a label
+    // here, and holding the rate to it would reject a correct match whose area
+    // was typed differently from the destination's name.
+    return q.durationHours == null || rate.durationHours == null || rate.durationHours === q.durationHours;
+  }
   const wantArea = norm(q.serviceArea);
   if (wantArea) {
     const areas = [rate.serviceArea, rate.city, rate.fromLocation, rate.fromName].map(norm).filter(Boolean);
