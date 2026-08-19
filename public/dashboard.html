@@ -3373,6 +3373,13 @@ async function openActivityDetails(id) {
           <input id="actAdults" type="number" min="1" value="2" oninput="actCalcTotal(${priceAdult},${priceChild},'${escapeHtml(currency)}');actRefreshGroupTypes()"></div>
         <div class="form-field"><label>${t("form.children","Children")}</label>
           <input id="actChildren" type="number" min="0" value="0" oninput="actUpdateChildAges();actCalcTotal(${priceAdult},${priceChild},'${escapeHtml(currency)}')"></div>
+        ${partyPrices.length ? `<div class="form-field full"><label>${t("activity.pricingBasis","How would you like to book?")}</label>
+          <div class="act-basis-grid">
+            ${a.priceAdult != null ? `<label class="act-basis"><input type="radio" name="actBasis" value="PER_PERSON" checked onchange="actBasisChanged()"><span><b>${t("activity.perPerson","Per person")}</b><small>${formatPrice(priceAdult, currency)} ${t("form.priceAdult","per adult")}</small></span></label>` : ""}
+            ${partyPrices.map(([k, fb, v], i) => `<label class="act-basis"><input type="radio" name="actBasis" value="${["SINGLE","DOUBLE","TRIPLE"][["hotel.single","hotel.double","hotel.triple"].indexOf(k)]}" ${a.priceAdult == null && i === 0 ? "checked" : ""} onchange="actBasisChanged()"><span><b>${escapeHtml(t(k, fb))}</b><small>${formatPrice(Number(v), currency)} ${t("activity.wholeParty","for the whole party")}</small></span></label>`).join("")}
+          </div>
+          <small class="field-hint">${t("activity.pricingBasisHint","A party price is one flat price for the group — it is not multiplied by the number of people.")}</small>
+        </div>` : ""}
         <div class="form-field full"><label>${t("activity.actType","Service Type")}</label>
           <div id="actGroupTypes" class="service-type-grid">
             ${activityGroupTypeOptions(groupTypes)}
@@ -3382,8 +3389,8 @@ async function openActivityDetails(id) {
           <textarea id="actNotes" rows="2"></textarea></div>
       </div>
       <div class="tr-price-card" style="margin-top:12px">
-        <div class="tr-price-row"><span>${t("form.priceAdult","Adult")}</span><span>${formatPrice(priceAdult, currency)} × <span id="actAdultCount">2</span></span></div>
-        ${priceChild > 0 ? `<div class="tr-price-row"><span>${t("form.priceChild","Child")}</span><span>${formatPrice(priceChild, currency)} × <span id="actChildCount">0</span></span></div>` : ""}
+        <div class="tr-price-row act-perhead-row"><span>${t("form.priceAdult","Adult")}</span><span>${formatPrice(priceAdult, currency)} × <span id="actAdultCount">2</span></span></div>
+        ${priceChild > 0 ? `<div class="tr-price-row act-perhead-row"><span>${t("form.priceChild","Child")}</span><span>${formatPrice(priceChild, currency)} × <span id="actChildCount">0</span></span></div>` : ""}
         <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="actTotalPreview">${formatPrice(2*priceAdult, currency)}</span></div>
       </div>
       <p style="color:var(--text-muted);font-size:11px;margin-top:8px">${t("booking.pendingNote","Your request is pending admin confirmation. No payment is taken now.")}</p>
@@ -3406,7 +3413,10 @@ async function openActivityDetails(id) {
     priceAdult,
     priceChild,
     currency,
+    partyPrices: { SINGLE: a.priceSingle, DOUBLE: a.priceDouble, TRIPLE: a.priceTriple },
   };
+  // Reflect the default basis in the summary before the client touches anything.
+  actBasisChanged();
 }
 
 function activityGroupTypeOptions(options) {
@@ -3464,10 +3474,28 @@ function selectActSlot(btn, slot) {
   if (inp) inp.value = slot;
 }
 
+/** Which price the client picked: per head, or a flat rate for the whole party. */
+function actBasis() {
+  return document.querySelector('input[name="actBasis"]:checked')?.value || "PER_PERSON";
+}
+
+function actBasisChanged() {
+  // A party rate covers the group, so the per-head rows in the summary no
+  // longer describe what is being charged.
+  const party = actBasis() !== "PER_PERSON";
+  document.querySelectorAll(".act-perhead-row").forEach(el => { el.style.display = party ? "none" : ""; });
+  actCalcTotalFromContext();
+}
+
 function actCalcTotal(priceAdult, priceChild, currency) {
   const adults   = Math.max(1, parseInt(document.getElementById("actAdults")?.value || "2"));
   const children = Math.max(0, parseInt(document.getElementById("actChildren")?.value || "0"));
-  let total = adults * priceAdult + children * priceChild;
+  const basis = actBasis();
+  const ctx = state.activityBookingContext || {};
+  // A party price is charged once for the group — never multiplied by pax.
+  let total = basis === "PER_PERSON"
+    ? adults * priceAdult + children * priceChild
+    : Number(ctx.partyPrices?.[basis] ?? 0);
   const selected = document.querySelector('input[name="actGroupType"]:checked');
   const adjustmentType = selected?.dataset.adjustmentType || "NONE";
   const adjustmentValue = Number(selected?.dataset.adjustmentValue || 0);
@@ -3523,6 +3551,8 @@ async function _submitActivityBooking(activityId, activityName, priceAdult, pric
 
   const res = await apiFetch("/activity-bookings", { method: "POST", body: JSON.stringify({
     activityId,
+    // Tells the server to charge per head or a flat party rate.
+    pricingBasis: actBasis(),
     activityDate: date,
     selectedTime: selTime,
     groupTypeId: groupType?.value || undefined,

@@ -1246,6 +1246,10 @@ model ActivityBooking {
   groupTypeLabel String?
   adultsCount    Int               @default(1)
   childrenCount  Int               @default(0)
+  // How this booking was priced: per head (PER_PERSON) or as a whole party at
+  // a flat rate (SINGLE / DOUBLE / TRIPLE). Recorded so an invoice or voucher
+  // can say "private tour for 2" rather than implying a per-person charge.
+  pricingBasis   String?           @default("PER_PERSON")
   childAges      Json? // array of child ages
   clientName     String? // lead client name
   clientPhone    String?

@@ -124,6 +124,8 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     clientPhone?: string;
     hotelName?: string;
     passengerNames?: string[];
+    // PER_PERSON (adult/child) or SINGLE | DOUBLE | TRIPLE for a flat party rate.
+    pricingBasis?: string;
     // totalAmount is intentionally ignored — computed server-side from activity prices
     notes?: string;
   };
@@ -140,6 +142,9 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     select: {
       priceAdult: true,
       priceChild: true,
+      priceSingle: true,
+      priceDouble: true,
+      priceTriple: true,
       currency: true,
       isActive: true,
       isConfirmableInApp: true,
@@ -187,38 +192,69 @@ export async function createActivityBooking(req: Request, res: Response): Promis
   const pax = adultsCount + childrenCount;
   // Full pricing context — company override beats market row beats default (Finding 6)
   const priceCtx = { market: company.market, companyId, pax, date: activityDate };
-  // A price left blank means the activity is not sold that way. Booking adults
-  // against an activity with no adult price would otherwise charge zero, so it
-  // is refused and routed to a quote request instead.
-  if (adultsCount > 0 && activity.priceAdult == null) {
-    res.status(400).json({
-      success: false,
-      error: 'PRICE_ON_REQUEST',
-      message: 'This activity has no per-adult price configured. Please submit a quote request.',
-    });
+  // An excursion is sold either per head or as a whole party at a flat rate —
+  // a private tour for two costs what it costs regardless of who is in the car.
+  // The basis decides which of the activity's prices applies; a blank price
+  // means the trip is not sold that way, and pricing it at zero would give it
+  // away, so those cases are refused and routed to a quote request.
+  const PARTY_PRICE: Record<string, Decimal | null> = {
+    SINGLE: activity.priceSingle,
+    DOUBLE: activity.priceDouble,
+    TRIPLE: activity.priceTriple,
+  };
+  const basis = String(body.pricingBasis ?? 'PER_PERSON').toUpperCase();
+  if (basis !== 'PER_PERSON' && !(basis in PARTY_PRICE)) {
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Unknown pricing basis.' });
     return;
   }
-  if (childrenCount > 0 && activity.priceChild == null) {
-    res.status(400).json({
-      success: false,
-      error: 'PRICE_ON_REQUEST',
-      message: 'This activity has no per-child price configured. Please submit a quote request.',
-    });
-    return;
+
+  let sourceAmountRaw: Decimal;
+  let priceCurrency: string;
+
+  if (basis === 'PER_PERSON') {
+    if (adultsCount > 0 && activity.priceAdult == null) {
+      res.status(400).json({
+        success: false,
+        error: 'PRICE_ON_REQUEST',
+        message: 'This activity has no per-adult price configured. Please submit a quote request.',
+      });
+      return;
+    }
+    if (childrenCount > 0 && activity.priceChild == null) {
+      res.status(400).json({
+        success: false,
+        error: 'PRICE_ON_REQUEST',
+        message: 'This activity has no per-child price configured. Please submit a quote request.',
+      });
+      return;
+    }
+    const [adultPrice, childPrice] = await Promise.all([
+      resolveMarketMoney('ACTIVITY_ADULT', body.activityId, priceCtx, activity.priceAdult ?? new Decimal(0), activity.currency),
+      resolveMarketMoney('ACTIVITY_CHILD', body.activityId, priceCtx, activity.priceChild ?? new Decimal(0), activity.currency),
+    ]);
+    // Explicit admin prices are used verbatim — the sale price is NEVER FX-converted (Finding 5).
+    if (childrenCount > 0 && adultPrice.currency !== childPrice.currency) {
+      res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: 'Adult and child prices are configured in different currencies for this activity. Align them or use a quote request.' });
+      return;
+    }
+    sourceAmountRaw = adultPrice.amount.mul(adultsCount).add(childPrice.amount.mul(childrenCount));
+    priceCurrency = adultPrice.currency;
+  } else {
+    const partyPrice = PARTY_PRICE[basis];
+    if (partyPrice == null) {
+      res.status(400).json({
+        success: false,
+        error: 'PRICE_ON_REQUEST',
+        message: 'This activity is not sold at that party size. Please submit a quote request.',
+      });
+      return;
+    }
+    // One flat price for the whole party — never multiplied by the head count.
+    sourceAmountRaw = partyPrice;
+    priceCurrency = activity.currency;
   }
-  const [adultPrice, childPrice] = await Promise.all([
-    resolveMarketMoney('ACTIVITY_ADULT', body.activityId, priceCtx, activity.priceAdult ?? new Decimal(0), activity.currency),
-    resolveMarketMoney('ACTIVITY_CHILD', body.activityId, priceCtx, activity.priceChild ?? new Decimal(0), activity.currency),
-  ]);
-  // Explicit admin prices are used verbatim — the sale price is NEVER FX-converted (Finding 5).
-  if (childrenCount > 0 && adultPrice.currency !== childPrice.currency) {
-    res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: 'Adult and child prices are configured in different currencies for this activity. Align them or use a quote request.' });
-    return;
-  }
-  const snap = explicitMoney(
-    applyGroupAdjustment(adultPrice.amount.mul(adultsCount).add(childPrice.amount.mul(childrenCount)), groupType),
-    adultPrice.currency,
-  );
+
+  const snap = explicitMoney(applyGroupAdjustment(sourceAmountRaw, groupType), priceCurrency);
   const { currency, sourceCurrency, sourceAmount, totalAmount, exchangeRate, exchangeRateAt } = snap;
 
   try {
@@ -232,6 +268,7 @@ export async function createActivityBooking(req: Request, res: Response): Promis
         createdById: caller.id,
         activityDate,
         selectedTime: body.selectedTime ?? null,
+        pricingBasis: basis,
         activityType: groupType.code,
         groupTypeId: groupType.id,
         groupTypeLabel: groupType.labelEn,

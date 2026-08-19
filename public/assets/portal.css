@@ -3654,6 +3654,38 @@ html[lang="ar"] .act-list-title { text-transform: none; letter-spacing: 0; }
   gap: 4px;
 }
 
+/* How the client wants to be charged: per head, or one flat party rate. */
+.act-basis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.act-basis {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-10);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.act-basis:hover { border-color: var(--brand-accent); }
+
+.act-basis:has(input:checked) {
+  border-color: var(--brand-accent);
+  box-shadow: 0 0 0 3px var(--brand-accent-soft);
+}
+
+.act-basis input { margin-top: 3px; }
+.act-basis span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.act-basis b { font-size: 13px; color: var(--text-primary); }
+.act-basis small { font-size: 11px; color: var(--text-muted); }
+
 /* Party prices (1 / 2 / 3 people) beside the per-person price. */
 .act-party-prices {
   display: flex;

@@ -1266,6 +1266,20 @@
     disposalDuration: "المدة",
   });
 
+  // ── Activity pricing basis (per head vs a flat party rate) ─────────────────
+  Object.assign(en.activity, {
+    pricingBasis: "How would you like to book?",
+    perPerson: "Per person",
+    wholeParty: "for the whole party",
+    pricingBasisHint: "A party price is one flat price for the group — it is not multiplied by the number of people.",
+  });
+  Object.assign(ar.activity, {
+    pricingBasis: "عايز تحجز إزاي؟",
+    perPerson: "بالفرد",
+    wholeParty: "للمجموعة كلها",
+    pricingBasisHint: "سعر المجموعة سعر واحد ثابت للمجموعة — مش بيتضرب في عدد الأفراد.",
+  });
+
   // ── Activity detail (description, excludes) ────────────────────────────────
   en.form = Object.assign({}, en.form, { excludes: "Not included" });
   ar.form = Object.assign({}, ar.form, { excludes: "غير شامل" });
