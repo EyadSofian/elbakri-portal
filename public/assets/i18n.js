@@ -1301,6 +1301,25 @@
     modeHintRoute: "رحلة من نقطة لنقطة. املا \"من\" و\"إلى\" تحت؛ سعر الذهاب والعودة اختياري ولو سيبته فاضي هيتحسب ضعف سعر الذهاب.",
   });
 
+  en.page = Object.assign({}, en.page, {
+    visaFeesTitle: "Approval fees",
+    visaFeesSub: "What each security approval costs, by type and processing speed",
+    receptionServicesTitle: "Airport assist services",
+    receptionServicesSub: "The assist services offered at each airport and their rates",
+  });
+  ar.page = Object.assign({}, ar.page, {
+    visaFeesTitle: "رسوم الموافقات الأمنية",
+    visaFeesSub: "تكلفة كل موافقة أمنية حسب النوع وسرعة الإنجاز",
+    receptionServicesTitle: "خدمات مساعدة المطار",
+    receptionServicesSub: "الخدمات المتاحة في كل مطار وأسعارها",
+  });
+
+  // ── Security approval / airport assist: requests vs their settings ─────────
+  en.securityAdmin = { requests: "Requests", fees: "Approval fees" };
+  ar.securityAdmin = { requests: "الطلبات", fees: "رسوم الموافقات" };
+  en.receptionAdmin = { requests: "Requests", services: "Services & rates" };
+  ar.receptionAdmin = { requests: "الطلبات", services: "الخدمات والأسعار" };
+
   // ── Base price vs the per-market rate rows ─────────────────────────────────
   // The English labels carried "(fallback)"; the Arabic ones said only
   // "المبلغ" / "العملة", so an Arabic admin read them as the hotel's real price.

@@ -229,6 +229,10 @@ const pageMeta = {
   activities: ["nav.activities", "page.servicesSub"],
   "security-approval": ["page.securityApprovalTitle", "page.securityApprovalSub"],
   "airport-assist": ["page.airportAssistTitle", "page.airportAssistSub"],
+  // Settings tabs of the two pages above. Without their own entry the header
+  // fell through to the dashboard's title, so the page read "Dashboard".
+  visa: ["page.visaFeesTitle", "page.visaFeesSub"],
+  reception: ["page.receptionServicesTitle", "page.receptionServicesSub"],
   "sim-card": ["page.simCardTitle", "page.simCardSub"],
   offers: ["page.offersTitle", "page.offersSub"],
   "ui-builder": ["page.uiBuilderTitle", "page.uiBuilderSub"],
@@ -4348,7 +4352,7 @@ async function renderVisa() {
     ["th.amount", v => formatMoney(v.fee, v.currency)],
     ["th.status", v => statusBadge(v.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", v => masterRowActions("visa", v)],
-  ], masterActions("visa"));
+  ], masterActions("visa"), securityTabs("fees"));
 }
 
 async function renderReception() {
@@ -4358,13 +4362,13 @@ async function renderReception() {
     ["th.amount", r => formatMoney(r.rate, r.currency)],
     ["th.status", r => statusBadge(r.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", r => masterRowActions("reception", r)],
-  ], masterActions("reception"));
+  ], masterActions("reception"), airportAssistTabs("services"));
 }
 
-async function renderSimpleList(page, endpoint, columns, extraActions = "") {
+async function renderSimpleList(page, endpoint, columns, extraActions = "", beforeContent = "") {
   const capturedToken = state.renderToken;
   state.page = page;
-  content(pageHeader(`${extraActions}<button class="btn btn-outline" onclick="exportRows('${page}', state.cache['${page}Rows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>`) + `
+  content(pageHeader(`${extraActions}<button class="btn btn-outline" onclick="exportRows('${page}', state.cache['${page}Rows'] || [])">${icon("download")}${t("btn.exportExcel")}</button>`) + beforeContent + `
     <section class="table-card">
       <div class="table-toolbar"><strong>${t(pageMeta[page]?.[0] || "nav."+page)}</strong><div class="toolbar-actions"><button class="refresh-pill" onclick="refreshCurrentPage()">${icon("refresh-cw")}${t("topbar.justNow")}</button></div></div>
       <div class="table-scroll"><table class="data-table"><thead><tr>${columns.map(([k]) => `<th>${labelText(k)}</th>`).join("")}</tr></thead><tbody id="simpleTbody">${skeletonRows(columns.length, 8)}</tbody></table></div>
@@ -4590,6 +4594,34 @@ function fxSwap() {
 }
 
 // ─── Security Approval (admin view of visa applications) ─────────────────────
+/**
+ * Tab bar for the two pages that have both a request queue and the settings
+ * behind it. The settings pages (renderVisa / renderReception) were written but
+ * never reachable — not in pageLoaders, not in the nav — so an admin could
+ * approve a request yet had no way to add a location, a service or a fee.
+ */
+function adminSubTabs(current, tabs) {
+  return `<div class="admin-tab-bar">${tabs.map(([key, fn, iconName, label]) =>
+    `<button class="btn ${current === key ? "btn-primary" : "btn-outline"}" onclick="${fn}()">${icon(iconName)}&nbsp;${escapeHtml(label)}</button>`
+  ).join("")}</div>`;
+}
+
+/** Requests queue ⇄ the approval fees behind it. */
+function securityTabs(current) {
+  return adminSubTabs(current, [
+    ["requests", "renderSecurityApproval", "list", t("securityAdmin.requests", "Requests")],
+    ["fees", "renderVisa", "banknote", t("securityAdmin.fees", "Approval fees")],
+  ]);
+}
+
+/** Requests queue ⇄ the assist services and their rates. */
+function airportAssistTabs(current) {
+  return adminSubTabs(current, [
+    ["requests", "renderAirportAssist", "list", t("receptionAdmin.requests", "Requests")],
+    ["services", "renderReception", "plane", t("receptionAdmin.services", "Services & rates")],
+  ]);
+}
+
 async function renderSecurityApproval() {
   const APPROVAL_TYPES = [
     { label: "Sharm El Sheikh", dest: "SSH" },
@@ -4620,6 +4652,7 @@ async function renderSecurityApproval() {
     </div>`],
   ], {
     filters: [["status","form.status",["","PENDING","SUBMITTED","APPROVED","REJECTED"]]],
+    beforeContent: securityTabs("requests"),
   });
 }
 
@@ -4657,6 +4690,7 @@ async function renderAirportAssist() {
     </div>`],
   ], {
     filters: [["status","form.status",["","PENDING","CONFIRMED","CANCELLED","COMPLETED"]]],
+    beforeContent: airportAssistTabs("requests"),
   });
 }
 
@@ -4889,7 +4923,9 @@ async function renderAdminList(page, endpoint, columns, options = {}) {
   const filters = options.filters || [];
   window._adminListState[page] = { endpoint, columns };
 
-  content(pageHeader() + `
+  // Optional markup rendered above the workbench — used by the pages that carry
+  // a sub-tab bar (requests ⇄ settings).
+  content(pageHeader() + (options.beforeContent || "") + `
     <div class="workbench">
       <aside class="filter-rail">
         <div class="filter-head"><span>${t("filter.title")}</span>${icon("sliders-horizontal")}</div>
@@ -6455,6 +6491,10 @@ const pageLoaders = {
   activities: renderActivities,
   "security-approval": renderSecurityApproval,
   "airport-assist": renderAirportAssist,
+  // Settings tabs of the two pages above. Registered so a language switch
+  // re-renders the tab the admin is on instead of falling back to the dashboard.
+  visa: renderVisa,
+  reception: renderReception,
   "sim-card": renderSimCardAdmin,
   offers: renderOffers,
   "ui-builder": renderUiBuilder,
