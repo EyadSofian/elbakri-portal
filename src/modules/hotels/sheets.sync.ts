@@ -12,9 +12,6 @@ interface SheetRow {
   address: string;
   pricePerNight: number;
   currency: string;
-  commissionPercent: number;
-  availableRooms: number;
-  maxGuestsPerRoom: number;
   imageUrl: string;
   isActive: boolean;
   sheetsRowId: string;
@@ -50,9 +47,7 @@ export async function syncFromSheets(): Promise<{
         address: row[6] ?? '',
         pricePerNight: parseFloat(row[7]) || 0,
         currency: row[8] ?? 'USD',
-        commissionPercent: parseFloat(row[9]) || 0,
-        availableRooms: parseInt(row[10]) || 0,
-        maxGuestsPerRoom: parseInt(row[11]) || 2,
+        // Columns 9-11 (commission, inventory, guests per room) are no longer used.
         imageUrl: row[12] ?? '',
         isActive: row[13] !== 'false',
         sheetsRowId: row[14] ?? '',
@@ -72,9 +67,6 @@ export async function syncFromSheets(): Promise<{
         address: data.address,
         pricePerNight: new Decimal(data.pricePerNight),
         currency: data.currency,
-        commissionPercent: new Decimal(data.commissionPercent),
-        availableRooms: data.availableRooms,
-        maxGuestsPerRoom: data.maxGuestsPerRoom,
         imageUrl: data.imageUrl || null,
         isActive: data.isActive,
         source: 'GOOGLE_SHEETS' as const,

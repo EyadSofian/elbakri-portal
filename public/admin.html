@@ -1034,12 +1034,8 @@ const masterConfigs = {
       { name: "galleryUrls", label: "form.gallery", fallback: "Gallery image URLs", type: "list", cls: "full", help: "One image URL per line — shown to agents as a gallery." },
       { name: "pricePerNight", label: "th.amount", type: "number", required: true, default: 1 },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
-      { name: "commissionPercent", label: "form.commissionPercent", fallback: "Hotel commission %", type: "number", default: 0, help: "Added to the hotel base price for client bookings" },
-      { name: "availableRooms", label: "form.availableRooms", fallback: "Available rooms", type: "number", default: 0, help: "0 means no inventory cap" },
-      { name: "maxGuestsPerRoom", label: "form.maxGuestsPerRoom", fallback: "Guests per room", type: "number", default: 2 },
       { name: "showPriceToAgents", label: "hotel.showPriceToAgents", fallback: "Show Prices to Agents", type: "checkbox" },
       { name: "allowQuoteRequest", label: "hotel.allowQuoteRequest", fallback: "Allow Quote Request", type: "checkbox" },
-      { name: "minVisibleTier", label: "hotel.minVisibleTier", fallback: "Min Visible Tier", type: "select", nullable: true, options: ["STANDARD", "SILVER", "GOLD", "PLATINUM"] },
     ],
     marketPrices: [{ entityType: "HOTEL", baseField: "pricePerNight", label: "Price / Night" }],
   },
@@ -2106,10 +2102,6 @@ async function openHotelEditor(id = "") {
           </div>
         </div>
       </div>
-      ${fld(t("form.commissionPercent", "Commission %"), inp("heCommission", h.commissionPercent ?? 0, "number", 'step="0.01" min="0"'))}
-      ${fld(t("form.availableRooms", "Available rooms"), inp("heRooms", h.availableRooms ?? 0, "number", 'min="0"'))}
-      ${fld(t("form.maxGuestsPerRoom", "Guests per room"), inp("heMaxGuests", h.maxGuestsPerRoom ?? 2, "number", 'min="1"'))}
-      ${fld(t("hotel.minVisibleTier", "Min visible tier"), `<select id="heMinTier"><option value="">— None —</option>${["STANDARD","SILVER","GOLD","PLATINUM"].map(x => `<option value="${x}" ${h.minVisibleTier===x?"selected":""}>${x}</option>`).join("")}</select>`)}
       ${fullFld(t("form.description", "Description (EN)"), ta("heDesc", h.description))}
       ${fullFld(t("form.descriptionAr", "Description (AR)"), ta("heDescAr", h.descriptionAr))}
     </div>
@@ -2587,10 +2579,6 @@ async function heSave() {
     googleRating: ratingRaw === "" ? null : Number(ratingRaw),
     pricePerNight: Number(val("hePrice") || 0) || 1,
     currency: document.getElementById("heCurrency")?.value || "USD",
-    commissionPercent: Number(val("heCommission") || 0),
-    availableRooms: Number(val("heRooms") || 0),
-    maxGuestsPerRoom: Number(val("heMaxGuests") || 2),
-    minVisibleTier: document.getElementById("heMinTier")?.value || null,
     description: val("heDesc") || null,
     descriptionAr: val("heDescAr") || null,
     isActive: document.getElementById("heActive")?.checked !== false,
@@ -2800,9 +2788,6 @@ async function showHotelDetails(id) {
     ${h.amenities?.length ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:6px">${amenityChips}</div>` : ""}
     <div class="info-grid" style="margin-top:16px">
       <div class="info-item"><div class="info-label">${t("th.amount","Price/Night")}</div><div class="info-value">${Number(h.pricePerNight||0) > 0 ? formatMoney(h.pricePerNight, h.currency) : t("hotel.priceOnRequest","On request")}</div></div>
-      <div class="info-item"><div class="info-label">${t("form.commissionPercent","Commission %")}</div><div class="info-value">${Number(h.commissionPercent||0).toFixed(2)}%</div></div>
-      <div class="info-item"><div class="info-label">${t("form.availableRooms","Available rooms")}</div><div class="info-value">${formatNumber(h.availableRooms||0)}</div></div>
-      <div class="info-item"><div class="info-label">${t("form.maxGuestsPerRoom","Guests per room")}</div><div class="info-value">${formatNumber(h.maxGuestsPerRoom||2)}</div></div>
     </div>
     ${pricingEditor}
     </div>`;

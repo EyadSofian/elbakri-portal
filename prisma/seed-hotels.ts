@@ -29,8 +29,6 @@ type HotelSeed = {
   amenities: string[];
   pricePerNight: number;
   currency: string;
-  maxGuestsPerRoom: number;
-  availableRooms: number;
   destinationSlug: string | null;
   showPriceToAgents: boolean;
   allowQuoteRequest: boolean;
@@ -96,8 +94,6 @@ async function main() {
       amenities: h.amenities,
       pricePerNight: new Decimal(h.pricePerNight),
       currency: h.currency,
-      maxGuestsPerRoom: h.maxGuestsPerRoom,
-      availableRooms: h.availableRooms,
       destinationId: destId,
       showPriceToAgents: h.showPriceToAgents,
       allowQuoteRequest: h.allowQuoteRequest,
