@@ -1050,6 +1050,8 @@
   // ── Transport extra keys ───────────────────────────────────────────────────
   Object.assign(en.transport, {
     tripType: "Trip Type", oneWay: "One Way", flightDetails: "Flight / Arrival Details",
+    // Same section, without a plane to meet.
+    pickupWhen: "Pickup Date & Time",
     route: "Route", passengers: "Passengers & Vehicle", priceSummary: "Price Summary",
     airport: "Airport", destination: "Destination",
     address: "Address", landmark: "Landmark",
@@ -1078,6 +1080,7 @@
   });
   Object.assign(ar.transport, {
     tripType: "نوع الرحلة", oneWay: "ذهاب فقط", flightDetails: "بيانات الرحلة / الوصول",
+    pickupWhen: "موعد الاستلام",
     route: "المسار", passengers: "المسافرون والمركبة", priceSummary: "ملخص السعر",
     airport: "المطار", destination: "الوجهة",
     address: "عنوان", landmark: "معلم",

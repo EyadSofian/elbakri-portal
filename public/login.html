@@ -11,7 +11,12 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Cairo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/assets/portal.css" />
-  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+  <!-- Icon font, served from our own origin. It used to come from unpkg: a
+       blocked, slow or CSP-refused CDN painted every icon as an empty box and
+       the buttons read as broken. onerror still marks a failure so the icon
+       layer can fall back to text-only buttons. -->
+  <link rel="stylesheet" href="/assets/vendor/phosphor/style.css"
+        onerror="document.documentElement.classList.add('icons-unavailable')" />
   <script src="/assets/icons.js"></script>
   <script src="/assets/i18n.js"></script>
 </head>

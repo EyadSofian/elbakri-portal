@@ -28,11 +28,11 @@
     .tf-ep-type.on { background:var(--brand-accent); color:#fff; border-color:var(--brand-accent); }
     @media (max-width:640px){ .hd-preview-grid{ grid-template-columns:1fr; } }
   </style>
-  <!-- Icon font. It is a third-party CDN: if unpkg is blocked, slow, or
-       refused by a CSP, every icon would otherwise paint as an empty box
-       and the buttons look broken. onerror marks the failure so the icon
+  <!-- Icon font, served from our own origin. It used to come from unpkg: a
+       blocked, slow or CSP-refused CDN painted every icon as an empty box and
+       the buttons read as broken. onerror still marks a failure so the icon
        layer can fall back to text-only buttons. -->
-  <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css"
+  <link rel="stylesheet" href="/assets/vendor/phosphor/style.css"
         onerror="document.documentElement.classList.add('icons-unavailable')" />
   <script src="/assets/icons.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -397,8 +397,30 @@ function exportRows(filename, rows) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Export");
     XLSX.writeFile(wb, `${filename}.xlsx`);
+  } else {
+    // The spreadsheet library is a third-party CDN. When it does not load the
+    // button used to report success and hand over nothing, so fall back to a
+    // CSV the browser builds itself.
+    downloadCsv(filename, rows);
   }
   toast(t("toast.exported"), "success");
+}
+
+/* CSV written with a UTF-8 BOM: without it Excel reads Arabic names as
+   mojibake, which is most of what this portal exports. */
+function downloadCsv(filename, rows) {
+  const headers = Object.keys(rows[0]);
+  const cell = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const csv = [headers.join(","), ...rows.map(row => headers.map(h => cell(row[h])).join(","))].join("\n");
+  const url = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoking in the same tick can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function openModal(title, body, footer = "") {
@@ -2120,14 +2142,44 @@ function trEpField(side, defaultType) {
     <input id="tr${cap}HotelText" class="tr-ep-ctrl" data-kind="HOTEL" placeholder="${t("transport.orTypeHotel", "…or type hotel / location name")}" oninput="trRouteChanged()" style="display:none;margin-top:6px">`;
 }
 
-function trEpType(side, type) {
+/* Whether the operator has picked the pickup point themselves. Until they do,
+   switching trip type is free to choose the sensible default for that type. */
+let trPickupChosen = false;
+
+function trEpType(side, type, fromUser = true) {
   const cap = side === "from" ? "From" : "To";
   const hidden = document.getElementById(`tr${cap}Type`);
   if (hidden) hidden.value = type;
+  // A pickup the operator picked themselves is never overwritten by a default.
+  if (fromUser && side === "from") trPickupChosen = true;
   document.querySelectorAll(`.tf-ep-types[data-side="${side}"] .tf-ep-type`).forEach(b => b.classList.toggle("on", b.dataset.type === type));
   const map = { AIRPORT: [`tr${cap}Airport`], DESTINATION: [`tr${cap}Dest`], HOTEL: [`tr${cap}Hotel`, `tr${cap}HotelText`] };
   ["AIRPORT", "DESTINATION", "HOTEL"].forEach(k => map[k].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = k === type ? "" : "none"; }));
+  if (side === "from") trSyncFlightFields();
   trRouteChanged();
+}
+
+/**
+ * Airline and flight number belong to a driver meeting a plane. Show them only
+ * when the pickup is an airport, and title the section for what it collects.
+ */
+function trSyncFlightFields() {
+  const isAirport = document.getElementById("trFromType")?.value === "AIRPORT";
+  const fields = document.getElementById("trFlightFields");
+  if (fields) fields.style.display = isAirport ? "" : "none";
+  const title = document.getElementById("trFlightTitle");
+  if (title) title.textContent = isAirport
+    ? t("transport.flightDetails", "Flight / Arrival Details")
+    : t("transport.pickupWhen", "Pickup Date & Time");
+  const ic = document.getElementById("trFlightIcon");
+  if (ic) { ic.innerHTML = icon(isAirport ? "plane-landing" : "clock"); refreshIcons(ic); }
+  if (!isAirport) {
+    // Never submit a flight left over from an earlier airport pickup.
+    const airline = document.getElementById("trAirline");
+    const flightNo = document.getElementById("trFlightNo");
+    if (airline) airline.value = "";
+    if (flightNo) flightNo.value = "";
+  }
 }
 
 // Read the typed endpoint for one side → { type, id, name }.
@@ -2171,9 +2223,11 @@ function renderTransportForm() {
         <input type="hidden" id="trTripType" value="ONE_WAY">
       </div>
 
-      <!-- ② Flight / Arrival Details -->
-      <div class="tr-section">
-        <div class="tr-section-title">${icon("plane-landing")}&nbsp;${t("transport.flightDetails","Flight / Arrival Details")}</div>
+      <!-- ② When. The flight half only applies when the driver is meeting a
+           plane; a city transfer or a car at disposal has no flight to enter,
+           so those two fields come and go with the pickup point. -->
+      <div class="tr-section" id="trFlightSection">
+        <div class="tr-section-title"><span id="trFlightIcon">${icon("plane-landing")}</span>&nbsp;<span id="trFlightTitle">${t("transport.flightDetails","Flight / Arrival Details")}</span></div>
         <div class="form-grid">
           <div class="form-field">
             <label>${t("form.date","Pickup / Arrival Date")} <span class="required">*</span></label>
@@ -2183,6 +2237,8 @@ function renderTransportForm() {
             <label>${t("form.time","Pickup / Arrival Time")}</label>
             <input id="trTime" type="time" value="10:00">
           </div>
+        </div>
+        <div class="form-grid" id="trFlightFields" style="margin-top:12px">
           <div class="form-field">
             <label>${t("transport.airlineName","Airline Name")}</label>
             <input id="trAirline" placeholder="e.g. EgyptAir, Emirates">
@@ -2335,6 +2391,8 @@ function renderTransportForm() {
 
   document.getElementById("transportFormArea").innerHTML = formHtml;
   refreshIcons(document.getElementById("transportFormArea"));
+  trPickupChosen = false; // a fresh form has no operator choice to preserve
+  trSyncFlightFields();
   trLoadCustomFields();
 }
 
@@ -2424,6 +2482,13 @@ function setTripType(type) {
     : t("form.from", "From");
   const fromHint = document.getElementById("trFromHint");
   if (fromHint) fromHint.style.display = isDisposal ? "" : "none";
+
+  // A car at disposal is normally picked up from the hotel, not the airport —
+  // but only until the operator states otherwise.
+  if (isDisposal && !trPickupChosen && document.getElementById("trFromType")?.value === "AIRPORT") {
+    trEpType("from", "HOTEL", false);
+  }
+  trSyncFlightFields();
 
   if (isDisposal) trLoadDisposalCatalogue();
   else {
