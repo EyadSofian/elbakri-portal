@@ -862,6 +862,7 @@
     consent: "I confirm the passenger details above are accurate and consent to sharing them with the relevant authorities for security clearance.",
     consentRequired: "Please confirm consent to proceed",
     newRequest: "New Security Request",
+    destination: "Destination", selectDestination: "Where will they be staying?",
   };
   ar.securityApproval = {
     sharm: "شرم الشيخ", cairo: "القاهرة", borgElArab: "برج العرب",
@@ -874,6 +875,7 @@
     consent: "أؤكد أن بيانات المسافر أعلاه صحيحة وأوافق على مشاركتها مع الجهات المختصة للحصول على الموافقة الأمنية.",
     consentRequired: "يرجى تأكيد الموافقة للمتابعة",
     newRequest: "طلب موافقة أمنية جديد",
+    destination: "الوجهة", selectDestination: "أين سيقيمون؟",
   };
 
   // ── Airport Assist form ────────────────────────────────────────────────────
@@ -1703,6 +1705,8 @@
       photo: "Photo",
       duration: "Duration / Slots",
       approvalLocation: "Approval location",
+      destinationCity: "Destination",
+      destinationCityNone: "Not specified",
       processing: "Processing",
       passportNumber: "Passport number",
       passportExpiry: "Passport expiry",
@@ -1718,6 +1722,8 @@
       photo: "الصورة",
       duration: "المدة / المواعيد",
       approvalLocation: "مكان الموافقة",
+      destinationCity: "الوجهة",
+      destinationCityNone: "غير محدد",
       processing: "سرعة الإنجاز",
       passportNumber: "رقم جواز السفر",
       passportExpiry: "تاريخ انتهاء الجواز",

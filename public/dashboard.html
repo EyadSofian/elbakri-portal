@@ -1878,10 +1878,13 @@ const REQUEST_FORM_TARGETS = {
   },
   security_approval: {
     endpoint: "/visa-applications", confirm: true,
-    known: ["approvalType", "applicantName", "phone", "nationality", "hotelName", "paxCount", "passportUrl", "flightTicketUrl", "notes"],
+    known: ["approvalType", "destinationCity", "applicantName", "phone", "nationality", "hotelName", "paxCount", "passportUrl", "flightTicketUrl", "notes"],
     build: (v, ctx, custom) => ({
       applicantName: v.applicantName, nationality: v.nationality, phone: v.phone,
       destinationCountry: v.approvalType || "CAI",
+      // Absent from templates built before the question existed — left unset
+      // rather than guessed, so the approval says nothing instead of the wrong thing.
+      destinationCity: v.destinationCity || undefined,
       passportNumber: "PENDING", visaType: "TOURIST", processingType: "NORMAL",
       passportExpiry: new Date(Date.now() + 365 * 864e5).toISOString(),
       travelDate: new Date().toISOString(),
@@ -3864,8 +3867,29 @@ async function ensureAirportList() {
   return state.cache.airports;
 }
 
+/**
+ * The three areas an approval can be filed for. Served by the API so the portal
+ * offers exactly what it accepts; the labels are kept raw and picked per render
+ * so switching language relabels them without a reload.
+ */
+async function ensureSecurityDestinations() {
+  if (state.cache.securityDestinations) return state.cache.securityDestinations;
+  const res = await apiFetch("/visa-applications/destinations");
+  const list = res?.data || [];
+  // Only remember a list that actually arrived — caching a failed fetch would
+  // leave the dropdown empty for the rest of the session.
+  if (list.length) state.cache.securityDestinations = list;
+  return list;
+}
+
+function securityDestinationLabel(code) {
+  if (!code) return "";
+  const found = (state.cache.securityDestinations || []).find(d => d.code === code);
+  return found ? locName(found.en, found.ar) : code;
+}
+
 async function renderSecurityApproval() {
-  const APPROVAL_TYPES = await ensureAirportList();
+  const [APPROVAL_TYPES] = await Promise.all([ensureAirportList(), ensureSecurityDestinations()]);
 
   renderListPage("security-approval", "/visa-applications", [
     ["th.ref",    v => `<span class="primary-text">${escapeHtml(v.refNumber)}</span>`],
@@ -3874,6 +3898,7 @@ async function renderSecurityApproval() {
       const loc = APPROVAL_TYPES.find(x => x.dest === v.destinationCountry);
       return escapeHtml(loc?.label || v.destinationCountry || v.visaType);
     }],
+    ["securityApproval.destination", v => escapeHtml(securityDestinationLabel(v.destinationCity) || "—")],
     ["form.phone", v => escapeHtml(v.phone || "—")],
     ["th.amount", v => `<span class="numeric">${formatStoredMoney(v.totalAmount, v.currency)}</span>`],
     ["th.status", v => statusBadge(v.status)],
@@ -3890,7 +3915,7 @@ async function openSecurityApprovalForm() {
   const rfTpl = await rfLoadTemplate("security_approval");
   if (rfTpl) return rfOpenModal("security_approval", rfTpl, {});
 
-  const types = await ensureAirportList();
+  const [types, destinations] = await Promise.all([ensureAirportList(), ensureSecurityDestinations()]);
   const body = `
     ${nationalityDatalist()}
     <div class="form-grid">
@@ -3898,6 +3923,11 @@ async function openSecurityApprovalForm() {
         <select id="saType">
           <option value="">${t("securityApproval.selectType","Select approval type")}</option>
           ${types.map(x => `<option value="${x.dest}">${x.label}</option>`).join("")}
+        </select></div>
+      <div class="form-field full"><label>${t("securityApproval.destination","Destination")} *</label>
+        <select id="saDestinationCity">
+          <option value="">${t("securityApproval.selectDestination","Where will they be staying?")}</option>
+          ${destinations.map(d => `<option value="${escapeHtml(d.code)}">${escapeHtml(locName(d.en, d.ar))}</option>`).join("")}
         </select></div>
       <div class="form-field"><label>${t("th.name","Client Name")} *</label>
         <input id="saName" placeholder="Full name"></div>
@@ -3936,13 +3966,14 @@ async function openSecurityApprovalForm() {
 
   document.getElementById("submitSaBtn").onclick = async () => {
     const destCountry = document.getElementById("saType").value;
+    const destCity = document.getElementById("saDestinationCity").value;
     const name = document.getElementById("saName").value.trim();
     const phone = document.getElementById("saPhone").value.trim();
     const nationality = document.getElementById("saNationality").value.trim();
     const passportNo = document.getElementById("saPassportNo").value.trim();
     const travelDate = document.getElementById("saTravelDate").value;
     const consent = document.getElementById("saConsent").checked;
-    if (!destCountry || !name || !phone || !nationality || !passportNo) {
+    if (!destCountry || !destCity || !name || !phone || !nationality || !passportNo) {
       toast(t("toast.validationError","Check required fields"), "error"); return;
     }
     if (!consent) {
@@ -3956,6 +3987,7 @@ async function openSecurityApprovalForm() {
       passportExpiry: new Date(Date.now() + 365*24*60*60*1000).toISOString(),
       visaType: "TOURIST",
       destinationCountry: destCountry,
+      destinationCity: destCity,
       travelDate: travelDate ? new Date(travelDate).toISOString() : new Date().toISOString(),
       processingType: "NORMAL",
       phone,

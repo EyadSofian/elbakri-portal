@@ -134,6 +134,8 @@ export interface SecurityApprovalVoucherData {
   arrivalTime?: Date | null;
   comingFrom?: string | null;
   arrivalDestination: string;
+  /** Where the guests are staying, already resolved to its English label. */
+  destinationCity?: string | null;
   hotelName?: string | null;
   notes?: string | null;
 }
@@ -481,6 +483,7 @@ function securitySections(d: SecurityApprovalVoucherData): { title: string; sect
         row('Arrival Time', d.arrivalTime ? `${fmtDate(d.arrivalTime)}  ${fmtTime(d.arrivalTime)}` : ''),
         row('Coming From', d.comingFrom),
         row('Arrival Destination', d.arrivalDestination),
+        row('Staying In', d.destinationCity),
         row('Hotel', d.hotelName),
       ],
     }],

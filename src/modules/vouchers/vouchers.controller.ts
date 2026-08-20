@@ -4,6 +4,7 @@ import { prisma } from '../../config/db';
 import { generateVoucherPdf } from './voucher.generator';
 import type { VoucherData } from './voucher.generator';
 import { jsonStringArray } from '../../shared/json-array';
+import { securityDestinationLabel } from '../../shared/security-destinations';
 
 // ── Number generator ──────────────────────────────────────────────────────────
 export async function generateVoucherNumber(): Promise<string> {
@@ -147,6 +148,7 @@ async function buildVisaVoucherData(appId: string): Promise<VoucherData | null> 
     arrivalTime: v.arrivalTime ?? v.travelDate,
     comingFrom: v.comingFrom ?? cf['comingFrom'] ?? null,
     arrivalDestination: v.destinationCountry,
+    destinationCity: securityDestinationLabel(v.destinationCity),
     hotelName: v.hotelName,
     notes: v.notes,
   };

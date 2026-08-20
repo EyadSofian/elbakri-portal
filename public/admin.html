@@ -205,6 +205,32 @@ async function ensureAirportOptions(force = false) {
 }
 
 /**
+ * The three areas a security approval can be filed for. Served by the API so the
+ * admin offers exactly what it accepts, and kept raw so the label follows the
+ * language the page is being read in.
+ */
+async function ensureSecurityDestinations() {
+  if (state.cache.securityDestinations) return state.cache.securityDestinations;
+  const res = await apiFetch("/visa-applications/destinations");
+  const list = res?.data || [];
+  // Only remember a list that actually arrived — caching a failed fetch would
+  // leave the dropdown empty for the rest of the session.
+  if (list.length) state.cache.securityDestinations = list;
+  return list;
+}
+
+/** [code, label] pairs for a <select>, in the reader's language. */
+function securityDestinationOptions() {
+  return (state.cache.securityDestinations || []).map(d => [d.code, state.lang === "ar" ? d.ar : d.en]);
+}
+
+function securityDestinationLabel(code) {
+  if (!code) return "";
+  const found = (state.cache.securityDestinations || []).find(d => d.code === code);
+  return found ? (state.lang === "ar" ? found.ar : found.en) : code;
+}
+
+/**
  * The destination list every "where does this belong?" dropdown is built from,
  * so an activity, a hotel and a transfer all offer exactly the destinations the
  * Destinations page manages — add one there (or inline) and it shows up here.
@@ -5103,7 +5129,8 @@ function airportAssistTabs(current) {
 async function renderSecurityApproval() {
   // Locations come from the admin-managed airport list; an approval stores the
   // code as free text, so adding an airport is all it takes to offer a new one.
-  await ensureAirportOptions();
+  // Where the guests stay is a separate, fixed question — see the API's list.
+  await Promise.all([ensureAirportOptions(), ensureSecurityDestinations()]);
   const APPROVAL_TYPES = (state.cache.airportOptions || []).map(a => ({ label: a.label, dest: a.code }));
   return renderAdminList("security-approval", "/visa-applications", [
     ["th.ref",    v => `<span class="primary-text">${escapeHtml(v.refNumber)}</span>`],
@@ -5113,6 +5140,7 @@ async function renderSecurityApproval() {
       const loc = APPROVAL_TYPES.find(x => x.dest === v.destinationCountry);
       return escapeHtml(loc?.label || v.destinationCountry || v.visaType);
     }],
+    ["form.destinationCity", v => escapeHtml(securityDestinationLabel(v.destinationCity) || "—")],
     ["th.company",v => escapeHtml(v.company?.name || "—")],
     ["form.phone",v => escapeHtml(v.phone || "—")],
     ["form.notes", v => v.notes ? `<span title="${escapeHtml(v.notes)}">${escapeHtml(v.notes.slice(0,40))}${v.notes.length>40?"…":""}</span>` : "—"],
@@ -5159,6 +5187,7 @@ async function openSecurityApprovalModal(id = "") {
   const [companies] = await Promise.all([
     id ? Promise.resolve(null) : apiFetch("/admin/companies?limit=300"),
     ensureAirportOptions(),
+    ensureSecurityDestinations(),
   ]);
   const rows = window._adminListState["security-approval"]?.rows || [];
   const v = id ? rows.find(r => r.id === id) : null;
@@ -5184,9 +5213,20 @@ async function openSecurityApprovalModal(id = "") {
          <div class="secondary-text" style="margin-top:4px">${t("securityAdmin.noAirports", "No airports yet — add one on the Airports page first.")}
          <button type="button" class="btn btn-outline btn-sm" style="margin-inline-start:6px" onclick="closeModal(); openAirportsTab()">${t("nav.airports", "Airports")}</button></div>`);
 
+  // A new approval has to say where the guests stay, same as the company portal
+  // asks. Editing keeps the blank: an approval filed before the question existed
+  // has no answer, and fixing an unrelated field should not invent one.
+  const destinationField = saField("saDestCity",
+    id ? t("form.destinationCity", "Destination") : `${t("form.destinationCity", "Destination")} *`,
+    `<select id="saDestinationCity"><option value="">${
+      id ? `— ${escapeHtml(t("form.destinationCityNone", "Not specified"))} —`
+         : escapeHtml(t("securityApproval.selectDestination", "Where will they be staying?"))}</option>${
+      opts(securityDestinationOptions(), v?.destinationCity)}</select>`);
+
   const body = `<div class="form-grid">
     ${companyField}
     ${locationField}
+    ${destinationField}
     ${saField("saType", t("form.type", "Type"), `<select id="saVisaType">${opts(["TOURIST","BUSINESS","TRANSIT","STUDENT","MEDICAL","UMRAH","HAJJ"].map(x => [x, x]), v?.visaType || "TOURIST")}</select>`)}
     ${saField("saProc", t("form.processing", "Processing"), `<select id="saProcessing">${opts(["NORMAL","EXPRESS","URGENT"].map(x => [x, x]), v?.processingType || "NORMAL")}</select>`)}
     ${saField("saName", `${t("th.name", "Client name")} *`, `<input id="saApplicantName" value="${escapeHtml(v?.applicantName || "")}">`)}
@@ -5214,6 +5254,7 @@ async function saveSecurityApproval(id) {
   const val = elId => document.getElementById(elId)?.value.trim() || "";
   const payload = {
     destinationCountry: val("saDestination"),
+    destinationCity: val("saDestinationCity") || null,
     visaType: val("saVisaType"),
     processingType: val("saProcessing"),
     applicantName: val("saApplicantName"),
@@ -5229,6 +5270,7 @@ async function saveSecurityApproval(id) {
     notes: val("saNotes") || null,
   };
   const missing = ["applicantName","nationality","passportNumber","passportExpiry","travelDate","destinationCountry"]
+    .concat(id ? [] : ["destinationCity"])
     .filter(k => !payload[k]);
   if (missing.length) { toast(t("toast.validationError", "Fill in the required fields"), "error"); return; }
   if (!id) {
@@ -5870,14 +5912,16 @@ const RF_DEFAULTS = {
   security_approval: () => ([
     rfbField({ key:"approvalType", type:"select", label:"Approval Type", labelAr:"نوع الموافقة", required:true, width:"full", order:1,
       options:(state.cache.airportOptions||[]).map(a=>({value:a.code,label:a.label})) }),
-    rfbField({ key:"applicantName", type:"text", label:"Client Name", labelAr:"اسم العميل", required:true, order:2 }),
-    rfbField({ key:"phone", type:"text", label:"Phone", labelAr:"الهاتف", required:true, order:3 }),
-    rfbField({ key:"nationality", type:"nationality-select", label:"Nationality", labelAr:"الجنسية", required:true, order:4 }),
-    rfbField({ key:"hotelName", type:"text", label:"Hotel Name", labelAr:"اسم الفندق", order:5 }),
-    rfbField({ key:"paxCount", type:"number", label:"Passengers", labelAr:"عدد الركاب", defaultValue:1, order:6 }),
-    rfbField({ key:"passportUrl", type:"file-upload", label:"Passport", labelAr:"جواز السفر", width:"full", order:7 }),
-    rfbField({ key:"flightTicketUrl", type:"file-upload", label:"Flight Ticket", labelAr:"تذكرة الطيران", width:"full", order:8 }),
-    rfbField({ key:"notes", type:"textarea", label:"Notes", labelAr:"ملاحظات", width:"full", order:9 }),
+    rfbField({ key:"destinationCity", type:"select", label:"Destination", labelAr:"الوجهة", required:true, width:"full", order:2,
+      options:(state.cache.securityDestinations||[]).map(d=>({value:d.code,label:d.en,labelAr:d.ar})) }),
+    rfbField({ key:"applicantName", type:"text", label:"Client Name", labelAr:"اسم العميل", required:true, order:3 }),
+    rfbField({ key:"phone", type:"text", label:"Phone", labelAr:"الهاتف", required:true, order:4 }),
+    rfbField({ key:"nationality", type:"nationality-select", label:"Nationality", labelAr:"الجنسية", required:true, order:5 }),
+    rfbField({ key:"hotelName", type:"text", label:"Hotel Name", labelAr:"اسم الفندق", order:6 }),
+    rfbField({ key:"paxCount", type:"number", label:"Passengers", labelAr:"عدد الركاب", defaultValue:1, order:7 }),
+    rfbField({ key:"passportUrl", type:"file-upload", label:"Passport", labelAr:"جواز السفر", width:"full", order:8 }),
+    rfbField({ key:"flightTicketUrl", type:"file-upload", label:"Flight Ticket", labelAr:"تذكرة الطيران", width:"full", order:9 }),
+    rfbField({ key:"notes", type:"textarea", label:"Notes", labelAr:"ملاحظات", width:"full", order:10 }),
   ]),
   airport_assist: () => ([
     rfbField({ key:"guestName", type:"text", label:"Guest Name", labelAr:"اسم الضيف", required:true, order:1 }),
@@ -5911,6 +5955,9 @@ let rfbTarget = "hotel_request";
 async function renderRequestFormBuilder() {
   state.page = "request-forms";
   const captured = state.renderToken;
+  // The built-in defaults read both lists straight out of the cache, so a form
+  // opened before any other page filled them would offer empty dropdowns.
+  await Promise.all([ensureAirportOptions(), ensureSecurityDestinations()]);
   content(pageHeader() + `
     <section class="panel" style="margin-bottom:16px">
       <div class="panel-body" style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">

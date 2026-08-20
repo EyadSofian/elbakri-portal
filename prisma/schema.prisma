@@ -1333,6 +1333,11 @@ model VisaApplication {
   notes              String?        @db.Text
   phone              String?
   hotelName          String?
+  // Where the guests are staying — Cairo, Sharm El Sheikh or the North Coast.
+  // destinationCountry above is the arrival airport, which only says where they
+  // land; the codes live in src/shared/security-destinations.ts. Nullable
+  // because approvals filed before the question existed never answered it.
+  destinationCity    String?
   comingFrom         String? // origin country/city — printed on the security voucher
   flightNumber       String? // arrival flight number — printed on the security voucher
   arrivalTime        DateTime? // arrival date/time — printed on the security voucher
