@@ -5213,10 +5213,14 @@ async function openSecurityApprovalModal(id = "") {
          <div class="secondary-text" style="margin-top:4px">${t("securityAdmin.noAirports", "No airports yet — add one on the Airports page first.")}
          <button type="button" class="btn btn-outline btn-sm" style="margin-inline-start:6px" onclick="closeModal(); openAirportsTab()">${t("nav.airports", "Airports")}</button></div>`);
 
-  // Blank stays available: an approval filed before the question existed has no
-  // answer, and editing an unrelated field should not invent one.
-  const destinationField = saField("saDestCity", t("form.destinationCity", "Destination"),
-    `<select id="saDestinationCity"><option value="">— ${escapeHtml(t("form.destinationCityNone", "Not specified"))} —</option>${
+  // A new approval has to say where the guests stay, same as the company portal
+  // asks. Editing keeps the blank: an approval filed before the question existed
+  // has no answer, and fixing an unrelated field should not invent one.
+  const destinationField = saField("saDestCity",
+    id ? t("form.destinationCity", "Destination") : `${t("form.destinationCity", "Destination")} *`,
+    `<select id="saDestinationCity"><option value="">${
+      id ? `— ${escapeHtml(t("form.destinationCityNone", "Not specified"))} —`
+         : escapeHtml(t("securityApproval.selectDestination", "Where will they be staying?"))}</option>${
       opts(securityDestinationOptions(), v?.destinationCity)}</select>`);
 
   const body = `<div class="form-grid">
@@ -5266,6 +5270,7 @@ async function saveSecurityApproval(id) {
     notes: val("saNotes") || null,
   };
   const missing = ["applicantName","nationality","passportNumber","passportExpiry","travelDate","destinationCountry"]
+    .concat(id ? [] : ["destinationCity"])
     .filter(k => !payload[k]);
   if (missing.length) { toast(t("toast.validationError", "Fill in the required fields"), "error"); return; }
   if (!id) {
