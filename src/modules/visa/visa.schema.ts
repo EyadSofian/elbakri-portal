@@ -1,5 +1,6 @@
 import { ProcessingType, VisaType } from '@prisma/client';
 import { z } from 'zod';
+import { SECURITY_DESTINATION_CODES } from '../../shared/security-destinations';
 
 // The admin form posts `null` for blank fields, so optional fields are
 // `.nullable().optional()`. Anything not declared here is stripped by
@@ -22,6 +23,9 @@ export const updateVisaApplicationSchema = z.object({
   passportExpiry: z.string().optional(),
   visaType: z.enum(VISA_TYPES).optional(),
   destinationCountry: z.string().min(1).optional(),
+  // Where the guests stay, as opposed to destinationCountry, the airport they
+  // arrive at. Blank clears it, so an approval filed without one can stay that way.
+  destinationCity: z.enum(SECURITY_DESTINATION_CODES).nullable().optional(),
   travelDate: z.string().optional(),
   processingType: z.enum(PROCESSING_TYPES).optional(),
   paxCount: z.coerce.number().int().min(1).max(200).optional(),

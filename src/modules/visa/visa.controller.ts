@@ -12,6 +12,7 @@ import {
   escapeHtml,
 } from '../../shared/helpers';
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
+import { SECURITY_DESTINATIONS, isSecurityDestination } from '../../shared/security-destinations';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
@@ -64,6 +65,12 @@ async function generateVisaInvoicePdf(invoiceId: string): Promise<void> {
   if (!invoice || invoice.pdfPath) return;
   const generated = await generateInvoicePdf(invoice as Parameters<typeof generateInvoicePdf>[0]);
   await prisma.invoice.update({ where: { id: invoice.id }, data: { pdfPath: generated.path } });
+}
+
+/** The areas an approval can be filed for, so both portals offer the same three
+ *  the API accepts instead of each keeping its own copy of the list. */
+export function listSecurityDestinations(_req: Request, res: Response): void {
+  res.json({ success: true, data: SECURITY_DESTINATIONS });
 }
 
 export async function getVisaQuote(req: Request, res: Response): Promise<void> {
@@ -145,6 +152,7 @@ export async function createVisaApplication(req: Request, res: Response): Promis
     notes?: string;
     phone?: string;
     hotelName?: string;
+    destinationCity?: string;
     paxCount?: number;
     passportUrl?: string;
     flightTicketUrl?: string;
@@ -155,6 +163,17 @@ export async function createVisaApplication(req: Request, res: Response): Promis
     : caller.companyId!;
   if (!companyId) {
     res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'companyId required' });
+    return;
+  }
+  // Where the guests stay is optional — a template built before the question
+  // existed never asks for it — but a value that is not one of the areas we
+  // file approvals for is a mistake, not a new area.
+  if (body.destinationCity && !isSecurityDestination(body.destinationCity)) {
+    res.status(400).json({
+      success: false,
+      error: 'VALIDATION_ERROR',
+      message: 'destinationCity must be one of CAIRO, SHARM_EL_SHEIKH, NORTH_COAST',
+    });
     return;
   }
 
@@ -202,6 +221,7 @@ export async function createVisaApplication(req: Request, res: Response): Promis
           notes: body.notes,
           phone: body.phone,
           hotelName: body.hotelName,
+          destinationCity: body.destinationCity,
           paxCount,
           passportUrl: body.passportUrl,
           flightTicketUrl: body.flightTicketUrl,
