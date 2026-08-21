@@ -3962,6 +3962,7 @@ async function openSecurityApprovalForm() {
     <button class="btn btn-primary" id="submitSaBtn">${icon("circle-check")}&nbsp;${t("btn.confirm","Confirm")}</button>`);
 
   document.getElementById("saType").addEventListener("change", updateSecurityApprovalQuote);
+  document.getElementById("saDestinationCity").addEventListener("change", updateSecurityApprovalQuote);
   document.getElementById("saPax").addEventListener("change", updateSecurityApprovalQuote);
 
   document.getElementById("submitSaBtn").onclick = async () => {
@@ -4010,24 +4011,31 @@ async function openSecurityApprovalForm() {
 
 async function updateSecurityApprovalQuote() {
   const type = document.getElementById("saType")?.value;
+  // The admin can price a destination on its own, so the quote is only right
+  // once both halves of the question are answered.
+  const destinationCity = document.getElementById("saDestinationCity")?.value;
   const paxCount = Math.max(1, Number(document.getElementById("saPax")?.value || 1));
   const preview = document.getElementById("saQuotePreview");
   if (!preview) return;
-  if (!type) {
-    preview.textContent = `${t("form.select","Select")} ${t("securityApproval.types","Approval Type")}`;
+  if (!type || !destinationCity) {
+    preview.textContent = `${t("form.select","Select")} ${
+      !type ? t("securityApproval.types","Approval Type") : t("securityApproval.destination","Destination")}`;
     return;
   }
   preview.innerHTML = `<span class="skeleton-line" style="width:140px"></span>`;
   const res = await apiFetch(`/visa-applications/quote?${new URLSearchParams({
     visaType: "TOURIST",
     destinationCountry: type,
+    destinationCity,
     processingType: "NORMAL",
     paxCount: String(paxCount),
   })}`);
   if (!document.getElementById("saQuotePreview")) return;
+  // Not every destination is priced, and "no data found" tells the agent nothing
+  // about what to do — say which half of the question has no price behind it.
   preview.innerHTML = res?.data
     ? `<span>${t("th.total","Total")}</span><strong>${formatStoredMoney(res.data.totalAmount, res.data.currency)}</strong>`
-    : `<span class="text-danger">${t("empty.noData","Price not configured")}</span>`;
+    : `<span class="text-danger">${t("securityApproval.priceNotSet","No price is set for this destination yet — please contact us.")}</span>`;
 }
 
 // ─── Airport Assist (renamed from Reception) ─────────────────────────────────

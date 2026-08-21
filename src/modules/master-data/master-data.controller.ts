@@ -248,7 +248,9 @@ export async function createVisaFee(req: Request, res: Response): Promise<void> 
   const fee = await prisma.visaFee.create({
     data: {
       visaType: enumValue(body.visaType, visaTypes, 'TOURIST'),
-      destinationCountry: stringValue(body.destinationCountry) ?? 'Egypt',
+      // Blank is meaningful on both: it prices any airport / any destination.
+      destinationCountry: stringValue(body.destinationCountry),
+      destinationCity: stringValue(body.destinationCity),
       processingType: enumValue(body.processingType, processingTypes, 'NORMAL'),
       fee: decimalValue(body.fee),
       currency: stringValue(body.currency)?.toUpperCase() ?? 'USD',
@@ -263,7 +265,8 @@ export async function updateVisaFee(req: Request, res: Response): Promise<void> 
   const body = req.body as Record<string, unknown>;
   const data: Record<string, unknown> = {};
   if (body.visaType !== undefined) data.visaType = enumValue(body.visaType, visaTypes, 'TOURIST');
-  if (body.destinationCountry !== undefined) data.destinationCountry = stringValue(body.destinationCountry) ?? 'Egypt';
+  if (body.destinationCountry !== undefined) data.destinationCountry = stringValue(body.destinationCountry);
+  if (body.destinationCity !== undefined) data.destinationCity = stringValue(body.destinationCity);
   if (body.processingType !== undefined) data.processingType = enumValue(body.processingType, processingTypes, 'NORMAL');
   if (body.fee !== undefined) data.fee = decimalValue(body.fee);
   if (body.currency !== undefined) data.currency = stringValue(body.currency)?.toUpperCase() ?? 'USD';

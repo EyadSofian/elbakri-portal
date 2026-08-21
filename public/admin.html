@@ -1170,13 +1170,23 @@ const masterConfigs = {
     ],
   },
   visa: {
-    titleKey: "nav.visa",
+    // The dialog title reads "Add New <this>", so it names the row — a price —
+    // not the page it lives on, which is what nav.visa would have said.
+    titleKey: "page.visaFeeRecord",
     endpoint: "/visa-fees",
     listEndpoint: "/visa-fees?limit=100",
     syncEntity: "visa-fees",
     fields: [
       { name: "visaType", label: "th.type", type: "select", default: "TOURIST", options: ["TOURIST", "BUSINESS", "TRANSIT", "STUDENT", "MEDICAL", "UMRAH", "HAJJ"] },
-      { name: "destinationCountry", label: "th.country", required: true, default: "Egypt" },
+      // Both narrowers are optional and blank means "any", so one row can price
+      // a whole type and another price a single destination differently. The
+      // request takes the most specific row that matches it.
+      { name: "destinationCity", label: "form.destinationCity", fallback: "Destination", type: "select", default: "",
+        options: securityDestinationOptions, nullable: true, emptyKey: "form.anyDestination", emptyLabel: "Any destination",
+        helpKey: "help.feeDestination", help: "Where the guests stay. Leave blank to charge this for every destination." },
+      { name: "destinationCountry", label: "form.arrivalAirport", fallback: "Arrival airport", type: "select", default: "",
+        options: airportSelectOptions, nullable: true, emptyKey: "form.anyAirport", emptyLabel: "Any airport",
+        helpKey: "help.feeAirport", help: "Where they land. Leave blank to charge this whatever airport they arrive at." },
       { name: "processingType", label: "form.processingType", fallback: "Processing", type: "select", default: "NORMAL", options: ["NORMAL", "EXPRESS", "URGENT"] },
       { name: "fee", label: "th.amount", type: "number", required: true, default: 1 },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
@@ -1311,7 +1321,10 @@ function masterField(entity, fieldDef, row) {
     return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><textarea id="${id}" rows="3">${escapeHtml(value)}</textarea>${help}</div>`;
   }
   if (fieldDef.type === "select") {
-    const emptyOpt = fieldDef.nullable ? `<option value="" ${!value ? "selected" : ""}>— None —</option>` : "";
+    // "— None —" reads as "nothing", which is wrong where blank means "applies
+    // to all of them" — such a field names what its blank stands for instead.
+    const emptyText = fieldDef.emptyKey ? t(fieldDef.emptyKey, fieldDef.emptyLabel) : (fieldDef.emptyLabel || "None");
+    const emptyOpt = fieldDef.nullable ? `<option value="" ${!value ? "selected" : ""}>— ${escapeHtml(emptyText)} —</option>` : "";
     // options may be a plain array or a function, so a field can be built from
     // admin-managed data (airports) instead of a list frozen in the source.
     const opts = typeof fieldDef.options === "function" ? fieldDef.options() : fieldDef.options;
@@ -4848,15 +4861,45 @@ async function deactivateGroupType(scope, id) {
   });
 }
 
+/** One line saying, in words, which approvals a fee row prices. */
+function visaFeeCoverage(v) {
+  const city = v.destinationCity
+    ? securityDestinationLabel(v.destinationCity)
+    : t("form.anyDestination", "Any destination");
+  const airport = v.destinationCountry || t("form.anyAirport", "Any airport");
+  return `${city} · ${airport}`;
+}
+
 async function renderVisa() {
+  // Both dropdowns on the fee form are built from these, and the list spells the
+  // stored codes back out, so nothing here reads as a bare code.
+  await Promise.all([ensureAirportOptions(), ensureSecurityDestinations()]);
   return renderSimpleList("visa", masterConfigs.visa.listEndpoint, [
     ["th.type", v => escapeHtml(v.visaType)],
-    ["th.country", v => escapeHtml(v.destinationCountry)],
+    ["form.appliesTo", v => escapeHtml(visaFeeCoverage(v))],
     ["form.processingType", v => escapeHtml(v.processingType)],
     ["th.amount", v => formatMoney(v.fee, v.currency)],
     ["th.status", v => statusBadge(v.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", v => masterRowActions("visa", v)],
-  ], masterActions("visa"), securityTabs("fees"));
+  ], masterActions("visa"), securityTabs("fees") + visaFeeRulePanel());
+}
+
+/** The pricing rule, in the plainest words it fits into — an admin filling this
+ *  page should not have to infer how two half-filled rows resolve. */
+function visaFeeRulePanel() {
+  return `<section class="panel" style="margin-bottom:16px">
+    <div class="panel-body">
+      <strong>${t("securityAdmin.feeRuleTitle", "How a price is chosen")}</strong>
+      <div class="secondary-text" style="margin-top:6px;line-height:1.9">
+        ${t("securityAdmin.feeRuleIntro", "Each row prices one type of approval. Leave a field blank to mean “any”.")}<br>
+        1. ${t("securityAdmin.feeRule1", "A row matching both the destination and the airport wins.")}<br>
+        2. ${t("securityAdmin.feeRule2", "Then a row for that destination, whatever the airport.")}<br>
+        3. ${t("securityAdmin.feeRule3", "Then a row for that airport, whatever the destination.")}<br>
+        4. ${t("securityAdmin.feeRule4", "Then a row with both blank — one price for everything.")}<br>
+        ${t("securityAdmin.feeRuleNone", "With no row matching at all, the company is told the price is not set yet and cannot submit.")}
+      </div>
+    </div>
+  </section>`;
 }
 
 async function renderReception() {
@@ -5160,7 +5203,6 @@ async function renderSecurityApproval() {
   ], {
     filters: [["status","form.status",["","PENDING","SUBMITTED","APPROVED","REJECTED"]]],
     beforeContent: securityTabs("requests"),
-    toolbarActions: `<button class="btn btn-primary" onclick="openSecurityApprovalModal()">${icon("plus")}${t("btn.newApproval", "New approval")}</button>`,
   });
 }
 
@@ -5175,34 +5217,32 @@ async function openAirportsTab() {
 }
 
 // ─── Security approval editor ────────────────────────────────────────────────
-// The admin files approvals on a company's behalf and fixes what an agency got
-// wrong, so the whole record is editable here — not just approve/reject.
+// Approvals are filed by the companies themselves — the admin defines what is on
+// offer on the Approval fees tab, then approves or rejects what comes in. What
+// this editor is for is fixing a record an agency got something wrong on, so the
+// whole record is editable; it deliberately cannot create one, because nobody
+// but the requesting agency holds the guest's passport details.
 
 /** The approval's own fields, in the order they are asked for. */
 function saField(id, label, input, cls = "") {
   return `<div class="form-field ${cls}"><label>${escapeHtml(label)}</label>${input}</div>`;
 }
 
-async function openSecurityApprovalModal(id = "") {
-  const [companies] = await Promise.all([
-    id ? Promise.resolve(null) : apiFetch("/admin/companies?limit=300"),
-    ensureAirportOptions(),
-    ensureSecurityDestinations(),
-  ]);
+async function openSecurityApprovalModal(id) {
+  if (!id) return;
+  await Promise.all([ensureAirportOptions(), ensureSecurityDestinations()]);
   const rows = window._adminListState["security-approval"]?.rows || [];
-  const v = id ? rows.find(r => r.id === id) : null;
-  if (id && !v) { toast(t("toast.notFound", "Record not found — refresh and try again"), "error"); return; }
+  const v = rows.find(r => r.id === id);
+  if (!v) { toast(t("toast.notFound", "Record not found — refresh and try again"), "error"); return; }
   const airports = state.cache.airportOptions || [];
   const day = value => (value ? String(value).slice(0, 10) : "");
   const opts = (list, current) => list.map(([value, label]) =>
     `<option value="${escapeHtml(value)}" ${value === current ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
 
-  // The company can only be chosen while creating — moving an existing approval
-  // between companies would strand its invoice on the old one.
-  const companyField = id
-    ? saField("saCompany", t("securityAdmin.company", "Company"), `<input value="${escapeHtml(v.company?.name || "—")}" disabled>`)
-    : saField("saCompany", t("securityAdmin.company", "Company"), `<select id="saCompanyId"><option value="">— ${escapeHtml(t("securityAdmin.pickCompany", "Pick a company"))} —</option>${
-        (companies?.data || []).map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("")}</select>`);
+  // Read-only: the approval belongs to the agency that filed it, and moving it
+  // to another company would strand its invoice on the old one.
+  const companyField = saField("saCompany", t("securityAdmin.company", "Company"),
+    `<input value="${escapeHtml(v.company?.name || "—")}" disabled>`);
 
   // With no airports configured there is nothing to approve against, and an
   // empty dropdown gives no clue why — say so, and point at the page that fixes it.
@@ -5213,14 +5253,11 @@ async function openSecurityApprovalModal(id = "") {
          <div class="secondary-text" style="margin-top:4px">${t("securityAdmin.noAirports", "No airports yet — add one on the Airports page first.")}
          <button type="button" class="btn btn-outline btn-sm" style="margin-inline-start:6px" onclick="closeModal(); openAirportsTab()">${t("nav.airports", "Airports")}</button></div>`);
 
-  // A new approval has to say where the guests stay, same as the company portal
-  // asks. Editing keeps the blank: an approval filed before the question existed
-  // has no answer, and fixing an unrelated field should not invent one.
-  const destinationField = saField("saDestCity",
-    id ? t("form.destinationCity", "Destination") : `${t("form.destinationCity", "Destination")} *`,
-    `<select id="saDestinationCity"><option value="">${
-      id ? `— ${escapeHtml(t("form.destinationCityNone", "Not specified"))} —`
-         : escapeHtml(t("securityApproval.selectDestination", "Where will they be staying?"))}</option>${
+  // The blank stays reachable: an approval filed before this question existed has
+  // no answer, and fixing an unrelated field on it should not invent one. Changing
+  // it reprices the approval — the hint at the foot of the form says so.
+  const destinationField = saField("saDestCity", t("form.destinationCity", "Destination"),
+    `<select id="saDestinationCity"><option value="">— ${escapeHtml(t("form.destinationCityNone", "Not specified"))} —</option>${
       opts(securityDestinationOptions(), v?.destinationCity)}</select>`);
 
   const body = `<div class="form-grid">
@@ -5240,16 +5277,18 @@ async function openSecurityApprovalModal(id = "") {
     ${saField("saFrom", t("form.comingFrom", "Coming from"), `<input id="saComingFrom" value="${escapeHtml(v?.comingFrom || "")}">`)}
     ${saField("saFlight", t("form.flightNumber", "Flight number"), `<input id="saFlightNumber" value="${escapeHtml(v?.flightNumber || "")}">`)}
     ${saField("saNotes", t("form.notes", "Notes"), `<textarea id="saNotes" rows="3">${escapeHtml(v?.notes || "")}</textarea>`, "full")}
-    <div class="form-field full secondary-text">${t("securityAdmin.repriceHint", "Changing the location, type, processing speed or passenger count recalculates the fee and the invoice.")}</div>
+    <div class="form-field full secondary-text">${t("securityAdmin.repriceHint", "Changing the destination, airport, type, processing speed or passenger count recalculates the fee and the invoice.")}</div>
   </div>`;
 
-  openModal(id ? t("securityAdmin.editTitle", "Edit security approval") : t("securityAdmin.newTitle", "New security approval"), body, `
+  openModal(t("securityAdmin.editTitle", "Edit security approval"), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
     <button class="btn btn-primary" id="saSaveBtn">${t("btn.save", "Save")}</button>
   `);
   document.getElementById("saSaveBtn").onclick = () => saveSecurityApproval(id);
 }
 
+/** Save an edit. There is no create path: an approval is filed by the agency
+ *  that holds the guest's details, never typed in here. */
 async function saveSecurityApproval(id) {
   const val = elId => document.getElementById(elId)?.value.trim() || "";
   const payload = {
@@ -5270,18 +5309,12 @@ async function saveSecurityApproval(id) {
     notes: val("saNotes") || null,
   };
   const missing = ["applicantName","nationality","passportNumber","passportExpiry","travelDate","destinationCountry"]
-    .concat(id ? [] : ["destinationCity"])
     .filter(k => !payload[k]);
   if (missing.length) { toast(t("toast.validationError", "Fill in the required fields"), "error"); return; }
-  if (!id) {
-    const companyId = document.getElementById("saCompanyId")?.value;
-    if (!companyId) { toast(t("securityAdmin.pickCompany", "Pick a company"), "error"); return; }
-    payload.companyId = companyId;
-  }
   const btn = document.getElementById("saSaveBtn");
   setBtnLoading(btn, true);
-  const res = await apiFetch(id ? `/visa-applications/${id}` : "/visa-applications", {
-    method: id ? "PATCH" : "POST",
+  const res = await apiFetch(`/visa-applications/${id}`, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
   setBtnLoading(btn, false);
