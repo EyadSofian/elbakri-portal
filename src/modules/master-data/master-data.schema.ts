@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SECURITY_DESTINATION_CODES } from '../../shared/security-destinations';
 
 // Validation for the admin master-data write paths (transport rates, visa fees,
 // reception service rates). Previously these endpoints had NO validation and the
@@ -87,7 +88,10 @@ export const transportRateSchema = z.object({
 
 export const visaFeeSchema = z.object({
   visaType: enumField(VISA_TYPES),
+  // Both narrowers are nullable: blank means the row prices any airport / any
+  // destination. See resolveVisaFee for how a request picks between rows.
   destinationCountry: strField,
+  destinationCity: enumField(SECURITY_DESTINATION_CODES),
   processingType: enumField(PROCESSING_TYPES),
   fee: numField,
   currency: strField,

@@ -1364,10 +1364,15 @@ model VisaApplication {
 }
 
 model VisaFee {
-  id                 String         @id @default(cuid())
-  sheetsRowId        String?
-  visaType           VisaType
-  destinationCountry String
+  id          String   @id @default(cuid())
+  sheetsRowId String?
+  visaType    VisaType
+  // What this price covers. Both narrowers are optional and blank means "any",
+  // so one row can price a single airport, a single destination, the exact pair,
+  // or every approval of this type. A request takes the most specific row that
+  // matches it — the order is spelled out in resolveVisaFee.
+  destinationCountry String? // arrival airport (code or name); null = any airport
+  destinationCity    String? // where the guests stay; null = any destination
   processingType     ProcessingType @default(NORMAL)
   fee                Decimal        @db.Decimal(10, 2)
   currency           String         @default("USD")
@@ -1379,6 +1384,7 @@ model VisaFee {
   @@index([sheetsRowId])
   @@index([visaType])
   @@index([destinationCountry])
+  @@index([destinationCity])
 }
 
 // ─────────────────────────────────────────────

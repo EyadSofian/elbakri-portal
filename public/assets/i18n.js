@@ -863,6 +863,7 @@
     consentRequired: "Please confirm consent to proceed",
     newRequest: "New Security Request",
     destination: "Destination", selectDestination: "Where will they be staying?",
+    priceNotSet: "No price is set for this destination yet — please contact us.",
   };
   ar.securityApproval = {
     sharm: "شرم الشيخ", cairo: "القاهرة", borgElArab: "برج العرب",
@@ -876,6 +877,7 @@
     consentRequired: "يرجى تأكيد الموافقة للمتابعة",
     newRequest: "طلب موافقة أمنية جديد",
     destination: "الوجهة", selectDestination: "أين سيقيمون؟",
+    priceNotSet: "لا يوجد سعر محدد لهذه الوجهة بعد — يرجى التواصل معنا.",
   };
 
   // ── Airport Assist form ────────────────────────────────────────────────────
@@ -1302,13 +1304,15 @@
 
   en.page = Object.assign({}, en.page, {
     visaFeesTitle: "Approval fees",
-    visaFeesSub: "What each security approval costs, by type and processing speed",
+    visaFeesSub: "What each security approval costs — by destination, arrival airport, type and processing speed",
+    visaFeeRecord: "Approval Fee",
     receptionServicesTitle: "Airport assist services",
     receptionServicesSub: "The assist services offered at each airport and their rates",
   });
   ar.page = Object.assign({}, ar.page, {
     visaFeesTitle: "رسوم الموافقات الأمنية",
-    visaFeesSub: "تكلفة كل موافقة أمنية حسب النوع وسرعة الإنجاز",
+    visaFeesSub: "تكلفة كل موافقة أمنية — حسب الوجهة ومطار الوصول والنوع وسرعة الإنجاز",
+    visaFeeRecord: "رسوم موافقة",
     receptionServicesTitle: "خدمات مساعدة المطار",
     receptionServicesSub: "الخدمات المتاحة في كل مطار وأسعارها",
   });
@@ -1705,6 +1709,10 @@
       photo: "Photo",
       duration: "Duration / Slots",
       approvalLocation: "Approval location",
+      arrivalAirport: "Arrival airport",
+      anyDestination: "Any destination",
+      anyAirport: "Any airport",
+      appliesTo: "Applies to",
       destinationCity: "Destination",
       destinationCityNone: "Not specified",
       processing: "Processing",
@@ -1722,6 +1730,10 @@
       photo: "الصورة",
       duration: "المدة / المواعيد",
       approvalLocation: "مكان الموافقة",
+      arrivalAirport: "مطار الوصول",
+      anyDestination: "كل الوجهات",
+      anyAirport: "كل المطارات",
+      appliesTo: "ينطبق على",
       destinationCity: "الوجهة",
       destinationCityNone: "غير محدد",
       processing: "سرعة الإنجاز",
@@ -1739,7 +1751,6 @@
       remove: "Remove",
       addDestination: "Add Destination",
       editDestination: "Edit Destination",
-      newApproval: "New approval",
     });
     Object.assign(ar.btn, {
       addPhotos: "إضافة صور",
@@ -1748,7 +1759,6 @@
       remove: "حذف",
       addDestination: "إضافة وجهة",
       editDestination: "تعديل الوجهة",
-      newApproval: "موافقة جديدة",
     });
     Object.assign(en.filter, { all: "All" });
     Object.assign(ar.filter, { all: "الكل" });
@@ -1793,6 +1803,8 @@
       timeSlots: "Comma-separated, e.g. 09:00 AM, 02:00 PM, 06:00 PM",
       blankNotSold: "Leave blank if this trip is not sold per person",
       privateTourOne: "Private-tour price for one person",
+      feeDestination: "Where the guests stay. Leave blank to charge this for every destination.",
+      feeAirport: "Where they land. Leave blank to charge this whatever airport they arrive at.",
     });
     Object.assign(ar.help, {
       cityExample: "مثال: شرم الشيخ، دهب، الغردقة، مرسى علم",
@@ -1804,31 +1816,43 @@
       timeSlots: "مفصولة بفاصلة، مثال: ٠٩:٠٠ ص، ٠٢:٠٠ م، ٠٦:٠٠ م",
       blankNotSold: "اتركه فارغًا إذا كانت الرحلة لا تُباع بسعر الفرد",
       privateTourOne: "سعر الرحلة الخاصة لشخص واحد",
+      feeDestination: "المكان اللي الضيوف هيقيموا فيه. سيبه فاضي علشان السعر ده يشمل كل الوجهات.",
+      feeAirport: "المطار اللي هينزلوا فيه. سيبه فاضي علشان السعر ده يشمل أي مطار وصول.",
     });
     en.securityAdmin = en.securityAdmin || {}; ar.securityAdmin = ar.securityAdmin || {};
     Object.assign(en.securityAdmin, {
-      newTitle: "New security approval",
       editTitle: "Edit security approval",
       company: "Company",
-      pickCompany: "Pick a company",
       deleteConfirm: "Delete this security approval and its invoice? This cannot be undone.",
       deleteBlockedPaid: "This approval is already paid — cancel it instead of deleting it.",
       repriced: "Saved. The fee was recalculated.",
       priceMissing: "No active approval fee is configured for this location and type.",
-      repriceHint: "Changing the location, type, processing speed or passenger count recalculates the fee and the invoice.",
+      repriceHint: "Changing the destination, airport, type, processing speed or passenger count recalculates the fee and the invoice.",
       noAirports: "No airports yet — add one on the Airports page first.",
+      feeRuleTitle: "How a price is chosen",
+      feeRuleIntro: "Each row prices one type of approval. Leave a field blank to mean “any”.",
+      feeRule1: "A row matching both the destination and the airport wins.",
+      feeRule2: "Then a row for that destination, whatever the airport.",
+      feeRule3: "Then a row for that airport, whatever the destination.",
+      feeRule4: "Then a row with both blank — one price for everything.",
+      feeRuleNone: "With no row matching at all, the company is told the price is not set yet and cannot submit.",
     });
     Object.assign(ar.securityAdmin, {
-      newTitle: "موافقة أمنية جديدة",
       editTitle: "تعديل الموافقة الأمنية",
       company: "الشركة",
-      pickCompany: "اختر الشركة",
       deleteConfirm: "حذف هذه الموافقة الأمنية وفاتورتها؟ لا يمكن التراجع.",
       deleteBlockedPaid: "هذه الموافقة مدفوعة بالفعل — قم بإلغائها بدلًا من حذفها.",
       repriced: "تم الحفظ وإعادة حساب الرسوم.",
       priceMissing: "لا توجد رسوم مفعّلة لهذا المكان ونوع الموافقة.",
-      repriceHint: "تغيير المكان أو النوع أو سرعة الإنجاز أو عدد الركاب يعيد حساب الرسوم والفاتورة.",
+      repriceHint: "تغيير الوجهة أو المطار أو النوع أو سرعة الإنجاز أو عدد الركاب يعيد حساب الرسوم والفاتورة.",
       noAirports: "لا توجد مطارات بعد — أضف مطارًا من صفحة المطارات أولًا.",
+      feeRuleTitle: "إزاي بيتحدد السعر",
+      feeRuleIntro: "كل صف بيسعّر نوع من الموافقات. سيب الحقل فاضي علشان يشمل الكل.",
+      feeRule1: "الصف اللي مطابق للوجهة والمطار مع بعض هو الأولى.",
+      feeRule2: "وبعده الصف الخاص بالوجهة دي مهما كان المطار.",
+      feeRule3: "وبعده الصف الخاص بالمطار ده مهما كانت الوجهة.",
+      feeRule4: "وبعده الصف اللي الاتنين فيه فاضيين — سعر واحد للكل.",
+      feeRuleNone: "لو مفيش صف مطابق خالص، الشركة هتشوف إن السعر لسه متحددش ومش هتقدر ترسل الطلب.",
     });
   })();
 

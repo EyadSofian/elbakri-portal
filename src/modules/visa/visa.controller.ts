@@ -32,24 +32,53 @@ const destinationAliases: Record<string, string[]> = {
   HBE: ['HBE', 'Borg El Arab', 'Borg Al Arab', 'برج العرب'],
 };
 
+/**
+ * The price of one approval.
+ *
+ * A fee row narrows on two things, either of which the admin may leave blank to
+ * mean "any": the arrival airport, and the destination the guests are staying
+ * in. The most specific row that matches wins, so a general price can stand for
+ * everything while one destination is priced differently:
+ *
+ *   3  this airport AND this destination
+ *   2  this destination, any airport
+ *   1  this airport, any destination
+ *   0  any airport, any destination
+ *
+ * A destination beats an airport at the same count of matches because it is what
+ * the approval is actually filed for. Ties go to the most recently edited row.
+ */
 async function resolveVisaFee(
   visaType: VisaType,
   destinationCountry: string,
+  destinationCity: string | null | undefined,
   processingType: ProcessingType,
   paxCount: number,
 ) {
   const aliases = destinationAliases[destinationCountry.toUpperCase()] ?? [destinationCountry];
-  const fee = await prisma.visaFee.findFirst({
+  const candidates = await prisma.visaFee.findMany({
     where: {
       visaType,
       processingType,
       isActive: true,
-      OR: aliases.map((value) => ({
-        destinationCountry: { equals: value },
-      })),
+      // A blank narrower on the row matches anything; a filled one has to match.
+      AND: [
+        { OR: [{ destinationCountry: null }, { destinationCountry: { in: aliases } }] },
+        // A request that never named a destination can only take a row that does
+        // not name one either — otherwise it would inherit another area's price.
+        destinationCity
+          ? { OR: [{ destinationCity: null }, { destinationCity }] }
+          : { destinationCity: null },
+      ],
     },
     orderBy: { updatedAt: 'desc' },
   });
+  const specificity = (row: { destinationCountry: string | null; destinationCity: string | null }) =>
+    (row.destinationCity ? 2 : 0) + (row.destinationCountry ? 1 : 0);
+  const fee = candidates.reduce<(typeof candidates)[number] | null>(
+    (best, row) => (best && specificity(best) >= specificity(row) ? best : row),
+    null,
+  );
   if (!fee) throw new Error('PRICE_NOT_CONFIGURED');
   return {
     amount: fee.fee.mul(Math.max(1, paxCount)),
@@ -76,6 +105,7 @@ export function listSecurityDestinations(_req: Request, res: Response): void {
 export async function getVisaQuote(req: Request, res: Response): Promise<void> {
   const visaType = String(req.query.visaType ?? 'TOURIST') as VisaType;
   const destinationCountry = String(req.query.destinationCountry ?? '');
+  const destinationCity = req.query.destinationCity ? String(req.query.destinationCity) : null;
   const processingType = String(req.query.processingType ?? 'NORMAL') as ProcessingType;
   const paxCount = Math.max(1, parseInt(String(req.query.paxCount ?? '1'), 10));
   if (!destinationCountry) {
@@ -83,7 +113,13 @@ export async function getVisaQuote(req: Request, res: Response): Promise<void> {
     return;
   }
   try {
-    const source = await resolveVisaFee(visaType, destinationCountry, processingType, paxCount);
+    const source = await resolveVisaFee(
+      visaType,
+      destinationCountry,
+      destinationCity,
+      processingType,
+      paxCount,
+    );
     const charge = explicitMoney(source.amount, source.currency);
     res.json({
       success: true,
@@ -189,6 +225,7 @@ export async function createVisaApplication(req: Request, res: Response): Promis
     const sourcePrice = await resolveVisaFee(
       body.visaType,
       body.destinationCountry,
+      body.destinationCity,
       processingType,
       paxCount,
     );
@@ -288,7 +325,9 @@ export async function createVisaApplication(req: Request, res: Response): Promis
 
 /** Editing any of these changes what the approval costs, so the fee and the
  *  invoice behind it have to be recalculated rather than left stale. */
-const REPRICING_FIELDS = ['visaType', 'destinationCountry', 'processingType', 'paxCount'] as const;
+const REPRICING_FIELDS = [
+  'visaType', 'destinationCountry', 'destinationCity', 'processingType', 'paxCount',
+] as const;
 
 export async function updateVisaApplication(req: Request, res: Response): Promise<void> {
   const body = req.body as UpdateVisaApplicationInput;
@@ -337,6 +376,9 @@ export async function updateVisaApplication(req: Request, res: Response): Promis
       const sourcePrice = await resolveVisaFee(
         (body.visaType ?? existing.visaType) as VisaType,
         body.destinationCountry ?? existing.destinationCountry,
+        // null is a real value here — "clear the destination" — so only an
+        // absent key falls back to what the approval already carries.
+        body.destinationCity !== undefined ? body.destinationCity : existing.destinationCity,
         (body.processingType ?? existing.processingType) as ProcessingType,
         paxCount,
       );

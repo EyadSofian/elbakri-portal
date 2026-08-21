@@ -3,6 +3,7 @@ import { SyncStatus } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { getSheetsClient } from '../../config/sheets';
 import { setJsonStringArray } from '../../shared/json-array';
+import { isSecurityDestination } from '../../shared/security-destinations';
 
 export type SyncEntity =
   | 'hotels'
@@ -542,10 +543,15 @@ async function upsertVisaFees(rows: SheetRow[], errors: string[]): Promise<{ cre
         continue;
       }
 
+      // Optional column: a sheet that names a destination prices that area on
+      // its own, one that does not keeps pricing every destination as before.
+      const destinationCityCell = pick(row, 'destinationCity', 'destination')
+        .trim().toUpperCase().replace(/[\s-]+/g, '_');
       const data = {
         sheetsRowId,
         visaType: enumCell(pick(row, 'visaType', 'type'), visaTypes, 'TOURIST'),
         destinationCountry,
+        destinationCity: isSecurityDestination(destinationCityCell) ? destinationCityCell : null,
         processingType: enumCell(pick(row, 'processingType', 'processing'), processingTypes, 'NORMAL'),
         fee: parseAmount(pick(row, 'fee', 'amount', 'rate')),
         currency: pick(row, 'currency') || 'USD',
