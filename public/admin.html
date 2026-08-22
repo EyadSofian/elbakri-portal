@@ -1138,7 +1138,8 @@ const masterConfigs = {
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
       { name: "minPax", label: "form.minPax", fallback: "Min Pax", type: "number", default: 1 },
       { name: "maxPax", label: "form.maxPax", fallback: "Max Pax", type: "number", default: 20 },
-      { name: "imageUrl", label: "activity.mainPhoto", fallback: "Main photo", type: "image", cls: "full" },
+      { name: "imageUrl", label: "activity.mainPhoto", fallback: "Main photo", type: "image", cls: "full",
+        helpKey: "help.activityPhoto", help: "Shown whole to the customer, whatever its shape — nothing is cropped off. A wide photo fills the frame best." },
       { name: "galleryUrls", label: "activity.photos", fallback: "More photos", type: "gallery", cls: "full" },
     ],
     marketPrices: [
@@ -1368,7 +1369,7 @@ function masterField(entity, fieldDef, row) {
     return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label>
       <input type="hidden" id="${id}" value="${escapeHtml(value)}">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <img id="${id}_preview" src="${escapeHtml(value)}" alt="" style="height:64px;width:96px;object-fit:cover;border-radius:8px;border:1px solid var(--border);${value ? "" : "display:none"}" onerror="this.style.display='none'">
+        <img id="${id}_preview" src="${escapeHtml(value)}" alt="" style="height:72px;width:104px;object-fit:contain;background:var(--surface-muted);border-radius:8px;border:1px solid var(--border);${value ? "" : "display:none"}" onerror="this.style.display='none'">
         <button type="button" class="btn btn-outline" id="${id}_btn" onclick="document.getElementById('${id}_file').click()">${icon("upload")}${t("btn.upload", "Upload")}</button>
         <input type="file" id="${id}_file" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none" onchange="masterPickImage('${id}', this)">
         <button type="button" class="btn btn-danger-ghost" onclick="masterClearImage('${id}')">${icon("trash-2")}${t("btn.remove", "Remove")}</button>
@@ -1393,7 +1394,7 @@ function masterField(entity, fieldDef, row) {
 function masterGalleryThumbs(id, urls) {
   if (!urls.length) return `<div class="secondary-text">${t("form.noPhotosYet", "No photos yet")}</div>`;
   return urls.map((url, i) => `<div style="position:relative">
-    <img src="${escapeHtml(url)}" alt="" style="height:64px;width:96px;object-fit:cover;border-radius:8px;border:1px solid var(--border)" onerror="this.style.opacity=0.3">
+    <img src="${escapeHtml(url)}" alt="" style="height:72px;width:104px;object-fit:contain;background:var(--surface-muted);border-radius:8px;border:1px solid var(--border)" onerror="this.style.opacity=0.3">
     <button type="button" class="btn btn-danger btn-sm" title="${escapeHtml(t("btn.remove", "Remove"))}" style="position:absolute;inset-block-start:2px;inset-inline-end:2px;padding:2px 6px;line-height:1" onclick="masterRemoveGalleryPhoto('${id}', ${i})">×</button>
   </div>`).join("");
 }
