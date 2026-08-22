@@ -1803,6 +1803,7 @@
       timeSlots: "Comma-separated, e.g. 09:00 AM, 02:00 PM, 06:00 PM",
       blankNotSold: "Leave blank if this trip is not sold per person",
       privateTourOne: "Private-tour price for one person",
+      activityPhoto: "Shown whole to the customer, whatever its shape — nothing is cropped off. A wide photo fills the frame best.",
       feeDestination: "Where the guests stay. Leave blank to charge this for every destination.",
       feeAirport: "Where they land. Leave blank to charge this whatever airport they arrive at.",
     });
@@ -1816,6 +1817,7 @@
       timeSlots: "مفصولة بفاصلة، مثال: ٠٩:٠٠ ص، ٠٢:٠٠ م، ٠٦:٠٠ م",
       blankNotSold: "اتركه فارغًا إذا كانت الرحلة لا تُباع بسعر الفرد",
       privateTourOne: "سعر الرحلة الخاصة لشخص واحد",
+      activityPhoto: "الصورة بتظهر للعميل كاملة مهما كان شكلها — مفيش أي جزء بيتقص منها. الصورة العرضية بتملا الإطار أحسن.",
       feeDestination: "المكان اللي الضيوف هيقيموا فيه. سيبه فاضي علشان السعر ده يشمل كل الوجهات.",
       feeAirport: "المطار اللي هينزلوا فيه. سيبه فاضي علشان السعر ده يشمل أي مطار وصول.",
     });

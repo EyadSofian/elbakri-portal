@@ -929,25 +929,50 @@ function hotelImageSrc(u) {
   return url;
 }
 
-function hotelMediaShowcase(h) {
-  const urls = [...new Set([h.imageUrl, ...(h.galleryUrls || [])].filter(Boolean))].map(hotelImageSrc);
-  if (!urls.length) {
-    return `<div class="hotel-media-empty">${escapeHtml((hotelName(h)||"?").charAt(0).toUpperCase())}</div>`;
-  }
+/**
+ * A photo carousel with thumbnails and a full-size lightbox.
+ *
+ * `fit` decides what happens when a photo is not the shape of the frame:
+ *   "cover"   — fill the frame and crop the overflow. Right for a catalogue of
+ *               uniformly wide photos, where a tidy row matters more.
+ *   "contain" — show the whole photo, over a blurred copy of itself so the
+ *               frame is still filled. Right where the operator uploaded a
+ *               particular picture and expects to see all of it, whatever
+ *               shape their phone or their supplier gave them.
+ */
+function mediaShowcase(urls, name, { fit = "cover" } = {}) {
   const id = "hms" + Math.random().toString(36).slice(2, 7);
-  const name = escapeHtml(hotelName(h));
-  return `<div class="hotel-media-showcase" id="${id}" data-imgs='${escapeHtml(JSON.stringify(urls))}'>
+  const label = escapeHtml(name || "");
+  const slide = (u, i) => `<button type="button" class="hotel-media-slide" onclick="hotelLightbox('${id}',${i})"${
+    fit === "contain" ? ` style="--slide-img:url('${escapeHtml(cssUrl(u))}')"` : ""
+  }><img src="${escapeHtml(u)}" alt="${label} ${i + 1}" loading="${i ? "lazy" : "eager"}"></button>`;
+  return `<div class="hotel-media-showcase${fit === "contain" ? " is-contain" : ""}" id="${id}" data-imgs='${escapeHtml(JSON.stringify(urls))}'>
     <div class="hotel-media-stage">
       <div class="hotel-media-main-scroll" onscroll="hmsSync('${id}')">
-        ${urls.map((u, i) => `<button type="button" class="hotel-media-slide" onclick="hotelLightbox('${id}',${i})"><img src="${u}" alt="${name} ${i + 1}" loading="${i ? "lazy" : "eager"}"></button>`).join("")}
+        ${urls.map(slide).join("")}
       </div>
       ${urls.length > 1 ? `
         <button type="button" class="hms-nav hms-prev" onclick="hmsScroll('${id}',-1)" aria-label="Previous photo">${icon("chevron-left")}</button>
         <button type="button" class="hms-nav hms-next" onclick="hmsScroll('${id}',1)" aria-label="Next photo">${icon("chevron-right")}</button>
         <div class="hms-count"><span id="${id}_i">1</span> / ${urls.length}</div>` : ""}
     </div>
-    ${urls.length > 1 ? `<div class="hotel-media-thumbs" id="${id}_t">${urls.slice(0, 24).map((u, i) => `<button type="button" class="hms-thumb${i === 0 ? " active" : ""}" onclick="hmsGo('${id}',${i})"><img src="${u}" alt="" loading="lazy"></button>`).join("")}</div>` : ""}
+    ${urls.length > 1 ? `<div class="hotel-media-thumbs" id="${id}_t">${urls.slice(0, 24).map((u, i) => `<button type="button" class="hms-thumb${i === 0 ? " active" : ""}" onclick="hmsGo('${id}',${i})"><img src="${escapeHtml(u)}" alt="" loading="lazy"></button>`).join("")}</div>` : ""}
   </div>`;
+}
+
+function hotelMediaShowcase(h) {
+  const urls = [...new Set([h.imageUrl, ...(h.galleryUrls || [])].filter(Boolean))].map(hotelImageSrc);
+  if (!urls.length) {
+    return `<div class="hotel-media-empty">${escapeHtml((hotelName(h)||"?").charAt(0).toUpperCase())}</div>`;
+  }
+  return mediaShowcase(urls, hotelName(h));
+}
+
+/** An excursion's own photos: whatever the operator uploaded, shown whole. */
+function activityMediaShowcase(a) {
+  const urls = [...new Set([a.imageUrl, ...(a.galleryUrls || [])].filter(Boolean))];
+  if (!urls.length) return "";
+  return mediaShowcase(urls, a.name, { fit: "contain" });
 }
 
 function hmsEl(id) { return document.querySelector("#" + id + " .hotel-media-main-scroll"); }
@@ -3535,7 +3560,7 @@ async function openActivityDetails(id) {
 
   const detailCard = `
     <div class="act-detail-card">
-      ${a.imageUrl ? `<img src="${escapeHtml(a.imageUrl)}" alt="" style="width:100%;height:180px;object-fit:cover;border-radius:var(--r-8);margin-bottom:14px">` : ""}
+      ${activityMediaShowcase(a)}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:12px">
         <div>
           <div style="font-size:18px;font-weight:800">${escapeHtml(a.name)}</div>

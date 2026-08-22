@@ -4839,6 +4839,45 @@ tr.enrich-row--error  td { background: rgba(224,36,36,0.05); }
 }
 .hotel-media-slide:hover img { transform: scale(1.03); }
 
+/* Whole-image mode. A photo that is not the shape of the frame is shown
+   complete rather than cropped, and the gap around it is filled with a blurred,
+   enlarged copy of the same photo — so a portrait picture from someone's phone
+   sits in the frame without either losing its top and bottom or leaving two
+   dead grey bars. The frame is taller here for the same reason. */
+.hotel-media-showcase.is-contain .hotel-media-slide {
+  position: relative;
+  /* Tall enough to read a portrait photo, short enough that the request form
+     under it is still the first thing in reach inside the modal. */
+  height: clamp(220px, 38vh, 360px);
+  background: var(--surface-muted);
+}
+
+.hotel-media-showcase.is-contain .hotel-media-slide::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--slide-img);
+  background-size: cover;
+  background-position: center;
+  filter: blur(26px) saturate(1.25);
+  transform: scale(1.2);
+  opacity: 0.5;
+}
+
+.hotel-media-showcase.is-contain .hotel-media-slide img {
+  position: relative;
+  object-fit: contain;
+}
+
+.hotel-media-showcase.is-contain .hms-thumb img {
+  object-fit: contain;
+  background: var(--surface-muted);
+}
+
+/* A hover zoom would clip the edges back off, which is the thing this mode
+   exists to avoid. */
+.hotel-media-showcase.is-contain .hotel-media-slide:hover img { transform: none; }
+
 /* glass prev/next arrows */
 .hms-nav {
   position: absolute;
