@@ -12,6 +12,20 @@ import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 import { debitWallet, refundWallet } from '../../shared/wallet';
+import {
+  PricingBasis,
+  availableBases,
+  isPartyBasis,
+  partyPriceFor,
+  partyUnits,
+} from '../../shared/activity-pricing';
+import {
+  buildInclusions,
+  excludedLabels,
+  includedLabels,
+  setInclusions,
+} from '../../shared/inclusions';
+import { readTransferAddOn } from '../../shared/transfer-addon';
 
 const activityInclude = {
   activity: { select: { id: true, name: true, city: true, category: true } },
@@ -69,6 +83,39 @@ function priceOrNull(v: unknown): Decimal | null {
 const ACTIVITY_LIST_FIELDS = ['timeSlots', 'includes', 'excludes', 'galleryUrls'] as const;
 
 /**
+ * Keep the marked inclusions list and the two flat lists saying the same thing.
+ *
+ * The editor sends `inclusions` — one ordered list where each row is marked
+ * included or not. Everything downstream (vouchers, the Sheets sync, an older
+ * client) still reads `includes` / `excludes`, so they are rewritten from that
+ * list on every save rather than being allowed to drift apart.
+ */
+function applyInclusions(data: Record<string, unknown>, body: Record<string, unknown>): void {
+  const touched = body.inclusions !== undefined
+    || body.includes !== undefined
+    || body.excludes !== undefined;
+  if (!touched) return;
+  const rows = buildInclusions({
+    inclusions: body.inclusions,
+    includes: body.includes,
+    excludes: body.excludes,
+  });
+  data.inclusions = setInclusions(rows);
+  data.includes = setJsonStringArray(includedLabels(rows));
+  data.excludes = setJsonStringArray(excludedLabels(rows));
+}
+
+/** The transfer half of the catalogue form. */
+function applyTransferFields(data: Record<string, unknown>, body: Record<string, unknown>): void {
+  if (body.transferIncluded !== undefined) data.transferIncluded = Boolean(body.transferIncluded);
+  for (const field of ['transferNote', 'transferNoteAr', 'returnTime'] as const) {
+    if (body[field] === undefined) continue;
+    const text = String(body[field] ?? '').trim();
+    data[field] = text || null;
+  }
+}
+
+/**
  * The catalogue is organised by destination, so `destinationId` is the field
  * that decides where an excursion appears. `city` stays as the human label and
  * is kept in step with the chosen destination — it is what the agency search,
@@ -99,6 +146,8 @@ export async function createActivity(req: Request, res: Response): Promise<void>
   for (const f of ACTIVITY_LIST_FIELDS) {
     if (body[f] !== undefined) data[f] = setJsonStringArray(body[f]);
   }
+  applyInclusions(data, body);
+  applyTransferFields(data, body);
   data.isConfirmableInApp = body.isConfirmableInApp !== undefined && body.isConfirmableInApp !== null
     ? Boolean(body.isConfirmableInApp)
     : true;
@@ -129,6 +178,8 @@ export async function updateActivity(req: Request, res: Response): Promise<void>
   for (const f of ACTIVITY_LIST_FIELDS) {
     if (body[f] !== undefined) data[f] = setJsonStringArray(body[f]);
   }
+  applyInclusions(data, body);
+  applyTransferFields(data, body);
   if (body.isConfirmableInApp !== undefined) data.isConfirmableInApp = Boolean(body.isConfirmableInApp);
   if (body.isActive !== undefined && body.isActive !== null) data.isActive = Boolean(body.isActive);
   try {
@@ -186,6 +237,15 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     clientPhone?: string;
     hotelName?: string;
     passengerNames?: string[];
+    // Transfer add-on — only read when the trip does not already include one.
+    transferRequested?: boolean;
+    transferFromType?: string;
+    transferFromName?: string;
+    transferToType?: string;
+    transferToName?: string;
+    transferPickupTime?: string;
+    transferReturnTime?: string;
+    transferNotes?: string;
     // PER_PERSON (adult/child) or SINGLE | DOUBLE | TRIPLE for a flat party rate.
     pricingBasis?: string;
     // totalAmount is intentionally ignored — computed server-side from activity prices
@@ -211,6 +271,8 @@ export async function createActivityBooking(req: Request, res: Response): Promis
       isActive: true,
       isConfirmableInApp: true,
       destinationId: true,
+      transferIncluded: true,
+      returnTime: true,
     },
   });
   if (!activity || !activity.isActive) {
@@ -254,24 +316,30 @@ export async function createActivityBooking(req: Request, res: Response): Promis
   const pax = adultsCount + childrenCount;
   // Full pricing context — company override beats market row beats default (Finding 6)
   const priceCtx = { market: company.market, companyId, pax, date: activityDate };
-  // An excursion is sold either per head or as a whole party at a flat rate —
-  // a private tour for two costs what it costs regardless of who is in the car.
-  // The basis decides which of the activity's prices applies; a blank price
-  // means the trip is not sold that way, and pricing it at zero would give it
-  // away, so those cases are refused and routed to a quote request.
-  const PARTY_PRICE: Record<string, Decimal | null> = {
-    SINGLE: activity.priceSingle,
-    DOUBLE: activity.priceDouble,
-    TRIPLE: activity.priceTriple,
-  };
-  const basis = String(body.pricingBasis ?? 'PER_PERSON').toUpperCase();
-  if (basis !== 'PER_PERSON' && !(basis in PARTY_PRICE)) {
+  // An excursion is sold per head, or as a party — one, two or three people out
+  // together in a car, a jeep, a boat. Only the ways this particular trip was
+  // priced may be booked: a blank price means "not sold that way", and charging
+  // zero for it would give the trip away, so anything else is refused and
+  // routed to a quote request.
+  const basis = String(body.pricingBasis ?? 'PER_PERSON').toUpperCase() as PricingBasis;
+  if (basis !== 'PER_PERSON' && !isPartyBasis(basis)) {
     res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Unknown pricing basis.' });
+    return;
+  }
+  if (!availableBases(activity).includes(basis)) {
+    res.status(400).json({
+      success: false,
+      error: 'PRICE_ON_REQUEST',
+      message: 'This activity is not sold that way. Please submit a quote request.',
+    });
     return;
   }
 
   let sourceAmountRaw: Decimal;
   let priceCurrency: string;
+  // Parties charged. Per-head bookings charge heads, so the count stays 1 and
+  // the head counts on the row say the rest.
+  let pricingUnits = 1;
 
   if (basis === 'PER_PERSON') {
     if (adultsCount > 0 && activity.priceAdult == null) {
@@ -302,7 +370,7 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     sourceAmountRaw = adultPrice.amount.mul(adultsCount).add(childPrice.amount.mul(childrenCount));
     priceCurrency = adultPrice.currency;
   } else {
-    const partyPrice = PARTY_PRICE[basis];
+    const partyPrice = partyPriceFor(activity, basis);
     if (partyPrice == null) {
       res.status(400).json({
         success: false,
@@ -311,13 +379,23 @@ export async function createActivityBooking(req: Request, res: Response): Promis
       });
       return;
     }
-    // One flat price for the whole party — never multiplied by the head count.
-    sourceAmountRaw = partyPrice;
+    // A party rate prices ONE party. Six guests on a double rate are three
+    // doubles, so the rate is charged once per party needed to seat everybody
+    // — a party that is not full still costs a whole party.
+    pricingUnits = partyUnits(pax, basis);
+    sourceAmountRaw = partyPrice.mul(pricingUnits);
     priceCurrency = activity.currency;
   }
 
   const snap = explicitMoney(applyGroupAdjustment(sourceAmountRaw, groupType), priceCurrency);
   const { currency, sourceCurrency, sourceAmount, totalAmount, exchangeRate, exchangeRateAt } = snap;
+
+  // A trip that already collects its guests can never carry an added transfer,
+  // so the flag on the catalogue row — not the payload — has the last word.
+  const transfer = readTransferAddOn(body as unknown as Record<string, unknown>, {
+    transferIncluded: activity.transferIncluded,
+    activityReturnTime: activity.returnTime,
+  });
 
   try {
     const refNumber = await generateRef(prisma, 'ACT');
@@ -331,6 +409,7 @@ export async function createActivityBooking(req: Request, res: Response): Promis
         activityDate,
         selectedTime: body.selectedTime ?? null,
         pricingBasis: basis,
+        pricingUnits,
         activityType: groupType.code,
         groupTypeId: groupType.id,
         groupTypeLabel: groupType.labelEn,
@@ -339,7 +418,10 @@ export async function createActivityBooking(req: Request, res: Response): Promis
         childAges: body.childAges ?? undefined,
         clientName: body.clientName ?? null,
         clientPhone: body.clientPhone ?? null,
-        hotelName: body.hotelName ?? null,
+        // Once a transfer is booked the pickup point answers "which hotel?",
+        // so the standalone hotel field is not asked for and stays empty.
+        hotelName: transfer.transferRequested ? null : (body.hotelName ?? null),
+        ...transfer,
         passengerNames: setJsonStringArray(body.passengerNames),
         totalAmount,   // server-calculated
         currency,

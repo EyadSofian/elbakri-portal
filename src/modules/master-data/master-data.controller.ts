@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta } from '../../shared/helpers';
+import { normalizeSecurityNationality } from '../../shared/security-nationalities';
 
 type ModelKey = 'transportRate' | 'visaFee' | 'receptionServiceRate';
 
@@ -240,6 +241,7 @@ export async function listVisaFees(req: Request, res: Response): Promise<void> {
   await listMaster(req, res, 'visaFee', {
     ...(req.query.visaType && { visaType: enumValue(req.query.visaType, visaTypes, 'TOURIST') }),
     ...(req.query.destinationCountry && { destinationCountry: { contains: String(req.query.destinationCountry), mode: 'insensitive' as const } }),
+    ...(req.query.nationality && { nationality: normalizeSecurityNationality(req.query.nationality) }),
   });
 }
 
@@ -248,9 +250,11 @@ export async function createVisaFee(req: Request, res: Response): Promise<void> 
   const fee = await prisma.visaFee.create({
     data: {
       visaType: enumValue(body.visaType, visaTypes, 'TOURIST'),
-      // Blank is meaningful on both: it prices any airport / any destination.
+      // Blank is meaningful on all three: it prices any airport / any
+      // destination / any nationality, so one row can still cover everyone.
       destinationCountry: stringValue(body.destinationCountry),
       destinationCity: stringValue(body.destinationCity),
+      nationality: normalizeSecurityNationality(body.nationality),
       processingType: enumValue(body.processingType, processingTypes, 'NORMAL'),
       fee: decimalValue(body.fee),
       currency: stringValue(body.currency)?.toUpperCase() ?? 'USD',
@@ -267,6 +271,7 @@ export async function updateVisaFee(req: Request, res: Response): Promise<void> 
   if (body.visaType !== undefined) data.visaType = enumValue(body.visaType, visaTypes, 'TOURIST');
   if (body.destinationCountry !== undefined) data.destinationCountry = stringValue(body.destinationCountry);
   if (body.destinationCity !== undefined) data.destinationCity = stringValue(body.destinationCity);
+  if (body.nationality !== undefined) data.nationality = normalizeSecurityNationality(body.nationality);
   if (body.processingType !== undefined) data.processingType = enumValue(body.processingType, processingTypes, 'NORMAL');
   if (body.fee !== undefined) data.fee = decimalValue(body.fee);
   if (body.currency !== undefined) data.currency = stringValue(body.currency)?.toUpperCase() ?? 'USD';

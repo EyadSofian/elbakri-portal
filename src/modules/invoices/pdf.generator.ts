@@ -804,6 +804,42 @@ export async function generateBulkInvoicePdf(
       drawInvoiceContent(doc, inv);
     }
 
+    // ── Grand total, after the details ────────────────────────────────────────
+    // The cover already carries the same figure, but a statement is read front
+    // to back: whoever has just worked through every invoice needs the number
+    // those invoices add up to on the page they finish on, not thirty pages
+    // back. Currencies stay separate — adding USD to EGP produces nothing.
+    const grandTotalFrom = doc.bufferedPageRange().count;
+    doc.addPage();
+    brandHeader('Grand Total');
+    y = 132;
+    doc.fillColor(INK).font('body-bold').fontSize(16).text('GRAND TOTAL', MARGIN, y, { characterSpacing: 0.4 });
+    y += 8;
+    doc.fillColor(GRAY).font('body').fontSize(9.5)
+      .text(`${invoices.length} invoice(s) issued for ${companyName}`, MARGIN, y + 14, { width: contentW });
+    y += 44;
+    doc.moveTo(MARGIN, y).lineTo(pageW - MARGIN, y).lineWidth(1).strokeColor(TEAL).stroke();
+    y += 18;
+
+    const countByCurrency = new Map<string, number>();
+    for (const inv of invoices) {
+      const cur = inv.currency || 'USD';
+      countByCurrency.set(cur, (countByCurrency.get(cur) ?? 0) + 1);
+    }
+    let gi = 0;
+    for (const [cur, amount] of totalsByCurrency) {
+      doc.roundedRect(MARGIN, y, contentW, 44, 6).fill(gi % 2 === 0 ? ALT : '#FFFFFF');
+      doc.roundedRect(MARGIN, y, contentW, 44, 6).lineWidth(0.5).strokeColor(LINE).stroke();
+      doc.fillColor(GRAY).font('body-medium').fontSize(9)
+        .text(`${countByCurrency.get(cur) ?? 0} INVOICE(S) IN ${cur}`, MARGIN + 14, y + 9, { characterSpacing: 0.5 });
+      doc.fillColor(NAVY).font('body-bold').fontSize(17)
+        .text(`${amount.toFixed(2)} ${cur}`, MARGIN + 14, y + 22, { width: contentW - 28, align: 'right', lineBreak: false });
+      y += 52; gi++;
+    }
+    // Only the grand-total page: the per-invoice pages already drew their own
+    // footer, and stamping a second one over them would overprint the first.
+    brandFooter(grandTotalFrom, doc.bufferedPageRange().count);
+
     doc.end();
   });
 }

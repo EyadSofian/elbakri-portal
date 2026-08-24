@@ -37,6 +37,7 @@ async function buildTransportVoucherData(bookingId: string): Promise<VoucherData
     isRoundTrip: b.isRoundTrip,
     date: b.pickupDateTime,
     time: t(b.pickupDateTime),
+    dropoffTime: t(b.dropoffDateTime),
     airlineName: b.airlineName,
     flightNumber: b.flightNumber,
     fromLocation: b.fromLocation,
@@ -95,6 +96,11 @@ async function buildActivityPackageVoucherData(packageId: string): Promise<Vouch
       time: it.selectedTime,
       groupType: it.groupTypeLabel ?? it.activityType,
       transferIncluded: it.transferIncluded,
+      transferRequested: it.transferRequested,
+      transferFromName: it.transferFromName,
+      transferToName: it.transferToName,
+      transferPickupTime: it.transferPickupTime,
+      transferReturnTime: it.transferReturnTime,
       adultsCount: it.adultsCount,
       childrenCount: it.childrenCount,
       notes: it.notes,
@@ -107,7 +113,7 @@ async function buildActivityVoucherData(bookingId: string): Promise<VoucherData 
     where: { id: bookingId },
     include: {
       company: { select: { name: true, logoUrl: true } },
-      activity: { select: { name: true, city: true } },
+      activity: { select: { name: true, city: true, transferIncluded: true } },
     },
   });
   if (!b) return null;
@@ -125,6 +131,12 @@ async function buildActivityVoucherData(bookingId: string): Promise<VoucherData 
     city: b.activity?.city,
     activityType: b.groupTypeLabel ?? b.activityType,
     selectedTime: b.selectedTime,
+    transferIncluded: b.activity?.transferIncluded ?? undefined,
+    transferRequested: b.transferRequested,
+    transferFromName: b.transferFromName,
+    transferToName: b.transferToName,
+    transferPickupTime: b.transferPickupTime,
+    transferReturnTime: b.transferReturnTime,
     notes: b.notes,
   };
 }

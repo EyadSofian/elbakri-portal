@@ -6,6 +6,7 @@ import { paginate, paginateMeta } from '../../shared/helpers';
 import { setJsonStringArray } from '../../shared/json-array';
 import { resolveMarketPriceMap } from '../../shared/pricing';
 import { resolveHotelRateMap } from './rates.controller';
+import { groupByTag } from './images.controller';
 import { syncEntityFromSheets } from '../sheets-sync/sheets-sync.service';
 
 // Structured hotel policy fields — plain optional strings shown in the company
@@ -184,6 +185,8 @@ export async function getHotel(req: Request, res: Response): Promise<void> {
     include: {
       destination: { select: { id: true, name: true, nameAr: true, slug: true } },
       pricing: { where: { isActive: true }, orderBy: { validFrom: 'asc' } },
+      // Tagged photos — what an agent shows a client who asks for "sea view".
+      images: { orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
       _count: { select: { rooms: true } },
       ...(caller.role !== 'SUPERADMIN' && caller.companyId
         ? {
@@ -202,7 +205,7 @@ export async function getHotel(req: Request, res: Response): Promise<void> {
   }
 
   if (caller.role === 'SUPERADMIN') {
-    res.json({ success: true, data: hotel });
+    res.json({ success: true, data: { ...hotel, imageGroups: groupByTag(hotel.images) } });
     return;
   }
 
@@ -233,6 +236,8 @@ export async function getHotel(req: Request, res: Response): Promise<void> {
       currency: hasRates ? (rateInfo!.currency ?? hotel.currency) : (ov?.currency ?? hotel.currency),
       rates: showPrice ? (rateInfo?.rates ?? []) : [],
       hasRateMatrix: hasRates,
+      // Same photos, pre-grouped, so the portal does not regroup them per render.
+      imageGroups: groupByTag(hotel.images),
       pricing: showPrice ? hotel.pricing : [],
       priceVisible: showPrice,
       canRequestQuote: visibilityOverride?.canRequestQuote ?? hotel.allowQuoteRequest,

@@ -46,6 +46,9 @@ export interface TransportVoucherData {
   isRoundTrip?: boolean;
   date: Date;
   time: string;
+  // When the car is due at the other end. A city-to-city run is quoted on two
+  // times, so the driver needs both on the page, not just the pickup.
+  dropoffTime?: string | null;
   airlineName?: string | null;
   flightNumber?: string | null;
   fromLocation: string;
@@ -93,6 +96,13 @@ export interface ActivityVoucherData {
   activityType?: string | null;
   selectedTime?: string | null;
   transferIncluded?: boolean;
+  // An added transfer, when the trip did not include one. The driver reads
+  // these two lines, so they have to be on the voucher, not only in the file.
+  transferRequested?: boolean | null;
+  transferFromName?: string | null;
+  transferToName?: string | null;
+  transferPickupTime?: string | null;
+  transferReturnTime?: string | null;
   notes?: string | null;
 }
 
@@ -103,6 +113,11 @@ export interface ActivityPackageItemData {
   time?: string | null;
   groupType?: string | null;
   transferIncluded?: boolean | null;
+  transferRequested?: boolean | null;
+  transferFromName?: string | null;
+  transferToName?: string | null;
+  transferPickupTime?: string | null;
+  transferReturnTime?: string | null;
   adultsCount?: number;
   childrenCount?: number;
   notes?: string | null;
@@ -379,6 +394,7 @@ function transportSections(d: TransportVoucherData): { title: string; sections: 
         row('Drop-off Hotel', d.dropoffHotelName),
         row('Drop-off Address', d.dropoffAddress),
         row('To', (d.dropoffHotelName || d.dropoffAddress) ? '' : (d.dropoffLocation || d.toLocation)),
+        row('Drop-off Time', d.dropoffTime),
       ]),
       row('Airline', d.airlineName),
       row('Flight Number', d.flightNumber),
@@ -415,6 +431,27 @@ function transportSections(d: TransportVoucherData): { title: string; sections: 
   return { title: round ? 'Transfer Voucher — Round Trip' : isDisposal ? 'Service Voucher' : 'Transfer Voucher', sections };
 }
 
+/**
+ * What the driver needs when a transfer was added on top of the trip. Written
+ * once and used by both the single-activity and the package voucher so the two
+ * never describe the same journey differently.
+ */
+function transferRows(t: {
+  transferRequested?: boolean | null;
+  transferFromName?: string | null;
+  transferToName?: string | null;
+  transferPickupTime?: string | null;
+  transferReturnTime?: string | null;
+}): Field[] {
+  if (!t.transferRequested) return [];
+  return [
+    row('Transfer Pickup', t.transferFromName),
+    row('Transfer Drop-off', t.transferToName),
+    row('Pickup Time', t.transferPickupTime),
+    row('Return Time', t.transferReturnTime),
+  ];
+}
+
 function activitySections(d: ActivityVoucherData): { title: string; sections: Section[] } {
   return {
     title: 'Activity Voucher',
@@ -431,7 +468,10 @@ function activitySections(d: ActivityVoucherData): { title: string; sections: Se
         row('Group Type', titleCase(d.activityType)),
         row('Adults', d.adultsCount),
         row('Children', d.childrenCount > 0 ? d.childrenCount : ''),
-        row('Transfer', d.transferIncluded == null ? '' : d.transferIncluded ? 'Included' : 'Not included'),
+        row('Transfer', d.transferRequested
+          ? 'Added'
+          : d.transferIncluded == null ? '' : d.transferIncluded ? 'Included' : 'Not included'),
+        ...transferRows(d),
       ],
     }],
   };
@@ -461,7 +501,10 @@ function packageSections(d: ActivityPackageVoucherData): { title: string; sectio
         row('Group Type', titleCase(it.groupType)),
         row('Adults', it.adultsCount),
         row('Children', it.childrenCount && it.childrenCount > 0 ? it.childrenCount : ''),
-        row('Transfer', it.transferIncluded == null ? '' : it.transferIncluded ? 'Included' : 'Not included'),
+        row('Transfer', it.transferRequested
+          ? 'Added'
+          : it.transferIncluded == null ? '' : it.transferIncluded ? 'Included' : 'Not included'),
+        ...transferRows(it),
         row('Notes', it.notes),
       ],
     });

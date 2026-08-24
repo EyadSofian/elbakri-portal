@@ -10,9 +10,19 @@ import { resolvePriceContext, resolveMarketPriceMap } from '../../shared/pricing
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { debitWallet, refundWallet } from '../../shared/wallet';
+import {
+  Occupancy,
+  applicableRates,
+  fromPrice,
+  isOccupancy,
+  priceCruiseBooking,
+} from '../../shared/cruise-rates';
 
 const cruiseInclude = {
   cruise: { select: { id: true, name: true, route: true, shipType: true } },
+  cabinRate: { select: { id: true, cabinName: true, cabinType: true, currency: true } },
+  schedule: { select: { id: true, departureDay: true, returnDay: true, nights: true, label: true, labelAr: true } },
+  addOns: { orderBy: { displayOrder: 'asc' as const } },
   company: { select: { id: true, name: true, email: true } },
   createdBy: { select: { id: true, name: true } },
   confirmedBy: { select: { id: true, name: true } },
@@ -36,21 +46,40 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
     ...(req.query.route && { route: req.query.route as CruiseRoute }),
     ...(req.query.shipType && { shipType: req.query.shipType as ShipType }),
   };
-  const cruises = await prisma.nileCruise.findMany({ where, orderBy: { priceFrom: 'asc' } });
+  const cruises = await prisma.nileCruise.findMany({
+    where,
+    orderBy: { name: 'asc' },
+    include: {
+      cabinRates: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
+      schedules: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
+    },
+  });
   if (caller.role === 'SUPERADMIN') {
     res.json({ success: true, data: cruises });
     return;
   }
 
+  // A sailing date narrows the rate rows to the period they cover, the same way
+  // a hotel stay does. Without one the agent is browsing, so today decides.
+  const on = req.query.date ? new Date(String(req.query.date)) : new Date();
+  const sailingDate = Number.isNaN(on.getTime()) ? new Date() : on;
+
   const { market, companyId } = await resolvePriceContext(req);
   const marketOverrides = await resolveMarketPriceMap('CRUISE', cruises.map((cruise) => cruise.id), { market, companyId });
   const data = cruises.map((cruise) => {
     const ov = marketOverrides.get(cruise.id);
+    // The rate rows are the price. `priceFrom` on the row is only a headline an
+    // operator may have typed years ago, so it is the last fallback, not the
+    // first — a boat with a rate table is quoted from its rate table.
+    const rates = applicableRates(cruise.cabinRates, market, sailingDate);
+    const cheapest = fromPrice(cruise.cabinRates, market, sailingDate);
+    const headline = cheapest?.amount ?? ov?.amount ?? cruise.priceFrom;
     return {
       ...cruise,
-      // Explicit admin price (verbatim, no FX) when configured, else the base column.
-      priceFrom: cruise.showPriceToAgents ? (ov?.amount ?? cruise.priceFrom) : null,
-      currency: ov?.currency ?? cruise.currency,
+      cabinRates: cruise.showPriceToAgents ? rates : [],
+      hasRateMatrix: rates.length > 0,
+      priceFrom: cruise.showPriceToAgents ? headline : null,
+      currency: cheapest?.currency ?? ov?.currency ?? cruise.currency,
       priceVisible: cruise.showPriceToAgents,
       canRequestQuote: cruise.allowQuoteRequest,
     };
@@ -58,15 +87,65 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
   res.json({ success: true, data });
 }
 
+/**
+ * The fields the catalogue form owns. Named explicitly rather than handing
+ * `req.body` to Prisma: the boat now has rate rows and schedules hanging off
+ * it, and a stray key in a payload must not be able to reach them.
+ */
+const CRUISE_TEXT_FIELDS = [
+  'name', 'nameAr', 'operator', 'description', 'descriptionAr', 'imageUrl',
+] as const;
+const CRUISE_LIST_FIELDS = ['departureDays', 'galleryUrls'] as const;
+
+function cruiseData(body: Record<string, unknown>, forCreate: boolean): Record<string, unknown> {
+  const data: Record<string, unknown> = {};
+  for (const field of CRUISE_TEXT_FIELDS) {
+    if (body[field] === undefined) continue;
+    const text = String(body[field] ?? '').trim();
+    data[field] = text || (field === 'name' ? undefined : null);
+  }
+  for (const field of CRUISE_LIST_FIELDS) {
+    if (body[field] !== undefined) data[field] = setJsonStringArray(body[field]);
+  }
+  if (body.shipType !== undefined) data.shipType = body.shipType as ShipType;
+  if (body.route !== undefined) data.route = body.route as CruiseRoute;
+  if (body.cabins !== undefined) data.cabins = Math.max(0, Number(body.cabins) || 0);
+  if (body.duration !== undefined) data.duration = Math.max(1, Number(body.duration) || 1);
+  if (body.currency !== undefined) {
+    data.currency = String(body.currency ?? 'USD').trim().toUpperCase().slice(0, 3) || 'USD';
+  }
+  // The rate rows are the price now, so a blank headline is a real answer —
+  // it must reach the column as null rather than as a zero that reads "free".
+  if (body.priceFrom !== undefined) {
+    const raw = body.priceFrom;
+    const n = raw === null || raw === '' ? null : Number(raw);
+    data.priceFrom = n !== null && Number.isFinite(n) && n >= 0 ? new Decimal(n) : null;
+  }
+  if (body.showPriceToAgents !== undefined) data.showPriceToAgents = Boolean(body.showPriceToAgents);
+  if (body.allowQuoteRequest !== undefined) data.allowQuoteRequest = Boolean(body.allowQuoteRequest);
+  if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
+  if (forCreate && !data.name) throw new Error('NAME_REQUIRED');
+  return data;
+}
+
 export async function createCruise(req: Request, res: Response): Promise<void> {
-  const cruise = await prisma.nileCruise.create({ data: req.body });
+  let data: Record<string, unknown>;
+  try {
+    data = cruiseData(req.body as Record<string, unknown>, true);
+  } catch {
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'A cruise name is required' });
+    return;
+  }
+  const cruise = await prisma.nileCruise.create({
+    data: data as Parameters<typeof prisma.nileCruise.create>[0]['data'],
+  });
   res.status(201).json({ success: true, data: cruise });
 }
 
 export async function updateCruise(req: Request, res: Response): Promise<void> {
   const cruise = await prisma.nileCruise.update({
     where: { id: req.params.id },
-    data: req.body,
+    data: cruiseData(req.body as Record<string, unknown>, false),
   });
   res.json({ success: true, data: cruise });
 }
@@ -121,9 +200,25 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     checkIn: string;
     checkOut: string;
     cabinType?: string;
+    // Priced from a rate row when one is named — occupancy and cabin count are
+    // what the row is multiplied by. `totalAmount` stays accepted for the boats
+    // that have no rate table yet, where the desk still types the figure.
+    cabinRateId?: string;
+    occupancy?: string;
+    cabinCount?: number;
+    scheduleId?: string;
     passengerNames?: string[];
     adultsCount?: number;
     childrenCount?: number;
+    // Tours the client asked for on top of the cruise itself.
+    addOns?: {
+      activityId?: string;
+      name?: string;
+      description?: string;
+      activityDate?: string;
+      paxCount?: number;
+      amount?: number;
+    }[];
     totalAmount: number;
     currency?: string;
     notes?: string;
@@ -135,7 +230,6 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
   }
 
   try {
-    if (!body.totalAmount || body.totalAmount <= 0) throw new Error('INVALID_TOTAL');
     const company = await prisma.company.findUniqueOrThrow({
       where: { id: companyId },
       select: { isActive: true, currency: true, email: true },
@@ -147,8 +241,56 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     });
     if (!cruise) throw new Error('CRUISE_NOT_AVAILABLE');
 
-    // Admin enters an explicit total in an explicit currency — used verbatim, no FX.
-    const charge = explicitMoney(new Decimal(body.totalAmount), body.currency ?? 'USD');
+    const adultsCount = Math.max(1, body.adultsCount ?? 1);
+    const childrenCount = Math.max(0, body.childrenCount ?? 0);
+    const pax = adultsCount + childrenCount;
+
+    // Where the money comes from. A boat with a rate table is priced FROM that
+    // table — the row, the occupancy and the number of cabins — so a typo in a
+    // hand-typed total cannot quietly undercut a contract. Only a boat with no
+    // rate row still takes the figure the desk enters.
+    const rate = body.cabinRateId
+      ? await prisma.cruiseCabinRate.findFirst({
+        where: { id: body.cabinRateId, cruiseId: body.cruiseId, isActive: true },
+      })
+      : null;
+    if (body.cabinRateId && !rate) throw new Error('RATE_NOT_AVAILABLE');
+
+    let occupancy: Occupancy | null = null;
+    let cabinCount = Math.max(1, body.cabinCount ?? 1);
+    let sourceAmount: Decimal;
+    let sourceCurrency: string;
+
+    if (rate) {
+      const requested = String(body.occupancy ?? 'DOUBLE').toUpperCase();
+      if (!isOccupancy(requested)) throw new Error('INVALID_OCCUPANCY');
+      occupancy = requested as Occupancy;
+      const priced = priceCruiseBooking({ row: rate, occupancy, pax, cabins: body.cabinCount });
+      // A blank occupancy price means the cabin is not sold that way — pricing
+      // it at zero would give the cabin away.
+      if (!priced) throw new Error('OCCUPANCY_NOT_SOLD');
+      cabinCount = priced.cabins;
+      sourceAmount = priced.total;
+      sourceCurrency = priced.currency;
+    } else {
+      if (!body.totalAmount || body.totalAmount <= 0) throw new Error('INVALID_TOTAL');
+      sourceAmount = new Decimal(body.totalAmount);
+      sourceCurrency = body.currency ?? 'USD';
+    }
+
+    // Tours added on top. A line with no name says nothing on a voucher, so it
+    // is dropped; a line with a price adds to the bill in the SAME currency —
+    // mixing currencies inside one booking would produce a meaningless total.
+    const addOns = (Array.isArray(body.addOns) ? body.addOns : [])
+      .map((a) => ({ ...a, name: String(a.name ?? '').trim() }))
+      .filter((a) => a.name.length > 0);
+    for (const addOn of addOns) {
+      const amount = Number(addOn.amount ?? 0);
+      if (Number.isFinite(amount) && amount > 0) sourceAmount = sourceAmount.add(new Decimal(amount));
+    }
+
+    // Explicit price in an explicit currency — used verbatim, no FX.
+    const charge = explicitMoney(sourceAmount, sourceCurrency);
     const [refNumber, invoiceNumber] = await Promise.all([
       generateRef(prisma, 'CRZ'),
       generateInvoiceNumber(prisma),
@@ -162,10 +304,28 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
           createdById: caller.id,
           checkIn: new Date(body.checkIn),
           checkOut: new Date(body.checkOut),
-          cabinType: (body.cabinType as 'STANDARD' | 'DELUXE' | 'SUITE' | 'PRESIDENTIAL') ?? 'STANDARD',
+          cabinType: rate?.cabinType
+            ?? (body.cabinType as 'STANDARD' | 'DELUXE' | 'SUITE' | 'PRESIDENTIAL')
+            ?? 'STANDARD',
+          cabinRateId: rate?.id ?? null,
+          occupancy,
+          cabinCount,
+          scheduleId: body.scheduleId ?? null,
           passengerNames: setJsonStringArray(body.passengerNames),
-          adultsCount: Math.max(1, body.adultsCount ?? 1),
-          childrenCount: Math.max(0, body.childrenCount ?? 0),
+          adultsCount,
+          childrenCount,
+          addOns: {
+            create: addOns.map((a, index) => ({
+              activityId: a.activityId ?? null,
+              name: a.name,
+              description: a.description ? String(a.description).trim() : null,
+              activityDate: a.activityDate ? new Date(a.activityDate) : null,
+              paxCount: Math.max(1, Number(a.paxCount ?? pax) || 1),
+              amount: Number(a.amount) > 0 ? new Decimal(Number(a.amount)) : null,
+              currency: charge.currency,
+              displayOrder: index,
+            })),
+          },
           totalAmount: charge.totalAmount,
           currency: charge.currency,
           sourceAmount: charge.sourceAmount,
@@ -205,7 +365,10 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     res.status(201).json({ success: true, data: booking });
   } catch (error) {
     const message = String((error as Error).message);
-    if (['COMPANY_INACTIVE', 'INVALID_TOTAL', 'CRUISE_NOT_AVAILABLE'].includes(message)) {
+    if ([
+      'COMPANY_INACTIVE', 'INVALID_TOTAL', 'CRUISE_NOT_AVAILABLE',
+      'RATE_NOT_AVAILABLE', 'INVALID_OCCUPANCY', 'OCCUPANCY_NOT_SOLD',
+    ].includes(message)) {
       res.status(400).json({ success: false, error: message });
     } else {
       console.error(error);
