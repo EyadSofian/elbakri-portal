@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // Railway builds and runs the app inside the same Debian-based container, so
   // "native" is what actually gets used at runtime. Both Debian OpenSSL
   // generations are kept so an image built on one still boots on the other.
@@ -472,6 +472,7 @@ model Hotel {
   destination            Destination?             @relation(fields: [destinationId], references: [id], onDelete: SetNull)
   rooms                  Room[]
   bookings               Booking[]
+  images                 HotelImage[]
   pricing                HotelPricing[]
   rates                  HotelRate[]
   quoteRequests          QuoteRequest[]
@@ -499,6 +500,27 @@ model Room {
   updatedAt     DateTime  @updatedAt
 
   @@index([hotelId])
+}
+
+// A photo filed under a tag the operator invents — "Sea View", "Single Room",
+// "Aqua Park". `galleryUrls` on Hotel stays the untagged strip; these are the
+// photos an agent can actually ask for by name, so the portal groups them.
+// `tag` is the stable key the images share; the two labels are what shows.
+model HotelImage {
+  id           String   @id @default(cuid())
+  hotelId      String
+  hotel        Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  url          String   @db.Text
+  tag          String // stable key, e.g. SEA_VIEW — blank is not allowed, an untagged photo belongs in galleryUrls
+  tagLabel     String // display label, e.g. "Sea View"
+  tagLabelAr   String?
+  caption      String?
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([hotelId])
+  @@index([hotelId, tag])
 }
 
 model HotelPricing {
@@ -882,65 +904,158 @@ model PlatformWalletTransaction {
 // ─────────────────────────────────────────────
 
 model NileCruise {
-  id                String          @id @default(cuid())
+  id                String            @id @default(cuid())
   name              String
   nameAr            String?
-  shipType          ShipType        @default(CRUISE)
+  shipType          ShipType          @default(CRUISE)
   operator          String?
-  cabins            Int             @default(0)
-  route             CruiseRoute     @default(LUXOR_ASWAN)
+  cabins            Int               @default(0)
+  route             CruiseRoute       @default(LUXOR_ASWAN)
   departureDays     Json?
-  duration          Int             @default(4)
-  description       String?         @db.Text
-  descriptionAr     String?         @db.Text
-  imageUrl          String?         @db.Text
-  priceFrom         Decimal         @db.Decimal(10, 2)
-  currency          String          @default("USD")
-  showPriceToAgents Boolean         @default(false)
-  allowQuoteRequest Boolean         @default(true)
+  duration          Int               @default(4)
+  description       String?           @db.Text
+  descriptionAr     String?           @db.Text
+  imageUrl          String?           @db.Text
+  galleryUrls       Json?
+  // Kept only as the "from" headline. A boat is priced by its rate rows now —
+  // cabin by cabin, per occupancy, per period — exactly as a hotel is, so this
+  // is nullable: an operator who fills in the rate table never types it.
+  priceFrom         Decimal?          @db.Decimal(10, 2)
+  currency          String            @default("USD")
+  showPriceToAgents Boolean           @default(false)
+  allowQuoteRequest Boolean           @default(true)
   sheetsRowId       String?
-  isActive          Boolean         @default(true)
+  isActive          Boolean           @default(true)
   bookings          CruiseBooking[]
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  schedules         CruiseSchedule[]
+  cabinRates        CruiseCabinRate[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   @@index([sheetsRowId])
 }
 
+// When a boat actually sails and when it is back. A cruise usually runs two
+// fixed legs a week — Monday out, Thursday back; Sunday out, Tuesday back — and
+// "departureDays" alone could never say which return went with which departure.
+model CruiseSchedule {
+  id           String          @id @default(cuid())
+  cruiseId     String
+  cruise       NileCruise      @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
+  departureDay String // MONDAY | TUESDAY | ... — the day it leaves
+  returnDay    String // the day it is back
+  nights       Int             @default(4)
+  label        String? // optional operator label, e.g. "Short cruise"
+  labelAr      String?
+  isActive     Boolean         @default(true)
+  displayOrder Int             @default(0)
+  bookings     CruiseBooking[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([cruiseId])
+  @@index([cruiseId, isActive])
+}
+
+// One cabin category, for one market, over one validity period, priced by how
+// many people share it. The shape is deliberately the same as HotelRate: an
+// operator who has priced a hotel already knows how to price a boat, and the
+// resolver rules (market row beats the all-markets row, period must contain the
+// sailing date) are identical. Every price is nullable — blank means "not sold
+// that way", never free.
+model CruiseCabinRate {
+  id            String          @id @default(cuid())
+  cruiseId      String
+  cruise        NileCruise      @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
+  cabinName     String // free text — e.g. "Standard Cabin", "Royal Suite"
+  cabinType     CabinType       @default(STANDARD)
+  market        Market? // null = applies to ALL markets
+  currency      String          @default("USD")
+  singlePrice   Decimal?        @db.Decimal(10, 2)
+  doublePrice   Decimal?        @db.Decimal(10, 2)
+  triplePrice   Decimal?        @db.Decimal(10, 2)
+  validFrom     DateTime?
+  validTo       DateTime?
+  isActive      Boolean         @default(true)
+  notes         String?         @db.Text
+  displayOrder  Int             @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  CruiseBooking CruiseBooking[]
+
+  @@index([cruiseId])
+  @@index([cruiseId, isActive])
+}
+
 model CruiseBooking {
-  id             String        @id @default(cuid())
-  refNumber      String        @unique
+  id             String                  @id @default(cuid())
+  refNumber      String                  @unique
   cruiseId       String
-  cruise         NileCruise    @relation(fields: [cruiseId], references: [id])
+  cruise         NileCruise              @relation(fields: [cruiseId], references: [id])
   companyId      String
-  company        Company       @relation(fields: [companyId], references: [id])
+  company        Company                 @relation(fields: [companyId], references: [id])
   createdById    String
-  createdBy      User          @relation("CruiseBookingCreatedBy", fields: [createdById], references: [id])
+  createdBy      User                    @relation("CruiseBookingCreatedBy", fields: [createdById], references: [id])
   checkIn        DateTime
   checkOut       DateTime
-  cabinType      CabinType     @default(STANDARD)
+  cabinType      CabinType               @default(STANDARD)
+  // The priced row this booking was quoted from, and which of its three
+  // occupancy prices was used. Matching a booking to a price by cabin *text*
+  // was the old way and it silently repriced whenever a rate was renamed.
+  cabinRateId    String?
+  cabinRate      CruiseCabinRate?        @relation(fields: [cabinRateId], references: [id], onDelete: SetNull)
+  occupancy      String? // SINGLE | DOUBLE | TRIPLE
+  cabinCount     Int                     @default(1)
+  scheduleId     String?
+  schedule       CruiseSchedule?         @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
   passengerNames Json?
-  adultsCount    Int           @default(1)
-  childrenCount  Int           @default(0)
-  totalAmount    Decimal       @db.Decimal(12, 2)
-  currency       String        @default("USD")
-  sourceAmount   Decimal?      @db.Decimal(12, 2)
+  adultsCount    Int                     @default(1)
+  childrenCount  Int                     @default(0)
+  addOns         CruiseBookingActivity[]
+  totalAmount    Decimal                 @db.Decimal(12, 2)
+  currency       String                  @default("USD")
+  sourceAmount   Decimal?                @db.Decimal(12, 2)
   sourceCurrency String?
-  exchangeRate   Decimal?      @db.Decimal(18, 8)
+  exchangeRate   Decimal?                @db.Decimal(18, 8)
   exchangeRateAt DateTime?
-  status         BookingStatus @default(PENDING)
-  notes          String?       @db.Text
+  status         BookingStatus           @default(PENDING)
+  notes          String?                 @db.Text
   invoice        Invoice?
-  requestedAt    DateTime      @default(now())
+  requestedAt    DateTime                @default(now())
   confirmedAt    DateTime?
   confirmedById  String?
-  confirmedBy    User?         @relation("CruiseConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  confirmedBy    User?                   @relation("CruiseConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 
   @@index([companyId])
   @@index([status])
   @@index([confirmedById])
+  @@index([cabinRateId])
+  @@index([scheduleId])
+}
+
+// A tour the client added on top of the cruise itself. The name and write-up
+// are snapshotted so the voucher still reads correctly after the catalogue
+// entry is renamed or retired; `activityId` keeps the link for reporting.
+model CruiseBookingActivity {
+  id           String        @id @default(cuid())
+  bookingId    String
+  booking      CruiseBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  activityId   String?
+  activity     Activity?     @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  name         String
+  description  String?       @db.Text
+  activityDate DateTime?
+  paxCount     Int           @default(1)
+  amount       Decimal?      @db.Decimal(12, 2)
+  currency     String        @default("USD")
+  displayOrder Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([bookingId])
+  @@index([activityId])
 }
 
 // ─────────────────────────────────────────────
@@ -975,6 +1090,10 @@ model TransportBooking {
   dropoffAddress         String?               @db.Text
   dropoffHotelName       String? // required when dropoffType = HOTEL
   pickupDateTime         DateTime
+  // When the guests want to be at the other end. A destination-to-destination
+  // run is two times, not one: the car collects them at `pickupDateTime` and is
+  // due at `dropoffDateTime`. Null for journeys where only the pickup matters.
+  dropoffDateTime        DateTime?
   returnDateTime         DateTime?
   isRoundTrip            Boolean               @default(false)
   sameRouteReversed      Boolean               @default(true) // true = return is the outbound reversed (convenience default; unlock to capture a different return)
@@ -1099,19 +1218,32 @@ model Airport {
 // ─────────────────────────────────────────────
 
 model Activity {
-  id                 String                @id @default(cuid())
+  id                 String                  @id @default(cuid())
   name               String
   nameAr             String?
   // city is now free-text (replaces ActivityCity enum) — dynamic destinations
   city               String
-  category           ActivityCategory      @default(SIGHTSEEING)
+  category           ActivityCategory        @default(SIGHTSEEING)
   duration           String?
   timeSlots          Json? // e.g. ["09:00 AM","02:00 PM"]
-  description        String?               @db.Text
-  descriptionAr      String?               @db.Text
+  description        String?                 @db.Text
+  descriptionAr      String?                 @db.Text
   includes           Json?
   excludes           Json?
-  imageUrl           String?               @db.Text
+  // The same two lists as one ordered, marked set:
+  //   [{ label, labelAr, included: true|false }]
+  // `includes` / `excludes` above stay in step with it so vouchers, the older
+  // sheet importer and anything else reading the flat lists keep working.
+  inclusions         Json?
+  // Is a transfer part of the price? When it is not, the portal offers the
+  // client an "Add transfer" panel instead of leaving them to guess.
+  transferIncluded   Boolean                 @default(false)
+  transferNote       String?                 @db.Text
+  transferNoteAr     String?                 @db.Text
+  // When the trip drops the guests back. Prefills the pickup time of a return
+  // transfer so the driver is booked for when they are actually free.
+  returnTime         String?
+  imageUrl           String?                 @db.Text
   // Extra photos for the activity gallery, in display order.
   galleryUrls        Json?
   // An excursion is quoted either per person (adult / child) or per party
@@ -1119,25 +1251,26 @@ model Activity {
   // Which of these carry a price is up to the operator: an activity sold only
   // as a private tour leaves the per-person fields empty, and vice versa. All
   // are nullable so a blank field means "not sold this way", not "free".
-  priceAdult         Decimal?              @db.Decimal(10, 2)
-  priceChild         Decimal?              @db.Decimal(10, 2)
-  priceSingle        Decimal?              @db.Decimal(10, 2)
-  priceDouble        Decimal?              @db.Decimal(10, 2)
-  priceTriple        Decimal?              @db.Decimal(10, 2)
-  currency           String                @default("USD")
+  priceAdult         Decimal?                @db.Decimal(10, 2)
+  priceChild         Decimal?                @db.Decimal(10, 2)
+  priceSingle        Decimal?                @db.Decimal(10, 2)
+  priceDouble        Decimal?                @db.Decimal(10, 2)
+  priceTriple        Decimal?                @db.Decimal(10, 2)
+  currency           String                  @default("USD")
   sheetsRowId        String?
-  minPax             Int                   @default(1)
-  maxPax             Int                   @default(20)
-  isActive           Boolean               @default(true)
+  minPax             Int                     @default(1)
+  maxPax             Int                     @default(20)
+  isActive           Boolean                 @default(true)
   // If false, creates a quote request instead of a confirmed booking
-  isConfirmableInApp Boolean               @default(true)
+  isConfirmableInApp Boolean                 @default(true)
   destinationId      String?
-  destination        Destination?          @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  destination        Destination?            @relation(fields: [destinationId], references: [id], onDelete: SetNull)
   bookings           ActivityBooking[]
   packageItems       ActivityPackageItem[]
+  cruiseAddOns       CruiseBookingActivity[]
   serviceGroupTypes  ServiceGroupType[]
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
   @@index([city])
   @@index([sheetsRowId])
@@ -1186,31 +1319,41 @@ model ActivityPackage {
 }
 
 model ActivityPackageItem {
-  id               String          @id @default(cuid())
-  packageId        String
-  package          ActivityPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
-  activityId       String
-  activity         Activity        @relation(fields: [activityId], references: [id])
-  activityName     String // snapshot of activity name at booking time
-  city             String?
-  activityDate     DateTime
-  selectedTime     String?
-  endTime          String? // optional — used for time-conflict validation
-  adultsCount      Int             @default(1)
-  childrenCount    Int             @default(0)
-  childAges        Json?
-  hotelName        String?
-  clientPhone      String?
-  activityType     String?
-  groupTypeId      String?
-  groupTypeLabel   String?
-  transferIncluded Boolean?
-  notes            String?         @db.Text
-  lineAmount       Decimal?        @db.Decimal(12, 2) // internal — never shown on voucher
-  currency         String          @default("USD")
-  displayOrder     Int             @default(0)
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id                 String          @id @default(cuid())
+  packageId          String
+  package            ActivityPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  activityId         String
+  activity           Activity        @relation(fields: [activityId], references: [id])
+  activityName       String // snapshot of activity name at booking time
+  city               String?
+  activityDate       DateTime
+  selectedTime       String?
+  endTime            String? // optional — used for time-conflict validation
+  adultsCount        Int             @default(1)
+  childrenCount      Int             @default(0)
+  childAges          Json?
+  hotelName          String?
+  clientPhone        String?
+  activityType       String?
+  groupTypeId        String?
+  groupTypeLabel     String?
+  transferIncluded   Boolean?
+  // Transfer add-on for this one line — mirrors ActivityBooking above so a trip
+  // booked inside a package collects the same journey as one booked on its own.
+  transferRequested  Boolean         @default(false)
+  transferFromType   String?
+  transferFromName   String?
+  transferToType     String?
+  transferToName     String?
+  transferPickupTime String?
+  transferReturnTime String?
+  transferNotes      String?         @db.Text
+  notes              String?         @db.Text
+  lineAmount         Decimal?        @db.Decimal(12, 2) // internal — never shown on voucher
+  currency           String          @default("USD")
+  displayOrder       Int             @default(0)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   @@index([packageId])
   @@index([activityId])
@@ -1222,47 +1365,63 @@ model ActivityPackageCounter {
 }
 
 model ActivityBooking {
-  id             String            @id @default(cuid())
-  refNumber      String            @unique
-  activityId     String
-  activity       Activity          @relation(fields: [activityId], references: [id])
-  companyId      String
-  company        Company           @relation(fields: [companyId], references: [id])
-  createdById    String
-  createdBy      User              @relation("ActivityBookingCreatedBy", fields: [createdById], references: [id])
-  activityDate   DateTime
-  selectedTime   String? // time slot chosen by user e.g. "09:00 AM"
-  activityType   String? // GROUP | PRIVATE | VIP
-  groupTypeId    String?
-  groupType      ServiceGroupType? @relation("ActivityBookingGroupType", fields: [groupTypeId], references: [id], onDelete: SetNull)
-  groupTypeLabel String?
-  adultsCount    Int               @default(1)
-  childrenCount  Int               @default(0)
+  id                 String            @id @default(cuid())
+  refNumber          String            @unique
+  activityId         String
+  activity           Activity          @relation(fields: [activityId], references: [id])
+  companyId          String
+  company            Company           @relation(fields: [companyId], references: [id])
+  createdById        String
+  createdBy          User              @relation("ActivityBookingCreatedBy", fields: [createdById], references: [id])
+  activityDate       DateTime
+  selectedTime       String? // time slot chosen by user e.g. "09:00 AM"
+  activityType       String? // GROUP | PRIVATE | VIP
+  groupTypeId        String?
+  groupType          ServiceGroupType? @relation("ActivityBookingGroupType", fields: [groupTypeId], references: [id], onDelete: SetNull)
+  groupTypeLabel     String?
+  adultsCount        Int               @default(1)
+  childrenCount      Int               @default(0)
   // How this booking was priced: per head (PER_PERSON) or as a whole party at
   // a flat rate (SINGLE / DOUBLE / TRIPLE). Recorded so an invoice or voucher
   // can say "private tour for 2" rather than implying a per-person charge.
-  pricingBasis   String?           @default("PER_PERSON")
-  childAges      Json? // array of child ages
-  clientName     String? // lead client name
-  clientPhone    String?
-  hotelName      String?
-  passengerNames Json?
-  totalAmount    Decimal           @db.Decimal(12, 2)
-  currency       String            @default("USD")
-  sourceAmount   Decimal?          @db.Decimal(12, 2)
-  sourceCurrency String?
-  exchangeRate   Decimal?          @db.Decimal(18, 8)
-  exchangeRateAt DateTime?
-  status         BookingStatus     @default(PENDING)
-  notes          String?           @db.Text
-  invoice        Invoice?
-  voucher        Voucher?          @relation("VoucherActivity")
-  requestedAt    DateTime          @default(now())
-  confirmedAt    DateTime?
-  confirmedById  String?
-  confirmedBy    User?             @relation("ActivityConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  pricingBasis       String?           @default("PER_PERSON")
+  // How many party units were charged. A "double" is a price for two, so six
+  // guests on a double basis are three of them — storing the count keeps an
+  // old invoice readable even if the rule is ever tuned.
+  pricingUnits       Int               @default(1)
+  childAges          Json? // array of child ages
+  clientName         String? // lead client name
+  clientPhone        String?
+  hotelName          String?
+  passengerNames     Json?
+  // Transfer add-on — filled only when the trip does not already include one
+  // and the client asked for it. The route is captured as its own leg (where
+  // the driver collects them and where they are dropped back), which is why the
+  // hotel question disappears from the form once a transfer is being booked.
+  transferRequested  Boolean           @default(false)
+  transferFromType   String? // HOTEL | AIRPORT | DESTINATION | ADDRESS
+  transferFromName   String?
+  transferToType     String?
+  transferToName     String?
+  transferPickupTime String? // "08:30" — when the driver collects them
+  transferReturnTime String? // "17:00" — defaults to the activity's return time
+  transferNotes      String?           @db.Text
+  totalAmount        Decimal           @db.Decimal(12, 2)
+  currency           String            @default("USD")
+  sourceAmount       Decimal?          @db.Decimal(12, 2)
+  sourceCurrency     String?
+  exchangeRate       Decimal?          @db.Decimal(18, 8)
+  exchangeRateAt     DateTime?
+  status             BookingStatus     @default(PENDING)
+  notes              String?           @db.Text
+  invoice            Invoice?
+  voucher            Voucher?          @relation("VoucherActivity")
+  requestedAt        DateTime          @default(now())
+  confirmedAt        DateTime?
+  confirmedById      String?
+  confirmedBy        User?             @relation("ActivityConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([companyId])
   @@index([activityId])
@@ -1364,15 +1523,18 @@ model VisaApplication {
 }
 
 model VisaFee {
-  id          String   @id @default(cuid())
-  sheetsRowId String?
-  visaType    VisaType
+  id                 String         @id @default(cuid())
+  sheetsRowId        String?
+  visaType           VisaType
   // What this price covers. Both narrowers are optional and blank means "any",
   // so one row can price a single airport, a single destination, the exact pair,
   // or every approval of this type. A request takes the most specific row that
   // matches it — the order is spelled out in resolveVisaFee.
   destinationCountry String? // arrival airport (code or name); null = any airport
   destinationCity    String? // where the guests stay; null = any destination
+  // Whose passport this price is for — an approval costs what it costs per
+  // nationality. null = any nationality, so one row can still price everyone.
+  nationality        String?
   processingType     ProcessingType @default(NORMAL)
   fee                Decimal        @db.Decimal(10, 2)
   currency           String         @default("USD")
@@ -1385,6 +1547,7 @@ model VisaFee {
   @@index([visaType])
   @@index([destinationCountry])
   @@index([destinationCity])
+  @@index([nationality])
 }
 
 // ─────────────────────────────────────────────

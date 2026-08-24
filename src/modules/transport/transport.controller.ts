@@ -285,7 +285,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     // Structured journey (independent of the rate's display labels)
     pickupType?: string; pickupLocation?: string; pickupAddress?: string; pickupHotelName?: string;
     dropoffType?: string; dropoffLocation?: string; dropoffAddress?: string; dropoffHotelName?: string;
-    pickupDateTime: string; returnDateTime?: string;
+    pickupDateTime: string; dropoffDateTime?: string; returnDateTime?: string;
     isRoundTrip?: boolean; sameRouteReversed?: boolean; passengerCount?: number;
     // Return leg (independent endpoints)
     returnFromLocation?: string; returnToLocation?: string;
@@ -323,6 +323,10 @@ export async function createTransportBooking(req: Request, res: Response): Promi
 
   const passengerCount = Math.max(1, body.passengerCount ?? 1);
   const pickupDateTime = new Date(body.pickupDateTime);
+  // A destination-to-destination run is two moments, not one: the car collects
+  // them, and it is due at the other end. Optional — an airport pickup or a car
+  // at disposal has no second time to give.
+  const dropoffDateTime = body.dropoffDateTime ? new Date(body.dropoffDateTime) : null;
   const returnDateTime = body.returnDateTime ? new Date(body.returnDateTime) : null;
 
   // ── Resolve the priced product FIRST. rateId is authoritative; otherwise the
@@ -399,6 +403,15 @@ export async function createTransportBooking(req: Request, res: Response): Promi
     if (!hasRealPickup) { fail('A pickup location is required.', 'PICKUP_REQUIRED'); return; }
     const hasRealDropoff = !!(dropoffHotelName || dropoffAddress || dropoffLocation);
     if (!hasRealDropoff) { fail('A drop-off location is required.', 'DROPOFF_REQUIRED'); return; }
+  }
+
+  // A drop-off that lands before the pickup is a typo, not an itinerary.
+  if (dropoffDateTime) {
+    if (Number.isNaN(dropoffDateTime.getTime())) { fail('Drop-off date/time is not a valid date.'); return; }
+    if (dropoffDateTime < pickupDateTime) {
+      fail('Drop-off date/time must not be earlier than the pickup date/time.', 'DROPOFF_BEFORE_PICKUP');
+      return;
+    }
   }
 
   // ── Round-trip validation (Finding 2 / §3) — independent return leg.
@@ -574,6 +587,7 @@ export async function createTransportBooking(req: Request, res: Response): Promi
           dropoffAddress,
           dropoffHotelName,
           pickupDateTime,
+          dropoffDateTime,
           returnDateTime,
           isRoundTrip,
           sameRouteReversed: isRoundTrip ? sameRouteReversed : true,

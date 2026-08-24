@@ -146,28 +146,60 @@ export async function downloadPdf(req: Request, res: Response): Promise<void> {
   stream.pipe(res);
 }
 
+/** How many invoices one combined PDF will ever carry. Past this it stops being
+ *  a statement anybody reads and starts being a document nobody can open. */
+const BULK_PDF_LIMIT = 200;
+
 /**
- * POST /api/invoices/bulk-pdf  { invoiceIds: string[] }
- * Merge several invoices into one paginated PDF. Ownership is enforced: company
- * users can only export their own invoices; SUPERADMIN can export any.
+ * POST /api/invoices/bulk-pdf
+ *   { invoiceIds: string[] }                 — merge exactly these
+ *   { all: true, status?, companyId?, from?, to? } — merge everything the caller
+ *                                              can see, optionally narrowed
+ *
+ * "Download all" is the common case: an accountant wants every invoice for the
+ * period in one file, and asking them to tick two hundred boxes first is not a
+ * feature. Ownership is enforced either way — a company user only ever gets
+ * their own invoices, whatever they ask for.
  */
 export async function bulkPdf(req: Request, res: Response): Promise<void> {
   const caller = req.user!;
-  const ids = Array.isArray(req.body?.invoiceIds) ? (req.body.invoiceIds as unknown[]).map(String) : [];
-  if (ids.length === 0) {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const wantsAll = body.all === true || body.all === 'true';
+  const ids = Array.isArray(body.invoiceIds) ? (body.invoiceIds as unknown[]).map(String) : [];
+  if (!wantsAll && ids.length === 0) {
     res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'invoiceIds is required' });
     return;
   }
-  if (ids.length > 200) {
-    res.status(400).json({ success: false, error: 'TOO_MANY', message: 'Select up to 200 invoices' });
+  if (!wantsAll && ids.length > BULK_PDF_LIMIT) {
+    res.status(400).json({ success: false, error: 'TOO_MANY', message: `Select up to ${BULK_PDF_LIMIT} invoices` });
     return;
   }
 
+  const companyScope = caller.role !== 'SUPERADMIN'
+    ? { companyId: caller.companyId! }
+    : (body.companyId ? { companyId: String(body.companyId) } : {});
   const where = {
-    id: { in: ids },
-    ...(caller.role !== 'SUPERADMIN' ? { companyId: caller.companyId! } : {}),
+    ...(wantsAll ? {} : { id: { in: ids } }),
+    ...companyScope,
+    // The narrowers only apply to "download all" — an explicit list of ids is
+    // already the answer to "which ones", and filtering it again would silently
+    // drop invoices the caller asked for by name.
+    ...(wantsAll && body.status ? { status: String(body.status) as 'UNPAID' | 'PAID' | 'OVERDUE' | 'CANCELLED' } : {}),
+    ...(wantsAll && (body.from || body.to)
+      ? {
+          createdAt: {
+            ...(body.from ? { gte: new Date(String(body.from)) } : {}),
+            ...(body.to ? { lte: new Date(String(body.to)) } : {}),
+          },
+        }
+      : {}),
   };
-  const invoices = await prisma.invoice.findMany({ where, orderBy: { createdAt: 'desc' }, include: invoiceInclude });
+  const invoices = await prisma.invoice.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    take: BULK_PDF_LIMIT,
+    include: invoiceInclude,
+  });
   if (invoices.length === 0) {
     res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'No accessible invoices found' });
     return;

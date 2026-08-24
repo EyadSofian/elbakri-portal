@@ -254,11 +254,19 @@ function refreshIcons(root = document) {
   if (window.lucide) window.lucide.createIcons();
 }
 
+/**
+ * `quiet: true` suppresses the error toast and returns null instead.
+ *
+ * For a lookup whose failure the screen already explains — a price that has not
+ * been set yet, where the panel offers "send a request" in its place — a red
+ * toast saying PRICE_NOT_CONFIGURED adds noise and no information.
+ */
 function apiFetch(path, options = {}) {
   const token = localStorage.getItem("accessToken");
+  const { quiet, ...init } = options;
   return fetch("/api" + path, {
-    ...options,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(options.headers || {}) },
+    ...init,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(init.headers || {}) },
     credentials: "include",
   }).then(async res => {
     if (res.status === 401) {
@@ -276,7 +284,7 @@ function apiFetch(path, options = {}) {
     if (!res.ok || json.success === false) throw new Error(json.message || json.error || "Request failed");
     return json;
   }).catch(err => {
-    toast(err.message || "Request failed", "error");
+    if (!quiet) toast(err.message || "Request failed", "error");
     return null;
   });
 }
@@ -968,6 +976,29 @@ function hotelMediaShowcase(h) {
   return mediaShowcase(urls, hotelName(h));
 }
 
+/**
+ * The hotel's tagged albums — "Sea View", "Single Room", "Aqua Park".
+ *
+ * `galleryUrls` is one undifferentiated reel, which is no use when a client
+ * asks to see the sea-view rooms specifically. Each album gets its own labelled
+ * carousel, so an agent can jump straight to the pictures they were asked for.
+ */
+function hotelTaggedAlbums(h) {
+  const groups = (h.imageGroups || []).filter(g => (g.images || []).length);
+  if (!groups.length) return "";
+  return `
+    <div class="hotel-albums">
+      <div class="hotel-albums-title">${icon("images")}&nbsp;${t("hotel.photoTags","Photo albums")}</div>
+      ${groups.map(g => `
+        <div class="hotel-album">
+          <div class="hotel-album-name">${escapeHtml(isArabic() && g.labelAr ? g.labelAr : g.label)}
+            <span class="hotel-album-count">${formatNumber(g.images.length)}</span>
+          </div>
+          ${mediaShowcase(g.images.map(i => hotelImageSrc(i.url)), `${hotelName(h)} — ${g.label}`)}
+        </div>`).join("")}
+    </div>`;
+}
+
 /** An excursion's own photos: whatever the operator uploaded, shown whole. */
 function activityMediaShowcase(a) {
   const urls = [...new Set([a.imageUrl, ...(a.galleryUrls || [])].filter(Boolean))];
@@ -1166,6 +1197,7 @@ async function showAgentHotelDetails(id) {
     ${attrBadges ? `<div style="margin:10px 0;display:flex;flex-wrap:wrap;gap:6px">${attrBadges}</div>` : ""}
     ${descLoc ? `<p style="white-space:pre-wrap;color:var(--text-secondary);line-height:1.5;margin:8px 0">${escapeHtml(descLoc)}</p>` : ""}
     ${h.amenities?.length ? `<div class="hotel-amenity-cloud" style="margin-top:8px">${amenityChips}</div>` : ""}
+    ${hotelTaggedAlbums(h)}
     ${hotelRatesSection(h)}
     ${hotelPoliciesSection(h)}
     </div>`;
@@ -1487,17 +1519,200 @@ window.matchMedia("(max-width:768px)").addEventListener("change", () => {
 
 function renderCruises() {
   renderListPage("cruises", "/cruises", [
-    ["th.name", c => `<span class="primary-text">${escapeHtml(c.name)}</span>`],
+    ["th.name", c => `<span class="primary-text">${escapeHtml(c.name)}</span>${c.operator ? `<div class="secondary-text">${escapeHtml(c.operator)}</div>` : ""}`],
     ["th.type", c => escapeHtml(c.shipType)],
     ["th.route", c => escapeHtml(c.route)],
+    // Which legs the boat actually sails — "departure days" alone never said
+    // which return went with which departure.
+    ["cruise.schedules", c => cruiseScheduleSummary(c)],
     ["th.amount", c => c.priceFrom != null && c.priceVisible !== false
-      ? `<span class="numeric">${formatPrice(c.priceFrom, c.currency)}</span>`
+      ? `<span class="numeric">${formatPrice(c.priceFrom, c.currency)}</span>${c.hasRateMatrix ? `<div class="secondary-text">${t("hotel.priceFrom","from")}</div>` : ""}`
       : `<span class="badge badge-info" style="font-size:11px">${t("hotel.priceOnRequest","Price on request")}</span>`],
-    ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
-    ["th.actions", c => c.canRequestQuote !== false
-      ? `<button class="btn btn-primary" onclick="openQuoteRequestModal('CRUISE','${c.id}',${inlineJsonArg(c.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`
-      : "—"],
+    ["th.actions", c => `<button class="btn btn-primary btn-sm request-cta request-cta-sm" onclick="openCruiseDetails('${c.id}')">${icon("send")}&nbsp;${t("btn.detailsRequest","Details / Request")}</button>`],
   ]);
+}
+
+function weekdayLabel(day) {
+  return t("weekday." + String(day || "").toUpperCase(), String(day || ""));
+}
+
+/** "Mon → Thu · 3 nights", one line per leg. */
+function cruiseScheduleSummary(c) {
+  const list = (c.schedules || []).filter(sc => sc.isActive !== false);
+  if (!list.length) return `<span class="secondary-text">—</span>`;
+  return list.slice(0, 3).map(sc =>
+    `<div style="font-size:12px">${escapeHtml(weekdayLabel(sc.departureDay))} → ${escapeHtml(weekdayLabel(sc.returnDay))}<span class="secondary-text"> · ${formatNumber(sc.nights)} ${t("cruise.nights","Nights")}</span></div>`
+  ).join("") + (list.length > 3 ? `<div class="secondary-text">+${formatNumber(list.length - 3)}</div>` : "");
+}
+
+/**
+ * One boat: its photos, when it sails, what each cabin costs at each occupancy,
+ * and the tours the client wants alongside it.
+ *
+ * A cruise is still quoted by the operations team, so this ends in a quote
+ * request — but the request now carries the leg, the cabin, the occupancy and
+ * the tours, instead of a name and a hope.
+ */
+async function openCruiseDetails(id) {
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === id);
+  if (!cruise) return toast(t("empty.failed","Failed to load"), "error");
+  state.cruiseSelection = { cruiseId: id, addOns: [] };
+
+  const description = locName(cruise.description, cruise.descriptionAr) || "";
+  const photos = [...new Set([cruise.imageUrl, ...(cruise.galleryUrls || [])].filter(Boolean))];
+  const schedules = (cruise.schedules || []).filter(sc => sc.isActive !== false);
+  const rates = cruise.cabinRates || [];
+
+  // Only the activities in the destinations this boat calls at would be a
+  // better filter, but a cruise route is not a destination id — so the whole
+  // confirmable catalogue is offered and the agent picks.
+  const actRes = await apiFetch("/activities?confirmableOnly=true&limit=200");
+  const activities = actRes?.data || [];
+  state.cruiseTourOptions = activities;
+
+  const body = `
+    ${photos.length ? mediaShowcase(photos, cruise.name) : ""}
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin:12px 0;flex-wrap:wrap">
+      <div>
+        <div style="font-size:18px;font-weight:800">${escapeHtml(locName(cruise.name, cruise.nameAr))}</div>
+        <div class="secondary-text">${escapeHtml(cruise.shipType)} · ${escapeHtml(cruise.route)}${cruise.operator ? " · " + escapeHtml(cruise.operator) : ""}</div>
+      </div>
+      <div style="text-align:right">
+        ${cruise.priceFrom != null && cruise.priceVisible !== false
+          ? `<div style="font-weight:800;font-size:16px;color:var(--brand-navy-2)">${formatPrice(cruise.priceFrom, cruise.currency)}</div>
+             <div style="font-size:11px;color:var(--text-muted)">${t("hotel.priceFrom","from")}</div>`
+          : `<div style="font-size:12px;color:var(--text-muted)">${t("hotel.priceOnRequest","Price on request")}</div>`}
+      </div>
+    </div>
+    ${description ? `<div class="act-description">${escapeHtml(description)}</div>` : ""}
+
+    <div class="form-field full" style="margin-top:14px">
+      <label>${t("cruise.schedules","Departures")}</label>
+      ${schedules.length ? `<div class="act-basis-grid">
+        ${schedules.map((sc, i) => `<label class="act-basis">
+          <input type="radio" name="crSchedule" value="${escapeHtml(sc.id)}" ${i === 0 ? "checked" : ""}>
+          <span>
+            <b>${escapeHtml(weekdayLabel(sc.departureDay))} → ${escapeHtml(weekdayLabel(sc.returnDay))}</b>
+            <small>${formatNumber(sc.nights)} ${t("cruise.nights","Nights")}${sc.label ? " · " + escapeHtml(locName(sc.label, sc.labelAr)) : ""}</small>
+          </span>
+        </label>`).join("")}
+      </div>` : `<div class="secondary-text">${t("cruise.schedulesHelp","When the boat leaves and when it is back.")}</div>`}
+    </div>
+
+    <div class="form-field full" style="margin-top:14px">
+      <label>${t("cruise.cabinRates","Cabin Rates")}</label>
+      ${rates.length ? `<div class="table-scroll"><table class="data-table">
+        <thead><tr>
+          <th></th><th>${t("cruise.cabinName","Cabin")}</th>
+          <th>${t("hotel.single","Single")}</th><th>${t("hotel.double","Double")}</th><th>${t("hotel.triple","Triple")}</th>
+        </tr></thead>
+        <tbody>${rates.map((r, i) => `<tr>
+          <td><input type="radio" name="crRate" value="${escapeHtml(r.id)}" ${i === 0 ? "checked" : ""}></td>
+          <td><span class="primary-text">${escapeHtml(r.cabinName)}</span>${r.notes ? `<div class="secondary-text">${escapeHtml(r.notes)}</div>` : ""}</td>
+          <td>${r.singlePrice != null ? formatPrice(r.singlePrice, r.currency) : "—"}</td>
+          <td>${r.doublePrice != null ? formatPrice(r.doublePrice, r.currency) : "—"}</td>
+          <td>${r.triplePrice != null ? formatPrice(r.triplePrice, r.currency) : "—"}</td>
+        </tr>`).join("")}</tbody>
+      </table></div>` : `<div class="secondary-text">${t("cruise.noRates","No cabin rates set yet")}</div>`}
+    </div>
+
+    <div class="act-transfer-block full" style="margin-top:14px">
+      <div class="act-transfer-head">
+        <strong style="font-size:13px">${t("cruise.addTours","Add Tours / Activities")}</strong>
+        <button type="button" class="btn btn-outline btn-sm" onclick="crAddTourRow()">${icon("plus")}&nbsp;${t("cruise.addTour","Add tour")}</button>
+      </div>
+      <div class="secondary-text" style="margin-top:6px">${t("cruise.addToursHelp","Excursions to run alongside the cruise. The description is shown to your client.")}</div>
+      <div id="crTours" style="margin-top:10px"></div>
+    </div>`;
+
+  openModal(escapeHtml(locName(cruise.name, cruise.nameAr)), body, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" onclick="crRequestQuote('${cruise.id}')">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`);
+}
+
+/** One "add tour" line: which excursion, when, for how many, plus its write-up. */
+function crAddTourRow() {
+  const host = document.getElementById("crTours");
+  if (!host) return;
+  const rowId = "crTour_" + Math.random().toString(36).slice(2, 8);
+  const options = (state.cruiseTourOptions || [])
+    .map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}${a.city ? " — " + escapeHtml(a.city) : ""}</option>`)
+    .join("");
+  const wrap = document.createElement("div");
+  wrap.className = "cr-tour-row";
+  wrap.id = rowId;
+  wrap.innerHTML = `
+    <div class="form-grid">
+      <div class="form-field">
+        <label>${t("nav.activities","Activity")}</label>
+        <select class="cr-tour-activity" onchange="crTourPicked('${rowId}')">
+          <option value="">${t("form.select","Select")}</option>${options}
+        </select>
+      </div>
+      <div class="form-field">
+        <label>${t("form.date","Date")}</label>
+        <input type="date" class="cr-tour-date">
+      </div>
+      <div class="form-field">
+        <label>${t("form.passengers","Passengers")}</label>
+        <input type="number" min="1" value="2" class="cr-tour-pax">
+      </div>
+      <div class="form-field full">
+        <label>${t("form.description","Description")}</label>
+        <textarea rows="2" class="cr-tour-desc" placeholder="${escapeHtml(t("cruise.addToursHelp","Excursions to run alongside the cruise. The description is shown to your client."))}"></textarea>
+      </div>
+    </div>
+    <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('${rowId}').remove()">${icon("trash-2")}&nbsp;${t("btn.remove","Remove")}</button>`;
+  host.appendChild(wrap);
+  refreshIcons(wrap);
+}
+
+/** Picking an excursion fills its own write-up in, so the agent rarely types. */
+function crTourPicked(rowId) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  const id = row.querySelector(".cr-tour-activity")?.value;
+  const activity = (state.cruiseTourOptions || []).find(a => a.id === id);
+  const desc = row.querySelector(".cr-tour-desc");
+  if (!activity || !desc || desc.value.trim()) return;
+  desc.value = locName(activity.description, activity.descriptionAr) || "";
+}
+
+function crCollectTours() {
+  return [...document.querySelectorAll(".cr-tour-row")].map(row => {
+    const select = row.querySelector(".cr-tour-activity");
+    const name = select?.selectedOptions?.[0]?.textContent?.trim() || "";
+    if (!select?.value) return null;
+    return {
+      activityId: select.value,
+      name,
+      description: row.querySelector(".cr-tour-desc")?.value.trim() || undefined,
+      activityDate: row.querySelector(".cr-tour-date")?.value || undefined,
+      paxCount: Math.max(1, parseInt(row.querySelector(".cr-tour-pax")?.value || "1")),
+    };
+  }).filter(Boolean);
+}
+
+/**
+ * Hand the whole selection to the quote-request flow. A cruise is priced by the
+ * operations team, so this stays a request — but it now carries the leg, the
+ * cabin and the tours rather than only the boat's name.
+ */
+function crRequestQuote(cruiseId) {
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === cruiseId);
+  const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value;
+  const rateId = document.querySelector('input[name="crRate"]:checked')?.value;
+  const schedule = (cruise?.schedules || []).find(sc => sc.id === scheduleId);
+  const rate = (cruise?.cabinRates || []).find(r => r.id === rateId);
+  const tours = crCollectTours();
+  const lines = [
+    schedule ? `${weekdayLabel(schedule.departureDay)} → ${weekdayLabel(schedule.returnDay)} (${schedule.nights} ${t("cruise.nights","Nights")})` : "",
+    rate ? `${t("cruise.cabinName","Cabin")}: ${rate.cabinName}` : "",
+    tours.length ? `${t("cruise.addTours","Add Tours / Activities")}: ${tours.map(x => x.name).join(", ")}` : "",
+  ].filter(Boolean);
+  state.quotePrefillNotes = lines.join("\n");
+  closeModal();
+  openQuoteRequestModal("CRUISE", cruiseId, cruise?.name || "");
 }
 
 // ─── Nationality data ─────────────────────────────────────────────────────────
@@ -2029,13 +2244,19 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
         </select></div>` : ""}
       <div id="childAgesContainer" class="form-field full" style="display:none"></div>
       <div class="form-field full"><label>${t("form.notes","Notes / Special Requests")}</label>
-        <textarea id="qrNotes" rows="3" placeholder="${t("form.notesPlaceholder","Room preferences, dietary needs, accessibility...")}"></textarea></div>
+        <!-- A screen that already collected a selection (a cruise leg, a cabin,
+             the tours to run alongside it) hands it over here so the agent does
+             not retype what they just picked. -->
+        <textarea id="qrNotes" rows="3" placeholder="${t("form.notesPlaceholder","Room preferences, dietary needs, accessibility...")}">${escapeHtml(state.quotePrefillNotes || "")}</textarea></div>
     </div>`;
 
   openModal(t("btn.requestQuote","Request a Quote"), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel","Cancel")}</button>
     <button class="btn btn-primary" id="submitQuoteBtn">${icon("brand-whatsapp")}&nbsp;${t("btn.sendRequest","Send via WhatsApp")}</button>
   `);
+  // Consumed once. Leaving it set would carry one screen's selection into the
+  // next, unrelated, quote request.
+  state.quotePrefillNotes = "";
 
   document.getElementById("submitQuoteBtn").onclick = async () => {
     const checkIn = document.getElementById("qrCheckIn").value;
@@ -2260,7 +2481,37 @@ function trEpType(side, type, fromUser = true) {
   // The hotel question only makes sense once a destination is chosen.
   trFillHotelsFor(side);
   if (side === "from") trSyncFlightFields();
+  trSyncDropoffFields();
   trRouteChanged();
+}
+
+/**
+ * The drop-off half of the "when" question.
+ *
+ * A city-to-city transfer is sold on two times — collected at one end, due at
+ * the other — while an airport run is timed by the flight and a car at disposal
+ * has no far end at all. So the pair is shown exactly when both endpoints are
+ * destinations, and cleared otherwise so a leftover value is never submitted.
+ */
+function trSyncDropoffFields() {
+  const box = document.getElementById("trDropoffFields");
+  if (!box) return;
+  const bothDestinations = document.getElementById("trFromType")?.value === "DESTINATION"
+    && document.getElementById("trToType")?.value === "DESTINATION"
+    && !trIsDisposal();
+  box.style.display = bothDestinations ? "" : "none";
+  if (!bothDestinations) {
+    const date = document.getElementById("trDropoffDate");
+    const time = document.getElementById("trDropoffTime");
+    if (date) date.value = "";
+    if (time) time.value = "";
+    return;
+  }
+  // Most transfers land the same day they start, so the drop-off date follows
+  // the pickup date until the operator says otherwise.
+  const pickupDate = document.getElementById("trDate")?.value;
+  const dropoffDate = document.getElementById("trDropoffDate");
+  if (pickupDate && dropoffDate && !dropoffDate.value) dropoffDate.value = pickupDate;
 }
 
 /**
@@ -2337,6 +2588,20 @@ function renderTransportForm() {
           <div class="form-field">
             <label>${t("form.time","Pickup / Arrival Time")}</label>
             <input id="trTime" type="time" value="10:00">
+          </div>
+        </div>
+        <!-- A destination-to-destination run is two moments, not one: the car
+             collects them here and is due there. An airport pickup only has
+             the one time, so the pair only appears when both ends are places. -->
+        <div class="form-grid" id="trDropoffFields" style="margin-top:12px;display:none">
+          <div class="form-field">
+            <label>${t("transport.dropoffDate","Drop-off Date")}</label>
+            <input id="trDropoffDate" type="date" oninput="trUpdateQuote()">
+          </div>
+          <div class="form-field">
+            <label>${t("transport.dropoffTime","Drop-off Time")}</label>
+            <input id="trDropoffTime" type="time">
+            <small class="field-hint">${t("transport.dropoffTimeHint","When the car should be at the other end.")}</small>
           </div>
         </div>
         <div class="form-grid" id="trFlightFields" style="margin-top:12px">
@@ -2494,6 +2759,7 @@ function renderTransportForm() {
   refreshIcons(document.getElementById("transportFormArea"));
   trPickupChosen = false; // a fresh form has no operator choice to preserve
   trSyncFlightFields();
+  trSyncDropoffFields();
   trLoadCustomFields();
 }
 
@@ -2595,6 +2861,8 @@ function setTripType(type) {
   // so the pickup narrows to WHICH hotel inside it.
   const fromTypes = document.querySelector('.tf-ep-types[data-side="from"]');
   if (fromTypes) fromTypes.style.display = isDisposal ? "none" : "";
+  // A car at disposal has no far end to be due at.
+  trSyncDropoffFields();
   const fromDest = document.getElementById("trFromDest");
   if (fromDest && isDisposal) fromDest.style.display = "none";
   else if (fromDest && document.getElementById("trFromType")?.value === "DESTINATION") fromDest.style.display = "";
@@ -3047,6 +3315,14 @@ async function trConfirmBooking() {
   if (isRoundTrip && returnDateTime && returnDateTime <= pickupDateTime) {
     toast(t("transport.returnAfterOutbound","Return date/time must be later than the outbound pickup"), "error"); return;
   }
+  // Only a destination-to-destination run collects a drop-off time; the fields
+  // are cleared whenever they are hidden, so an empty box means "not asked".
+  const dropoffDate = document.getElementById("trDropoffDate")?.value;
+  const dropoffTime = document.getElementById("trDropoffTime")?.value;
+  const dropoffDateTime = dropoffDate ? `${dropoffDate}T${(dropoffTime || time || "10:00")}:00` : undefined;
+  if (dropoffDateTime && dropoffDateTime < pickupDateTime) {
+    toast(t("transport.dropoffAfterPickup","Drop-off must not be earlier than the pickup"), "error"); return;
+  }
   if (isRoundTrip && !sameRouteReversed) {
     const rFromOk = retFromType === "HOTEL" ? !!retPickupHotel : !!retFrom;
     const rToOk   = retToType === "HOTEL" ? !!retDropoffHotel : !!retTo;
@@ -3074,6 +3350,7 @@ async function trConfirmBooking() {
     dropoffLocation: isDisposal ? undefined : (to || undefined),
     dropoffHotelName: isDisposal ? undefined : (dropoffHotel || undefined),
     pickupDateTime,
+    dropoffDateTime,
     returnDateTime,
     // A disposal block already includes coming back — sending the round-trip
     // flag here would ask the server to bill the same car twice.
@@ -3242,19 +3519,104 @@ async function renderActivities(mode = "choice") {
   refreshIcons(document.getElementById("content"));
 }
 
-async function renderSingleActivities() {
+/**
+ * The destination cards both activity modes open on.
+ *
+ * Trips are organised by destination, so "which destination?" is the first
+ * question — the same question the hotels page already opens with. Showing one
+ * flat list of every excursion in Egypt and a filter dropdown asked the agent
+ * to narrow something they had not chosen yet.
+ *
+ * `onPick` names the function a card calls, so the single-trip mode and the
+ * package builder share this screen instead of each growing their own.
+ */
+async function renderActivityDestinations(onPick, subtitleKey, subtitleFallback) {
   state.page = "activities";
   const capturedToken = state.renderToken;
 
-  // Fetch destinations for filter
-  let destOptions = [""];
-  try {
-    const dr = await apiFetch("/destinations?isActive=true&limit=200");
-    if (dr?.data) destOptions = ["", ...dr.data.map(d => d.name)];
-  } catch {}
+  content(pageHeader(`
+    <button class="btn btn-outline" onclick="renderActivities()">${icon("arrow-left")}&nbsp;${t("btn.back","Back")}</button>
+  `) + `
+    <p style="color:var(--text-secondary);margin:0 0 20px">${t(subtitleKey, subtitleFallback)}</p>
+    <div class="dest-grid">
+      ${Array.from({length:6}, () => `<div class="dest-card" style="pointer-events:none"><div class="skeleton" style="height:44px;width:44px;border-radius:50%;margin:0 auto"></div><div class="skeleton" style="height:12px;width:70%;margin:10px auto 6px"></div><div class="skeleton" style="height:10px;width:40%;margin:0 auto"></div></div>`).join("")}
+    </div>`);
+
+  const [destRes, actRes] = await Promise.all([
+    apiFetch("/destinations?isActive=true&limit=200"),
+    apiFetch("/activities?limit=500"),
+  ]);
   if (state.renderToken !== capturedToken) return;
 
-  renderListPage("activities", "/activities", [
+  const dests = destRes?.data || [];
+  const activities = actRes?.data || [];
+  state.activityCatalogue = activities;
+
+  // Counted from the trips themselves rather than one request per destination:
+  // the whole catalogue is already loaded, and twenty extra round-trips to
+  // count rows we are holding would only make the screen slower.
+  const counts = new Map();
+  let unfiled = 0;
+  for (const a of activities) {
+    if (a.destinationId) counts.set(a.destinationId, (counts.get(a.destinationId) || 0) + 1);
+    else unfiled += 1;
+  }
+
+  const card = (id, name, nameAr, imageUrl, count) => `
+    <button class="dest-card ${imageUrl ? "has-bg" : ""}" ${imageUrl ? `style="--dest-bg:url('${escapeHtml(cssUrl(imageUrl))}')"` : ""} onclick="${onPick}(${inlineJsonArg(id)},${inlineJsonArg(locName(name, nameAr))})">
+      <div class="dest-card-icon dest-card-media"><i data-lucide="map-pin"></i></div>
+      <div class="dest-card-name">${escapeHtml(locName(name, nameAr))}</div>
+      ${(!isArabic() && nameAr) ? `<div class="dest-card-sub">${escapeHtml(nameAr)}</div>` : ""}
+      <div class="dest-card-count">${formatNumber(count)} ${t("activity.tripsCount","Trips")}</div>
+    </button>`;
+
+  const cards = [
+    `<button class="dest-card dest-card-all" onclick="${onPick}('',${inlineJsonArg(t("activity.allDestinations","All Destinations"))})">
+      <div class="dest-card-icon dest-card-media"><i data-lucide="ticket"></i></div>
+      <div class="dest-card-name">${t("activity.allDestinations","All Destinations")}</div>
+      <div class="dest-card-count">${formatNumber(activities.length)} ${t("activity.tripsCount","Trips")}</div>
+    </button>`,
+    // Every destination is offered, empty ones included — an agent looking for
+    // Luxor needs to see that Luxor exists and has nothing in it yet.
+    ...dests.map(d => card(d.id, d.name, d.nameAr, d.imageUrl, counts.get(d.id) || 0)),
+    ...(unfiled ? [card("__none__", t("activity.noDestinationTrips","Trips with no destination"), null, null, unfiled)] : []),
+  ];
+
+  content(pageHeader(`
+    <button class="btn btn-outline" onclick="renderActivities()">${icon("arrow-left")}&nbsp;${t("btn.back","Back")}</button>
+  `) + `
+    <p style="color:var(--text-secondary);margin:0 0 20px">${t(subtitleKey, subtitleFallback)}</p>
+    ${dests.length || activities.length
+      ? `<div class="dest-grid">${cards.join("")}</div>`
+      : `<div class="empty-state">${icon("map-pin")}<strong>${t("empty.noDestinations","No destinations added yet")}</strong><span>${t("empty.adjustFilters","Ask admin to add destinations")}</span></div>`}`);
+  refreshIcons(document.getElementById("content"));
+}
+
+async function renderSingleActivities() {
+  return renderActivityDestinations(
+    "renderSingleActivitiesByDest",
+    "activity.chooseDest",
+    "Choose a destination to see its trips",
+  );
+}
+
+/** The trips inside one destination, with the filters that make sense there. */
+async function renderSingleActivitiesByDest(destId, destName) {
+  state.page = "activities";
+  state.selectedActivityDest = { id: destId, name: destName };
+  const capturedToken = state.renderToken;
+
+  // Only the cities that actually have a trip in this destination — offering a
+  // filter value that matches nothing is a dead control.
+  const scoped = (state.activityCatalogue || []).filter(a =>
+    !destId ? true : (destId === "__none__" ? !a.destinationId : a.destinationId === destId));
+  const destOptions = ["", ...[...new Set(scoped.map(a => a.city).filter(Boolean))].sort()];
+  if (state.renderToken !== capturedToken) return;
+
+  // "__none__" is the card for trips nobody filed anywhere; the API takes
+  // `destinationId=none` for exactly that, so both cards go through one path.
+  const destParam = destId === "__none__" ? "none" : destId;
+  renderListPage("activities", `/activities${destParam ? `?destinationId=${encodeURIComponent(destParam)}` : ""}`, [
     ["th.name", a => `
       <div style="display:flex;gap:10px;align-items:flex-start">
         ${a.imageUrl ? `<img src="${escapeHtml(a.imageUrl)}" style="width:42px;height:42px;border-radius:8px;object-fit:cover;flex-shrink:0">` : `<div style="width:42px;height:42px;border-radius:8px;background:linear-gradient(135deg,var(--info-soft),var(--info-soft));display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon("map-pin")}</div>`}
@@ -3267,6 +3629,8 @@ async function renderSingleActivities() {
     ["th.amount", a => `<span class="numeric">${formatPrice(a.priceAdult, a.currency)}</span><div class="secondary-text">${a.priceChild ? t("form.child","Child")+": "+formatPrice(a.priceChild, a.currency) : ""}</div>`],
     ["th.actions", a => `<button class="btn btn-primary btn-sm request-cta request-cta-sm" onclick="openActivityDetails('${a.id}')">${icon("send")}&nbsp;${t("btn.detailsRequest","Details / Request")}</button>`],
   ], {
+    headerNote: destName || t("activity.allDestinations","All Destinations"),
+    extraActions: `<button class="btn btn-outline" onclick="renderSingleActivities()">${icon("arrow-left")}&nbsp;${t("activity.chooseDest","Destinations")}</button>`,
     filters: [
       ["city", "th.city", destOptions],
       ["category", "th.type", ["","SIGHTSEEING","DIVING","SNORKELING","DESERT_SAFARI","WATER_SPORTS","CULTURAL","ADVENTURE"]],
@@ -3275,15 +3639,26 @@ async function renderSingleActivities() {
 }
 
 async function renderActivityPackagePicker() {
+  return renderActivityDestinations(
+    "renderActivityPackageByDest",
+    "activity.chooseDest",
+    "Choose a destination to see its trips",
+  );
+}
+
+async function renderActivityPackageByDest(destId, destName) {
   state.page = "activities";
+  state.selectedActivityDest = { id: destId, name: destName };
   state.activityPackageCart = state.activityPackageCart || [];
   const capturedToken = state.renderToken;
-  const res = await apiFetch("/activities?confirmableOnly=true");
+  const params = new URLSearchParams({ confirmableOnly: "true" });
+  if (destId) params.set("destinationId", destId === "__none__" ? "none" : destId);
+  const res = await apiFetch(`/activities?${params}`);
   if (state.renderToken !== capturedToken) return;
   const activities = res?.data || [];
   state.activityPackageSource = activities;
   content(pageHeader(`
-    <button class="btn btn-outline" onclick="renderActivities()">${icon("arrow-left")}${t("btn.back","Back")}</button>
+    <button class="btn btn-outline" onclick="renderActivityPackagePicker()">${icon("arrow-left")}${t("activity.chooseDest","Destinations")}</button>
     <button class="btn btn-outline" onclick="renderActivityPackageHistory()">${icon("list")}${t("activity.myPackages","My Packages")}</button>
     <button class="btn btn-primary" onclick="submitActivityPackage()" ${state.activityPackageCart.length ? "" : "disabled"}>${icon("send")}${t("activity.submitPackage","Submit Package")}</button>
   `) + `
@@ -3294,7 +3669,13 @@ async function renderActivityPackagePicker() {
       </aside>
       <section class="workbench-main table-card">
         <div class="table-toolbar">
-          <div><strong>${t("activity.packageMode","Activity Package")}</strong><div class="secondary-text">${t("activity.packagePickHelp","Choose each trip and fill its own details before submitting.")}</div></div>
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <strong>${t("activity.packageMode","Activity Package")}</strong>
+              <span class="ctx-chip">${icon("map-pin")}&nbsp;${escapeHtml(destName || t("activity.allDestinations","All Destinations"))}</span>
+            </div>
+            <div class="secondary-text">${t("activity.packagePickHelp","Choose each trip and fill its own details before submitting.")}</div>
+          </div>
           <div class="toolbar-actions"><button class="btn btn-outline" onclick="renderActivities('single')">${icon("ticket")}${t("activity.singleMode","Single Activity")}</button></div>
         </div>
         <div class="table-scroll">
@@ -3353,6 +3734,7 @@ function activityPackageCartHtml() {
         <div class="primary-text">${escapeHtml(item.activityName)}</div>
         <div class="secondary-text">${escapeHtml(item.activityDate)} ${item.selectedTime ? "· " + escapeHtml(item.selectedTime) : ""}</div>
         <div class="secondary-text">${t("form.passengers","Passengers")}: ${formatNumber(item.adultsCount + item.childrenCount)}</div>
+        ${item.transferRequested ? `<div class="secondary-text">${icon("car")}&nbsp;${escapeHtml(item.transferFromName || "")}${item.transferPickupTime ? " · " + escapeHtml(item.transferPickupTime) : ""}</div>` : ""}
         <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="removePackageActivity('${item.localId}')">${icon("trash-2")}${t("btn.remove","Remove")}</button>
       </div>`).join("")}
       <div class="info-item" style="padding:12px;border-radius:var(--r-8);background:var(--info-soft)">
@@ -3382,16 +3764,17 @@ async function openPackageActivityForm(activityId) {
     <div class="form-grid">
       <div class="form-field"><label>${t("th.name","Client Name")} *</label><input id="pkgClientName" value="${escapeHtml(state.activityPackageCart?.[0]?.clientName || "")}"></div>
       <div class="form-field"><label>${t("form.phone","Phone")} *</label><input id="pkgClientPhone" type="tel" value="${escapeHtml(state.activityPackageCart?.[0]?.clientPhone || "")}"></div>
-      <div class="form-field"><label>${t("th.hotel","Hotel Name")}</label><input id="pkgHotelName" value="${escapeHtml(state.activityPackageCart?.[0]?.hotelName || "")}"></div>
+      <div class="form-field" id="pkgHotelField"><label>${t("th.hotel","Hotel Name")}</label><input id="pkgHotelName" value="${escapeHtml(state.activityPackageCart?.[0]?.hotelName || "")}"></div>
       <div class="form-field"><label>${t("form.date","Date")} *</label><input id="pkgDate" type="date"></div>
       <div class="form-field"><label>${t("form.time","Time")}</label>${slots.length ? `<select id="pkgTime"><option value="">${t("form.select","Select")}</option>${slots.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("")}</select>` : `<input id="pkgTime" placeholder="09:00">`}</div>
       <div class="form-field"><label>${t("form.adults","Adults / Pax")} *</label><input id="pkgAdults" type="number" min="1" value="2" oninput="pkgUpdateTotal(${Number(activity.priceAdult)||0},${Number(activity.priceChild)||0},'${escapeHtml(activity.currency || "USD")}')"></div>
       <div class="form-field"><label>${t("form.children","Children")}</label><input id="pkgChildren" type="number" min="0" value="0" oninput="pkgUpdateTotal(${Number(activity.priceAdult)||0},${Number(activity.priceChild)||0},'${escapeHtml(activity.currency || "USD")}');pkgUpdateChildAges()"></div>
       <div class="form-field full" id="pkgChildAgesBox" style="display:none"></div>
       <div class="form-field full"><label>${t("activity.actType","Service Type")}</label><div id="pkgGroupTypes" class="service-type-grid">${activityGroupTypeOptions(groupTypes)}</div></div>
-      <div class="form-field"><label class="tr-radio-label" style="cursor:pointer"><input type="checkbox" id="pkgTransfer"> ${t("activity.transferIncluded","Transport included")}</label></div>
+      ${activityTransferPanel(activity, "pkg")}
       <div class="form-field full"><label>${t("form.notes","Notes")}</label><textarea id="pkgNotes" rows="2"></textarea></div>
     </div>
+    <div class="act-inc-wrap">${activityInclusionBoxes(activity)}</div>
     <div class="tr-price-card" style="margin-top:12px">
       <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="pkgTotalPreview">${formatPrice((Number(activity.priceAdult)||0)*2, activity.currency || "USD")}</span></div>
     </div>`, `
@@ -3437,6 +3820,12 @@ function addPackageActivity(activityId) {
   const childAges = Array.from({length: childrenCount}, (_, i) =>
     parseInt(document.getElementById(`pkgChildAge_${i}`)?.value || "7"));
   const groupType = document.querySelector('input[name="actGroupType"]:checked');
+  const transfer = actCollectTransfer("pkg");
+  if (transfer === null) {
+    toast(t("activity.transferFromRequired","Enter where the driver should collect them"), "error");
+    document.getElementById("pkgTransferFrom")?.focus();
+    return;
+  }
   state.activityPackageCart = state.activityPackageCart || [];
   state.activityPackageCart.push({
     localId: `pkg_${Date.now()}_${Math.random().toString(16).slice(2)}`,
@@ -3450,8 +3839,12 @@ function addPackageActivity(activityId) {
     childAges: childrenCount > 0 ? childAges : undefined,
     clientName,
     clientPhone,
-    hotelName: document.getElementById("pkgHotelName")?.value.trim() || undefined,
-    transferIncluded: document.getElementById("pkgTransfer")?.checked || false,
+    hotelName: transfer.transferRequested
+      ? undefined
+      : (document.getElementById("pkgHotelName")?.value.trim() || undefined),
+    // The trip's own answer, not the agent's — kept so the cart can label the line.
+    transferIncluded: actTransferIncluded(activity),
+    ...transfer,
     notes: document.getElementById("pkgNotes")?.value.trim() || undefined,
     city: activity.city || undefined,
     totalPreview: adultsCount * (Number(activity.priceAdult) || 0) + childrenCount * (Number(activity.priceChild || activity.priceAdult) || 0),
@@ -3487,6 +3880,14 @@ async function submitActivityPackage() {
       hotelName: i.hotelName,
       clientPhone: i.clientPhone,
       transferIncluded: i.transferIncluded,
+      transferRequested: i.transferRequested,
+      transferFromType: i.transferFromType,
+      transferFromName: i.transferFromName,
+      transferToType: i.transferToType,
+      transferToName: i.transferToName,
+      transferPickupTime: i.transferPickupTime,
+      transferReturnTime: i.transferReturnTime,
+      transferNotes: i.transferNotes,
       notes: i.notes,
     })),
   })});
@@ -3524,6 +3925,250 @@ function packageSuccessModal(pkg) {
 }
 
 // Fetch full activity details then open rich popup
+/* ── Trip inclusions, transfers and party pricing ──────────────────────────
+   Kept together above the detail modal because the single-trip form and the
+   package line form both build on them. Mirrors src/shared/inclusions.ts and
+   src/shared/activity-pricing.ts — the server is still what decides, these are
+   what the client is shown before it does. */
+
+/** The marked list, falling back to the two flat lists an older row still has. */
+function activityInclusionRows(a) {
+  if (Array.isArray(a.inclusions) && a.inclusions.length) {
+    return a.inclusions
+      .map(r => ({
+        label: String(r?.label ?? "").trim(),
+        labelAr: r?.labelAr ? String(r.labelAr).trim() : "",
+        included: r?.included !== false,
+      }))
+      .filter(r => r.label);
+  }
+  return [
+    ...(a.includes || []).map(x => ({ label: String(x), labelAr: "", included: true })),
+    ...(a.excludes || []).map(x => ({ label: String(x), labelAr: "", included: false })),
+  ].filter(r => r.label);
+}
+
+function inclusionLabel(row) {
+  return isArabic() && row.labelAr ? row.labelAr : row.label;
+}
+
+/** Two boxes — what the client gets, and what they do not — instead of two
+ *  chip rows that read the same and were easy to mistake for each other. */
+function activityInclusionBoxes(a) {
+  const rows = activityInclusionRows(a);
+  const included = rows.filter(r => r.included);
+  const excluded = rows.filter(r => !r.included);
+  if (!included.length && !excluded.length) return "";
+  const box = (list, kind, titleKey, titleFallback, ic) => list.length ? `
+    <div class="act-inc-box act-inc-box--${kind}">
+      <div class="act-inc-box-title">${icon(ic)}&nbsp;${t(titleKey, titleFallback)}</div>
+      <ul class="act-inc-list">
+        ${list.map(r => `<li><span class="act-inc-mark">${icon(ic)}</span><span>${escapeHtml(inclusionLabel(r))}</span></li>`).join("")}
+      </ul>
+    </div>` : "";
+  return `<div class="act-inc-grid">
+    ${box(included, "in", "activity.whatsIncluded", "What's included", "check")}
+    ${box(excluded, "out", "activity.notIncluded", "Not included", "x")}
+  </div>`;
+}
+
+/** Words that mean "we collect you" — an operator says so in the inclusions as
+ *  often as they tick the flag, and both have to count. */
+const ACT_TRANSFER_WORDS = [/\btransfer/i, /\bpick[- ]?up\b/i, /\btransport/i, /مواصلات/, /انتقال/, /توصيل/];
+
+function actTransferIncluded(a) {
+  if (a.transferIncluded) return true;
+  return activityInclusionRows(a)
+    .filter(r => r.included)
+    .some(r => ACT_TRANSFER_WORDS.some(re => re.test(r.label) || (r.labelAr && re.test(r.labelAr))));
+}
+
+/** How many people one unit of each party rate covers. */
+const ACT_PARTY_SIZE = { SINGLE: 1, DOUBLE: 2, TRIPLE: 3 };
+const ACT_SIZE_BASIS = { 1: "SINGLE", 2: "DOUBLE", 3: "TRIPLE" };
+
+/** The price this trip is sold at for one party of the given size, or null. */
+function actPartyPrice(prices, basis) {
+  const raw = prices?.[basis];
+  return raw === null || raw === undefined || raw === "" ? null : Number(raw);
+}
+
+/**
+ * How a party rate seats `pax` people — the same rule the server applies.
+ *
+ * Fill as many full parties as the rate holds, then charge whoever is left over
+ * at the rate for how many THEY are: five people on a double rate are two
+ * doubles and a single. When the leftover size is not priced, the odd group
+ * falls back to a whole party at the chosen rate.
+ *
+ * Mirrors partyComposition() in src/shared/activity-pricing.ts. The two are
+ * asserted against each other in tests/portal-helpers.test.js, because a
+ * preview that disagreed with the server would quote one price and charge
+ * another.
+ */
+function actPartyComposition(pax, basis, prices) {
+  const unitPrice = actPartyPrice(prices, basis);
+  if (unitPrice === null) return null;
+  const size = ACT_PARTY_SIZE[basis];
+  if (!size) return null;
+  const heads = Math.max(1, Math.floor(pax) || 1);
+  const full = Math.floor(heads / size);
+  const rest = heads % size;
+
+  const lines = [];
+  if (full > 0) lines.push({ basis, count: full, unitPrice });
+  if (rest > 0) {
+    const restBasis = ACT_SIZE_BASIS[rest];
+    const restPrice = restBasis ? actPartyPrice(prices, restBasis) : null;
+    lines.push(restBasis && restPrice !== null
+      ? { basis: restBasis, count: 1, unitPrice: restPrice }
+      : { basis, count: 1, unitPrice });
+  }
+  return lines;
+}
+
+function actCompositionTotal(lines) {
+  return (lines || []).reduce((sum, l) => sum + l.unitPrice * l.count, 0);
+}
+
+function actCompositionUnits(lines) {
+  return (lines || []).reduce((sum, l) => sum + l.count, 0);
+}
+
+/** "2 × Double + 1 × Single" — what the price row says it is charging. */
+function actCompositionLabel(lines, labels) {
+  return (lines || [])
+    .map(l => `${l.count} × ${(labels && labels[l.basis]) || l.basis}`)
+    .join(" + ");
+}
+
+/** Only the ways this trip was actually priced. A blank price is "not sold that
+ *  way", so the option is left out rather than shown as free. */
+function actPartyPriceRows(a) {
+  return [
+    ["SINGLE", "hotel.single", "1 person", a.priceSingle],
+    ["DOUBLE", "hotel.double", "2 people", a.priceDouble],
+    ["TRIPLE", "hotel.triple", "3 people", a.priceTriple],
+  ].filter(([, , , v]) => v !== null && v !== undefined && v !== "");
+}
+
+/**
+ * The transfer panel: where the driver collects the clients and where they go
+ * back. Hidden until the agent asks for it, and never offered at all when the
+ * trip already includes a transfer.
+ */
+function activityTransferPanel(a, prefix) {
+  if (actTransferIncluded(a)) {
+    return `<div class="act-transfer-state act-transfer-state--on">
+      ${icon("check")}&nbsp;${t("activity.transferIncluded","Transfer included")}
+    </div>`;
+  }
+  const back = t("activity.transferSameAsPickup", "Back to the pickup point");
+  return `
+    <div class="act-transfer-block full">
+      <div class="act-transfer-head">
+        <div class="act-transfer-state act-transfer-state--off">
+          ${icon("info")}&nbsp;${t("activity.transferNotIncluded","Transfer not included")}
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" id="${prefix}TransferToggle" onclick="actToggleTransfer('${prefix}')">
+          ${icon("car")}&nbsp;${t("activity.addTransfer","Add transfer")}
+        </button>
+      </div>
+      <input type="hidden" id="${prefix}TransferRequested" value="0">
+      <div id="${prefix}TransferFields" class="act-transfer-fields" style="display:none">
+        <div class="secondary-text" style="margin-bottom:10px">${t("activity.transferHelp","Tell us where the driver collects your clients and where to bring them back.")}</div>
+        <div class="form-grid">
+          <div class="form-field">
+            <label>${t("activity.transferFrom","Pick them up from")} <span class="required">*</span></label>
+            <input id="${prefix}TransferFrom" placeholder="${escapeHtml(t("transport.orTypeHotel","…or type hotel / address"))}" oninput="actSyncTransferBack('${prefix}')">
+          </div>
+          <div class="form-field">
+            <label>${t("activity.transferBack","Bring them back to")}</label>
+            <input id="${prefix}TransferTo" placeholder="${escapeHtml(back)}">
+          </div>
+          <div class="form-field">
+            <label>${t("activity.transferPickupTime","Pickup time")}</label>
+            <input id="${prefix}TransferPickup" type="time">
+          </div>
+          <div class="form-field">
+            <label>${t("activity.transferReturnTime","Return time")}</label>
+            <input id="${prefix}TransferReturn" type="time" value="${escapeHtml(actTimeValue(a.returnTime))}">
+            <small class="field-hint">${t("activity.transferReturnHint","Taken from the trip's return time — change it if they are going on somewhere else.")}</small>
+          </div>
+          <div class="form-field full">
+            <label>${t("activity.transferNotes","Transfer notes")}</label>
+            <input id="${prefix}TransferNotes" placeholder="${escapeHtml(t("form.notesPlaceholder","Wheelchair access, child seat, VIP requirements..."))}">
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/** "05:00 PM" and "17:00" both belong in a <input type=time>, which only takes
+ *  the 24-hour form. Anything unparseable leaves the field empty. */
+function actTimeValue(raw) {
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(String(raw ?? "").trim());
+  if (!m) return "";
+  let h = Number(m[1]);
+  const min = Number(m[2]);
+  const ap = (m[3] || "").toUpperCase();
+  if (min > 59) return "";
+  if (ap === "PM" && h !== 12) h += 12;
+  if (ap === "AM" && h === 12) h = 0;
+  if (h > 23) return "";
+  return `${String(h).padStart(2,"0")}:${String(min).padStart(2,"0")}`;
+}
+
+/** Show or hide the transfer questions. Hiding the hotel field at the same time
+ *  is the point: once a pickup point is given, "which hotel?" is answered. */
+function actToggleTransfer(prefix) {
+  const flag = document.getElementById(prefix + "TransferRequested");
+  const fields = document.getElementById(prefix + "TransferFields");
+  const button = document.getElementById(prefix + "TransferToggle");
+  if (!flag || !fields) return;
+  const on = flag.value !== "1";
+  flag.value = on ? "1" : "0";
+  fields.style.display = on ? "" : "none";
+  if (button) {
+    button.innerHTML = on
+      ? `${icon("x")}&nbsp;${t("activity.removeTransfer","Remove transfer")}`
+      : `${icon("car")}&nbsp;${t("activity.addTransfer","Add transfer")}`;
+    refreshIcons(button);
+  }
+  const hotelField = document.getElementById(prefix + "HotelField");
+  if (hotelField) hotelField.style.display = on ? "none" : "";
+  if (on) document.getElementById(prefix + "TransferFrom")?.focus();
+}
+
+/** Most transfers bring people back where they were collected, so the return
+ *  box shows the pickup as its placeholder rather than sitting blank. */
+function actSyncTransferBack(prefix) {
+  const from = document.getElementById(prefix + "TransferFrom");
+  const to = document.getElementById(prefix + "TransferTo");
+  if (!from || !to) return;
+  to.placeholder = from.value.trim() || t("activity.transferSameAsPickup", "Back to the pickup point");
+}
+
+/** Read the transfer answers for submission. Returns null when none was asked
+ *  for, and reports the one field that cannot be guessed. */
+function actCollectTransfer(prefix) {
+  const on = document.getElementById(prefix + "TransferRequested")?.value === "1";
+  if (!on) return { transferRequested: false };
+  const from = document.getElementById(prefix + "TransferFrom")?.value.trim();
+  if (!from) return null;
+  const to = document.getElementById(prefix + "TransferTo")?.value.trim();
+  return {
+    transferRequested: true,
+    transferFromType: "ADDRESS",
+    transferFromName: from,
+    transferToType: "ADDRESS",
+    transferToName: to || from,
+    transferPickupTime: document.getElementById(prefix + "TransferPickup")?.value || undefined,
+    transferReturnTime: document.getElementById(prefix + "TransferReturn")?.value || undefined,
+    transferNotes: document.getElementById(prefix + "TransferNotes")?.value.trim() || undefined,
+  };
+}
+
 async function openActivityDetails(id) {
   const res = await apiFetch(`/activities?limit=200`);
   const all = res?.data || [];
@@ -3533,6 +4178,8 @@ async function openActivityDetails(id) {
   const priceAdult = Number(a.priceAdult) || 0;
   const priceChild = Number(a.priceChild) || priceAdult;
   const currency   = a.currency || "USD";
+  // A trip that already collects its guests is never offered an added transfer.
+  const transferIncluded = actTransferIncluded(a);
   const groupRes = await apiFetch(`/group-types?${new URLSearchParams({
     scope: "ACTIVITY",
     activityId: a.id,
@@ -3546,11 +4193,7 @@ async function openActivityDetails(id) {
   const description = (state.lang === "ar" ? (a.descriptionAr || a.description) : a.description) || "";
   // Whichever ways this trip is actually sold — a blank price means "not sold
   // that way", so it is left out rather than shown as zero.
-  const partyPrices = [
-    ["hotel.single", "1 person", a.priceSingle],
-    ["hotel.double", "2 people", a.priceDouble],
-    ["hotel.triple", "3 people", a.priceTriple],
-  ].filter(([, , v]) => v != null);
+  const partyPrices = actPartyPriceRows(a);
 
   const slots = Array.isArray(a.timeSlots) ? a.timeSlots : [];
   const slotOptions = slots.map((s, i) =>
@@ -3570,7 +4213,7 @@ async function openActivityDetails(id) {
           ${a.priceAdult != null ? `
             <div style="font-weight:800;font-size:16px;color:var(--brand-navy-2)">${formatPrice(priceAdult, currency)}</div>
             <div style="font-size:11px;color:var(--text-muted)">${t("form.priceAdult","per adult")}</div>` : ""}
-          ${partyPrices.length ? `<div class="act-party-prices">${partyPrices.map(([k, fb, v]) =>
+          ${partyPrices.length ? `<div class="act-party-prices">${partyPrices.map(([, k, fb, v]) =>
             `<span><b>${formatPrice(Number(v), currency)}</b> ${escapeHtml(t(k, fb))}</span>`).join("")}</div>` : ""}
           ${a.priceAdult == null && !partyPrices.length ? `<div style="font-size:12px;color:var(--text-muted)">${t("hotel.priceOnRequest","Price on request")}</div>` : ""}
         </div>
@@ -3587,8 +4230,7 @@ async function openActivityDetails(id) {
         </div>
       </div>
       ${description ? `<div class="act-description">${escapeHtml(description)}</div>` : ""}
-      ${a.includes?.length ? `<div class="act-list-block"><div class="act-list-title act-inc">${icon("check")} ${t("form.includes","Includes")}</div><div class="act-chips">${a.includes.map(x => `<span class="badge badge-confirmed">${escapeHtml(x)}</span>`).join("")}</div></div>` : ""}
-      ${a.excludes?.length ? `<div class="act-list-block"><div class="act-list-title act-exc">${icon("x")} ${t("form.excludes","Not included")}</div><div class="act-chips">${a.excludes.map(x => `<span class="badge badge-outline">${escapeHtml(x)}</span>`).join("")}</div></div>` : ""}
+      ${activityInclusionBoxes(a)}
     </div>`;
 
   const requestForm = `
@@ -3600,7 +4242,7 @@ async function openActivityDetails(id) {
           <input id="actClientName" placeholder="${t("transport.namePlaceholder","Full name")}"></div>
         <div class="form-field"><label>${t("form.phone","Phone")} *</label>
           <input id="actClientPhone" type="tel" placeholder="+20..."></div>
-        <div class="form-field"><label>${t("th.hotel","Hotel Name")}</label>
+        <div class="form-field" id="actHotelField"><label>${t("th.hotel","Hotel Name")}</label>
           <input id="actHotelName" placeholder="Your hotel"></div>
         <div class="form-field"><label>${t("form.date","Date")} *</label>
           <input id="actDate" type="date" required onchange="actRefreshGroupTypes()"></div>
@@ -3611,10 +4253,11 @@ async function openActivityDetails(id) {
         ${partyPrices.length ? `<div class="form-field full"><label>${t("activity.pricingBasis","How would you like to book?")}</label>
           <div class="act-basis-grid">
             ${a.priceAdult != null ? `<label class="act-basis"><input type="radio" name="actBasis" value="PER_PERSON" checked onchange="actBasisChanged()"><span><b>${t("activity.perPerson","Per person")}</b><small>${formatPrice(priceAdult, currency)} ${t("form.priceAdult","per adult")}</small></span></label>` : ""}
-            ${partyPrices.map(([k, fb, v], i) => `<label class="act-basis"><input type="radio" name="actBasis" value="${["SINGLE","DOUBLE","TRIPLE"][["hotel.single","hotel.double","hotel.triple"].indexOf(k)]}" ${a.priceAdult == null && i === 0 ? "checked" : ""} onchange="actBasisChanged()"><span><b>${escapeHtml(t(k, fb))}</b><small>${formatPrice(Number(v), currency)} ${t("activity.wholeParty","for the whole party")}</small></span></label>`).join("")}
+            ${partyPrices.map(([basis, k, fb, v], i) => `<label class="act-basis"><input type="radio" name="actBasis" value="${basis}" ${a.priceAdult == null && i === 0 ? "checked" : ""} onchange="actBasisChanged()"><span><b>${escapeHtml(t(k, fb))}</b><small>${formatPrice(Number(v), currency)} ${t("activity.perParty","per party")}</small></span></label>`).join("")}
           </div>
-          <small class="field-hint">${t("activity.pricingBasisHint","A party price is one flat price for the group — it is not multiplied by the number of people.")}</small>
+          <small class="field-hint" id="actBasisHint">${t("activity.pricingBasisHint","A party price covers one party — a bigger group is charged for as many parties as it takes to seat everybody.")}</small>
         </div>` : ""}
+        ${activityTransferPanel(a, "act")}
         <div class="form-field full"><label>${t("activity.actType","Service Type")}</label>
           <div id="actGroupTypes" class="service-type-grid">
             ${activityGroupTypeOptions(groupTypes)}
@@ -3626,6 +4269,7 @@ async function openActivityDetails(id) {
       <div class="tr-price-card" style="margin-top:12px">
         <div class="tr-price-row act-perhead-row"><span>${t("form.priceAdult","Adult")}</span><span>${formatPrice(priceAdult, currency)} × <span id="actAdultCount">2</span></span></div>
         ${priceChild > 0 ? `<div class="tr-price-row act-perhead-row"><span>${t("form.priceChild","Child")}</span><span>${formatPrice(priceChild, currency)} × <span id="actChildCount">0</span></span></div>` : ""}
+        <div class="tr-price-row act-party-row" id="actPartyRow" style="display:none"><span id="actPartyLabel"></span><span id="actPartyCalc"></span></div>
         <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="actTotalPreview">${formatPrice(2*priceAdult, currency)}</span></div>
       </div>
       <p style="color:var(--text-muted);font-size:11px;margin-top:8px">${t("booking.pendingNote","Your request is pending admin confirmation. No payment is taken now.")}</p>
@@ -3648,7 +4292,13 @@ async function openActivityDetails(id) {
     priceAdult,
     priceChild,
     currency,
+    transferIncluded,
     partyPrices: { SINGLE: a.priceSingle, DOUBLE: a.priceDouble, TRIPLE: a.priceTriple },
+    partyLabels: {
+      SINGLE: t("hotel.single","Single"),
+      DOUBLE: t("hotel.double","Double"),
+      TRIPLE: t("hotel.triple","Triple"),
+    },
   };
   // Reflect the default basis in the summary before the client touches anything.
   actBasisChanged();
@@ -3715,10 +4365,12 @@ function actBasis() {
 }
 
 function actBasisChanged() {
-  // A party rate covers the group, so the per-head rows in the summary no
-  // longer describe what is being charged.
+  // A party rate is charged per party, so the per-head rows in the summary no
+  // longer describe what is being charged — a party row replaces them.
   const party = actBasis() !== "PER_PERSON";
   document.querySelectorAll(".act-perhead-row").forEach(el => { el.style.display = party ? "none" : ""; });
+  const partyRow = document.getElementById("actPartyRow");
+  if (partyRow) partyRow.style.display = party ? "" : "none";
   actCalcTotalFromContext();
 }
 
@@ -3727,10 +4379,36 @@ function actCalcTotal(priceAdult, priceChild, currency) {
   const children = Math.max(0, parseInt(document.getElementById("actChildren")?.value || "0"));
   const basis = actBasis();
   const ctx = state.activityBookingContext || {};
-  // A party price is charged once for the group — never multiplied by pax.
-  let total = basis === "PER_PERSON"
-    ? adults * priceAdult + children * priceChild
-    : Number(ctx.partyPrices?.[basis] ?? 0);
+  let total;
+  if (basis === "PER_PERSON") {
+    total = adults * priceAdult + children * priceChild;
+  } else {
+    // A party rate prices ONE party, and whoever is left over is charged at the
+    // rate for how many THEY are — five guests on a double rate are two doubles
+    // and a single. Same rule as the server, so the preview and the confirmed
+    // booking can never disagree.
+    const pax = adults + children;
+    const lines = actPartyComposition(pax, basis, ctx.partyPrices) || [];
+    total = actCompositionTotal(lines);
+    const partyLabel = ctx.partyLabels?.[basis] || basis;
+    const breakdown = actCompositionLabel(lines, ctx.partyLabels);
+    const label = document.getElementById("actPartyLabel");
+    const calc = document.getElementById("actPartyCalc");
+    if (label) label.textContent = breakdown;
+    if (calc) {
+      calc.textContent = lines
+        .map(l => `${formatPrice(l.unitPrice, currency)} × ${l.count}`)
+        .join("  +  ");
+    }
+    const hint = document.getElementById("actBasisHint");
+    if (hint) {
+      hint.textContent = t("activity.partyUnitHint","A {label} covers {size} people — {pax} are charged as {breakdown}.")
+        .replace("{label}", partyLabel)
+        .replace("{size}", String(ACT_PARTY_SIZE[basis] || 1))
+        .replace("{pax}", String(pax))
+        .replace("{breakdown}", breakdown);
+    }
+  }
   const selected = document.querySelector('input[name="actGroupType"]:checked');
   const adjustmentType = selected?.dataset.adjustmentType || "NONE";
   const adjustmentValue = Number(selected?.dataset.adjustmentValue || 0);
@@ -3781,6 +4459,15 @@ async function _submitActivityBooking(activityId, activityName, priceAdult, pric
     return;
   }
 
+  // A transfer with no pickup point is a car with nowhere to go, so the request
+  // is held back rather than sent for the desk to chase.
+  const transfer = actCollectTransfer("act");
+  if (transfer === null) {
+    toast(t("activity.transferFromRequired","Enter where the driver should collect them"), "error");
+    document.getElementById("actTransferFrom")?.focus();
+    return;
+  }
+
   const submitBtn = document.getElementById("submitActivityBtn");
   if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("btn.saving","Saving...")}`; }
 
@@ -3796,7 +4483,9 @@ async function _submitActivityBooking(activityId, activityName, priceAdult, pric
     childAges: children > 0 ? childAges : undefined,
     clientName,
     clientPhone,
-    hotelName: hotelName || undefined,
+    // Once a transfer is booked the pickup point answers "which hotel?".
+    hotelName: transfer.transferRequested ? undefined : (hotelName || undefined),
+    ...transfer,
     notes: notes || undefined,
   })});
 
@@ -3907,6 +4596,27 @@ async function ensureSecurityDestinations() {
   return list;
 }
 
+/**
+ * The three nationalities approvals are actually filed for.
+ *
+ * Offering the whole country list let an agent pick "Saudi", fill the form and
+ * only then learn the request cannot be filed. Served by the API so the portal
+ * offers exactly what it accepts, cached like the destinations list.
+ */
+async function ensureSecurityNationalities() {
+  if (state.cache.securityNationalities) return state.cache.securityNationalities;
+  const res = await apiFetch("/visa-applications/nationalities");
+  const list = res?.data || [];
+  if (list.length) state.cache.securityNationalities = list;
+  return list;
+}
+
+function securityNationalityLabel(code) {
+  if (!code) return "";
+  const found = (state.cache.securityNationalities || []).find(n => n.code === code);
+  return found ? locName(found.en, found.ar) : t("nationality." + code, code);
+}
+
 function securityDestinationLabel(code) {
   if (!code) return "";
   const found = (state.cache.securityDestinations || []).find(d => d.code === code);
@@ -3914,7 +4624,9 @@ function securityDestinationLabel(code) {
 }
 
 async function renderSecurityApproval() {
-  const [APPROVAL_TYPES] = await Promise.all([ensureAirportList(), ensureSecurityDestinations()]);
+  const [APPROVAL_TYPES] = await Promise.all([
+    ensureAirportList(), ensureSecurityDestinations(), ensureSecurityNationalities(),
+  ]);
 
   renderListPage("security-approval", "/visa-applications", [
     ["th.ref",    v => `<span class="primary-text">${escapeHtml(v.refNumber)}</span>`],
@@ -3924,6 +4636,7 @@ async function renderSecurityApproval() {
       return escapeHtml(loc?.label || v.destinationCountry || v.visaType);
     }],
     ["securityApproval.destination", v => escapeHtml(securityDestinationLabel(v.destinationCity) || "—")],
+    ["form.nationality", v => escapeHtml(securityNationalityLabel(v.nationality) || "—")],
     ["form.phone", v => escapeHtml(v.phone || "—")],
     ["th.amount", v => `<span class="numeric">${formatStoredMoney(v.totalAmount, v.currency)}</span>`],
     ["th.status", v => statusBadge(v.status)],
@@ -3940,7 +4653,9 @@ async function openSecurityApprovalForm() {
   const rfTpl = await rfLoadTemplate("security_approval");
   if (rfTpl) return rfOpenModal("security_approval", rfTpl, {});
 
-  const [types, destinations] = await Promise.all([ensureAirportList(), ensureSecurityDestinations()]);
+  const [types, destinations, nationalities] = await Promise.all([
+    ensureAirportList(), ensureSecurityDestinations(), ensureSecurityNationalities(),
+  ]);
   const body = `
     ${nationalityDatalist()}
     <div class="form-grid">
@@ -3959,7 +4674,11 @@ async function openSecurityApprovalForm() {
       <div class="form-field"><label>${t("form.phone","Phone")} *</label>
         <input id="saPhone" type="tel" placeholder="+20..."></div>
       <div class="form-field"><label>${t("form.nationality","Nationality")} *</label>
-        ${nationalitySelectHtml("saNationality", "", t("form.nationalityPlaceholder","e.g. Saudi"))}</div>
+        <select id="saNationality">
+          <option value="">${t("securityApproval.selectNationality","Select nationality")}</option>
+          ${nationalities.map(n => `<option value="${escapeHtml(n.code)}">${escapeHtml(locName(n.en, n.ar))}</option>`).join("")}
+        </select>
+        <small class="field-hint">${t("securityApproval.nationalityOnly","Approvals are filed for Lebanese, Iraqi and Syrian passports only.")}</small></div>
       <div class="form-field"><label>${t("securityApproval.passportNumber","Passport Number")} *</label>
         <input id="saPassportNo" placeholder="${t("securityApproval.passportNumber","Passport Number")}"></div>
       <div class="form-field"><label>${t("securityApproval.hotelName","Hotel Name")}</label>
@@ -3968,10 +4687,10 @@ async function openSecurityApprovalForm() {
         <input id="saTravelDate" type="date"></div>
       <div class="form-field"><label>${t("securityApproval.paxCount","Number of Passengers")}</label>
         <input id="saPax" type="number" min="1" value="1"></div>
-      <div class="form-field full"><label>${t("securityApproval.passportUpload","Passport")} <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
+      <div class="form-field full"><label>${t("securityApproval.passportUpload","Passport")} <span class="required">*</span> <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
         <input type="file" id="saPassportFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'saPassportUrl',true)">
         <input id="saPassportUrl" placeholder="or paste URL" style="margin-top:6px"></div>
-      <div class="form-field full"><label>${t("securityApproval.flightTicketUpload","Flight Ticket")} <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
+      <div class="form-field full"><label>${t("securityApproval.flightTicketUpload","Flight Ticket")} <span class="required">*</span> <span style="color:var(--text-muted);font-size:11px">(upload or paste URL)</span></label>
         <input type="file" id="saTicketFile" accept="image/*,.pdf" onchange="uploadAndFill(this,'saTicketUrl',true)">
         <input id="saTicketUrl" placeholder="or paste URL" style="margin-top:6px"></div>
       <div class="form-field full"><label>${t("form.notes","Notes")}</label>
@@ -3989,6 +4708,8 @@ async function openSecurityApprovalForm() {
   document.getElementById("saType").addEventListener("change", updateSecurityApprovalQuote);
   document.getElementById("saDestinationCity").addEventListener("change", updateSecurityApprovalQuote);
   document.getElementById("saPax").addEventListener("change", updateSecurityApprovalQuote);
+  // The price depends on whose passport it is, so the quote follows it.
+  document.getElementById("saNationality").addEventListener("change", updateSecurityApprovalQuote);
 
   document.getElementById("submitSaBtn").onclick = async () => {
     const destCountry = document.getElementById("saType").value;
@@ -3999,8 +4720,17 @@ async function openSecurityApprovalForm() {
     const passportNo = document.getElementById("saPassportNo").value.trim();
     const travelDate = document.getElementById("saTravelDate").value;
     const consent = document.getElementById("saConsent").checked;
+    const passportUrl = document.getElementById("saPassportUrl").value.trim();
+    const ticketUrl = document.getElementById("saTicketUrl").value.trim();
     if (!destCountry || !destCity || !name || !phone || !nationality || !passportNo) {
       toast(t("toast.validationError","Check required fields"), "error"); return;
+    }
+    // The authorities will not look at an application without these two, so it
+    // is stopped here rather than sitting in the queue waiting for a chase-up.
+    if (!passportUrl || !ticketUrl) {
+      toast(t("securityApproval.documentsRequired","Attach both the passport and the flight ticket"), "error");
+      document.getElementById(passportUrl ? "saTicketFile" : "saPassportFile")?.focus();
+      return;
     }
     if (!consent) {
       toast(t("securityApproval.consentRequired","Please confirm consent to proceed"), "error"); return;
@@ -4019,8 +4749,8 @@ async function openSecurityApprovalForm() {
       phone,
       hotelName: document.getElementById("saHotel").value.trim() || undefined,
       paxCount: parseInt(document.getElementById("saPax").value || "1"),
-      passportUrl: document.getElementById("saPassportUrl").value.trim() || undefined,
-      flightTicketUrl: document.getElementById("saTicketUrl").value.trim() || undefined,
+      passportUrl,
+      flightTicketUrl: ticketUrl,
       notes: document.getElementById("saNotes").value.trim() || undefined,
       totalAmount: 0,
       currency: "USD",
@@ -4034,17 +4764,42 @@ async function openSecurityApprovalForm() {
   };
 }
 
+/**
+ * Nobody has priced this nationality yet — which is not a dead end. The agent
+ * has already filled the form, so it is handed to the quote-request flow with
+ * what they entered rather than being thrown away.
+ */
+function saSendUnpricedRequest() {
+  const nationality = document.getElementById("saNationality")?.value || "";
+  const destination = document.getElementById("saDestinationCity")?.value || "";
+  const name = document.getElementById("saName")?.value.trim() || "";
+  const summary = [
+    t("page.securityApprovalTitle","Security Approval Request"),
+    securityNationalityLabel(nationality),
+    securityDestinationLabel(destination),
+    name,
+  ].filter(Boolean).join(" — ");
+  closeModal();
+  openQuoteRequestModal("MULTI_SERVICE", "", summary);
+}
+
 async function updateSecurityApprovalQuote() {
   const type = document.getElementById("saType")?.value;
-  // The admin can price a destination on its own, so the quote is only right
-  // once both halves of the question are answered.
+  // An approval is priced per nationality as well as per destination, so the
+  // quote is only right once all three parts of the question are answered.
   const destinationCity = document.getElementById("saDestinationCity")?.value;
+  const nationality = document.getElementById("saNationality")?.value;
   const paxCount = Math.max(1, Number(document.getElementById("saPax")?.value || 1));
   const preview = document.getElementById("saQuotePreview");
+  const submitBtn = document.getElementById("submitSaBtn");
   if (!preview) return;
-  if (!type || !destinationCity) {
-    preview.textContent = `${t("form.select","Select")} ${
-      !type ? t("securityApproval.types","Approval Type") : t("securityApproval.destination","Destination")}`;
+  const missing = !type ? t("securityApproval.types","Approval Type")
+    : !destinationCity ? t("securityApproval.destination","Destination")
+      : !nationality ? t("form.nationality","Nationality")
+        : "";
+  if (missing) {
+    preview.textContent = `${t("form.select","Select")} ${missing}`;
+    if (submitBtn) submitBtn.disabled = false;
     return;
   }
   preview.innerHTML = `<span class="skeleton-line" style="width:140px"></span>`;
@@ -4052,15 +4807,25 @@ async function updateSecurityApprovalQuote() {
     visaType: "TOURIST",
     destinationCountry: type,
     destinationCity,
+    nationality,
     processingType: "NORMAL",
     paxCount: String(paxCount),
-  })}`);
+  })}`, { quiet: true });
   if (!document.getElementById("saQuotePreview")) return;
-  // Not every destination is priced, and "no data found" tells the agent nothing
-  // about what to do — say which half of the question has no price behind it.
-  preview.innerHTML = res?.data
-    ? `<span>${t("th.total","Total")}</span><strong>${formatStoredMoney(res.data.totalAmount, res.data.currency)}</strong>`
-    : `<span class="text-danger">${t("securityApproval.priceNotSet","No price is set for this destination yet — please contact us.")}</span>`;
+  if (res?.data) {
+    preview.innerHTML = `<span>${t("th.total","Total")}</span><strong>${formatStoredMoney(res.data.totalAmount, res.data.currency)}</strong>`;
+    if (submitBtn) submitBtn.disabled = false;
+    return;
+  }
+  // Nothing is priced for this combination. Booking it would fail on the
+  // server anyway, so the button becomes the thing that CAN be done: send the
+  // desk a request and let them quote it.
+  preview.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px">
+    <span class="text-danger">${t("securityApproval.priceNotSetForNationality","No price is set for this nationality yet — send a request and we will quote it.")}</span>
+    <button type="button" class="btn btn-primary btn-sm" onclick="saSendUnpricedRequest()">${icon("send")}&nbsp;${t("securityApproval.sendRequest","Send Request")}</button>
+  </div>`;
+  refreshIcons(preview);
+  if (submitBtn) submitBtn.disabled = true;
 }
 
 // ─── Airport Assist (renamed from Reception) ─────────────────────────────────
@@ -4400,8 +5165,11 @@ function renderInvoices() {
   content(pageHeader() + `
     <section class="table-card">
       <div class="table-toolbar">
-        <div><strong>${t("nav.invoices","Invoices")}</strong><div class="secondary-text">${t("invoice.individualHelp","Individual booking invoices")}</div></div>
-        <div class="toolbar-actions"><button class="btn btn-outline" onclick="renderInvoices()">${icon("refresh-cw")}${t("btn.refresh")}</button></div>
+        <div><strong>${t("nav.invoices","Invoices")}</strong><div class="secondary-text">${t("invoice.downloadAllHelp","Every invoice in one PDF — details first, grand total at the end.")}</div></div>
+        <div class="toolbar-actions">
+          <button class="btn btn-primary" id="invAllBtn" onclick="invDownloadAllPdf()">${icon("file-down")}${t("invoice.downloadAll","Download All Invoices")}</button>
+          <button class="btn btn-outline" onclick="renderInvoices()">${icon("refresh-cw")}${t("btn.refresh")}</button>
+        </div>
       </div>
       <div id="companyInvoiceList"><div class="table-scroll"><table class="data-table"><tbody>${skeletonRows(7, 5)}</tbody></table></div></div>
     </section>
@@ -4461,18 +5229,22 @@ function invClearSelection() {
   const all = document.getElementById("invSelectAll"); if (all) all.checked = false;
   invBulkSync();
 }
-async function invBulkDownloadPdf() {
-  const ids = Array.from(document.querySelectorAll(".inv-check:checked")).map(c => c.value);
-  if (!ids.length) return;
-  const btn = document.getElementById("invBulkBtn");
-  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("btn.saving","Preparing...")}`; }
+/**
+ * Fetch a combined invoice PDF and hand it to the browser.
+ *
+ * `body` is either an explicit list of invoice ids or `{ all: true }` — the
+ * download itself is identical, so the two buttons share this rather than each
+ * keeping its own copy of the blob dance.
+ */
+async function invFetchCombinedPdf(body, btn, restoreHtml) {
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("invoice.preparing","Preparing…")}`; }
   try {
     const token = localStorage.getItem("accessToken");
     const res = await fetch("/api/invoices/bulk-pdf", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ invoiceIds: ids }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error("bulk pdf failed");
     const blob = await res.blob();
@@ -4482,12 +5254,29 @@ async function invBulkDownloadPdf() {
     const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
     toast(t("invoice.downloaded","Combined invoice PDF downloaded"), "success");
-    invClearSelection(); // clear after a successful download
+    return true;
   } catch (e) {
     toast(t("toast.error","Download failed"), "error");
+    return false;
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = `${icon("file-down")}&nbsp;${t("invoice.downloadCombined","Download Combined PDF")}`; refreshIcons(btn.parentElement); }
+    if (btn) { btn.disabled = false; btn.innerHTML = restoreHtml; refreshIcons(btn.parentElement); }
   }
+}
+
+async function invBulkDownloadPdf() {
+  const ids = Array.from(document.querySelectorAll(".inv-check:checked")).map(c => c.value);
+  if (!ids.length) return;
+  const btn = document.getElementById("invBulkBtn");
+  const ok = await invFetchCombinedPdf({ invoiceIds: ids }, btn,
+    `${icon("file-down")}&nbsp;${t("invoice.downloadCombined","Download Combined PDF")}`);
+  if (ok) invClearSelection(); // clear after a successful download
+}
+
+/** Every invoice, without ticking two hundred boxes first. */
+async function invDownloadAllPdf() {
+  const btn = document.getElementById("invAllBtn");
+  await invFetchCombinedPdf({ all: true }, btn,
+    `${icon("file-down")}${t("invoice.downloadAll","Download All Invoices")}`);
 }
 
 async function renderCompanyInvoiceLists() {

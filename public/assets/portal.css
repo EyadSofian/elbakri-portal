@@ -3688,7 +3688,114 @@ html[lang="ar"] .act-list-title { text-transform: none; letter-spacing: 0; }
   gap: 4px;
 }
 
-/* How the client wants to be charged: per head, or one flat party rate. */
+/* ── What a trip covers, as two boxes ──────────────────────────────────────
+   Two rows of chips read the same whichever list they belonged to, so an agent
+   had to look twice to tell "lunch is included" from "lunch is not". Two
+   bordered boxes, coloured and ticked or crossed per line, say it at a glance. */
+.act-inc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.act-inc-box {
+  border: 1px solid var(--border);
+  border-radius: var(--r-10);
+  padding: 12px 14px;
+  background: var(--surface);
+}
+
+.act-inc-box--in  { border-color: color-mix(in srgb, var(--success) 35%, var(--border)); }
+.act-inc-box--out { border-color: var(--border); background: var(--surface-2, var(--surface)); }
+
+.act-inc-box-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+html[lang="ar"] .act-inc-box-title { text-transform: none; letter-spacing: 0; }
+
+.act-inc-box--in  .act-inc-box-title { color: var(--success); }
+.act-inc-box--out .act-inc-box-title { color: var(--text-muted); }
+.act-inc-box-title svg { width: 14px; height: 14px; }
+
+.act-inc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.act-inc-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.act-inc-mark {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 50%;
+}
+
+.act-inc-mark svg { width: 11px; height: 11px; }
+.act-inc-box--in .act-inc-mark  { background: var(--success-soft, var(--info-soft)); color: var(--success); }
+.act-inc-box--out .act-inc-mark { background: var(--info-soft); color: var(--text-muted); }
+.act-inc-box--out .act-inc-list li { color: var(--text-secondary); }
+
+.act-inc-wrap { margin: 14px 0; }
+
+/* ── Adding a transfer to a trip that does not include one ─────────────────── */
+.act-transfer-block {
+  border: 1px dashed var(--border);
+  border-radius: var(--r-10);
+  padding: 12px 14px;
+  background: var(--surface);
+}
+
+.act-transfer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.act-transfer-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.act-transfer-state svg { width: 14px; height: 14px; }
+.act-transfer-state--on  { color: var(--success); }
+.act-transfer-state--off { color: var(--warning, var(--text-muted)); }
+
+.act-transfer-fields { margin-top: 12px; }
+
+/* The party breakdown line in the price summary ("Double × 3"). */
+.act-party-row span:first-child { font-weight: 600; }
+
+/* How the client wants to be charged: per head, or a party rate. */
 .act-basis-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -7897,4 +8004,107 @@ td .row-actions { min-width: max-content; }
 :root[data-theme="dark"] .login-card-logo {
   /* The card goes dark too, and a navy logo on it would disappear. */
   filter: brightness(0) invert(1);
+}
+
+/* ── Tagged hotel photo albums ─────────────────────────────────────────────
+   One reel of every photo cannot answer "show me the sea-view rooms", so the
+   tagged pictures are shown as named albums, each with its own carousel. */
+.hotel-albums { margin-top: 18px; }
+
+.hotel-albums-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
+.hotel-albums-title svg { width: 14px; height: 14px; }
+
+.hotel-album + .hotel-album { margin-top: 16px; }
+
+.hotel-album-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.hotel-album-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--info-soft);
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+
+/* One "add a tour to this cruise" line. */
+.cr-tour-row {
+  border: 1px solid var(--border);
+  border-radius: var(--r-10);
+  padding: 12px 14px;
+  background: var(--surface);
+}
+
+.cr-tour-row + .cr-tour-row { margin-top: 10px; }
+.cr-tour-row > button { margin-top: 8px; }
+
+/* ── Admin: what a trip includes, one marked line at a time ───────────────── */
+.inc-editor { display: grid; gap: 8px; }
+
+.inc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-10);
+  background: var(--surface);
+}
+
+.inc-row-fields { display: grid; gap: 6px; min-width: 0; }
+.inc-row-fields input { width: 100%; }
+
+.inc-row-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.inc-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.inc-mark input { width: auto; margin: 0; }
+.inc-mark--in  { color: var(--success); }
+.inc-mark--out { color: var(--text-muted); }
+
+@media (max-width: 640px) {
+  .inc-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Admin: one cabin rate row / one sailing leg. */
+.cr-row {
+  border: 1px solid var(--border);
+  border-radius: var(--r-8);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
 }

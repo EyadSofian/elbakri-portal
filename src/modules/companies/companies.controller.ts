@@ -244,7 +244,55 @@ export async function getCompany(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  res.json({ success: true, data: company });
+  res.json({ success: true, data: { ...company, wallet: await buildWalletSummary(company) } });
+}
+
+/**
+ * What a company's money actually looks like, in the four numbers that answer
+ * the question people keep asking: what is the difference between "credit" and
+ * "balance"?
+ *
+ *   balance         — money in the wallet right now. Every confirmed service is
+ *                     debited from it; it is what "top up" adds to.
+ *   creditLimit     — how far the wallet is allowed to run past its own money.
+ *                     A limit is a permission, NOT money: raising it does not
+ *                     put anything in the wallet, which is exactly why a
+ *                     top-up appeared to "do nothing" when read off this field.
+ *   availableCredit — the headroom left under that limit.
+ *   spendingPower   — balance + availableCredit: what they can actually book.
+ *
+ * `totalDeposited` / `totalUsed` come from the ledger and are reconciled
+ * against the authoritative balance, the same way the agent wallet page does
+ * it, so the two screens can never disagree.
+ */
+async function buildWalletSummary(company: {
+  id: string; balance: Decimal; creditLimit: Decimal; currency: string;
+}) {
+  const [creditAgg, debitAgg, refundAgg] = await Promise.all([
+    prisma.walletTransaction.aggregate({ where: { companyId: company.id, type: 'CREDIT' }, _sum: { amount: true } }),
+    prisma.walletTransaction.aggregate({ where: { companyId: company.id, type: 'DEBIT' }, _sum: { amount: true } }),
+    prisma.walletTransaction.aggregate({ where: { companyId: company.id, type: 'REFUND' }, _sum: { amount: true } }),
+  ]);
+  const credited = creditAgg._sum.amount ?? new Decimal(0);
+  const debited = debitAgg._sum.amount ?? new Decimal(0);
+  const refunded = refundAgg._sum.amount ?? new Decimal(0);
+  const totalUsed = Decimal.max(new Decimal(0), debited.sub(refunded));
+  // A seeded or hand-set balance has no CREDIT rows behind it; showing "0
+  // deposited, 5,000 balance" would read as a bug rather than as history.
+  const totalDeposited = Decimal.max(credited, company.balance.add(totalUsed));
+  // A wallet that has been allowed to go negative has already eaten into the
+  // limit; the headroom left is what is under it, never more than the limit.
+  const usedCredit = Decimal.max(new Decimal(0), company.balance.neg());
+  const availableCredit = Decimal.max(new Decimal(0), company.creditLimit.sub(usedCredit));
+  return {
+    currency: company.currency,
+    balance: company.balance,
+    creditLimit: company.creditLimit,
+    availableCredit,
+    spendingPower: Decimal.max(new Decimal(0), company.balance).add(availableCredit),
+    totalDeposited,
+    totalUsed,
+  };
 }
 
 export async function updateCompany(req: Request, res: Response): Promise<void> {

@@ -13,6 +13,10 @@ import {
 } from '../../shared/helpers';
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { SECURITY_DESTINATIONS, isSecurityDestination } from '../../shared/security-destinations';
+import {
+  SECURITY_NATIONALITIES,
+  normalizeSecurityNationality,
+} from '../../shared/security-nationalities';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
@@ -33,20 +37,46 @@ const destinationAliases: Record<string, string[]> = {
 };
 
 /**
- * The price of one approval.
+ * How specific one fee row is to the request in front of it.
  *
- * A fee row narrows on two things, either of which the admin may leave blank to
- * mean "any": the arrival airport, and the destination the guests are staying
- * in. The most specific row that matches wins, so a general price can stand for
- * everything while one destination is priced differently:
+ * A row narrows on three things, any of which the admin may leave blank to mean
+ * "any": whose passport it is, the arrival airport, and where the guests stay.
+ * The most specific row that matches wins, so one general price can cover
+ * everything while a single nationality or destination is priced differently.
  *
- *   3  this airport AND this destination
- *   2  this destination, any airport
- *   1  this airport, any destination
- *   0  any airport, any destination
+ * The weights say which narrower matters most when two rows are equally
+ * detailed. Nationality outranks the rest because it is what the approval is
+ * granted against — an Iraqi approval into Cairo is priced as an Iraqi
+ * approval, not as "a Cairo approval that happens to be Iraqi". Destination
+ * then beats airport, which only says where the plane lands.
  *
- * A destination beats an airport at the same count of matches because it is what
- * the approval is actually filed for. Ties go to the most recently edited row.
+ * Exported so the rule can be read and tested on its own, without a database.
+ */
+export function visaFeeSpecificity(row: {
+  nationality?: string | null;
+  destinationCountry?: string | null;
+  destinationCity?: string | null;
+}): number {
+  return (row.nationality ? 4 : 0) + (row.destinationCity ? 2 : 0) + (row.destinationCountry ? 1 : 0);
+}
+
+/** Pick the winning row out of the ones that already matched. Ties go to the
+ *  most recently edited row, which is the order the caller passes them in. */
+export function pickVisaFeeRow<T extends {
+  nationality?: string | null;
+  destinationCountry?: string | null;
+  destinationCity?: string | null;
+}>(candidates: T[]): T | null {
+  return candidates.reduce<T | null>(
+    (best, row) => (best && visaFeeSpecificity(best) >= visaFeeSpecificity(row) ? best : row),
+    null,
+  );
+}
+
+/**
+ * The price of one approval, or PRICE_NOT_CONFIGURED when nobody has priced
+ * this combination yet — which is not an error the agent should see as a dead
+ * end: the portal turns it into "Send request" so the desk can quote by hand.
  */
 async function resolveVisaFee(
   visaType: VisaType,
@@ -54,8 +84,10 @@ async function resolveVisaFee(
   destinationCity: string | null | undefined,
   processingType: ProcessingType,
   paxCount: number,
+  nationality?: string | null,
 ) {
   const aliases = destinationAliases[destinationCountry.toUpperCase()] ?? [destinationCountry];
+  const nationalityCode = normalizeSecurityNationality(nationality);
   const candidates = await prisma.visaFee.findMany({
     where: {
       visaType,
@@ -69,16 +101,16 @@ async function resolveVisaFee(
         destinationCity
           ? { OR: [{ destinationCity: null }, { destinationCity }] }
           : { destinationCity: null },
+        // Same rule for the passport: an unanswered nationality cannot borrow
+        // the price set for a specific one.
+        nationalityCode
+          ? { OR: [{ nationality: null }, { nationality: nationalityCode }] }
+          : { nationality: null },
       ],
     },
     orderBy: { updatedAt: 'desc' },
   });
-  const specificity = (row: { destinationCountry: string | null; destinationCity: string | null }) =>
-    (row.destinationCity ? 2 : 0) + (row.destinationCountry ? 1 : 0);
-  const fee = candidates.reduce<(typeof candidates)[number] | null>(
-    (best, row) => (best && specificity(best) >= specificity(row) ? best : row),
-    null,
-  );
+  const fee = pickVisaFeeRow(candidates);
   if (!fee) throw new Error('PRICE_NOT_CONFIGURED');
   return {
     amount: fee.fee.mul(Math.max(1, paxCount)),
@@ -102,12 +134,19 @@ export function listSecurityDestinations(_req: Request, res: Response): void {
   res.json({ success: true, data: SECURITY_DESTINATIONS });
 }
 
+/** The three nationalities approvals are filed for, so the portal offers exactly
+ *  the ones the API accepts rather than the whole country list. */
+export function listSecurityNationalities(_req: Request, res: Response): void {
+  res.json({ success: true, data: SECURITY_NATIONALITIES });
+}
+
 export async function getVisaQuote(req: Request, res: Response): Promise<void> {
   const visaType = String(req.query.visaType ?? 'TOURIST') as VisaType;
   const destinationCountry = String(req.query.destinationCountry ?? '');
   const destinationCity = req.query.destinationCity ? String(req.query.destinationCity) : null;
   const processingType = String(req.query.processingType ?? 'NORMAL') as ProcessingType;
   const paxCount = Math.max(1, parseInt(String(req.query.paxCount ?? '1'), 10));
+  const nationality = req.query.nationality ? String(req.query.nationality) : null;
   if (!destinationCountry) {
     res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'destinationCountry required' });
     return;
@@ -119,6 +158,7 @@ export async function getVisaQuote(req: Request, res: Response): Promise<void> {
       destinationCity,
       processingType,
       paxCount,
+      nationality,
     );
     const charge = explicitMoney(source.amount, source.currency);
     res.json({
@@ -213,6 +253,32 @@ export async function createVisaApplication(req: Request, res: Response): Promis
     return;
   }
 
+  // Approvals are only filed for these three nationalities, so anything else is
+  // refused here rather than after a client has been quoted for it.
+  const nationalityCode = normalizeSecurityNationality(body.nationality);
+  if (!nationalityCode) {
+    res.status(400).json({
+      success: false,
+      error: 'UNSUPPORTED_NATIONALITY',
+      message: 'Security approvals are filed for Lebanese, Iraqi and Syrian passports only.',
+    });
+    return;
+  }
+
+  // The passport and the flight ticket ARE the application — the authorities
+  // will not look at one without them, so a request that arrives without both
+  // is refused instead of sitting in the queue waiting for a chase-up.
+  const passportUrl = String(body.passportUrl ?? '').trim();
+  const flightTicketUrl = String(body.flightTicketUrl ?? '').trim();
+  if (!passportUrl || !flightTicketUrl) {
+    res.status(400).json({
+      success: false,
+      error: 'DOCUMENTS_REQUIRED',
+      message: 'A passport copy and a flight ticket are both required for a security approval.',
+    });
+    return;
+  }
+
   try {
     const paxCount = Math.max(1, Number(body.paxCount ?? 1));
     const processingType = body.processingType ?? 'NORMAL';
@@ -228,6 +294,7 @@ export async function createVisaApplication(req: Request, res: Response): Promis
       body.destinationCity,
       processingType,
       paxCount,
+      nationalityCode,
     );
     const charge = explicitMoney(sourcePrice.amount, sourcePrice.currency);
     const [refNumber, invoiceNumber] = await Promise.all([
@@ -242,7 +309,7 @@ export async function createVisaApplication(req: Request, res: Response): Promis
           companyId,
           createdById: caller.id,
           applicantName: body.applicantName,
-          nationality: body.nationality,
+          nationality: nationalityCode,
           passportNumber: body.passportNumber,
           passportExpiry: new Date(body.passportExpiry),
           visaType: body.visaType,
@@ -260,8 +327,8 @@ export async function createVisaApplication(req: Request, res: Response): Promis
           hotelName: body.hotelName,
           destinationCity: body.destinationCity,
           paxCount,
-          passportUrl: body.passportUrl,
-          flightTicketUrl: body.flightTicketUrl,
+          passportUrl,
+          flightTicketUrl,
           customFields: sanitizeCustomFields(body.customFields) ?? undefined,
         },
       });
@@ -311,10 +378,18 @@ export async function createVisaApplication(req: Request, res: Response): Promis
     if (message === 'COMPANY_INACTIVE') {
       res.status(400).json({ success: false, error: message });
     } else if (message === 'PRICE_NOT_CONFIGURED') {
+      // Not a dead end: nobody has priced this nationality / destination yet,
+      // so the portal turns this into "Send request" and the desk quotes it by
+      // hand. Saying which combination is unpriced is what makes that possible.
       res.status(400).json({
         success: false,
         error: message,
-        message: 'No active security approval fee is configured for this type',
+        message: 'No price is set for this nationality and destination yet — send a request instead.',
+        details: {
+          nationality: nationalityCode,
+          destinationCity: body.destinationCity ?? null,
+          destinationCountry: body.destinationCountry,
+        },
       });
     } else {
       console.error(error);

@@ -1,6 +1,7 @@
 import { ProcessingType, VisaType } from '@prisma/client';
 import { z } from 'zod';
 import { SECURITY_DESTINATION_CODES } from '../../shared/security-destinations';
+import { SECURITY_NATIONALITY_CODES } from '../../shared/security-nationalities';
 
 // The admin form posts `null` for blank fields, so optional fields are
 // `.nullable().optional()`. Anything not declared here is stripped by
@@ -18,7 +19,9 @@ const PROCESSING_TYPES = Object.values(ProcessingType) as [ProcessingType, ...Pr
  *  reject / repricing, never through a free-form edit. */
 export const updateVisaApplicationSchema = z.object({
   applicantName: z.string().min(2).optional(),
-  nationality: z.string().min(2).optional(),
+  // One of the three nationalities approvals are filed for — an admin edit
+  // cannot move an approval onto a passport the authorities will not process.
+  nationality: z.enum(SECURITY_NATIONALITY_CODES).optional(),
   passportNumber: z.string().min(3).optional(),
   passportExpiry: z.string().optional(),
   visaType: z.enum(VISA_TYPES).optional(),

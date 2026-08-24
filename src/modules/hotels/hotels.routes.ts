@@ -25,6 +25,7 @@ import {
   updateHotelPricing,
 } from './pricing.controller';
 import { listHotelRatesAdmin, saveHotelRates } from './rates.controller';
+import { listHotelImages, saveHotelImages } from './images.controller';
 import { requireRole } from '../../middleware/role';
 import { validate } from '../../middleware/validate';
 import { createHotelSchema, updateHotelSchema } from './hotels.schema';
@@ -63,5 +64,9 @@ router.post('/:id/pricing', requireRole('SUPERADMIN'), addHotelPricing);
 // Structured hotel rate matrix (rooms × markets × occupancy) + supplements
 router.get('/:id/rates', requireRole('SUPERADMIN'), listHotelRatesAdmin);
 router.put('/:id/rates', requireRole('SUPERADMIN'), saveHotelRates);
+// Tagged photo library — readable by agents (it is what they show a client),
+// writable by admins only.
+router.get('/:id/images', listHotelImages);
+router.put('/:id/images', requireRole('SUPERADMIN'), saveHotelImages);
 
 export default router;

@@ -10,6 +10,7 @@ import { buildInvoiceTotals } from '../../shared/invoicing';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 import { debitWallet, refundWallet } from '../../shared/wallet';
+import { TransferAddOn, readTransferAddOn } from '../../shared/transfer-addon';
 
 const packageInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -63,6 +64,15 @@ interface ItemInput {
   hotelName?: string;
   clientPhone?: string;
   transferIncluded?: boolean;
+  // A transfer added on this one line — same shape as a single activity booking.
+  transferRequested?: boolean;
+  transferFromType?: string;
+  transferFromName?: string;
+  transferToType?: string;
+  transferToName?: string;
+  transferPickupTime?: string;
+  transferReturnTime?: string;
+  transferNotes?: string;
   notes?: string;
 }
 
@@ -170,6 +180,7 @@ export async function createActivityPackage(req: Request, res: Response): Promis
     hotelName: string | null; clientPhone: string | null;
     groupTypeId: string | null; groupTypeLabel: string | null; activityType: string | null;
     transferIncluded: boolean | null; notes: string | null; lineAmount: Decimal;
+    transfer: TransferAddOn;
   }[] = [];
   let packageTotal = new Decimal(0);
 
@@ -178,7 +189,8 @@ export async function createActivityPackage(req: Request, res: Response): Promis
     const activity = await prisma.activity.findUnique({
       where: { id: it.activityId },
       select: { id: true, name: true, city: true, priceAdult: true, priceChild: true, currency: true,
-        isActive: true, isConfirmableInApp: true, destinationId: true },
+        isActive: true, isConfirmableInApp: true, destinationId: true,
+        transferIncluded: true, returnTime: true },
     });
     if (!activity || !activity.isActive) {
       res.status(404).json({ success: false, error: 'NOT_FOUND', message: `Activity #${i + 1} not found or inactive` });
@@ -250,7 +262,13 @@ export async function createActivityPackage(req: Request, res: Response): Promis
       groupTypeId: groupType?.id ?? null,
       groupTypeLabel: groupType?.labelEn ?? null,
       activityType: groupType?.code ?? null,
-      transferIncluded: it.transferIncluded ?? null,
+      // The catalogue row decides: a trip that already collects its guests can
+      // never also carry an added transfer, whatever the line asked for.
+      transferIncluded: activity.transferIncluded || (it.transferIncluded ?? null),
+      transfer: readTransferAddOn(it as unknown as Record<string, unknown>, {
+        transferIncluded: activity.transferIncluded,
+        activityReturnTime: activity.returnTime,
+      }),
       notes: it.notes ?? null,
       lineAmount,
     });
@@ -295,12 +313,14 @@ export async function createActivityPackage(req: Request, res: Response): Promis
               adultsCount: l.adultsCount,
               childrenCount: l.childrenCount,
               childAges: l.childAges ?? undefined,
-              hotelName: l.hotelName,
+              // The pickup point is the hotel question, so it is not asked twice.
+              hotelName: l.transfer.transferRequested ? null : l.hotelName,
               clientPhone: l.clientPhone,
               groupTypeId: l.groupTypeId,
               groupTypeLabel: l.groupTypeLabel,
               activityType: l.activityType,
               transferIncluded: l.transferIncluded,
+              ...l.transfer,
               notes: l.notes,
               lineAmount: l.lineAmount,
               currency,
