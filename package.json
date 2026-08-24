@@ -10,7 +10,7 @@
     "dev": "nodemon --exec ts-node src/app.ts",
     "build": "prisma generate && tsc -p tsconfig.json",
     "postinstall": "prisma generate",
-    "test": "node -r ts-node/register/transpile-only -r ./tests/setup.ts --test tests/pricing.test.ts tests/wallet.test.ts tests/accounts.test.ts tests/activity-pricing.test.ts tests/inclusions.test.ts tests/transfer-addon.test.ts tests/cruise-rates.test.ts tests/security-approval.test.ts tests/hotel-images.test.ts tests/invoice-totals.test.ts tests/portal-helpers.test.js tests/pricing-parity.test.ts",
+    "test": "node -r ts-node/register/transpile-only -r ./tests/setup.ts --test tests/pricing.test.ts tests/wallet.test.ts tests/accounts.test.ts tests/activity-pricing.test.ts tests/inclusions.test.ts tests/transfer-addon.test.ts tests/cruise-rates.test.ts tests/security-approval.test.ts tests/hotel-images.test.ts tests/invoice-totals.test.ts tests/portal-helpers.test.js tests/pricing-parity.test.ts tests/activity-schema.test.ts tests/search-mapping.test.ts tests/form-schema-parity.test.ts",
     "test:integration": "node -r ts-node/register/transpile-only -r ./tests/setup.ts --test tests/integration.test.ts",
     "start": "node dist/app.js",
     "db:migrate": "prisma migrate dev",
@@ -28,7 +28,8 @@
     "db:seed:catalog": "npm run db:seed:hotels && npm run db:seed:mea && npm run db:seed:airports && npm run db:seed:destinations && npm run db:apply:images",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
-    "test:html": "node scripts/check-inline-scripts.js public/dashboard.html public/admin.html public/login.html"
+    "test:html": "node scripts/check-inline-scripts.js public/dashboard.html public/admin.html public/login.html",
+    "test:audit": "node scripts/check-inline-scripts.js public/dashboard.html public/admin.html public/login.html && node scripts/audit-handlers.js public/dashboard.html public/admin.html public/login.html && node scripts/audit-endpoints.js public/dashboard.html public/admin.html && node scripts/audit-schema-fields.js"
   },
   "dependencies": {
     "@prisma/client": "^5.14.0",

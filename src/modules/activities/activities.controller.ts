@@ -90,6 +90,10 @@ function priceOrNull(v: unknown): Decimal | null {
 /** Array-like fields the form sends as a list (or as delimited text). */
 const ACTIVITY_LIST_FIELDS = ['timeSlots', 'includes', 'excludes', 'galleryUrls'] as const;
 
+/** Text and flag fields describing the transfer half of the catalogue form. */
+const ACTIVITY_TRANSFER_FIELDS = ['transferNote', 'transferNoteAr', 'returnTime'] as const;
+
+
 /**
  * Keep the marked inclusions list and the two flat lists saying the same thing.
  *
@@ -116,7 +120,7 @@ function applyInclusions(data: Record<string, unknown>, body: Record<string, unk
 /** The transfer half of the catalogue form. */
 function applyTransferFields(data: Record<string, unknown>, body: Record<string, unknown>): void {
   if (body.transferIncluded !== undefined) data.transferIncluded = Boolean(body.transferIncluded);
-  for (const field of ['transferNote', 'transferNoteAr', 'returnTime'] as const) {
+  for (const field of ACTIVITY_TRANSFER_FIELDS) {
     if (body[field] === undefined) continue;
     const text = String(body[field] ?? '').trim();
     data[field] = text || null;
@@ -147,9 +151,52 @@ async function syncDestinationCity(
   if (!String(data.city ?? '').trim()) data.city = destination.name;
 }
 
+/**
+ * The plain text and number fields, copied across by name.
+ *
+ * The two handlers used to start from `{ ...body }`. That worked only because
+ * the route's schema strips undeclared keys first — a guard living in a
+ * different file, which nothing tied to this one. Naming the fields here makes
+ * the write self-evidently bounded: a key nobody listed cannot reach Prisma,
+ * whatever a future edit does to the schema or the route.
+ */
+const ACTIVITY_SCALAR_FIELDS = [
+  'name', 'nameAr', 'city', 'category', 'duration',
+  'description', 'descriptionAr', 'imageUrl', 'currency', 'minPax', 'maxPax',
+] as const;
+
+function applyScalarFields(data: Record<string, unknown>, body: Record<string, unknown>): void {
+  for (const field of ACTIVITY_SCALAR_FIELDS) {
+    if (body[field] !== undefined) data[field] = body[field];
+  }
+}
+
+/**
+ * Every field a catalogue save may write.
+ *
+ * `validate()` replaces req.body with the schema's output, and z.object() drops
+ * whatever it does not declare — so a field listed here but missing from
+ * activities.schema.ts is silently discarded: the save succeeds and the value
+ * is simply not stored. Exported so a test can hold the two in step rather than
+ * leaving it to whoever edits one of them next.
+ */
+export const ACTIVITY_WRITABLE_FIELDS = [
+  ...ACTIVITY_SCALAR_FIELDS,
+  ...ACTIVITY_PRICE_FIELDS,
+  ...ACTIVITY_LIST_FIELDS,
+  ...ACTIVITY_TRANSFER_FIELDS,
+  // Handled by their own rules rather than copied straight across.
+  'destinationId',
+  'isActive',
+  'isConfirmableInApp',
+  'inclusions',
+  'transferIncluded',
+] as const;
+
 export async function createActivity(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
-  const data: Record<string, unknown> = { ...body };
+  const data: Record<string, unknown> = {};
+  applyScalarFields(data, body);
   for (const f of ACTIVITY_PRICE_FIELDS) data[f] = priceOrNull(body[f]);
   for (const f of ACTIVITY_LIST_FIELDS) {
     if (body[f] !== undefined) data[f] = setJsonStringArray(body[f]);
@@ -179,7 +226,8 @@ export async function createActivity(req: Request, res: Response): Promise<void>
 
 export async function updateActivity(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
-  const data: Record<string, unknown> = { ...body };
+  const data: Record<string, unknown> = {};
+  applyScalarFields(data, body);
   for (const f of ACTIVITY_PRICE_FIELDS) {
     if (body[f] !== undefined) data[f] = priceOrNull(body[f]);
   }
