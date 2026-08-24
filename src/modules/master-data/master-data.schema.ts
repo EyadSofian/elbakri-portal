@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SECURITY_DESTINATION_CODES } from '../../shared/security-destinations';
+import { SECURITY_NATIONALITY_CODES } from '../../shared/security-nationalities';
 
 // Validation for the admin master-data write paths (transport rates, visa fees,
 // reception service rates). Previously these endpoints had NO validation and the
@@ -88,10 +89,15 @@ export const transportRateSchema = z.object({
 
 export const visaFeeSchema = z.object({
   visaType: enumField(VISA_TYPES),
-  // Both narrowers are nullable: blank means the row prices any airport / any
-  // destination. See resolveVisaFee for how a request picks between rows.
+  // All three narrowers are nullable: blank means the row prices any airport /
+  // any destination / any nationality. See resolveVisaFee for how a request
+  // picks between rows.
   destinationCountry: strField,
   destinationCity: enumField(SECURITY_DESTINATION_CODES),
+  // Whose passport this price is for. Undeclared, this was stripped before the
+  // controller saw it — the admin could pick a nationality, the save reported
+  // success, and every row came back priced for everyone.
+  nationality: enumField(SECURITY_NATIONALITY_CODES),
   processingType: enumField(PROCESSING_TYPES),
   fee: numField,
   currency: strField,

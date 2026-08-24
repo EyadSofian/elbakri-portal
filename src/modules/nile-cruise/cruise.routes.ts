@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { requireRole } from '../../middleware/role';
+import { validate } from '../../middleware/validate';
+import { createCruiseSchema, updateCruiseSchema } from './cruise.schema';
 import {
   listCruises, createCruise, updateCruise, deleteCruise,
   listCruiseBookings, createCruiseBooking, confirmCruiseBooking, cancelCruiseBooking,
@@ -11,8 +13,8 @@ import {
 const router = Router();
 
 router.get('/cruises', listCruises);
-router.post('/cruises', requireRole('SUPERADMIN'), createCruise);
-router.patch('/cruises/:id', requireRole('SUPERADMIN'), updateCruise);
+router.post('/cruises', requireRole('SUPERADMIN'), validate(createCruiseSchema), createCruise);
+router.patch('/cruises/:id', requireRole('SUPERADMIN'), validate(updateCruiseSchema), updateCruise);
 router.delete('/cruises/:id', requireRole('SUPERADMIN'), deleteCruise);
 
 // Cabin rate rows and the sailing schedule. Both are readable by agents — the
