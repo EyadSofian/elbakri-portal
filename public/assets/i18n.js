@@ -2080,5 +2080,59 @@
     });
   })();
 
+  // Admin-side wording for the additions above.
+  (function () {
+    const en = dict.en, ar = dict.ar;
+    en.securityAdmin = en.securityAdmin || {}; ar.securityAdmin = ar.securityAdmin || {};
+    Object.assign(en.securityAdmin, {
+      feeRuleNationality: "A row naming the nationality wins — that is what the approval is granted against.",
+    });
+    Object.assign(ar.securityAdmin, {
+      feeRuleNationality: "الصف الذي يحدّد الجنسية له الأولوية — فالموافقة تُمنح على الجواز نفسه.",
+    });
+    en.help = en.help || {}; ar.help = ar.help || {};
+    Object.assign(en.help, {
+      feeNationality: "Whose passport this price is for. Leave blank to charge it for every nationality.",
+      activityTransfer: "Tick this when the price already collects the guests. When it does not, the company portal offers to add a transfer.",
+      activityReturnTime: "When the trip drops the guests back — it fills in the pickup time of a return transfer.",
+      inclusions: "One line per thing. Mark each as included or not included.",
+      photoTag: "Group photos under a name your agents will recognise — Sea View, Single Room, Aqua Park.",
+      cruiseRates: "One row per cabin category, market and period. Leave a price blank when the cabin is not sold that way.",
+      cruiseSchedule: "Which day the boat leaves and which day it is back. Add one row per leg.",
+    });
+    Object.assign(ar.help, {
+      feeNationality: "الجنسية التي ينطبق عليها هذا السعر. اتركه فارغًا ليشمل كل الجنسيات.",
+      activityTransfer: "فعّل هذا إذا كان السعر يشمل نقل الضيوف بالفعل. وإن لم يكن، تعرض بوابة الشركات إضافة ترانسفير.",
+      activityReturnTime: "موعد رجوع الضيوف من الرحلة — يُستخدم لملء موعد استلام ترانسفير العودة.",
+      inclusions: "سطر لكل بند، مع تحديد إن كان مشمولًا أو غير مشمول.",
+      photoTag: "اجمع الصور تحت اسم يعرفه وكلاؤك — سي فيو، غرفة سنجل، أكوا بارك.",
+      cruiseRates: "صف لكل نوع كابينة وسوق وفترة. اترك السعر فارغًا إذا لم تكن الكابينة تُباع بهذا الشكل.",
+      cruiseSchedule: "يوم تحرك المركب ويوم عودته. أضف صفًا لكل رحلة.",
+    });
+    en.activityAdmin = en.activityAdmin || {}; ar.activityAdmin = ar.activityAdmin || {};
+    Object.assign(en.activityAdmin, {
+      inclusions: "Included / not included",
+      addInclusion: "Add line",
+      included: "Included",
+      notIncluded: "Not included",
+      linePlaceholder: "e.g. Lunch, Entry tickets, Transfer from your hotel",
+      linePlaceholderAr: "Arabic (optional)",
+      transferIncluded: "Transfer included in the price",
+      returnTime: "Return time",
+      noInclusions: "No lines yet — add what the price covers and what it does not.",
+    });
+    Object.assign(ar.activityAdmin, {
+      inclusions: "مشمول / غير مشمول",
+      addInclusion: "أضف سطر",
+      included: "مشمول",
+      notIncluded: "غير مشمول",
+      linePlaceholder: "مثال: الغداء، تذاكر الدخول، الانتقال من الفندق",
+      linePlaceholderAr: "بالعربية (اختياري)",
+      transferIncluded: "الانتقالات مشمولة في السعر",
+      returnTime: "موعد الرجوع",
+      noInclusions: "لا توجد بنود بعد — أضف ما يشمله السعر وما لا يشمله.",
+    });
+  })();
+
   window.PortalI18n = { dict, t, setLang, initI18n, applyTranslations, formatNumber, formatMoney, formatDate };
 })();

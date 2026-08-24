@@ -219,6 +219,29 @@ async function ensureSecurityDestinations() {
   return list;
 }
 
+/**
+ * The three nationalities approvals are filed for. Same shape and same reason
+ * as the destinations list above: served by the API so the admin prices exactly
+ * the passports the portal will accept.
+ */
+async function ensureSecurityNationalities() {
+  if (state.cache.securityNationalities) return state.cache.securityNationalities;
+  const res = await apiFetch("/visa-applications/nationalities");
+  const list = res?.data || [];
+  if (list.length) state.cache.securityNationalities = list;
+  return list;
+}
+
+function securityNationalityOptions() {
+  return (state.cache.securityNationalities || []).map(n => [n.code, state.lang === "ar" ? n.ar : n.en]);
+}
+
+function securityNationalityLabel(code) {
+  if (!code) return "";
+  const found = (state.cache.securityNationalities || []).find(n => n.code === code);
+  return found ? (state.lang === "ar" ? found.ar : found.en) : code;
+}
+
 /** [code, label] pairs for a <select>, in the reader's language. */
 function securityDestinationOptions() {
   return (state.cache.securityDestinations || []).map(d => [d.code, state.lang === "ar" ? d.ar : d.en]);
@@ -1100,9 +1123,13 @@ const masterConfigs = {
       { name: "departureDays", label: "form.departureDays", fallback: "Departure Days", type: "list", cls: "full", helpKey: "help.daysExample", help: "Example: Monday, Thursday" },
       { name: "duration", label: "form.duration", fallback: "Duration", type: "number", default: 4 },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
-      { name: "priceFrom", label: "th.amount", type: "number", required: true, default: 1 },
+      // The cabin rate rows are the price now, so the headline is optional —
+      // filling in the rate table is what an operator actually does.
+      { name: "priceFrom", label: "th.amount", fallback: "Headline \"from\" price (optional)", type: "number", nullable: true,
+        helpKey: "help.cruisePriceFrom", help: "Leave blank once the cabin rates are filled in — the cheapest rate becomes the \"from\" price." },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
-      { name: "imageUrl", label: "form.logo", fallback: "Image URL" },
+      { name: "imageUrl", label: "activity.mainPhoto", fallback: "Main photo", type: "image", cls: "full" },
+      { name: "galleryUrls", label: "cruise.gallery", fallback: "More photos", type: "gallery", cls: "full" },
     ],
     marketPrices: [{ entityType: "CRUISE", baseField: "priceFrom", label: "Price From" }],
   },
@@ -1126,8 +1153,16 @@ const masterConfigs = {
       { name: "duration", label: "form.duration", fallback: "Duration (e.g. 4 hours, Full day)" },
       { name: "timeSlots", label: "activity.timeSlot", fallback: "Time Slots", type: "list", cls: "full", helpKey: "help.timeSlots", help: "Comma-separated, e.g. 09:00 AM, 02:00 PM, 06:00 PM" },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
-      { name: "includes", label: "form.includes", fallback: "Includes", type: "list", cls: "full" },
-      { name: "excludes", label: "form.excludes", fallback: "Excludes", type: "list", cls: "full" },
+      // One list, each line marked. Two separate boxes let the same line be
+      // typed into both, and gave the agent no way to tell which box a line on
+      // a voucher had come from. `includes` / `excludes` are still written from
+      // this on save, so nothing downstream had to change.
+      { name: "inclusions", label: "activityAdmin.inclusions", fallback: "Included / not included", type: "inclusions", cls: "full",
+        helpKey: "help.inclusions", help: "One line per thing. Mark each as included or not included." },
+      { name: "transferIncluded", label: "activityAdmin.transferIncluded", fallback: "Transfer included in the price", type: "checkbox",
+        helpKey: "help.activityTransfer", help: "Tick this when the price already collects the guests. When it does not, the company portal offers to add a transfer." },
+      { name: "returnTime", label: "activityAdmin.returnTime", fallback: "Return time", type: "time",
+        helpKey: "help.activityReturnTime", help: "When the trip drops the guests back — it fills in the pickup time of a return transfer." },
       // An excursion is sold per person, per party, or both. Leave a field blank
       // when the activity is not sold that way — blank is not zero.
       { name: "priceAdult", label: "form.priceAdult", fallback: "Adult Price", type: "number", nullable: true, helpKey: "help.blankNotSold", help: "Leave blank if this trip is not sold per person" },
@@ -1188,6 +1223,11 @@ const masterConfigs = {
       { name: "destinationCountry", label: "form.arrivalAirport", fallback: "Arrival airport", type: "select", default: "",
         options: airportSelectOptions, nullable: true, emptyKey: "form.anyAirport", emptyLabel: "Any airport",
         helpKey: "help.feeAirport", help: "Where they land. Leave blank to charge this whatever airport they arrive at." },
+      // An approval costs what it costs per passport. Blank still prices
+      // everyone, so an existing single-price setup keeps working untouched.
+      { name: "nationality", label: "securityApproval.nationalityPrice", fallback: "Nationality", type: "select", default: "",
+        options: securityNationalityOptions, nullable: true, emptyKey: "securityApproval.anyNationality", emptyLabel: "Any nationality",
+        helpKey: "help.feeNationality", help: "Whose passport this price is for. Leave blank to charge it for every nationality." },
       { name: "processingType", label: "form.processingType", fallback: "Processing", type: "select", default: "NORMAL", options: ["NORMAL", "EXPRESS", "URGENT"] },
       { name: "fee", label: "th.amount", type: "number", required: true, default: 1 },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
@@ -1387,7 +1427,98 @@ function masterField(entity, fieldDef, row) {
       </div>
       <div id="${id}_strip" style="display:flex;gap:8px;flex-wrap:wrap">${masterGalleryThumbs(id, urls)}</div>${help}</div>`;
   }
+  // What a trip covers, as one marked list. Each row is a line of text plus the
+  // one answer that matters: is it in the price or not. The rows are held in a
+  // hidden JSON field so the whole editor stays inside the generic save path.
+  if (fieldDef.type === "inclusions") {
+    const rows = inclusionRowsFrom(raw, row);
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label>
+      <input type="hidden" id="${id}" value="${escapeHtml(JSON.stringify(rows))}">
+      <div id="${id}_rows" class="inc-editor">${rows.map((r, i) => inclusionRowHtml(id, r, i)).join("")}</div>
+      <div id="${id}_empty" class="secondary-text" style="margin-top:6px;display:${rows.length ? "none" : "block"}">${t("activityAdmin.noInclusions","No lines yet — add what the price covers and what it does not.")}</div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="incAddRow('${id}')">${icon("plus")}${t("activityAdmin.addInclusion","Add line")}</button>
+      ${help}</div>`;
+  }
   return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><input id="${id}" type="${fieldDef.type || "text"}" value="${escapeHtml(value)}" ${fieldDef.type === "number" ? 'step="0.01" min="0"' : ""} ${fieldDef.placeholder ? `placeholder="${escapeHtml(fieldDef.placeholder)}"` : ""}>${help}</div>`;
+}
+
+/**
+ * Read whatever the row already holds into the editor's shape.
+ *
+ * A trip saved before this existed has two flat lists and no marked list, so
+ * they are folded in — everything under "includes" is included, everything
+ * under "excludes" is not — and the operator's earlier work is not lost.
+ */
+function inclusionRowsFrom(raw, row) {
+  const rows = [];
+  const seen = new Set();
+  const push = (label, labelAr, included) => {
+    const text = String(label ?? "").trim();
+    if (!text || seen.has(text.toLowerCase())) return;
+    seen.add(text.toLowerCase());
+    rows.push({ label: text, labelAr: String(labelAr ?? "").trim(), included });
+  };
+  if (Array.isArray(raw) && raw.length && typeof raw[0] === "object") {
+    for (const r of raw) push(r?.label, r?.labelAr, r?.included !== false);
+    return rows;
+  }
+  // No marked list on this row yet: fold in whatever the two flat lists hold,
+  // so an editor opened on an older trip starts with the operator's own words.
+  if (Array.isArray(raw)) for (const x of raw) push(x, "", true);
+  for (const x of (row?.includes || [])) push(x, "", true);
+  for (const x of (row?.excludes || [])) push(x, "", false);
+  return rows;
+}
+
+function inclusionRowHtml(id, row, index) {
+  const name = `${id}_inc_${index}`;
+  return `<div class="inc-row" data-index="${index}">
+    <div class="inc-row-fields">
+      <input class="inc-label" value="${escapeHtml(row.label || "")}" placeholder="${escapeHtml(t("activityAdmin.linePlaceholder","e.g. Lunch, Entry tickets, Transfer from your hotel"))}" oninput="incSync('${id}')">
+      <input class="inc-label-ar" value="${escapeHtml(row.labelAr || "")}" placeholder="${escapeHtml(t("activityAdmin.linePlaceholderAr","Arabic (optional)"))}" oninput="incSync('${id}')" dir="rtl">
+    </div>
+    <div class="inc-row-mark">
+      <label class="inc-mark inc-mark--in"><input type="radio" name="${name}" value="1" ${row.included !== false ? "checked" : ""} onchange="incSync('${id}')"> ${t("activityAdmin.included","Included")}</label>
+      <label class="inc-mark inc-mark--out"><input type="radio" name="${name}" value="0" ${row.included === false ? "checked" : ""} onchange="incSync('${id}')"> ${t("activityAdmin.notIncluded","Not included")}</label>
+      <button type="button" class="icon-button btn-icon" title="${t("btn.remove","Remove")}" onclick="incRemoveRow('${id}', this)">${icon("trash-2")}</button>
+    </div>
+  </div>`;
+}
+
+function incAddRow(id) {
+  const host = document.getElementById(id + "_rows");
+  if (!host) return;
+  const index = host.querySelectorAll(".inc-row").length;
+  host.insertAdjacentHTML("beforeend", inclusionRowHtml(id, { label: "", labelAr: "", included: true }, index));
+  const added = host.lastElementChild;
+  refreshIcons(added);
+  added.querySelector(".inc-label")?.focus();
+  const empty = document.getElementById(id + "_empty");
+  if (empty) empty.style.display = "none";
+  incSync(id);
+}
+
+function incRemoveRow(id, btn) {
+  btn.closest(".inc-row")?.remove();
+  const host = document.getElementById(id + "_rows");
+  const empty = document.getElementById(id + "_empty");
+  if (empty) empty.style.display = host?.querySelectorAll(".inc-row").length ? "none" : "block";
+  incSync(id);
+}
+
+/** Mirror the editor into its hidden field, so the generic save path sees it. */
+function incSync(id) {
+  const host = document.getElementById(id + "_rows");
+  const field = document.getElementById(id);
+  if (!host || !field) return;
+  const rows = [...host.querySelectorAll(".inc-row")].map(row => ({
+    label: row.querySelector(".inc-label")?.value.trim() || "",
+    labelAr: row.querySelector(".inc-label-ar")?.value.trim() || "",
+    // A half-typed row is kept in the editor and dropped on save, so the admin
+    // never loses the line they are in the middle of writing.
+    included: row.querySelector('input[type="radio"]:checked')?.value !== "0",
+  })).filter(r => r.label);
+  field.value = JSON.stringify(rows);
 }
 
 /** Thumbnails for a gallery field, each with its own remove button. */
@@ -1666,8 +1797,11 @@ function collectMasterPayload(entity) {
     if (fieldDef.type === "number") value = value === "" ? (fieldDef.nullable ? null : 0) : Number(value);
     if (fieldDef.type === "list") value = String(value || "").split(/[\n,]+/).map(item => item.trim()).filter(Boolean);
     if (fieldDef.type === "gallery") value = String(value || "").split(/\n+/).map(item => item.trim()).filter(Boolean);
+    if (fieldDef.type === "inclusions") {
+      try { value = JSON.parse(value || "[]"); } catch { value = []; }
+    }
     if (fieldDef.nullable && value === "") value = null;
-    if (value !== "" || value === null || fieldDef.required || fieldDef.type === "number" || fieldDef.type === "list" || fieldDef.type === "gallery") {
+    if (value !== "" || value === null || fieldDef.required || fieldDef.type === "number" || fieldDef.type === "list" || fieldDef.type === "gallery" || fieldDef.type === "inclusions") {
       payload[fieldDef.name] = value;
     }
   }
@@ -1790,10 +1924,9 @@ async function showCompanyDetails(id) {
         ${info("form.country", escapeHtml(c.country))}
         ${info("form.tier", tierBadge(c.tier))}
         ${info("th.status", statusBadge(c.isActive ? "ACTIVE" : "INACTIVE"))}
-        ${info("th.balance", formatMoney(c.balance, c.currency || "USD"))}
-        ${info("th.creditLimit", formatMoney(c.creditLimit, c.currency || "USD"))}
         ${info("form.taxId", escapeHtml(c.taxId || "—"))}
       </div>
+      ${companyWalletPanel(c)}
     </div>
     <div id="pane-users" class="detail-pane">${detailTable(c.users || [], ["name","email","role","isActive"])}</div>
     <div id="pane-bookings" class="detail-pane">${detailTable(c.bookings || [], ["refNumber","type","totalAmount","status","createdAt"])}</div>
@@ -1808,6 +1941,40 @@ async function showCompanyDetails(id) {
 
 function info(labelKey, value) {
   return `<div class="info-item"><div class="info-label">${t(labelKey)}</div><div class="info-value">${value}</div></div>`;
+}
+
+/**
+ * The company's money, with the difference between the two numbers spelled out.
+ *
+ * "Credit" and "balance" were shown side by side as two amounts, which read as
+ * two pots of money — so topping a company up looked like it had done nothing
+ * whenever the credit limit was the number being watched. A credit limit is a
+ * permission to book past the wallet, not money in it, and the panel now says
+ * so, with the deposits and spend that reconcile the balance.
+ */
+function companyWalletPanel(c) {
+  const cur = c.wallet?.currency || c.currency || "USD";
+  const w = c.wallet || {};
+  const tile = (labelKey, fallback, value, hint) => `
+    <div class="info-item">
+      <div class="info-label">${t(labelKey, fallback)}</div>
+      <div class="info-value">${formatMoney(value ?? 0, cur)}</div>
+      ${hint ? `<div class="secondary-text" style="margin-top:2px">${escapeHtml(hint)}</div>` : ""}
+    </div>`;
+  return `
+    <div style="margin-top:16px">
+      <div class="info-grid">
+        ${tile("wallet.walletBalance", "Wallet Balance", w.balance ?? c.balance)}
+        ${tile("th.creditLimit", "Credit Limit", w.creditLimit ?? c.creditLimit)}
+        ${tile("wallet.availableCredit", "Available Credit", w.availableCredit)}
+        ${tile("wallet.spendingPower", "Total Spending Power", w.spendingPower)}
+        ${tile("wallet.totalDeposited", "Total Deposited", w.totalDeposited)}
+        ${tile("wallet.totalUsed", "Total Used / Deducted", w.totalUsed)}
+      </div>
+      <div class="secondary-text" style="margin-top:8px;line-height:1.7">
+        ${t("wallet.creditVsBalance", "Balance is money in the wallet. A credit limit is permission to book past it — raising it adds no money.")}
+      </div>
+    </div>`;
 }
 
 function detailTable(rows, keys) {
@@ -1877,6 +2044,12 @@ async function submitTopup(ids) {
   state.selectedCompanies.clear();
   await refreshPlatformWalletPill(currency);
   loadCompanies();
+  // Topping up from a company's own page used to close it, so the new credit
+  // was only visible after reopening — which read as "the top-up did nothing".
+  // Reopen it on the freshly-read figures instead.
+  if (ids.length === 1 && state.currentCompany?.id === ids[0]) {
+    await showCompanyDetails(ids[0]);
+  }
 }
 
 async function toggleCompany(id, isActive) {
@@ -3553,10 +3726,11 @@ async function renderInvoices() {
   const capturedToken = state.renderToken;
   content(pageHeader(`
     <button class="btn btn-primary" onclick="openConsolidatedInvoiceModal()">${icon("layers")}${t("btn.consolidatedInvoice","Create Consolidated Statement")}</button>
+    <button class="btn btn-outline" id="invAllBtn" onclick="invDownloadAllPdf()">${icon("file-down")}${t("invoice.downloadAll","Download All Invoices")}</button>
     <button class="btn btn-outline" onclick="exportRows('invoices', state.cache.invoicesRows || [])">${icon("download")}${t("btn.exportExcel")}</button>
   `) + `
     <section class="table-card">
-      <div class="table-toolbar"><div><strong>${t("nav.invoices","Invoices")}</strong><div class="secondary-text">${t("invoice.individualHelp","Individual service invoices")}</div></div><button class="refresh-pill" onclick="renderInvoices()">${icon("refresh-cw")}${t("topbar.justNow")}</button></div>
+      <div class="table-toolbar"><div><strong>${t("nav.invoices","Invoices")}</strong><div class="secondary-text">${t("invoice.downloadAllHelp","Every invoice in one PDF — details first, grand total at the end.")}</div></div><button class="refresh-pill" onclick="renderInvoices()">${icon("refresh-cw")}${t("topbar.justNow")}</button></div>
       <div class="table-scroll"><table class="data-table"><thead><tr>
         <th>${t("th.invoice")}</th><th>${t("th.company")}</th><th>${t("th.ref")}</th><th>${t("th.amount")}</th><th>${t("th.status")}</th><th>${t("th.dueDate")}</th><th>${t("th.actions")}</th>
       </tr></thead><tbody id="invoiceRows">${skeletonRows(7, 8)}</tbody></table></div>
@@ -3720,6 +3894,40 @@ async function createConsolidatedInvoice() {
   }
 }
 
+/**
+ * Every invoice in one PDF, without ticking a box per row.
+ *
+ * The combined file already ends with a grand total after the per-invoice
+ * detail pages, which is what an accountant is actually asking for when they
+ * say "send me all the invoices".
+ */
+async function invDownloadAllPdf() {
+  const btn = document.getElementById("invAllBtn");
+  const restore = `${icon("file-down")}${t("invoice.downloadAll","Download All Invoices")}`;
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("invoice.preparing","Preparing…")}`; }
+  try {
+    const token = localStorage.getItem("accessToken");
+    const res = await fetch("/api/invoices/bulk-pdf", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ all: true }),
+    });
+    if (!res.ok) throw new Error("bulk pdf failed");
+    const blob = await res.blob();
+    const disp = res.headers.get("Content-Disposition") || "";
+    const name = (disp.match(/filename="?([^"]+)"?/) || [])[1] || "ELBAKRI-INVOICES.pdf";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast(t("invoice.downloaded","Combined invoice PDF downloaded"), "success");
+  } catch {
+    toast(t("toast.error","Download failed"), "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = restore; refreshIcons(btn.parentElement); }
+  }
+}
+
 async function markInvoicePaid(id) {
   confirmAction(t("invoice.markPaidConfirm","Mark this invoice as paid?"), async () => {
     const res = await apiFetch(`/invoices/${id}/mark-paid`, { method: "PATCH" });
@@ -3808,13 +4016,176 @@ async function renderReports() {
 
 async function renderCruises() {
   renderSimpleList("cruises", masterConfigs.cruises.listEndpoint, [
-    ["th.name", c => `<span class="primary-text">${escapeHtml(c.name)}</span>`],
+    ["th.name", c => `<span class="primary-text">${escapeHtml(c.name)}</span>${c.operator ? `<div class="secondary-text">${escapeHtml(c.operator)}</div>` : ""}`],
     ["th.type", c => escapeHtml(c.shipType)],
     ["th.route", c => escapeHtml(c.route)],
-    ["th.amount", c => formatMoney(c.priceFrom, c.currency)],
+    ["cruise.schedules", c => adminCruiseScheduleSummary(c)],
+    ["th.amount", c => {
+      // The rate rows are the price; the headline is only what an operator may
+      // have typed before there were any, so it is the fallback, not the answer.
+      const rates = c.cabinRates || [];
+      const prices = rates.flatMap(r => [r.singlePrice, r.doublePrice, r.triplePrice])
+        .map(Number).filter(n => Number.isFinite(n));
+      if (prices.length) {
+        return `<span class="numeric">${formatMoney(Math.min(...prices), rates[0].currency)}</span><div class="secondary-text">${formatNumber(rates.length)} ${t("cruise.cabinRates","Cabin Rates")}</div>`;
+      }
+      return c.priceFrom != null
+        ? formatMoney(c.priceFrom, c.currency)
+        : `<span class="secondary-text">${t("cruise.noRates","No cabin rates set yet")}</span>`;
+    }],
     ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
-    ["th.actions", c => masterRowActions("cruises", c)],
+    ["th.actions", c => `<div class="row-actions">
+      <button class="btn btn-outline btn-sm" onclick="openCruiseRatesEditor('${c.id}')">${icon("table-2")}${t("cruise.cabinRates","Cabin Rates")}</button>
+      ${masterRowActions("cruises", c)}
+    </div>`],
   ], masterActions("cruises"));
+}
+
+function adminWeekdayLabel(day) {
+  return t("weekday." + String(day || "").toUpperCase(), String(day || ""));
+}
+
+function adminCruiseScheduleSummary(c) {
+  const list = (c.schedules || []).filter(sc => sc.isActive !== false);
+  if (!list.length) return `<span class="secondary-text">—</span>`;
+  return list.slice(0, 3).map(sc =>
+    `<div style="font-size:12px">${escapeHtml(adminWeekdayLabel(sc.departureDay))} → ${escapeHtml(adminWeekdayLabel(sc.returnDay))}<span class="secondary-text"> · ${formatNumber(sc.nights)}n</span></div>`
+  ).join("") + (list.length > 3 ? `<div class="secondary-text">+${formatNumber(list.length - 3)}</div>` : "");
+}
+
+/* ── Cruise cabin rates and sailing schedule ───────────────────────────────
+   A boat is priced the way a hotel is: one row per cabin category, market and
+   period, with a price per occupancy. Both tables are saved as a whole set, so
+   the editor is a plain list the admin adds to, reorders and deletes from. */
+
+const CRUISE_MARKETS = [["", "All markets"], ["EGYPTIAN", "Egyptian"], ["FOREIGN", "Foreign"], ["GULF", "Gulf"], ["INTERNATIONAL", "International"], ["MIDDLE_EAST", "Middle East"], ["NORTH_AFRICA", "North Africa"], ["ARAB_48", "Arab 48"]];
+const CRUISE_CABIN_TYPES = ["STANDARD", "DELUXE", "SUITE", "PRESIDENTIAL"];
+const CRUISE_WEEKDAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+
+async function openCruiseRatesEditor(cruiseId) {
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === cruiseId);
+  const [rateRes, schedRes] = await Promise.all([
+    apiFetch(`/cruises/${cruiseId}/rates`),
+    apiFetch(`/cruises/${cruiseId}/schedules`),
+  ]);
+  const rates = rateRes?.data || [];
+  const schedules = schedRes?.data || [];
+
+  openModal(`${t("cruise.cabinRates","Cabin Rates")} — ${escapeHtml(cruise?.name || "")}`, `
+    <div class="form-section">
+      <div class="form-section-title">${t("cruise.schedules","Departures")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("help.cruiseSchedule","Which day the boat leaves and which day it is back. Add one row per leg.")}</div>
+      <div id="crSchedRows">${schedules.map(crScheduleRowHtml).join("")}</div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="crAddScheduleRow()">${icon("plus")}${t("cruise.addSchedule","Add departure")}</button>
+    </div>
+    <div class="form-section" style="margin-top:18px">
+      <div class="form-section-title">${t("cruise.cabinRates","Cabin Rates")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("help.cruiseRates","One row per cabin category, market and period. Leave a price blank when the cabin is not sold that way.")}</div>
+      <div id="crRateRows">${rates.map(crRateRowHtml).join("")}</div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="crAddRateRow()">${icon("plus")}${t("cruise.addCabinRate","Add cabin rate")}</button>
+    </div>`, `
+    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
+    <button class="btn btn-primary" onclick="crSaveRatesEditor('${cruiseId}')">${t("btn.save")}</button>`);
+}
+
+function crScheduleRowHtml(sc) {
+  sc = sc || {};
+  const dayOpts = (selected) => CRUISE_WEEKDAYS
+    .map(d => `<option value="${d}" ${String(selected || "").toUpperCase() === d ? "selected" : ""}>${escapeHtml(t("weekday." + d, d))}</option>`)
+    .join("");
+  return `<div class="cr-row">
+    <div class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:8px">
+      <div class="form-field"><label>${t("cruise.departureDay","Departs")}</label><select class="cr-dep">${dayOpts(sc.departureDay || "MONDAY")}</select></div>
+      <div class="form-field"><label>${t("cruise.returnDay","Returns")}</label><select class="cr-ret">${dayOpts(sc.returnDay || "THURSDAY")}</select></div>
+      <div class="form-field"><label>${t("cruise.nights","Nights")}</label><input class="cr-nights" type="number" min="1" value="${escapeHtml(sc.nights ?? "")}" placeholder="auto"></div>
+      <div class="form-field"><label>${t("form.name","Label")}</label><input class="cr-sched-label" value="${escapeHtml(sc.label || "")}" placeholder="${escapeHtml(t("form.optional","optional"))}"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+      <label class="check-row"><input type="checkbox" class="cr-sched-active" ${sc.isActive === false ? "" : "checked"}> ${t("form.active","Active")}</label>
+      <button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-row').remove()">${t("btn.remove","Remove")}</button>
+    </div>
+  </div>`;
+}
+
+function crRateRowHtml(r) {
+  r = r || {};
+  const marketOpts = CRUISE_MARKETS
+    .map(([v, l]) => `<option value="${v}" ${String(r.market || "") === v ? "selected" : ""}>${escapeHtml(t("market." + (v || "ALL"), l))}</option>`)
+    .join("");
+  const cabinOpts = CRUISE_CABIN_TYPES
+    .map(v => `<option value="${v}" ${(r.cabinType || "STANDARD") === v ? "selected" : ""}>${escapeHtml(v.replace(/_/g, " "))}</option>`)
+    .join("");
+  const curOpts = PRICE_CURRENCIES
+    .map(c => `<option value="${c}" ${(r.currency || "USD") === c ? "selected" : ""}>${c}</option>`)
+    .join("");
+  const dateVal = (v) => (v ? String(v).slice(0, 10) : "");
+  return `<div class="cr-row">
+    <div class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:8px">
+      <div class="form-field"><label>${t("cruise.cabinName","Cabin")}</label><input class="cr-cabin" value="${escapeHtml(r.cabinName || "")}" placeholder="Standard Cabin"></div>
+      <div class="form-field"><label>${t("th.type","Type")}</label><select class="cr-cabin-type">${cabinOpts}</select></div>
+      <div class="form-field"><label>${t("market.label","Market")}</label><select class="cr-market">${marketOpts}</select></div>
+      <div class="form-field"><label>${t("form.currency","Currency")}</label><select class="cr-cur">${curOpts}</select></div>
+      <div class="form-field"><label>${t("hotel.single","Single")}</label><input class="cr-single" type="number" step="0.01" min="0" value="${escapeHtml(r.singlePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("hotel.double","Double")}</label><input class="cr-double" type="number" step="0.01" min="0" value="${escapeHtml(r.doublePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("hotel.triple","Triple")}</label><input class="cr-triple" type="number" step="0.01" min="0" value="${escapeHtml(r.triplePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("form.validFrom","Valid from")}</label><input class="cr-from" type="date" value="${dateVal(r.validFrom)}"></div>
+      <div class="form-field"><label>${t("form.validTo","Valid to")}</label><input class="cr-to" type="date" value="${dateVal(r.validTo)}"></div>
+      <div class="form-field full"><label>${t("placeholder.notes","Notes")}</label><input class="cr-notes" value="${escapeHtml(r.notes || "")}"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+      <label class="check-row"><input type="checkbox" class="cr-rate-active" ${r.isActive === false ? "" : "checked"}> ${t("form.active","Active")}</label>
+      <button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-row').remove()">${t("btn.remove","Remove")}</button>
+    </div>
+  </div>`;
+}
+
+function crAddScheduleRow() {
+  const host = document.getElementById("crSchedRows");
+  if (!host) return;
+  host.insertAdjacentHTML("beforeend", crScheduleRowHtml({}));
+  refreshIcons(host.lastElementChild);
+}
+
+function crAddRateRow() {
+  const host = document.getElementById("crRateRows");
+  if (!host) return;
+  host.insertAdjacentHTML("beforeend", crRateRowHtml({}));
+  refreshIcons(host.lastElementChild);
+}
+
+async function crSaveRatesEditor(cruiseId) {
+  const num = (el) => (el && el.value !== "" ? Number(el.value) : null);
+  const schedules = [...document.querySelectorAll("#crSchedRows .cr-row")].map(row => ({
+    departureDay: row.querySelector(".cr-dep")?.value,
+    returnDay: row.querySelector(".cr-ret")?.value,
+    nights: num(row.querySelector(".cr-nights")),
+    label: row.querySelector(".cr-sched-label")?.value.trim() || null,
+    isActive: row.querySelector(".cr-sched-active")?.checked !== false,
+  }));
+  // A row with no cabin name prices nothing an agent could pick, so it is not
+  // sent — the same rule the server applies, applied before the round trip.
+  const rates = [...document.querySelectorAll("#crRateRows .cr-row")].map(row => ({
+    cabinName: row.querySelector(".cr-cabin")?.value.trim() || "",
+    cabinType: row.querySelector(".cr-cabin-type")?.value,
+    market: row.querySelector(".cr-market")?.value || null,
+    currency: row.querySelector(".cr-cur")?.value || "USD",
+    singlePrice: num(row.querySelector(".cr-single")),
+    doublePrice: num(row.querySelector(".cr-double")),
+    triplePrice: num(row.querySelector(".cr-triple")),
+    validFrom: row.querySelector(".cr-from")?.value || null,
+    validTo: row.querySelector(".cr-to")?.value || null,
+    notes: row.querySelector(".cr-notes")?.value.trim() || null,
+    isActive: row.querySelector(".cr-rate-active")?.checked !== false,
+  })).filter(r => r.cabinName);
+
+  const [rateRes, schedRes] = await Promise.all([
+    apiFetch(`/cruises/${cruiseId}/rates`, { method: "PUT", body: JSON.stringify({ rates }) }),
+    apiFetch(`/cruises/${cruiseId}/schedules`, { method: "PUT", body: JSON.stringify({ schedules }) }),
+  ]);
+  if (!rateRes?.success || !schedRes?.success) return;
+  closeModal();
+  toast(t("toast.updated"), "success");
+  renderCruises();
 }
 
 // Which destination the catalogue is filtered to ("" = all, "__none__" = the
@@ -4868,13 +5239,16 @@ function visaFeeCoverage(v) {
     ? securityDestinationLabel(v.destinationCity)
     : t("form.anyDestination", "Any destination");
   const airport = v.destinationCountry || t("form.anyAirport", "Any airport");
-  return `${city} · ${airport}`;
+  const nationality = v.nationality
+    ? securityNationalityLabel(v.nationality)
+    : t("securityApproval.anyNationality", "Any nationality");
+  return `${nationality} · ${city} · ${airport}`;
 }
 
 async function renderVisa() {
-  // Both dropdowns on the fee form are built from these, and the list spells the
+  // Every dropdown on the fee form is built from these, and the list spells the
   // stored codes back out, so nothing here reads as a bare code.
-  await Promise.all([ensureAirportOptions(), ensureSecurityDestinations()]);
+  await Promise.all([ensureAirportOptions(), ensureSecurityDestinations(), ensureSecurityNationalities()]);
   return renderSimpleList("visa", masterConfigs.visa.listEndpoint, [
     ["th.type", v => escapeHtml(v.visaType)],
     ["form.appliesTo", v => escapeHtml(visaFeeCoverage(v))],
@@ -4893,10 +5267,11 @@ function visaFeeRulePanel() {
       <strong>${t("securityAdmin.feeRuleTitle", "How a price is chosen")}</strong>
       <div class="secondary-text" style="margin-top:6px;line-height:1.9">
         ${t("securityAdmin.feeRuleIntro", "Each row prices one type of approval. Leave a field blank to mean “any”.")}<br>
-        1. ${t("securityAdmin.feeRule1", "A row matching both the destination and the airport wins.")}<br>
-        2. ${t("securityAdmin.feeRule2", "Then a row for that destination, whatever the airport.")}<br>
-        3. ${t("securityAdmin.feeRule3", "Then a row for that airport, whatever the destination.")}<br>
-        4. ${t("securityAdmin.feeRule4", "Then a row with both blank — one price for everything.")}<br>
+        1. ${t("securityAdmin.feeRuleNationality", "A row naming the nationality wins — that is what the approval is granted against.")}<br>
+        2. ${t("securityAdmin.feeRule1", "Then a row matching both the destination and the airport.")}<br>
+        3. ${t("securityAdmin.feeRule2", "Then a row for that destination, whatever the airport.")}<br>
+        4. ${t("securityAdmin.feeRule3", "Then a row for that airport, whatever the destination.")}<br>
+        5. ${t("securityAdmin.feeRule4", "Then a row with everything blank — one price for all of them.")}<br>
         ${t("securityAdmin.feeRuleNone", "With no row matching at all, the company is told the price is not set yet and cannot submit.")}
       </div>
     </div>

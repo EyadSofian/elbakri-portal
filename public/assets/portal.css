@@ -8057,3 +8057,54 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
 
 .cr-tour-row + .cr-tour-row { margin-top: 10px; }
 .cr-tour-row > button { margin-top: 8px; }
+
+/* ── Admin: what a trip includes, one marked line at a time ───────────────── */
+.inc-editor { display: grid; gap: 8px; }
+
+.inc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-10);
+  background: var(--surface);
+}
+
+.inc-row-fields { display: grid; gap: 6px; min-width: 0; }
+.inc-row-fields input { width: 100%; }
+
+.inc-row-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.inc-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.inc-mark input { width: auto; margin: 0; }
+.inc-mark--in  { color: var(--success); }
+.inc-mark--out { color: var(--text-muted); }
+
+@media (max-width: 640px) {
+  .inc-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Admin: one cabin rate row / one sailing leg. */
+.cr-row {
+  border: 1px solid var(--border);
+  border-radius: var(--r-8);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+}
