@@ -3613,7 +3613,10 @@ async function renderSingleActivitiesByDest(destId, destName) {
   const destOptions = ["", ...[...new Set(scoped.map(a => a.city).filter(Boolean))].sort()];
   if (state.renderToken !== capturedToken) return;
 
-  renderListPage("activities", `/activities${destId && destId !== "__none__" ? `?destinationId=${encodeURIComponent(destId)}` : ""}`, [
+  // "__none__" is the card for trips nobody filed anywhere; the API takes
+  // `destinationId=none` for exactly that, so both cards go through one path.
+  const destParam = destId === "__none__" ? "none" : destId;
+  renderListPage("activities", `/activities${destParam ? `?destinationId=${encodeURIComponent(destParam)}` : ""}`, [
     ["th.name", a => `
       <div style="display:flex;gap:10px;align-items:flex-start">
         ${a.imageUrl ? `<img src="${escapeHtml(a.imageUrl)}" style="width:42px;height:42px;border-radius:8px;object-fit:cover;flex-shrink:0">` : `<div style="width:42px;height:42px;border-radius:8px;background:linear-gradient(135deg,var(--info-soft),var(--info-soft));display:flex;align-items:center;justify-content:center;flex-shrink:0">${icon("map-pin")}</div>`}
@@ -3649,13 +3652,10 @@ async function renderActivityPackageByDest(destId, destName) {
   state.activityPackageCart = state.activityPackageCart || [];
   const capturedToken = state.renderToken;
   const params = new URLSearchParams({ confirmableOnly: "true" });
-  if (destId && destId !== "__none__") params.set("destinationId", destId);
+  if (destId) params.set("destinationId", destId === "__none__" ? "none" : destId);
   const res = await apiFetch(`/activities?${params}`);
   if (state.renderToken !== capturedToken) return;
-  const all = res?.data || [];
-  // "__none__" is the bucket for trips nobody filed anywhere; the API has no
-  // filter for "no destination", so it is applied here.
-  const activities = destId === "__none__" ? all.filter(a => !a.destinationId) : all;
+  const activities = res?.data || [];
   state.activityPackageSource = activities;
   content(pageHeader(`
     <button class="btn btn-outline" onclick="renderActivityPackagePicker()">${icon("arrow-left")}${t("activity.chooseDest","Destinations")}</button>

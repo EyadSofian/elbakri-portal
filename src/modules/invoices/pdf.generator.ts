@@ -2,6 +2,7 @@ import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 import { registerPdfFonts, hasArabic } from '../../shared/pdf';
+import { totalsByCurrency } from '../../shared/invoicing';
 
 // Company contact + bank details for invoice footers. Sourced from env so
 // production never ships placeholder values. When bank details are not
@@ -673,12 +674,15 @@ export async function generateBulkInvoicePdf(
   const MARGIN = 48;
   const fmt = (d?: Date | null) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
-  // Aggregate
-  const totalsByCurrency = new Map<string, number>();
+  // What the statement adds up to, per currency — adding USD to EGP would
+  // produce a figure that means nothing, so each keeps its own total.
+  // `total` is typed loose here (Prisma Decimals reach this file from a dozen
+  // shapes), so it is coerced once on the way in rather than per use.
+  const currencyTotals = totalsByCurrency(
+    invoices.map((inv) => ({ total: Number(inv.total ?? 0), currency: inv.currency })),
+  );
   let minDate: Date | null = null, maxDate: Date | null = null;
   for (const inv of invoices) {
-    const cur = inv.currency || 'USD';
-    totalsByCurrency.set(cur, (totalsByCurrency.get(cur) ?? 0) + Number(inv.total || 0));
     const d = new Date(inv.createdAt);
     if (!minDate || d < minDate) minDate = d;
     if (!maxDate || d > maxDate) maxDate = d;
@@ -748,11 +752,12 @@ export async function generateBulkInvoicePdf(
     doc.fillColor('#FFFFFF').font('body-bold').fontSize(9.5).text('TOTAL BY CURRENCY', MARGIN + 10, y + 6, { characterSpacing: 0.6 });
     y += 22;
     let ti = 0;
-    for (const [cur, amount] of totalsByCurrency) {
+    for (const bucket of currencyTotals) {
       doc.rect(MARGIN, y, contentW, 26).fill(ti % 2 === 0 ? '#FFFFFF' : ALT);
       doc.rect(MARGIN, y, contentW, 26).lineWidth(0.5).strokeColor(LINE).stroke();
-      doc.fillColor(GRAY).font('body-medium').fontSize(10).text(`Total (${cur})`, MARGIN + 10, y + 8);
-      doc.fillColor(NAVY).font('body-bold').fontSize(12).text(`${amount.toFixed(2)} ${cur}`, MARGIN + 10, y + 7, { width: contentW - 20, align: 'right' });
+      doc.fillColor(GRAY).font('body-medium').fontSize(10).text(`Total (${bucket.currency})`, MARGIN + 10, y + 8);
+      doc.fillColor(NAVY).font('body-bold').fontSize(12)
+        .text(`${bucket.total.toFixed(2)} ${bucket.currency}`, MARGIN + 10, y + 7, { width: contentW - 20, align: 'right' });
       y += 26; ti++;
     }
 
@@ -821,19 +826,14 @@ export async function generateBulkInvoicePdf(
     doc.moveTo(MARGIN, y).lineTo(pageW - MARGIN, y).lineWidth(1).strokeColor(TEAL).stroke();
     y += 18;
 
-    const countByCurrency = new Map<string, number>();
-    for (const inv of invoices) {
-      const cur = inv.currency || 'USD';
-      countByCurrency.set(cur, (countByCurrency.get(cur) ?? 0) + 1);
-    }
     let gi = 0;
-    for (const [cur, amount] of totalsByCurrency) {
+    for (const bucket of currencyTotals) {
       doc.roundedRect(MARGIN, y, contentW, 44, 6).fill(gi % 2 === 0 ? ALT : '#FFFFFF');
       doc.roundedRect(MARGIN, y, contentW, 44, 6).lineWidth(0.5).strokeColor(LINE).stroke();
       doc.fillColor(GRAY).font('body-medium').fontSize(9)
-        .text(`${countByCurrency.get(cur) ?? 0} INVOICE(S) IN ${cur}`, MARGIN + 14, y + 9, { characterSpacing: 0.5 });
+        .text(`${bucket.count} INVOICE(S) IN ${bucket.currency}`, MARGIN + 14, y + 9, { characterSpacing: 0.5 });
       doc.fillColor(NAVY).font('body-bold').fontSize(17)
-        .text(`${amount.toFixed(2)} ${cur}`, MARGIN + 14, y + 22, { width: contentW - 28, align: 'right', lineBreak: false });
+        .text(`${bucket.total.toFixed(2)} ${bucket.currency}`, MARGIN + 14, y + 22, { width: contentW - 28, align: 'right', lineBreak: false });
       y += 52; gi++;
     }
     // Only the grand-total page: the per-invoice pages already drew their own

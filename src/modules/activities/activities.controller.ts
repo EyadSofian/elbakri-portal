@@ -47,7 +47,14 @@ export async function listActivities(req: Request, res: Response): Promise<void>
     // city is now a free-text field (case-insensitive contains)
     ...(req.query.city && { city: { contains: String(req.query.city), mode: 'insensitive' as const } }),
     ...(req.query.category && { category: req.query.category as ActivityCategory }),
-    ...(req.query.destinationId && { destinationId: String(req.query.destinationId) }),
+    // "none" is the bucket for excursions nobody filed under a destination —
+    // an admin needs to find them to file them, and the portal offers them as
+    // their own card, so it has to be askable for rather than only browsable.
+    ...(req.query.destinationId
+      ? (String(req.query.destinationId) === 'none'
+        ? { destinationId: null }
+        : { destinationId: String(req.query.destinationId) })
+      : {}),
     ...(req.query.confirmableOnly && { isConfirmableInApp: true }),
   };
   const activities = await prisma.activity.findMany({

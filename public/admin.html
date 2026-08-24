@@ -32,6 +32,9 @@
     .he-thumb-actions button { width:26px; height:26px; border-radius:6px; border:none; background:var(--surface); color:var(--text-primary); display:flex; align-items:center; justify-content:center; }
     .he-thumb-actions button:disabled { opacity:.4; cursor:default; }
     .he-thumb-actions button svg { width:14px; height:14px; }
+    /* A named photo album, e.g. Sea View / Single Room. */
+    .he-album { border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:10px; background:var(--surface); }
+    .he-thumb-x { position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%; border:none; background:rgba(5,13,36,.68); color:#fff; font-size:15px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
     .he-amenity { display:inline-flex; align-items:center; gap:4px; padding:7px 13px; border:1px solid var(--border); border-radius:999px; cursor:pointer; font-size:13px; user-select:none; transition:all .12s; }
     .he-amenity:hover { border-color:var(--brand-accent); }
     .he-amenity.on { background:var(--brand-accent); color:#fff; border-color:var(--brand-accent); }
@@ -2466,13 +2469,16 @@ async function openHotelEditor(id = "") {
   // Meal plans are configurable, so pull the current list before the rate rows
   // are rendered — otherwise a plan the admin added would not appear.
   await heLoadMealPlans();
+  let albums = [];
   if (id) {
-    const [hr, rr] = await Promise.all([
+    const [hr, rr, ir] = await Promise.all([
       apiFetch(`/hotels/${id}`),
       apiFetch(`/hotels/${id}/rates`),
+      apiFetch(`/hotels/${id}/images`),
     ]);
     h = hr?.data || {};
     rates = rr?.data || [];
+    albums = ir?.groups || [];
   }
   const dr = await apiFetch("/destinations?limit=300").catch(() => null);
   destinations = (dr?.data || []).filter(d => d && d.id);
@@ -2482,6 +2488,14 @@ async function openHotelEditor(id = "") {
     mainImage: h.imageUrl || "",
     gallery: Array.isArray(h.galleryUrls) ? [...h.galleryUrls] : [],
     amenities: Array.isArray(h.amenities) ? [...h.amenities] : [],
+    // Photos filed under a name — "Sea View", "Single Room". Held as albums
+    // here because that is how they are edited and how they are shown.
+    albums: albums.map(g => ({
+      tag: g.tag,
+      label: g.label,
+      labelAr: g.labelAr || "",
+      urls: (g.images || []).map(i => i.url),
+    })),
   };
 
   const tabBtn = (key, label) => `<button type="button" class="he-tabbtn" data-tab="${key}" onclick="heTab('${key}')">${label}</button>`;
@@ -2543,6 +2557,11 @@ async function openHotelEditor(id = "") {
     <button type="button" class="btn btn-outline" id="heGalleryBtn" onclick="document.getElementById('heGalleryFile').click()">${icon("images")}${t("hotel.uploadGallery", "Upload gallery images")}</button>
     <div class="secondary-text" style="margin:6px 0 12px">${t("hotel.galleryHint", "Select multiple files at once. Drag-free reorder with the arrows. Click ★ to make an image the main image.")}</div>
     <div id="heGalleryGrid" class="he-gallery-grid">${heGalleryInner()}</div>
+
+    <div class="form-section-title" style="margin-top:22px">${t("hotel.photoTags", "Photo albums")}</div>
+    <div class="secondary-text" style="margin-bottom:10px">${t("help.photoTag", "Group photos under a name your agents will recognise — Sea View, Single Room, Aqua Park.")}</div>
+    <div id="heAlbums">${heAlbumsInner()}</div>
+    <button type="button" class="btn btn-outline" style="margin-top:10px" onclick="heAddAlbum()">${icon("plus")}${t("hotel.addPhotoTag", "Add album")}</button>
   </div>`;
 
   // ── Amenities
@@ -2694,6 +2713,111 @@ async function heUploadGallery(input) {
     setBtnLoading(btn, false);
   }
 }
+/**
+ * The tagged albums, redrawn from `hotelEditor.albums`.
+ *
+ * Everything is kept in the editor's own state rather than in the DOM, so
+ * uploading into one album, reordering and deleting never depend on where the
+ * inputs happen to sit — and the save is one PUT of the whole set.
+ */
+function heAlbumsInner() {
+  const albums = hotelEditor.albums || [];
+  if (!albums.length) {
+    return `<div class="secondary-text">${t("hotel.noPhotoTags", "No albums yet")}</div>`;
+  }
+  return albums.map((album, ai) => `
+    <div class="he-album">
+      <div class="form-grid" style="grid-template-columns:1fr 1fr auto;gap:8px;align-items:end">
+        <div class="form-field">
+          <label>${t("hotel.photoTagName", "Album name")}</label>
+          <input value="${escapeHtml(album.label || "")}" oninput="heAlbumRename(${ai}, this.value)" placeholder="Sea View">
+        </div>
+        <div class="form-field">
+          <label>${t("hotel.photoTagNameAr", "Album name (Arabic)")}</label>
+          <input value="${escapeHtml(album.labelAr || "")}" dir="rtl" oninput="heAlbumRenameAr(${ai}, this.value)" placeholder="إطلالة بحرية">
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="heRemoveAlbum(${ai})">${icon("trash-2")}${t("btn.remove", "Remove")}</button>
+      </div>
+      <input type="file" id="heAlbumFile_${ai}" accept="image/png,image/jpeg,image/webp" multiple style="display:none" onchange="heUploadAlbum(${ai}, this)">
+      <button type="button" class="btn btn-outline btn-sm" id="heAlbumBtn_${ai}" style="margin-top:8px" onclick="document.getElementById('heAlbumFile_${ai}').click()">${icon("images")}${t("hotel.addPhotosToTag", "Add photos")}</button>
+      <div class="he-gallery-grid" style="margin-top:8px">
+        ${(album.urls || []).map((u, ui) => `
+          <div class="he-thumb">
+            <img src="${escapeHtml(u)}" alt="" loading="lazy">
+            <button type="button" class="he-thumb-x" title="${t("btn.remove", "Remove")}" onclick="heRemoveAlbumImage(${ai}, ${ui})">×</button>
+          </div>`).join("")}
+      </div>
+    </div>`).join("");
+}
+
+function heRefreshAlbums() {
+  const host = document.getElementById("heAlbums");
+  if (!host) return;
+  host.innerHTML = heAlbumsInner();
+  refreshIcons(host);
+}
+
+function heAddAlbum() {
+  hotelEditor.albums = hotelEditor.albums || [];
+  hotelEditor.albums.push({ label: "", labelAr: "", urls: [] });
+  heRefreshAlbums();
+}
+
+function heRemoveAlbum(index) {
+  hotelEditor.albums.splice(index, 1);
+  heRefreshAlbums();
+}
+
+// Renaming does NOT redraw: the input the admin is typing into would lose focus
+// on every keystroke. The state is enough — the name is read back on save.
+function heAlbumRename(index, value) {
+  if (hotelEditor.albums?.[index]) hotelEditor.albums[index].label = value;
+}
+function heAlbumRenameAr(index, value) {
+  if (hotelEditor.albums?.[index]) hotelEditor.albums[index].labelAr = value;
+}
+
+function heRemoveAlbumImage(albumIndex, imageIndex) {
+  hotelEditor.albums?.[albumIndex]?.urls.splice(imageIndex, 1);
+  heRefreshAlbums();
+}
+
+async function heUploadAlbum(index, input) {
+  const files = [...(input?.files || [])];
+  input.value = "";
+  if (!files.length) return;
+  const btn = document.getElementById(`heAlbumBtn_${index}`);
+  setBtnLoading(btn, true, "btn.uploading");
+  const fd = new FormData();
+  files.forEach(f => fd.append("files", f));
+  const token = localStorage.getItem("accessToken");
+  try {
+    const res = await fetch("/api/upload/images", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd, credentials: "include" });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.success) throw new Error(json?.message || "Upload failed");
+    (json.data || []).forEach(d => { if (d.url) hotelEditor.albums[index].urls.push(d.url); });
+    heRefreshAlbums();
+  } catch (err) {
+    toast(err.message || t("upload.failed", "Upload failed"), "error");
+  } finally {
+    setBtnLoading(btn, false);
+  }
+}
+
+/** Flatten the albums into the row-per-photo shape the API stores. An album
+ *  with no name or no photos says nothing, so it is not sent. */
+function heCollectAlbumImages() {
+  const images = [];
+  for (const album of (hotelEditor.albums || [])) {
+    const label = String(album.label || "").trim();
+    if (!label || !album.urls?.length) continue;
+    for (const url of album.urls) {
+      images.push({ url, tag: label, tagLabel: label, tagLabelAr: album.labelAr || null });
+    }
+  }
+  return images;
+}
+
 function heRemoveMain() { hotelEditor.mainImage = ""; heRefreshImages(); }
 function heSetMain(i) {
   const url = hotelEditor.gallery[i];
@@ -3025,9 +3149,12 @@ async function heSave() {
   });
   if (!res?.success) { setBtnLoading(btn, false); return; }
   const hotelId = hotelEditor.id || res.data?.id;
-  // Save the rate matrix.
+  // Save the rate matrix and the tagged albums.
   if (hotelId) {
-    await apiFetch(`/hotels/${hotelId}/rates`, { method: "PUT", body: JSON.stringify({ rates: heCollectRates() }) }).catch(() => null);
+    await Promise.all([
+      apiFetch(`/hotels/${hotelId}/rates`, { method: "PUT", body: JSON.stringify({ rates: heCollectRates() }) }).catch(() => null),
+      apiFetch(`/hotels/${hotelId}/images`, { method: "PUT", body: JSON.stringify({ images: heCollectAlbumImages() }) }).catch(() => null),
+    ]);
   }
   setBtnLoading(btn, false);
   closeModal();
@@ -4329,7 +4456,11 @@ function actRenderCatalogRows(activities) {
       <td>${a.imageUrl
         ? `<img src="${escapeHtml(a.imageUrl)}" alt="" style="height:44px;width:64px;object-fit:cover;border-radius:6px" onerror="this.style.display='none'">`
         : `<span class="secondary-text">—</span>`}${photos ? `<div class="secondary-text" style="font-size:10px">+${formatNumber(photos)}</div>` : ""}</td>
-      <td class="primary-text">${escapeHtml(a.name)}${a.nameAr ? `<div class="secondary-text">${escapeHtml(a.nameAr)}</div>` : ""}</td>
+      <td class="primary-text">${escapeHtml(a.name)}${a.nameAr ? `<div class="secondary-text">${escapeHtml(a.nameAr)}</div>` : ""}
+        <div style="margin-top:4px">${a.transferIncluded
+          ? `<span class="badge badge-confirmed" style="font-size:10px">${t("activity.transferIncluded","Transfer included")}</span>`
+          : `<span class="badge badge-outline" style="font-size:10px">${t("activity.transferNotIncluded","Transfer not included")}</span>`}</div>
+      </td>
       <td>${a.destination ? escapeHtml(destinationLabel(a.destination)) : `<span class="secondary-text">${escapeHtml(a.city || "—")}</span>`}</td>
       <td>
         ${a.duration ? `<div style="font-size:12px;color:var(--info)">${icon("clock")}&nbsp;${escapeHtml(a.duration)}</div>` : ""}
