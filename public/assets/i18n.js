@@ -1885,5 +1885,200 @@
     });
   })();
 
+  // ── Trips by destination, marked inclusions, added transfers, tagged hotel
+  //    photos, cruise rate rows and the credit-vs-balance wording. ──────────
+  (function () {
+    const en = dict.en, ar = dict.ar;
+    en.activity = en.activity || {}; ar.activity = ar.activity || {};
+    Object.assign(en.activity, {
+      chooseDest: "Choose a destination to see its trips",
+      allDestinations: "All Destinations",
+      tripsCount: "Trips",
+      noDestinationTrips: "Trips with no destination",
+      whatsIncluded: "What's included",
+      notIncluded: "Not included",
+      transferIncluded: "Transfer included",
+      transferNotIncluded: "Transfer not included",
+      addTransfer: "Add transfer",
+      removeTransfer: "Remove transfer",
+      transferTitle: "Transfer",
+      transferHelp: "Tell us where the driver collects your clients and where to bring them back.",
+      transferFrom: "Pick them up from",
+      transferBack: "Bring them back to",
+      transferSameAsPickup: "Back to the pickup point",
+      transferPickupTime: "Pickup time",
+      transferReturnTime: "Return time",
+      transferReturnHint: "Taken from the trip's return time — change it if they are going on somewhere else.",
+      transferNotes: "Transfer notes",
+      transferFromRequired: "Enter where the driver should collect them",
+      returnTime: "Back at",
+      perParty: "per party",
+      partiesCharged: "{n} × {label}",
+      partyUnitHint: "A {label} covers {size} people — {n} are needed for {pax}.",
+    });
+    Object.assign(ar.activity, {
+      chooseDest: "اختر الوجهة لعرض رحلاتها",
+      allDestinations: "جميع الوجهات",
+      tripsCount: "رحلة",
+      noDestinationTrips: "رحلات بدون وجهة",
+      whatsIncluded: "يشمل",
+      notIncluded: "لا يشمل",
+      transferIncluded: "الانتقالات مشمولة",
+      transferNotIncluded: "الانتقالات غير مشمولة",
+      addTransfer: "أضف ترانسفير",
+      removeTransfer: "إلغاء الترانسفير",
+      transferTitle: "الترانسفير",
+      transferHelp: "حدد من أين يقلّ السائق العملاء وإلى أين يعيدهم.",
+      transferFrom: "الاستلام من",
+      transferBack: "العودة إلى",
+      transferSameAsPickup: "العودة إلى نقطة الاستلام",
+      transferPickupTime: "موعد الاستلام",
+      transferReturnTime: "موعد العودة",
+      transferReturnHint: "مأخوذ من موعد رجوع الرحلة — غيّره لو كان لهم وجهة أخرى بعدها.",
+      transferNotes: "ملاحظات الترانسفير",
+      transferFromRequired: "اكتب من أين يقلّهم السائق",
+      returnTime: "موعد الرجوع",
+      perParty: "للمجموعة",
+      partiesCharged: "{n} × {label}",
+      partyUnitHint: "الـ{label} تكفي {size} أفراد — {pax} فردًا يحتاجون {n}.",
+    });
+
+    en.transport = en.transport || {}; ar.transport = ar.transport || {};
+    Object.assign(en.transport, {
+      dropoffTime: "Drop-off Time",
+      dropoffDate: "Drop-off Date",
+      dropoffTimeHint: "When the car should be at the other end.",
+      dropoffAfterPickup: "Drop-off must not be earlier than the pickup",
+    });
+    Object.assign(ar.transport, {
+      dropoffTime: "موعد الوصول",
+      dropoffDate: "تاريخ الوصول",
+      dropoffTimeHint: "الموعد الذي يجب أن تصل فيه السيارة إلى الوجهة.",
+      dropoffAfterPickup: "موعد الوصول لا يمكن أن يسبق موعد الاستلام",
+    });
+
+    en.hotel = en.hotel || {}; ar.hotel = ar.hotel || {};
+    Object.assign(en.hotel, {
+      photoTags: "Photo albums",
+      photoTagsHelp: "Photos filed under a name — sea view, single room, anything you like.",
+      addPhotoTag: "Add album",
+      photoTagName: "Album name",
+      photoTagNameAr: "Album name (Arabic)",
+      addPhotosToTag: "Add photos",
+      noPhotoTags: "No albums yet",
+    });
+    Object.assign(ar.hotel, {
+      photoTags: "ألبومات الصور",
+      photoTagsHelp: "صور تحت اسم معيّن — سي فيو، غرفة سنجل، أو أي تصنيف تختاره.",
+      addPhotoTag: "أضف ألبوم",
+      photoTagName: "اسم الألبوم",
+      photoTagNameAr: "اسم الألبوم بالعربية",
+      addPhotosToTag: "أضف صور",
+      noPhotoTags: "لا توجد ألبومات بعد",
+    });
+
+    en.securityApproval = en.securityApproval || {}; ar.securityApproval = ar.securityApproval || {};
+    Object.assign(en.securityApproval, {
+      nationalityOnly: "Approvals are filed for Lebanese, Iraqi and Syrian passports only.",
+      selectNationality: "Select nationality",
+      priceNotSetForNationality: "No price is set for this nationality yet — send a request and we will quote it.",
+      sendRequest: "Send Request",
+      passportRequired: "A passport copy is required",
+      ticketRequired: "A flight ticket is required",
+      documentsRequired: "Attach both the passport and the flight ticket",
+      nationalityPrice: "Nationality",
+      anyNationality: "Any nationality",
+    });
+    Object.assign(ar.securityApproval, {
+      nationalityOnly: "الموافقات تُقدَّم لجوازات لبنان والعراق وسوريا فقط.",
+      selectNationality: "اختر الجنسية",
+      priceNotSetForNationality: "لا يوجد سعر لهذه الجنسية بعد — أرسل طلبًا وسنقوم بتسعيره.",
+      sendRequest: "إرسال طلب",
+      passportRequired: "صورة جواز السفر مطلوبة",
+      ticketRequired: "تذكرة الطيران مطلوبة",
+      documentsRequired: "أرفق جواز السفر وتذكرة الطيران معًا",
+      nationalityPrice: "الجنسية",
+      anyNationality: "كل الجنسيات",
+    });
+
+    en.nationality = en.nationality || {}; ar.nationality = ar.nationality || {};
+    Object.assign(en.nationality, { LEBANESE: "Lebanese", IRAQI: "Iraqi", SYRIAN: "Syrian" });
+    Object.assign(ar.nationality, { LEBANESE: "لبناني", IRAQI: "عراقي", SYRIAN: "سوري" });
+
+    en.invoice = en.invoice || {}; ar.invoice = ar.invoice || {};
+    Object.assign(en.invoice, {
+      downloadAll: "Download All Invoices",
+      downloadAllHelp: "Every invoice in one PDF — details first, grand total at the end.",
+      preparing: "Preparing…",
+    });
+    Object.assign(ar.invoice, {
+      downloadAll: "تحميل كل الفواتير",
+      downloadAllHelp: "كل الفواتير في ملف واحد — التفاصيل أولًا والإجمالي في آخره.",
+      preparing: "جارٍ التجهيز…",
+    });
+
+    en.wallet = en.wallet || {}; ar.wallet = ar.wallet || {};
+    Object.assign(en.wallet, {
+      availableCredit: "Available Credit",
+      spendingPower: "Total Spending Power",
+      creditVsBalance: "Balance is money in the wallet. A credit limit is permission to book past it — raising it adds no money.",
+    });
+    Object.assign(ar.wallet, {
+      availableCredit: "الائتمان المتاح",
+      spendingPower: "إجمالي القدرة على الحجز",
+      creditVsBalance: "الرصيد هو المبلغ الموجود فعليًا في المحفظة. أما حد الائتمان فهو تصريح بالحجز بما يتجاوزه — ورفعه لا يضيف أي مبلغ.",
+    });
+
+    en.cruise = en.cruise || {}; ar.cruise = ar.cruise || {};
+    Object.assign(en.cruise, {
+      schedules: "Departures",
+      schedulesHelp: "When the boat leaves and when it is back.",
+      departureDay: "Departs",
+      returnDay: "Returns",
+      nights: "Nights",
+      cabinRates: "Cabin Rates",
+      cabinRatesHelp: "One row per cabin category, market and period — priced by how many share the cabin.",
+      cabinName: "Cabin",
+      addCabinRate: "Add cabin rate",
+      addSchedule: "Add departure",
+      occupancy: "Occupancy",
+      cabins: "Cabins",
+      addTours: "Add Tours / Activities",
+      addToursHelp: "Excursions to run alongside the cruise. The description is shown to your client.",
+      addTour: "Add tour",
+      noRates: "No cabin rates set yet",
+      gallery: "Photos",
+    });
+    Object.assign(ar.cruise, {
+      schedules: "مواعيد التحرك",
+      schedulesHelp: "متى تتحرك الرحلة ومتى تعود.",
+      departureDay: "يوم التحرك",
+      returnDay: "يوم العودة",
+      nights: "عدد الليالي",
+      cabinRates: "أسعار الكبائن",
+      cabinRatesHelp: "صف لكل نوع كابينة وسوق وفترة — بسعر حسب عدد المشاركين في الكابينة.",
+      cabinName: "الكابينة",
+      addCabinRate: "أضف سعر كابينة",
+      addSchedule: "أضف موعد تحرك",
+      occupancy: "نوع الإقامة",
+      cabins: "عدد الكبائن",
+      addTours: "أضف تورز / أنشطة",
+      addToursHelp: "رحلات تُنفَّذ بجانب الكروز، ويظهر شرحها للعميل.",
+      addTour: "أضف تور",
+      noRates: "لم تُحدَّد أسعار كبائن بعد",
+      gallery: "الصور",
+    });
+
+    en.weekday = en.weekday || {}; ar.weekday = ar.weekday || {};
+    Object.assign(en.weekday, {
+      SUNDAY: "Sunday", MONDAY: "Monday", TUESDAY: "Tuesday", WEDNESDAY: "Wednesday",
+      THURSDAY: "Thursday", FRIDAY: "Friday", SATURDAY: "Saturday",
+    });
+    Object.assign(ar.weekday, {
+      SUNDAY: "الأحد", MONDAY: "الاثنين", TUESDAY: "الثلاثاء", WEDNESDAY: "الأربعاء",
+      THURSDAY: "الخميس", FRIDAY: "الجمعة", SATURDAY: "السبت",
+    });
+  })();
+
   window.PortalI18n = { dict, t, setLang, initI18n, applyTranslations, formatNumber, formatMoney, formatDate };
 })();
