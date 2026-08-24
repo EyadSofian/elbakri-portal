@@ -3985,13 +3985,61 @@ function actTransferIncluded(a) {
 
 /** How many people one unit of each party rate covers. */
 const ACT_PARTY_SIZE = { SINGLE: 1, DOUBLE: 2, TRIPLE: 3 };
+const ACT_SIZE_BASIS = { 1: "SINGLE", 2: "DOUBLE", 3: "TRIPLE" };
 
-/** How many parties it takes to seat `pax`. A party that is not full still
- *  costs a whole party, which is how every operator quotes it. */
-function actPartyUnits(pax, basis) {
+/** The price this trip is sold at for one party of the given size, or null. */
+function actPartyPrice(prices, basis) {
+  const raw = prices?.[basis];
+  return raw === null || raw === undefined || raw === "" ? null : Number(raw);
+}
+
+/**
+ * How a party rate seats `pax` people — the same rule the server applies.
+ *
+ * Fill as many full parties as the rate holds, then charge whoever is left over
+ * at the rate for how many THEY are: five people on a double rate are two
+ * doubles and a single. When the leftover size is not priced, the odd group
+ * falls back to a whole party at the chosen rate.
+ *
+ * Mirrors partyComposition() in src/shared/activity-pricing.ts. The two are
+ * asserted against each other in tests/portal-helpers.test.js, because a
+ * preview that disagreed with the server would quote one price and charge
+ * another.
+ */
+function actPartyComposition(pax, basis, prices) {
+  const unitPrice = actPartyPrice(prices, basis);
+  if (unitPrice === null) return null;
   const size = ACT_PARTY_SIZE[basis];
-  if (!size) return 1;
-  return Math.max(1, Math.ceil(Math.max(1, pax) / size));
+  if (!size) return null;
+  const heads = Math.max(1, Math.floor(pax) || 1);
+  const full = Math.floor(heads / size);
+  const rest = heads % size;
+
+  const lines = [];
+  if (full > 0) lines.push({ basis, count: full, unitPrice });
+  if (rest > 0) {
+    const restBasis = ACT_SIZE_BASIS[rest];
+    const restPrice = restBasis ? actPartyPrice(prices, restBasis) : null;
+    lines.push(restBasis && restPrice !== null
+      ? { basis: restBasis, count: 1, unitPrice: restPrice }
+      : { basis, count: 1, unitPrice });
+  }
+  return lines;
+}
+
+function actCompositionTotal(lines) {
+  return (lines || []).reduce((sum, l) => sum + l.unitPrice * l.count, 0);
+}
+
+function actCompositionUnits(lines) {
+  return (lines || []).reduce((sum, l) => sum + l.count, 0);
+}
+
+/** "2 × Double + 1 × Single" — what the price row says it is charging. */
+function actCompositionLabel(lines, labels) {
+  return (lines || [])
+    .map(l => `${l.count} × ${(labels && labels[l.basis]) || l.basis}`)
+    .join(" + ");
 }
 
 /** Only the ways this trip was actually priced. A blank price is "not sold that
@@ -4335,24 +4383,30 @@ function actCalcTotal(priceAdult, priceChild, currency) {
   if (basis === "PER_PERSON") {
     total = adults * priceAdult + children * priceChild;
   } else {
-    // A party rate prices ONE party. Six guests on a double rate are three
-    // doubles — the same rule the server applies, so the preview and the
-    // confirmed booking can never disagree.
-    const unitPrice = Number(ctx.partyPrices?.[basis] ?? 0);
-    const units = actPartyUnits(adults + children, basis);
-    total = unitPrice * units;
+    // A party rate prices ONE party, and whoever is left over is charged at the
+    // rate for how many THEY are — five guests on a double rate are two doubles
+    // and a single. Same rule as the server, so the preview and the confirmed
+    // booking can never disagree.
+    const pax = adults + children;
+    const lines = actPartyComposition(pax, basis, ctx.partyPrices) || [];
+    total = actCompositionTotal(lines);
+    const partyLabel = ctx.partyLabels?.[basis] || basis;
+    const breakdown = actCompositionLabel(lines, ctx.partyLabels);
     const label = document.getElementById("actPartyLabel");
     const calc = document.getElementById("actPartyCalc");
-    const partyLabel = ctx.partyLabels?.[basis] || basis;
-    if (label) label.textContent = `${partyLabel} × ${units}`;
-    if (calc) calc.textContent = `${formatPrice(unitPrice, currency)} × ${units}`;
+    if (label) label.textContent = breakdown;
+    if (calc) {
+      calc.textContent = lines
+        .map(l => `${formatPrice(l.unitPrice, currency)} × ${l.count}`)
+        .join("  +  ");
+    }
     const hint = document.getElementById("actBasisHint");
     if (hint) {
-      hint.textContent = t("activity.partyUnitHint","A {label} covers {size} people — {n} are needed for {pax}.")
+      hint.textContent = t("activity.partyUnitHint","A {label} covers {size} people — {pax} are charged as {breakdown}.")
         .replace("{label}", partyLabel)
         .replace("{size}", String(ACT_PARTY_SIZE[basis] || 1))
-        .replace("{n}", String(units))
-        .replace("{pax}", String(adults + children));
+        .replace("{pax}", String(pax))
+        .replace("{breakdown}", breakdown);
     }
   }
   const selected = document.querySelector('input[name="actGroupType"]:checked');

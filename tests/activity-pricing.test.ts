@@ -4,75 +4,119 @@ import { Decimal } from '@prisma/client/runtime/library';
 import {
   PARTY_SIZE,
   availableBases,
+  basisForSize,
+  compositionTotal,
+  compositionUnits,
   isPartyBasis,
+  partyComposition,
   partyPriceFor,
-  partyTotal,
-  partyUnits,
   perPersonTotal,
   priceActivity,
 } from '../src/shared/activity-pricing';
 
 // The bug this module exists to fix: a party rate ("double", "triple") was
 // charged ONCE however many people were on the booking, so a desert safari for
-// six cost the same as a safari for two. A party rate prices one party; a
-// booking is as many parties as it takes to seat everybody.
+// six cost the same as a safari for two.
+//
+// A party rate prices ONE party. A booking fills as many full parties as the
+// rate holds, and whoever is left over is charged at the rate for how many THEY
+// are — five people on a double rate are two doubles and a single.
 
-const D = (n: number) => new Decimal(n);
+const D = (n: number | string) => new Decimal(n);
 
-// ── partyUnits: how many parties seat N people ──────────────────────────────
+/** A trip sold at every party size, so the composition rule is what is tested. */
+const ALL = { priceSingle: D(60), priceDouble: D(100), priceTriple: D(120) };
 
-test('partyUnits: a double seats two, so six people are three doubles', () => {
-  assert.equal(partyUnits(6, 'DOUBLE'), 3);
-});
-
-test('partyUnits: a part-full party still costs a whole party', () => {
-  assert.equal(partyUnits(5, 'DOUBLE'), 3);  // 2 + 2 + 1
-  assert.equal(partyUnits(4, 'TRIPLE'), 2);  // 3 + 1
-  assert.equal(partyUnits(7, 'TRIPLE'), 3);  // 3 + 3 + 1
-});
-
-test('partyUnits: a single is one party per head', () => {
-  assert.equal(partyUnits(1, 'SINGLE'), 1);
-  assert.equal(partyUnits(4, 'SINGLE'), 4);
-});
-
-test('partyUnits: exact fits do not round up', () => {
-  assert.equal(partyUnits(2, 'DOUBLE'), 1);
-  assert.equal(partyUnits(4, 'DOUBLE'), 2);
-  assert.equal(partyUnits(3, 'TRIPLE'), 1);
-  assert.equal(partyUnits(6, 'TRIPLE'), 2);
-});
-
-test('partyUnits: never charges zero parties, whatever the pax count says', () => {
-  for (const pax of [0, -3, NaN]) {
-    assert.equal(partyUnits(pax, 'DOUBLE'), 1, `pax=${pax}`);
-  }
-});
-
-test('partyUnits: a fractional head count is floored to whole people', () => {
-  assert.equal(partyUnits(4.9, 'DOUBLE'), 2); // four people, two doubles
-});
+const shape = (lines: ReturnType<typeof partyComposition>) =>
+  (lines ?? []).map((l) => [l.basis, l.count]);
 
 test('PARTY_SIZE names how many one party holds', () => {
   assert.deepEqual(PARTY_SIZE, { SINGLE: 1, DOUBLE: 2, TRIPLE: 3 });
 });
 
-// ── partyTotal ──────────────────────────────────────────────────────────────
-
-test('partyTotal: raising the pax count RAISES the price (the reported bug)', () => {
-  const rate = D(100);
-  assert.equal(partyTotal(rate, 2, 'DOUBLE').toString(), '100');
-  assert.equal(partyTotal(rate, 4, 'DOUBLE').toString(), '200');
-  assert.equal(partyTotal(rate, 6, 'DOUBLE').toString(), '300');
+test('basisForSize maps a leftover group to the rate that prices it', () => {
+  assert.equal(basisForSize(1), 'SINGLE');
+  assert.equal(basisForSize(2), 'DOUBLE');
+  assert.equal(basisForSize(3), 'TRIPLE');
+  assert.equal(basisForSize(4), null);
+  assert.equal(basisForSize(0), null);
 });
 
-test('partyTotal: triple rate scales in threes', () => {
-  assert.equal(partyTotal(D(90), 3, 'TRIPLE').toString(), '90');
-  assert.equal(partyTotal(D(90), 9, 'TRIPLE').toString(), '270');
+// ── partyComposition: how a group is actually seated ────────────────────────
+
+test('partyComposition: an exact fit is whole parties and nothing else', () => {
+  assert.deepEqual(shape(partyComposition(6, 'DOUBLE', ALL)), [['DOUBLE', 3]]);
+  assert.deepEqual(shape(partyComposition(2, 'DOUBLE', ALL)), [['DOUBLE', 1]]);
+  assert.deepEqual(shape(partyComposition(6, 'TRIPLE', ALL)), [['TRIPLE', 2]]);
 });
 
-test('partyTotal: keeps decimal precision (no float drift)', () => {
-  assert.equal(partyTotal(D('33.33'), 6, 'DOUBLE').toString(), '99.99');
+test('partyComposition: five on a double rate are two doubles and a SINGLE', () => {
+  // The rule the operator asked for: the odd person is charged as a single,
+  // not as a whole second double.
+  assert.deepEqual(shape(partyComposition(5, 'DOUBLE', ALL)), [['DOUBLE', 2], ['SINGLE', 1]]);
+});
+
+test('partyComposition: a triple rate leaves a single or a double behind', () => {
+  assert.deepEqual(shape(partyComposition(4, 'TRIPLE', ALL)), [['TRIPLE', 1], ['SINGLE', 1]]);
+  assert.deepEqual(shape(partyComposition(5, 'TRIPLE', ALL)), [['TRIPLE', 1], ['DOUBLE', 1]]);
+  assert.deepEqual(shape(partyComposition(7, 'TRIPLE', ALL)), [['TRIPLE', 2], ['SINGLE', 1]]);
+  assert.deepEqual(shape(partyComposition(8, 'TRIPLE', ALL)), [['TRIPLE', 2], ['DOUBLE', 1]]);
+});
+
+test('partyComposition: a single rate is one party per head', () => {
+  assert.deepEqual(shape(partyComposition(4, 'SINGLE', ALL)), [['SINGLE', 4]]);
+});
+
+test('partyComposition: fewer people than the rate holds are charged at their own size', () => {
+  assert.deepEqual(shape(partyComposition(1, 'DOUBLE', ALL)), [['SINGLE', 1]]);
+  assert.deepEqual(shape(partyComposition(2, 'TRIPLE', ALL)), [['DOUBLE', 1]]);
+});
+
+test('partyComposition: an unpriced leftover size falls back to a whole party', () => {
+  // The trip is only sold as a double. The fifth guest still travels — in a
+  // second double — because charging a single price that was never set would
+  // invent a rate the operator never agreed to.
+  const doubleOnly = { priceDouble: D(100) };
+  assert.deepEqual(shape(partyComposition(5, 'DOUBLE', doubleOnly)), [['DOUBLE', 2], ['DOUBLE', 1]]);
+  assert.equal(compositionTotal(partyComposition(5, 'DOUBLE', doubleOnly)!).toString(), '300');
+});
+
+test('partyComposition: the chosen rate must itself be priced', () => {
+  assert.equal(partyComposition(4, 'TRIPLE', { priceDouble: D(100) }), null);
+});
+
+test('partyComposition: never composes an empty booking', () => {
+  for (const pax of [0, -3, NaN]) {
+    const lines = partyComposition(pax, 'DOUBLE', ALL)!;
+    assert.ok(compositionUnits(lines) >= 1, `pax=${pax}`);
+  }
+});
+
+test('partyComposition: a fractional head count is floored to whole people', () => {
+  assert.deepEqual(shape(partyComposition(4.9, 'DOUBLE', ALL)), [['DOUBLE', 2]]);
+});
+
+// ── compositionTotal / compositionUnits ─────────────────────────────────────
+
+test('compositionTotal: five on a double costs two doubles plus one single', () => {
+  assert.equal(compositionTotal(partyComposition(5, 'DOUBLE', ALL)!).toString(), '260'); // 100+100+60
+});
+
+test('compositionTotal: raising the pax count RAISES the price (the reported bug)', () => {
+  const at = (pax: number) => compositionTotal(partyComposition(pax, 'DOUBLE', ALL)!).toString();
+  assert.equal(at(2), '100');
+  assert.equal(at(4), '200');
+  assert.equal(at(6), '300');
+});
+
+test('compositionTotal: keeps decimal precision (no float drift)', () => {
+  const rates = { priceSingle: D('11.11'), priceDouble: D('33.33') };
+  assert.equal(compositionTotal(partyComposition(5, 'DOUBLE', rates)!).toString(), '77.77');
+});
+
+test('compositionUnits counts every party across every line', () => {
+  assert.equal(compositionUnits(partyComposition(5, 'DOUBLE', ALL)!), 3);
+  assert.equal(compositionUnits(partyComposition(6, 'DOUBLE', ALL)!), 3);
 });
 
 // ── perPersonTotal ──────────────────────────────────────────────────────────
@@ -162,6 +206,26 @@ test('priceActivity: a party booking reports the parties it charged', () => {
   assert.equal(r.units, 3);          // six people, three doubles
   assert.equal(r.unitPrice!.toString(), '120');
   assert.equal(r.total.toString(), '360');
+});
+
+test('priceActivity: the odd guest is charged at a single rate, and itemised', () => {
+  const r = priceActivity({ activity: ALL, basis: 'DOUBLE', adultsCount: 5, childrenCount: 0 })!;
+  assert.deepEqual(r.lines.map((l) => [l.basis, l.count]), [['DOUBLE', 2], ['SINGLE', 1]]);
+  assert.equal(r.units, 3);
+  assert.equal(r.total.toString(), '260');
+  // `unitPrice` still names the rate the client CHOSE, so the summary can say
+  // "you picked the double rate" even when a line prices the leftover.
+  assert.equal(r.unitPrice!.toString(), '100');
+});
+
+test('priceActivity: a per-person booking has no party lines to itemise', () => {
+  const r = priceActivity({
+    activity: { priceAdult: D(50) },
+    basis: 'PER_PERSON',
+    adultsCount: 2,
+    childrenCount: 0,
+  })!;
+  assert.deepEqual(r.lines, []);
 });
 
 test('priceActivity: children count towards the party size', () => {

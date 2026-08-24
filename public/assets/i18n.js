@@ -1914,7 +1914,7 @@
       returnTime: "Back at",
       perParty: "per party",
       partiesCharged: "{n} × {label}",
-      partyUnitHint: "A {label} covers {size} people — {n} are needed for {pax}.",
+      partyUnitHint: "A {label} covers {size} people — {pax} are charged as {breakdown}.",
     });
     Object.assign(ar.activity, {
       chooseDest: "اختر الوجهة لعرض رحلاتها",
@@ -1940,7 +1940,7 @@
       returnTime: "موعد الرجوع",
       perParty: "للمجموعة",
       partiesCharged: "{n} × {label}",
-      partyUnitHint: "الـ{label} تكفي {size} أفراد — {pax} فردًا يحتاجون {n}.",
+      partyUnitHint: "الـ{label} تكفي {size} أفراد — {pax} فردًا يُحسبوا {breakdown}.",
     });
 
     en.transport = en.transport || {}; ar.transport = ar.transport || {};

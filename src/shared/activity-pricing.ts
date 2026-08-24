@@ -64,22 +64,72 @@ export function partyPriceFor(activity: ActivityPriceSet, basis: PartyBasis): De
   return raw instanceof Decimal ? raw : new Decimal(raw as number);
 }
 
-/**
- * How many parties it takes to seat `pax` people.
- *
- * Five people on a double rate need three cars, not two and a half — a party
- * that is not full still costs a whole party, which is how every operator
- * quotes it. Always at least one, so a booking is never charged nothing.
- */
-export function partyUnits(pax: number, basis: PartyBasis): number {
-  const size = PARTY_SIZE[basis];
-  const heads = Math.max(1, Math.floor(pax) || 1);
-  return Math.max(1, Math.ceil(heads / size));
+/** Which rate prices a leftover group of this size. */
+export function basisForSize(size: number): PartyBasis | null {
+  if (size === 1) return 'SINGLE';
+  if (size === 2) return 'DOUBLE';
+  if (size === 3) return 'TRIPLE';
+  return null;
 }
 
-/** What `pax` people cost at a party rate: the rate once per party needed. */
-export function partyTotal(unitPrice: Decimal, pax: number, basis: PartyBasis): Decimal {
-  return unitPrice.mul(partyUnits(pax, basis));
+/** One charged line: this many parties at this rate. */
+export interface PartyLine {
+  basis: PartyBasis;
+  count: number;
+  unitPrice: Decimal;
+}
+
+/**
+ * How a party rate actually seats `pax` people.
+ *
+ * Fill as many full parties as the chosen rate holds, then charge whoever is
+ * left over at the rate that matches how many they are — five people on a
+ * double rate are two doubles and a single, not three doubles. That is how the
+ * operator quotes it, and charging the odd person a full double would overbill
+ * every group with an odd head count.
+ *
+ * The leftover is only priced that way if the operator actually sells it that
+ * way. When the rate for the remainder is blank, the odd group falls back to a
+ * whole party at the chosen rate — the trip is still sellable, and the operator
+ * never ends up charging for something they never priced.
+ *
+ * Returns null when the chosen rate itself is not priced.
+ */
+export function partyComposition(
+  pax: number,
+  basis: PartyBasis,
+  prices: ActivityPriceSet,
+): PartyLine[] | null {
+  const unitPrice = partyPriceFor(prices, basis);
+  if (unitPrice === null) return null;
+
+  const size = PARTY_SIZE[basis];
+  const heads = Math.max(1, Math.floor(pax) || 1);
+  const full = Math.floor(heads / size);
+  const rest = heads % size;
+
+  const lines: PartyLine[] = [];
+  if (full > 0) lines.push({ basis, count: full, unitPrice });
+  if (rest > 0) {
+    const restBasis = basisForSize(rest);
+    const restPrice = restBasis ? partyPriceFor(prices, restBasis) : null;
+    lines.push(restBasis && restPrice !== null
+      ? { basis: restBasis, count: 1, unitPrice: restPrice }
+      // Not sold at the leftover size — the group still travels, in a party of
+      // the size that IS priced.
+      : { basis, count: 1, unitPrice });
+  }
+  return lines;
+}
+
+/** What the composed lines add up to. */
+export function compositionTotal(lines: PartyLine[]): Decimal {
+  return lines.reduce((sum, line) => sum.add(line.unitPrice.mul(line.count)), new Decimal(0));
+}
+
+/** How many parties are charged in total, across every line. */
+export function compositionUnits(lines: PartyLine[]): number {
+  return lines.reduce((sum, line) => sum + line.count, 0);
 }
 
 /** Per-head total. Children are only charged when there are any. */
@@ -94,11 +144,13 @@ export function perPersonTotal(
   return adultPrice.mul(adults).add(childPrice.mul(children));
 }
 
-/** One line an invoice or a price preview can print, in words a client reads. */
+/** What an invoice or a price preview prints, in words a client reads. */
 export interface PricingBreakdown {
   basis: PricingBasis;
-  units: number; // parties charged (1 for per-person, where heads are the count)
-  unitPrice: Decimal | null; // the party rate, null on a per-person booking
+  units: number; // parties charged in total (heads, on a per-person booking)
+  unitPrice: Decimal | null; // the chosen party rate, null on a per-person booking
+  /** The charged lines — e.g. two doubles and a single. Empty for per-person. */
+  lines: PartyLine[];
   total: Decimal;
 }
 
@@ -130,12 +182,20 @@ export function priceActivity(input: {
       basis,
       units: adults + children,
       unitPrice: null,
+      lines: [],
       total: perPersonTotal(adultPrice, childPrice, adults, children),
     };
   }
   const unitPrice = partyPriceFor(activity, basis);
   if (unitPrice === null) return null;
   const pax = Math.max(1, (Math.max(0, adultsCount) || 0) + (Math.max(0, childrenCount) || 0));
-  const units = partyUnits(pax, basis);
-  return { basis, units, unitPrice, total: unitPrice.mul(units) };
+  const lines = partyComposition(pax, basis, activity);
+  if (lines === null) return null;
+  return {
+    basis,
+    units: compositionUnits(lines),
+    unitPrice,
+    lines,
+    total: compositionTotal(lines),
+  };
 }

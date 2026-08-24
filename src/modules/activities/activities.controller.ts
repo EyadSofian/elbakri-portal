@@ -15,9 +15,10 @@ import { debitWallet, refundWallet } from '../../shared/wallet';
 import {
   PricingBasis,
   availableBases,
+  compositionTotal,
+  compositionUnits,
   isPartyBasis,
-  partyPriceFor,
-  partyUnits,
+  partyComposition,
 } from '../../shared/activity-pricing';
 import {
   buildInclusions,
@@ -377,8 +378,12 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     sourceAmountRaw = adultPrice.amount.mul(adultsCount).add(childPrice.amount.mul(childrenCount));
     priceCurrency = adultPrice.currency;
   } else {
-    const partyPrice = partyPriceFor(activity, basis);
-    if (partyPrice == null) {
+    // A party rate prices ONE party, so the group is composed into as many full
+    // parties as the rate holds, and whoever is left over is charged at the
+    // rate for how many THEY are — five guests on a double rate are two doubles
+    // and a single, not three doubles.
+    const lines = partyComposition(pax, basis, activity);
+    if (lines === null) {
       res.status(400).json({
         success: false,
         error: 'PRICE_ON_REQUEST',
@@ -386,11 +391,8 @@ export async function createActivityBooking(req: Request, res: Response): Promis
       });
       return;
     }
-    // A party rate prices ONE party. Six guests on a double rate are three
-    // doubles, so the rate is charged once per party needed to seat everybody
-    // — a party that is not full still costs a whole party.
-    pricingUnits = partyUnits(pax, basis);
-    sourceAmountRaw = partyPrice.mul(pricingUnits);
+    pricingUnits = compositionUnits(lines);
+    sourceAmountRaw = compositionTotal(lines);
     priceCurrency = activity.currency;
   }
 
