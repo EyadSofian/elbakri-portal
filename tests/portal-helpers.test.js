@@ -172,3 +172,138 @@ test('portal: a cruise schedule reads departure → return with its night count'
   assert.match(html, /Thursday/);
   assert.match(html, /3/);
 });
+
+// ── Picking a cabin AND how many share it ───────────────────────────────────
+
+test('portal: crCabinPrice reads the occupancy the agent picked', () => {
+  const rate = { singlePrice: 900, doublePrice: 600, triplePrice: 550 };
+  assert.equal(portal.crCabinPrice(rate, 'SINGLE'), 900);
+  assert.equal(portal.crCabinPrice(rate, 'DOUBLE'), 600);
+  assert.equal(portal.crCabinPrice(rate, 'TRIPLE'), 550);
+});
+
+test('portal: a blank cabin price is "not sold that way", never free', () => {
+  // Reading a blank as zero would give the cabin away, so every empty shape a
+  // rate row can carry has to come back as null.
+  for (const blank of [null, undefined, '']) {
+    assert.equal(portal.crCabinPrice({ triplePrice: blank }, 'TRIPLE'), null, String(blank));
+  }
+});
+
+test('portal: crCabinsNeeded never sells half a cabin', () => {
+  // Five guests in doubles need three cabins: a half-empty cabin is still a
+  // whole cabin on the bill.
+  assert.equal(portal.crCabinsNeeded(5, 'DOUBLE'), 3);
+  assert.equal(portal.crCabinsNeeded(4, 'DOUBLE'), 2);
+  assert.equal(portal.crCabinsNeeded(1, 'SINGLE'), 1);
+  assert.equal(portal.crCabinsNeeded(7, 'TRIPLE'), 3);
+});
+
+test('portal: crCabinsNeeded treats a nonsense party as one cabin, not zero', () => {
+  for (const pax of [0, -3, 'many', null, undefined]) {
+    assert.equal(portal.crCabinsNeeded(pax, 'DOUBLE'), 1, String(pax));
+  }
+});
+
+test('portal: an unpriced boat says the rates are hidden, not that none exist', () => {
+  // "No cabin rates set yet" was a lie whenever the boat WAS priced and the
+  // rates were simply not shown to this agent.
+  const hidden = portal.cruiseCabinPicker({ hasRateMatrix: true, priceVisible: false }, []);
+  assert.match(hidden, /operations team/);
+  assert.doesNotMatch(hidden, /No cabin rates set yet/);
+
+  const unpriced = portal.cruiseCabinPicker({ hasRateMatrix: false, priceVisible: true }, []);
+  assert.match(unpriced, /No cabin rates set yet/);
+
+  // Prices hidden from this agent: they cannot know whether the boat is priced,
+  // so "nobody has priced it" is not ours to say either way.
+  const bothHidden = portal.cruiseCabinPicker({ hasRateMatrix: false, priceVisible: false }, []);
+  assert.match(bothHidden, /operations team/);
+});
+
+test('portal: every priced cell is a choice, and every blank one is not', () => {
+  const html = portal.cruiseCabinPicker({}, [
+    { id: 'r1', cabinName: 'Standard', currency: 'USD', singlePrice: 900, doublePrice: 600, triplePrice: null },
+  ]);
+  assert.match(html, /value="r1\|SINGLE"/);
+  assert.match(html, /value="r1\|DOUBLE"/);
+  // The triple has no price, so it is not offered as something to book.
+  assert.doesNotMatch(html, /value="r1\|TRIPLE"/);
+  assert.match(html, /cr-cell-empty/);
+});
+
+test('portal: the picker opens on the cheapest cell actually sold', () => {
+  const html = portal.cruiseCabinPicker({}, [
+    { id: 'r1', cabinName: 'Suite', currency: 'USD', singlePrice: 1500, doublePrice: 1200 },
+    { id: 'r2', cabinName: 'Standard', currency: 'USD', singlePrice: 900, doublePrice: 550 },
+  ]);
+  assert.match(html, /value="r2\|DOUBLE" checked/);
+  assert.equal((html.match(/ checked/g) || []).length, 1);
+});
+
+test('portal: a cabin name is escaped, never injected', () => {
+  const html = portal.cruiseCabinPicker({}, [
+    { id: 'r1', cabinName: '<img onerror=alert(1)>', currency: 'USD', doublePrice: 600 },
+  ]);
+  assert.doesNotMatch(html, /<img onerror/);
+  assert.match(html, /&lt;img/);
+});
+
+// ── The day-by-day programme ────────────────────────────────────────────────
+
+test('portal: a boat with no programme renders nothing at all', () => {
+  assert.equal(portal.cruiseItineraryHtml({}), '');
+  assert.equal(portal.cruiseItineraryHtml({ itinerary: [] }), '');
+});
+
+test('portal: a programme lists each day with its write-up', () => {
+  const html = portal.cruiseItineraryHtml({
+    itinerary: [
+      { day: 1, title: 'Embarkation', description: 'Board at Luxor' },
+      { day: 2, title: 'Edfu & Kom Ombo' },
+    ],
+  });
+  assert.match(html, /Day 1/);
+  assert.match(html, /Embarkation/);
+  assert.match(html, /Board at Luxor/);
+  assert.match(html, /Day 2/);
+});
+
+test('portal: a programme line is escaped, never injected', () => {
+  const html = portal.cruiseItineraryHtml({
+    itinerary: [{ day: 1, title: '<img onerror=alert(1)>' }],
+  });
+  assert.doesNotMatch(html, /<img onerror/);
+  assert.match(html, /&lt;img/);
+});
+
+// ── A cruise that does not collect its guests ───────────────────────────────
+
+test('portal: a fare that collects the guests is never offered an added transfer', () => {
+  const html = portal.transferPanel({ prefix: 'cr', included: true });
+  assert.match(html, /Transfer included/);
+  assert.doesNotMatch(html, /crTransferFrom/);
+});
+
+test('portal: a fare that does not collect them asks where the driver goes', () => {
+  const html = portal.transferPanel({ prefix: 'cr', included: false });
+  assert.match(html, /crTransferFrom/);
+  assert.match(html, /crTransferRequested/);
+  assert.match(html, /Add transfer/);
+});
+
+test('portal: the operator\'s own transfer wording is shown, and escaped', () => {
+  const html = portal.transferPanel({ prefix: 'cr', included: true, note: '<b>Pier only</b>' });
+  assert.match(html, /&lt;b&gt;Pier only/);
+  assert.doesNotMatch(html, /<b>Pier only/);
+});
+
+test('portal: the return-time hint only appears when a time was inherited', () => {
+  // A cruise has no "return time of the trip" to take one from, so promising
+  // the agent it was taken from one would be false.
+  assert.doesNotMatch(portal.transferPanel({ prefix: 'cr', included: false }), /Taken from the trip/);
+  assert.match(
+    portal.transferPanel({ prefix: 'act', included: false, returnTime: '05:00 PM' }),
+    /Taken from the trip/,
+  );
+});

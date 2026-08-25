@@ -1599,21 +1599,17 @@ async function openCruiseDetails(id) {
       </div>` : `<div class="secondary-text">${t("cruise.schedulesHelp","When the boat leaves and when it is back.")}</div>`}
     </div>
 
+    ${cruiseItineraryHtml(cruise)}
+
+    ${cruiseCabinPicker(cruise, rates)}
+
     <div class="form-field full" style="margin-top:14px">
-      <label>${t("cruise.cabinRates","Cabin Rates")}</label>
-      ${rates.length ? `<div class="table-scroll"><table class="data-table">
-        <thead><tr>
-          <th></th><th>${t("cruise.cabinName","Cabin")}</th>
-          <th>${t("hotel.single","Single")}</th><th>${t("hotel.double","Double")}</th><th>${t("hotel.triple","Triple")}</th>
-        </tr></thead>
-        <tbody>${rates.map((r, i) => `<tr>
-          <td><input type="radio" name="crRate" value="${escapeHtml(r.id)}" ${i === 0 ? "checked" : ""}></td>
-          <td><span class="primary-text">${escapeHtml(r.cabinName)}</span>${r.notes ? `<div class="secondary-text">${escapeHtml(r.notes)}</div>` : ""}</td>
-          <td>${r.singlePrice != null ? formatPrice(r.singlePrice, r.currency) : "—"}</td>
-          <td>${r.doublePrice != null ? formatPrice(r.doublePrice, r.currency) : "—"}</td>
-          <td>${r.triplePrice != null ? formatPrice(r.triplePrice, r.currency) : "—"}</td>
-        </tr>`).join("")}</tbody>
-      </table></div>` : `<div class="secondary-text">${t("cruise.noRates","No cabin rates set yet")}</div>`}
+      <label>${t("cruise.transfer","Transfer")}</label>
+      ${transferPanel({
+        prefix: "cr",
+        included: !!cruise.transferIncluded,
+        note: locName(cruise.transferNote, cruise.transferNoteAr) || "",
+      })}
     </div>
 
     <div class="act-transfer-block full" style="margin-top:14px">
@@ -1628,6 +1624,171 @@ async function openCruiseDetails(id) {
   openModal(escapeHtml(locName(cruise.name, cruise.nameAr)), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
     <button class="btn btn-primary" onclick="crRequestQuote('${cruise.id}')">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`);
+  // Price the cell the picker opened on, so the agent sees a total straight
+  // away rather than after touching something.
+  crUpdateQuote();
+}
+
+/** How many guests one cabin sleeps at each occupancy — the server's own rule. */
+const CR_OCCUPANCIES = ["SINGLE", "DOUBLE", "TRIPLE"];
+const CR_OCC_SIZE = { SINGLE: 1, DOUBLE: 2, TRIPLE: 3 };
+const CR_OCC_KEY = { SINGLE: "hotel.single", DOUBLE: "hotel.double", TRIPLE: "hotel.triple" };
+const CR_OCC_PRICE = { SINGLE: "singlePrice", DOUBLE: "doublePrice", TRIPLE: "triplePrice" };
+
+/** The price of one cabin at one occupancy, or null when it is not sold that
+ *  way. A blank price is "not sold", never free. */
+function crCabinPrice(rate, occupancy) {
+  const raw = rate?.[CR_OCC_PRICE[occupancy]];
+  return raw === null || raw === undefined || raw === "" ? null : Number(raw);
+}
+
+/**
+ * How many cabins it takes to sleep `pax` guests at this occupancy.
+ *
+ * Five guests in doubles need three cabins, not two and a half — a half-empty
+ * cabin is still a whole cabin on the bill. Same rule as the server, so the
+ * price the agent is shown is the price the desk quotes.
+ */
+function crCabinsNeeded(pax, occupancy) {
+  const heads = Math.max(1, Math.floor(Number(pax)) || 1);
+  return Math.max(1, Math.ceil(heads / (CR_OCC_SIZE[occupancy] || 2)));
+}
+
+/** The day-by-day programme, when the operator has written one. */
+function cruiseItineraryHtml(cruise) {
+  const days = Array.isArray(cruise.itinerary) ? cruise.itinerary : [];
+  if (!days.length) return "";
+  return `<div class="form-field full" style="margin-top:14px">
+    <label>${t("cruise.itinerary","Day-by-day programme")}</label>
+    <ol class="cr-itinerary">
+      ${days.map(d => {
+        const title = locName(d.title, d.titleAr) || "";
+        const body = locName(d.description, d.descriptionAr) || "";
+        return `<li class="cr-itinerary-day">
+          <span class="cr-itinerary-num">${t("cruise.day","Day")} ${formatNumber(d.day)}</span>
+          <div class="cr-itinerary-body">
+            ${title ? `<strong>${escapeHtml(title)}</strong>` : ""}
+            ${body ? `<div class="secondary-text">${escapeHtml(body)}</div>` : ""}
+          </div>
+        </li>`;
+      }).join("")}
+    </ol>
+  </div>`;
+}
+
+/**
+ * Pick a cabin AND how many share it, in one grid.
+ *
+ * The old table showed Single / Double / Triple as three read-only columns and
+ * asked the agent to choose a cabin — so there was no way to say which of the
+ * three prices the quote was for, and the occupancy the booking API has always
+ * accepted could never be filled in. Every priced cell is a choice now; a cell
+ * with no price is not sold that way and stays blank rather than reading free.
+ */
+function cruiseCabinPicker(cruise, rates) {
+  if (!rates.length) {
+    // "No cabin rates set yet" was a lie whenever the boat WAS priced and the
+    // rates were simply not shown to this agent. Say which it is.
+    const hidden = cruise.hasRateMatrix || cruise.priceVisible === false;
+    return `<div class="form-field full" style="margin-top:14px">
+      <label>${t("cruise.cabinRates","Cabin Rates")}</label>
+      <div class="secondary-text">${hidden
+        ? t("cruise.ratesHidden","Cabin rates for this boat are quoted by the operations team — send a request and they will price it.")
+        : t("cruise.noRates","No cabin rates set yet")}</div>
+    </div>`;
+  }
+  // Which of the nine cells to start on: the cheapest one actually sold, so the
+  // panel opens on a real price rather than on a blank cell.
+  let best = null;
+  for (const rate of rates) {
+    for (const occupancy of CR_OCCUPANCIES) {
+      const price = crCabinPrice(rate, occupancy);
+      if (price == null) continue;
+      if (!best || price < best.price) best = { rateId: rate.id, occupancy, price };
+    }
+  }
+  const cell = (rate, occupancy) => {
+    const price = crCabinPrice(rate, occupancy);
+    if (price == null) return `<td class="cr-cell-empty">—</td>`;
+    const checked = best && best.rateId === rate.id && best.occupancy === occupancy;
+    return `<td class="cr-cell">
+      <label class="cr-pick">
+        <input type="radio" name="crRate" value="${escapeHtml(rate.id)}|${occupancy}" ${checked ? "checked" : ""} onchange="crUpdateQuote()">
+        <span>${formatPrice(price, rate.currency)}</span>
+      </label>
+    </td>`;
+  };
+  return `<div class="form-field full" style="margin-top:14px">
+    <label>${t("cruise.cabinRates","Cabin Rates")}</label>
+    <div class="secondary-text" style="margin-bottom:8px">${t("cruise.pickCabinHelp","Pick the cabin and how many share it — the price is per cabin, per sailing.")}</div>
+    <div class="table-scroll"><table class="data-table cr-rate-table">
+      <thead><tr>
+        <th>${t("cruise.cabinName","Cabin")}</th>
+        ${CR_OCCUPANCIES.map(o => `<th>${t(CR_OCC_KEY[o], o)}</th>`).join("")}
+      </tr></thead>
+      <tbody>${rates.map(r => `<tr>
+        <td><span class="primary-text">${escapeHtml(r.cabinName)}</span>${r.notes ? `<div class="secondary-text">${escapeHtml(r.notes)}</div>` : ""}</td>
+        ${CR_OCCUPANCIES.map(o => cell(r, o)).join("")}
+      </tr>`).join("")}</tbody>
+    </table></div>
+    <div class="form-grid" style="margin-top:12px">
+      <div class="form-field">
+        <label>${t("form.passengers","Passengers")}</label>
+        <input id="crPax" type="number" min="1" value="2" oninput="crUpdateQuote()">
+      </div>
+      <div class="form-field">
+        <label>${t("cruise.cabins","Cabins")}</label>
+        <input id="crCabins" type="number" min="1" value="1" oninput="crUpdateQuote()">
+        <small class="field-hint">${t("cruise.cabinsHint","Worked out from the passenger count — change it if they want the cabins split differently.")}</small>
+      </div>
+    </div>
+    <div id="crQuoteLine" class="cr-quote-line"></div>
+  </div>`;
+}
+
+/** What the agent has picked, or null when nothing priced is selected. */
+function crReadSelection() {
+  const raw = document.querySelector('input[name="crRate"]:checked')?.value;
+  if (!raw) return null;
+  const [rateId, occupancy] = String(raw).split("|");
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
+  const rate = (cruise?.cabinRates || []).find(r => r.id === rateId);
+  if (!rate || !CR_OCC_SIZE[occupancy]) return null;
+  const unitPrice = crCabinPrice(rate, occupancy);
+  if (unitPrice == null) return null;
+  const pax = Math.max(1, parseInt(document.getElementById("crPax")?.value || "1", 10) || 1);
+  const typed = parseInt(document.getElementById("crCabins")?.value || "", 10);
+  const cabins = Number.isInteger(typed) && typed >= 1 ? typed : crCabinsNeeded(pax, occupancy);
+  return { rate, occupancy, unitPrice, pax, cabins, total: unitPrice * cabins, currency: rate.currency };
+}
+
+/**
+ * Recompute the line the agent is reading.
+ *
+ * Changing the passenger count re-derives the cabin count, because that is the
+ * number they would otherwise have to work out themselves; typing in the cabin
+ * box is an explicit answer and is left alone until the party size changes.
+ */
+function crUpdateQuote() {
+  const picked = document.querySelector('input[name="crRate"]:checked')?.value;
+  const line = document.getElementById("crQuoteLine");
+  if (!line) return;
+  if (!picked) { line.innerHTML = ""; return; }
+  const [, occupancy] = String(picked).split("|");
+  const paxEl = document.getElementById("crPax");
+  const cabinsEl = document.getElementById("crCabins");
+  // Re-derive the cabin count from the party size, unless the agent is in the
+  // middle of typing one — an explicit answer is left alone.
+  if (paxEl && cabinsEl && document.activeElement !== cabinsEl) {
+    const pax = Math.max(1, parseInt(paxEl.value || "1", 10) || 1);
+    cabinsEl.value = crCabinsNeeded(pax, occupancy);
+  }
+  const sel = crReadSelection();
+  if (!sel) { line.innerHTML = ""; return; }
+  const occLabel = t(CR_OCC_KEY[sel.occupancy], sel.occupancy);
+  line.innerHTML = `
+    <div class="cr-quote-what">${escapeHtml(sel.rate.cabinName)} · ${escapeHtml(occLabel)} · ${formatNumber(sel.cabins)} × ${formatPrice(sel.unitPrice, sel.currency)}</div>
+    <div class="cr-quote-total">${formatPrice(sel.total, sel.currency)}</div>`;
 }
 
 /** One "add tour" line: which excursion, when, for how many, plus its write-up. */
@@ -1701,16 +1862,36 @@ function crCollectTours() {
 function crRequestQuote(cruiseId) {
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === cruiseId);
   const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value;
-  const rateId = document.querySelector('input[name="crRate"]:checked')?.value;
   const schedule = (cruise?.schedules || []).find(sc => sc.id === scheduleId);
-  const rate = (cruise?.cabinRates || []).find(r => r.id === rateId);
+  const selection = crReadSelection();
   const tours = crCollectTours();
+  // A transfer the agent started filling in but left without a pickup point is
+  // the one thing that cannot be guessed, so it stops the request rather than
+  // travelling to the desk half-written.
+  const transfer = actCollectTransfer("cr");
+  if (transfer === null) {
+    toast(t("activity.transferFromRequired","Enter where the driver should collect them"), "error");
+    document.getElementById("crTransferFrom")?.focus();
+    return;
+  }
+  const occLabel = selection ? t(CR_OCC_KEY[selection.occupancy], selection.occupancy) : "";
   const lines = [
     schedule ? `${weekdayLabel(schedule.departureDay)} → ${weekdayLabel(schedule.returnDay)} (${schedule.nights} ${t("cruise.nights","Nights")})` : "",
-    rate ? `${t("cruise.cabinName","Cabin")}: ${rate.cabinName}` : "",
+    // The cabin AND how many share it — the half the request never carried.
+    selection
+      ? `${t("cruise.cabinName","Cabin")}: ${selection.rate.cabinName} · ${occLabel} · `
+        + `${selection.cabins} ${t("cruise.cabins","Cabins")} · ${selection.pax} ${t("form.passengers","Passengers")} · `
+        + `${formatPrice(selection.total, selection.currency)}`
+      : "",
+    transfer.transferRequested
+      ? `${t("cruise.transfer","Transfer")}: ${transfer.transferFromName} → ${transfer.transferToName}`
+        + (transfer.transferPickupTime ? ` · ${transfer.transferPickupTime}` : "")
+        + (transfer.transferNotes ? ` · ${transfer.transferNotes}` : "")
+      : (cruise?.transferIncluded ? `${t("cruise.transfer","Transfer")}: ${t("activity.transferIncluded","Transfer included")}` : ""),
     tours.length ? `${t("cruise.addTours","Add Tours / Activities")}: ${tours.map(x => x.name).join(", ")}` : "",
   ].filter(Boolean);
   state.quotePrefillNotes = lines.join("\n");
+  state.quotePrefillPax = selection?.pax;
   closeModal();
   openQuoteRequestModal("CRUISE", cruiseId, cruise?.name || "");
 }
@@ -1842,8 +2023,15 @@ function rfControl(f, ctx) {
       return `<div id="${id}" class="rf-price">${escapeHtml(ctx.priceText || "—")}</div>`;
     case "nationality-select":
       return nationalitySelectHtml(id, dv, ph);
-    case "textarea":
-      return `<textarea id="${id}" rows="3"${phAttr}>${escapeHtml(dv || "")}</textarea>`;
+    case "textarea": {
+      // A screen that already collected a selection (a cruise leg, a cabin and
+      // occupancy, an added transfer, the tours to run alongside it) hands it
+      // over here. The hardcoded fallback form has always done this; the
+      // template path dropped it, so everything the agent picked on the cruise
+      // screen reached the desk as a bare boat name.
+      const seed = (f.key === "notes" && ctx.prefillNotes) ? ctx.prefillNotes : (dv || "");
+      return `<textarea id="${id}" rows="3"${phAttr}>${escapeHtml(seed)}</textarea>`;
+    }
     case "select":
     case "searchable-select":
     case "meal-plan-select": {
@@ -1882,7 +2070,10 @@ function rfControl(f, ctx) {
       const minAttr = min != null ? ` min="${min}"` : "";
       const maxAttr = f.max != null ? ` max="${f.max}"` : "";
       const stepAttr = f.step != null ? ` step="${f.step}"` : "";
-      const val = dv != null ? dv : (f.type === "number" ? "" : 1);
+      // Same reasoning as the notes box: the party size the agent already gave
+      // on the previous screen is the answer, not a number to retype.
+      const seeded = f.type === "pax-counter" && ctx.prefillPax ? ctx.prefillPax : null;
+      const val = seeded != null ? seeded : (dv != null ? dv : (f.type === "number" ? "" : 1));
       return `<input id="${id}" type="number"${minAttr}${maxAttr}${stepAttr} value="${escapeHtml(val)}"${phAttr} oninput="rfFieldChanged('${f.key}')">`;
     }
     case "date":     return `<input id="${id}" type="date" value="${escapeHtml(dv || "")}">`;
@@ -2212,8 +2403,15 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
   const rfTarget = serviceType === "HOTEL" ? "hotel_request"
                  : serviceType === "CRUISE" ? "cruise_request"
                  : "activity_request";
+  // Consumed once, by whichever of the two forms opens. Leaving it set would
+  // carry one screen's selection into the next, unrelated, quote request.
+  const prefillNotes = state.quotePrefillNotes || "";
+  const prefillPax = state.quotePrefillPax;
+  state.quotePrefillNotes = "";
+  state.quotePrefillPax = undefined;
+
   const rfTpl = await rfLoadTemplate(rfTarget);
-  if (rfTpl) return rfOpenModal(rfTarget, rfTpl, { serviceType, serviceId, serviceName });
+  if (rfTpl) return rfOpenModal(rfTarget, rfTpl, { serviceType, serviceId, serviceName, prefillNotes, prefillPax });
 
   // Fallback: original hardcoded quote form.
   const isHotel = serviceType === "HOTEL";
@@ -2232,7 +2430,7 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
       <div class="form-field"><label>${t("form.checkOut","Check-out Date")} *</label>
         <input id="qrCheckOut" type="date"></div>
       <div class="form-field"><label>${t("form.adults","Adults / Pax")} *</label>
-        <input id="qrAdults" type="number" min="1" value="2"></div>
+        <input id="qrAdults" type="number" min="1" value="${escapeHtml(prefillPax || 2)}"></div>
       <div class="form-field"><label>${t("form.children","Children")}</label>
         <input id="qrChildren" type="number" min="0" max="10" value="0" oninput="onChildrenCountChange('qrChildren','childAgesContainer','qr')"></div>
       ${isHotel ? `<div class="form-field"><label>${t("hotel.rooms","Rooms")}</label>
@@ -2247,17 +2445,13 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
         <!-- A screen that already collected a selection (a cruise leg, a cabin,
              the tours to run alongside it) hands it over here so the agent does
              not retype what they just picked. -->
-        <textarea id="qrNotes" rows="3" placeholder="${t("form.notesPlaceholder","Room preferences, dietary needs, accessibility...")}">${escapeHtml(state.quotePrefillNotes || "")}</textarea></div>
+        <textarea id="qrNotes" rows="3" placeholder="${t("form.notesPlaceholder","Room preferences, dietary needs, accessibility...")}">${escapeHtml(prefillNotes)}</textarea></div>
     </div>`;
 
   openModal(t("btn.requestQuote","Request a Quote"), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel","Cancel")}</button>
     <button class="btn btn-primary" id="submitQuoteBtn">${icon("brand-whatsapp")}&nbsp;${t("btn.sendRequest","Send via WhatsApp")}</button>
   `);
-  // Consumed once. Leaving it set would carry one screen's selection into the
-  // next, unrelated, quote request.
-  state.quotePrefillNotes = "";
-
   document.getElementById("submitQuoteBtn").onclick = async () => {
     const checkIn = document.getElementById("qrCheckIn").value;
     const checkOut = document.getElementById("qrCheckOut").value;
@@ -4055,12 +4249,18 @@ function actPartyPriceRows(a) {
 /**
  * The transfer panel: where the driver collects the clients and where they go
  * back. Hidden until the agent asks for it, and never offered at all when the
- * trip already includes a transfer.
+ * service already includes a transfer.
+ *
+ * A trip and a cruise ask the client exactly the same question, so they share
+ * one panel: `prefix` namespaces the inputs, `included` is the service's own
+ * answer, `returnTime` prefills the return leg, and `note` is the operator's
+ * wording about what the price does and does not cover.
  */
-function activityTransferPanel(a, prefix) {
-  if (actTransferIncluded(a)) {
+function transferPanel({ prefix, included, returnTime, note }) {
+  if (included) {
     return `<div class="act-transfer-state act-transfer-state--on">
       ${icon("check")}&nbsp;${t("activity.transferIncluded","Transfer included")}
+      ${note ? `<span class="secondary-text" style="margin-inline-start:8px">${escapeHtml(note)}</span>` : ""}
     </div>`;
   }
   const back = t("activity.transferSameAsPickup", "Back to the pickup point");
@@ -4069,6 +4269,7 @@ function activityTransferPanel(a, prefix) {
       <div class="act-transfer-head">
         <div class="act-transfer-state act-transfer-state--off">
           ${icon("info")}&nbsp;${t("activity.transferNotIncluded","Transfer not included")}
+          ${note ? `<span class="secondary-text" style="margin-inline-start:8px">${escapeHtml(note)}</span>` : ""}
         </div>
         <button type="button" class="btn btn-outline btn-sm" id="${prefix}TransferToggle" onclick="actToggleTransfer('${prefix}')">
           ${icon("car")}&nbsp;${t("activity.addTransfer","Add transfer")}
@@ -4092,8 +4293,8 @@ function activityTransferPanel(a, prefix) {
           </div>
           <div class="form-field">
             <label>${t("activity.transferReturnTime","Return time")}</label>
-            <input id="${prefix}TransferReturn" type="time" value="${escapeHtml(actTimeValue(a.returnTime))}">
-            <small class="field-hint">${t("activity.transferReturnHint","Taken from the trip's return time — change it if they are going on somewhere else.")}</small>
+            <input id="${prefix}TransferReturn" type="time" value="${escapeHtml(actTimeValue(returnTime))}">
+            ${actTimeValue(returnTime) ? `<small class="field-hint">${t("activity.transferReturnHint","Taken from the trip's return time — change it if they are going on somewhere else.")}</small>` : ""}
           </div>
           <div class="form-field full">
             <label>${t("activity.transferNotes","Transfer notes")}</label>
@@ -4102,6 +4303,15 @@ function activityTransferPanel(a, prefix) {
         </div>
       </div>
     </div>`;
+}
+
+/** The panel for one excursion — the trip's own inclusions decide the answer. */
+function activityTransferPanel(a, prefix) {
+  return transferPanel({
+    prefix,
+    included: actTransferIncluded(a),
+    returnTime: a.returnTime,
+  });
 }
 
 /** "05:00 PM" and "17:00" both belong in a <input type=time>, which only takes
