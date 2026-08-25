@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { itineraryDays, itineraryLines, readItinerary } from '../src/shared/cruise-itinerary';
+import { isMultiDay, itineraryDays, itineraryLines, readItinerary } from '../src/shared/itinerary';
 
 /**
  * A cruise programme is typed by an operator, one row at a time, and read back
@@ -111,12 +111,55 @@ test('itineraryLines: each day reads as one line', () => {
 });
 
 test('itineraryLines: Arabic uses the operator\'s own words where there are any', () => {
-  const rows = readItinerary([{ day: 1, title: 'Luxor', titleAr: 'الأقصر' }]);
-  assert.deepEqual(itineraryLines(rows, 'ar'), ['اليوم 1: الأقصر']);
+  // Multi-day on purpose: this is about which language wins, not about how a
+  // row is labelled — a one-day programme numbers its stops instead.
+  const rows = readItinerary([
+    { day: 1, title: 'Luxor', titleAr: 'الأقصر' },
+    { day: 2, title: 'Edfu', titleAr: 'إدفو' },
+  ]);
+  assert.deepEqual(itineraryLines(rows, 'ar'), ['اليوم 1: الأقصر', 'اليوم 2: إدفو']);
 });
 
 test('itineraryLines: a day written only in English still reads in an Arabic list', () => {
   // Falling back is the point — an Arabic voucher must not lose the day.
   const rows = readItinerary([{ day: 2, title: 'Edfu', description: 'Temple of Horus' }]);
   assert.deepEqual(itineraryLines(rows, 'ar'), ['اليوم 2: Edfu — Temple of Horus']);
+});
+
+// ── A day trip has stops, not days ─────────────────────────────────────────
+
+test('isMultiDay: a sailing runs over days, a museum visit does not', () => {
+  assert.equal(isMultiDay(readItinerary([{ day: 1, title: 'Luxor' }, { day: 2, title: 'Edfu' }])), true);
+  assert.equal(isMultiDay(readItinerary([{ day: 1, title: 'Pyramids' }, { day: 1, title: 'Sphinx' }])), false);
+  assert.equal(isMultiDay([]), false);
+});
+
+test('itineraryLines: a one-day programme numbers its stops in order', () => {
+  // "Day 1: Pyramids, Day 1: Sphinx, Day 1: Museum" reads as a mistake. The
+  // rows are the order the guests do things in, so they are numbered as such.
+  const rows = readItinerary([
+    { day: 1, title: 'Giza Pyramids' },
+    { day: 1, title: 'The Sphinx', description: 'Photo stop' },
+  ]);
+  assert.deepEqual(itineraryLines(rows), ['1. Giza Pyramids', '2. The Sphinx — Photo stop']);
+});
+
+test('itineraryLines: a single stop is still numbered, not called Day 1', () => {
+  assert.deepEqual(itineraryLines(readItinerary([{ title: 'Egyptian Museum' }])), ['1. Egyptian Museum']);
+});
+
+test('itineraryLines: one late day is enough to make the whole thing days', () => {
+  // Two things on day 1 and one on day 3 is a three-day programme, so every
+  // row is labelled by its day — including the two that share day one.
+  const rows = readItinerary([
+    { day: 1, title: 'Cairo' },
+    { day: 1, title: 'Giza' },
+    { day: 3, title: 'Alexandria' },
+  ]);
+  assert.deepEqual(itineraryLines(rows), ['Day 1: Cairo', 'Day 1: Giza', 'Day 3: Alexandria']);
+});
+
+test('itineraryLines: a one-day programme numbers stops in Arabic too', () => {
+  const rows = readItinerary([{ day: 1, titleAr: 'الأهرامات' }, { day: 1, titleAr: 'أبو الهول' }]);
+  assert.deepEqual(itineraryLines(rows, 'ar'), ['1. الأهرامات', '2. أبو الهول']);
 });

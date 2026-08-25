@@ -1599,7 +1599,7 @@ async function openCruiseDetails(id) {
       </div>` : `<div class="secondary-text">${t("cruise.schedulesHelp","When the boat leaves and when it is back.")}</div>`}
     </div>
 
-    ${cruiseItineraryHtml(cruise)}
+    ${itineraryHtml(cruise.itinerary, "cruise.itinerary", "Day-by-day programme")}
 
     ${cruiseCabinPicker(cruise, rates)}
 
@@ -1654,18 +1654,29 @@ function crCabinsNeeded(pax, occupancy) {
   return Math.max(1, Math.ceil(heads / (CR_OCC_SIZE[occupancy] || 2)));
 }
 
-/** The day-by-day programme, when the operator has written one. */
-function cruiseItineraryHtml(cruise) {
-  const days = Array.isArray(cruise.itinerary) ? cruise.itinerary : [];
+/**
+ * The programme, when the operator has written one.
+ *
+ * A sailing runs over days and each row says which. A day trip does not: its
+ * rows all sit on day one, so they are numbered as the stops they are —
+ * "Day 1, Day 1, Day 1" against a morning at the Egyptian Museum would read as
+ * a mistake, not a programme. Same rule as the server's `isMultiDay`.
+ */
+function itineraryHtml(rows, labelKey, labelFallback) {
+  const days = Array.isArray(rows) ? rows : [];
   if (!days.length) return "";
+  const byDay = days.reduce((most, d) => Math.max(most, Number(d.day) || 0), 0) > 1;
   return `<div class="form-field full" style="margin-top:14px">
-    <label>${t("cruise.itinerary","Day-by-day programme")}</label>
+    <label>${t(labelKey, labelFallback)}</label>
     <ol class="cr-itinerary">
-      ${days.map(d => {
+      ${days.map((d, i) => {
         const title = locName(d.title, d.titleAr) || "";
         const body = locName(d.description, d.descriptionAr) || "";
+        const marker = byDay
+          ? `${t("cruise.day","Day")} ${formatNumber(d.day)}`
+          : `${formatNumber(i + 1)}.`;
         return `<li class="cr-itinerary-day">
-          <span class="cr-itinerary-num">${t("cruise.day","Day")} ${formatNumber(d.day)}</span>
+          <span class="cr-itinerary-num">${marker}</span>
           <div class="cr-itinerary-body">
             ${title ? `<strong>${escapeHtml(title)}</strong>` : ""}
             ${body ? `<div class="secondary-text">${escapeHtml(body)}</div>` : ""}
@@ -3968,7 +3979,7 @@ async function openPackageActivityForm(activityId) {
       ${activityTransferPanel(activity, "pkg")}
       <div class="form-field full"><label>${t("form.notes","Notes")}</label><textarea id="pkgNotes" rows="2"></textarea></div>
     </div>
-    <div class="act-inc-wrap">${activityInclusionBoxes(activity)}</div>
+    <div class="act-inc-wrap">${itineraryHtml(activity.itinerary, "activity.itinerary", "Programme")}${activityInclusionBoxes(activity)}</div>
     <div class="tr-price-card" style="margin-top:12px">
       <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="pkgTotalPreview">${formatPrice((Number(activity.priceAdult)||0)*2, activity.currency || "USD")}</span></div>
     </div>`, `
@@ -4440,6 +4451,7 @@ async function openActivityDetails(id) {
         </div>
       </div>
       ${description ? `<div class="act-description">${escapeHtml(description)}</div>` : ""}
+      ${itineraryHtml(a.itinerary, "activity.itinerary", "Programme")}
       ${activityInclusionBoxes(a)}
     </div>`;
 

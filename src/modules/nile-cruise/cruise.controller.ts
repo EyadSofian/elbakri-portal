@@ -17,7 +17,7 @@ import {
   isOccupancy,
   priceCruiseBooking,
 } from '../../shared/cruise-rates';
-import { readItinerary } from '../../shared/cruise-itinerary';
+import { readItinerary } from '../../shared/itinerary';
 import { readTransferAddOn } from '../../shared/transfer-addon';
 
 const cruiseInclude = {

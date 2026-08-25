@@ -53,6 +53,19 @@ const activityShape = {
     z.string(),
     z.null(),
   ]).optional(),
+  // The programme, as an ordered list. Only the shape is checked here — which
+  // rows are real, how they are numbered and how they sort is `readItinerary`'s
+  // job, so the form and the database cannot disagree about what one is.
+  itinerary: z.union([
+    z.array(z.object({
+      day: z.union([z.number(), z.string(), z.null()]).optional(),
+      title: z.string().max(300).nullable().optional(),
+      titleAr: z.string().max(300).nullable().optional(),
+      description: z.string().max(5000).nullable().optional(),
+      descriptionAr: z.string().max(5000).nullable().optional(),
+    }).passthrough()),
+    z.null(),
+  ]).optional(),
   // Whether the price already collects the guests, and when it drops them back.
   // Without these declared the portal's "Add transfer" panel has nothing to key
   // off and the return time can never prefill a transfer's pickup.

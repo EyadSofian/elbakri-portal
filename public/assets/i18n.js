@@ -1915,6 +1915,7 @@
       perParty: "per party",
       partiesCharged: "{n} × {label}",
       partyUnitHint: "A {label} covers {size} people — {pax} are charged as {breakdown}.",
+      itinerary: "Programme",
     });
     Object.assign(ar.activity, {
       chooseDest: "اختر الوجهة لعرض رحلاتها",
@@ -1941,6 +1942,7 @@
       perParty: "للمجموعة",
       partiesCharged: "{n} × {label}",
       partyUnitHint: "الـ{label} تكفي {size} أفراد — {pax} فردًا يُحسبوا {breakdown}.",
+      itinerary: "البرنامج",
     });
 
     en.transport = en.transport || {}; ar.transport = ar.transport || {};
@@ -2136,6 +2138,7 @@
       cruiseRates: "One row per cabin category, market and period. Leave a price blank when the cabin is not sold that way.",
       cruiseSchedule: "Which day the boat leaves and which day it is back. Add one row per leg.",
       cruiseItinerary: "One row per day — where the boat is and what the guests do. Shown to the agent and carried into the quote.",
+      activityItinerary: "One row per stop, in the order the guests do them. Leave every row on day 1 for a day trip; number them 1, 2, 3… for a multi-day package.",
       cruiseTransfer: "Tick this when the fare already collects the guests. When it does not, the company portal offers to add a transfer.",
       cruiseTransferNote: "What the fare does and does not cover — e.g. \"Airport to pier only\".",
       cruiseShowPrices: "Off, the agent sees no cabin rates at all — no Single, Double or Triple — only \"price on request\".",
@@ -2149,6 +2152,7 @@
       cruiseRates: "صف لكل نوع كابينة وسوق وفترة. اترك السعر فارغًا إذا لم تكن الكابينة تُباع بهذا الشكل.",
       cruiseSchedule: "يوم تحرك المركب ويوم عودته. أضف صفًا لكل رحلة.",
       cruiseItinerary: "صف لكل يوم — أين تكون المركب وماذا يفعل الضيوف. يظهر للوكيل ويُرسل مع طلب عرض السعر.",
+      activityItinerary: "صف لكل محطة، بالترتيب الذي ينفّذه الضيوف. اترك كل الصفوف على اليوم ١ لرحلة اليوم الواحد؛ ورقّمها ١، ٢، ٣… للبرنامج متعدد الأيام.",
       cruiseTransfer: "فعّل هذا إذا كان السعر يشمل استلام الضيوف بالفعل. وإن لم يكن، تعرض بوابة الشركات إضافة ترانسفير.",
       cruiseTransferNote: "ما الذي يشمله السعر وما لا يشمله — مثال: «من المطار إلى الميناء فقط».",
       cruiseShowPrices: "إذا كان مغلقًا، لن يرى الوكيل أي أسعار كبائن إطلاقًا — لا سنجل ولا دبل ولا تربل — بل «السعر عند الطلب» فقط.",

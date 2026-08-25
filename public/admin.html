@@ -1182,6 +1182,10 @@ const masterConfigs = {
       // this on save, so nothing downstream had to change.
       { name: "inclusions", label: "activityAdmin.inclusions", fallback: "Included / not included", type: "inclusions", cls: "full",
         helpKey: "help.inclusions", help: "One line per thing. Mark each as included or not included." },
+      // The programme, the same editor a cruise uses. A day trip leaves every
+      // row on day 1 and they read as stops; a multi-day package reads as days.
+      { name: "itinerary", label: "activity.itinerary", fallback: "Programme", type: "itinerary", cls: "full",
+        helpKey: "help.activityItinerary", help: "One row per stop, in the order the guests do them. Leave every row on day 1 for a day trip; number them 1, 2, 3… for a multi-day package." },
       { name: "transferIncluded", label: "activityAdmin.transferIncluded", fallback: "Transfer included in the price", type: "checkbox",
         helpKey: "help.activityTransfer", help: "Tick this when the price already collects the guests. When it does not, the company portal offers to add a transfer." },
       { name: "returnTime", label: "activityAdmin.returnTime", fallback: "Return time", type: "time",

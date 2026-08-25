@@ -251,28 +251,49 @@ test('portal: a cabin name is escaped, never injected', () => {
 
 // ── The day-by-day programme ────────────────────────────────────────────────
 
-test('portal: a boat with no programme renders nothing at all', () => {
-  assert.equal(portal.cruiseItineraryHtml({}), '');
-  assert.equal(portal.cruiseItineraryHtml({ itinerary: [] }), '');
+test('portal: no programme renders nothing at all', () => {
+  assert.equal(portal.itineraryHtml(undefined, 'cruise.itinerary', 'Programme'), '');
+  assert.equal(portal.itineraryHtml([], 'cruise.itinerary', 'Programme'), '');
 });
 
-test('portal: a programme lists each day with its write-up', () => {
-  const html = portal.cruiseItineraryHtml({
-    itinerary: [
-      { day: 1, title: 'Embarkation', description: 'Board at Luxor' },
-      { day: 2, title: 'Edfu & Kom Ombo' },
-    ],
-  });
+test('portal: a multi-day programme lists each day with its write-up', () => {
+  const html = portal.itineraryHtml([
+    { day: 1, title: 'Embarkation', description: 'Board at Luxor' },
+    { day: 2, title: 'Edfu & Kom Ombo' },
+  ], 'cruise.itinerary', 'Programme');
   assert.match(html, /Day 1/);
   assert.match(html, /Embarkation/);
   assert.match(html, /Board at Luxor/);
   assert.match(html, /Day 2/);
 });
 
+test('portal: a one-day programme numbers its stops instead of repeating Day 1', () => {
+  // A morning at the Egyptian Museum is a sequence of stops. Labelling them
+  // "Day 1, Day 1, Day 1" would read as a mistake, not a programme.
+  const html = portal.itineraryHtml([
+    { day: 1, title: 'Giza Pyramids' },
+    { day: 1, title: 'The Sphinx' },
+  ], 'activity.itinerary', 'Programme');
+  assert.doesNotMatch(html, /Day 1/);
+  assert.match(html, /1\./);
+  assert.match(html, /2\./);
+});
+
+test('portal: one late day makes the whole programme read as days', () => {
+  const html = portal.itineraryHtml([
+    { day: 1, title: 'Cairo' },
+    { day: 3, title: 'Alexandria' },
+  ], 'activity.itinerary', 'Programme');
+  assert.match(html, /Day 1/);
+  assert.match(html, /Day 3/);
+});
+
 test('portal: a programme line is escaped, never injected', () => {
-  const html = portal.cruiseItineraryHtml({
-    itinerary: [{ day: 1, title: '<img onerror=alert(1)>' }],
-  });
+  const html = portal.itineraryHtml(
+    [{ day: 1, title: '<img onerror=alert(1)>' }],
+    'cruise.itinerary',
+    'Programme',
+  );
   assert.doesNotMatch(html, /<img onerror/);
   assert.match(html, /&lt;img/);
 });

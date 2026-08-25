@@ -1253,6 +1253,11 @@ model Activity {
   descriptionAr      String?                 @db.Text
   includes           Json?
   excludes           Json?
+  // The programme, as an ordered list:
+  //   [{ day, title, titleAr, description, descriptionAr }]
+  // The same shape a cruise carries. A day trip's rows all sit on day one and
+  // read as stops; a multi-day package reads as days.
+  itinerary          Json?
   // The same two lists as one ordered, marked set:
   //   [{ label, labelAr, included: true|false }]
   // `includes` / `excludes` above stay in step with it so vouchers, the older

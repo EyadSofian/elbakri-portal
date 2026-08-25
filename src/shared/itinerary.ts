@@ -1,15 +1,20 @@
 /**
- * The day-by-day programme of a Nile cruise.
+ * The programme of a cruise or an excursion.
  *
- * A boat used to carry one free-text `description`, which is where the whole
+ * Both used to carry one free-text `description`, which is where the whole
  * programme ended up: "Day 1 embarkation, day 2 Edfu and Kom Ombo…" typed as
  * one paragraph. Nothing could read it — a voucher could not list the stops, an
  * agent could not tell which day Abu Simbel fell on without asking, and two
- * boats sold by the same operator were written up in two different styles.
+ * products sold by the same operator were written up in two different styles.
  *
- * A programme is a list of days, so it is stored as one:
+ * A programme is an ordered list, so it is stored as one:
  *
  *   [{ day, title, titleAr, description, descriptionAr }]
+ *
+ * The same shape serves a four-night sailing and a three-hour museum visit: a
+ * multi-day programme reads as days, and one that all falls on a single day
+ * reads as stops (see `isMultiDay`) — numbering a morning at the Egyptian
+ * Museum "Day 1, Day 1, Day 1" would read as a mistake, not a programme.
  *
  * The parsing lives here, away from Express, so every branch is testable and
  * the catalogue form, the agent portal and anything printed later all agree on
@@ -81,9 +86,20 @@ export function readItinerary(value: unknown): ItineraryDay[] {
     .map((r) => r.row);
 }
 
-/** How many nights a programme covers — its last day, not its row count. */
+/** How many days a programme covers — its last day, not its row count. */
 export function itineraryDays(rows: ItineraryDay[]): number {
   return rows.reduce((most, row) => Math.max(most, row.day), 0);
+}
+
+/**
+ * Does this programme run over more than one day?
+ *
+ * A sailing does; a day trip does not. The answer decides whether each row is
+ * labelled by its day or simply numbered as the next stop, so an excursion and
+ * a cruise can share one editor without the excursion reading absurdly.
+ */
+export function isMultiDay(rows: ItineraryDay[]): boolean {
+  return itineraryDays(rows) > 1;
 }
 
 /**
@@ -95,10 +111,14 @@ export function itineraryDays(rows: ItineraryDay[]): number {
  */
 export function itineraryLines(rows: ItineraryDay[], lang: 'en' | 'ar' = 'en'): string[] {
   const dayWord = lang === 'ar' ? 'اليوم' : 'Day';
-  return rows.map((row) => {
+  const byDay = isMultiDay(rows);
+  return rows.map((row, index) => {
     const title = (lang === 'ar' ? row.titleAr ?? row.title : row.title) || '';
     const body = (lang === 'ar' ? row.descriptionAr ?? row.description : row.description) || '';
-    const head = `${dayWord} ${row.day}${title ? `: ${title}` : ''}`;
+    // A one-day programme is a sequence of stops, so its rows are numbered in
+    // order rather than all claiming to be day one.
+    const marker = byDay ? `${dayWord} ${row.day}` : `${index + 1}.`;
+    const head = `${marker}${title ? `${byDay ? ':' : ''} ${title}` : ''}`;
     return body ? `${head} — ${body}` : head;
   });
 }
