@@ -1126,11 +1126,31 @@ const masterConfigs = {
       { name: "departureDays", label: "form.departureDays", fallback: "Departure Days", type: "list", cls: "full", helpKey: "help.daysExample", help: "Example: Monday, Thursday" },
       { name: "duration", label: "form.duration", fallback: "Duration", type: "number", default: 4 },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
+      // The programme, day by day. It used to be typed into the description as
+      // one paragraph, which no voucher could list and no agent could read
+      // without asking which day a stop fell on.
+      { name: "itinerary", label: "cruise.itinerary", fallback: "Day-by-day programme", type: "itinerary", cls: "full",
+        helpKey: "help.cruiseItinerary", help: "One row per day — where the boat is and what the guests do. Shown to the agent and carried into the quote." },
+      { name: "transferIncluded", label: "cruise.transferIncluded", fallback: "Transfer included in the fare", type: "checkbox",
+        checkKey: "cruise.transferIncludedOn", checkLabel: "The fare collects the guests",
+        helpKey: "help.cruiseTransfer", help: "Tick this when the fare already collects the guests. When it does not, the company portal offers to add a transfer." },
+      { name: "transferNote", label: "cruise.transferNote", fallback: "Transfer note", type: "textarea", cls: "full",
+        helpKey: "help.cruiseTransferNote", help: "What the fare does and does not cover — e.g. \"Airport to pier only\"." },
+      { name: "transferNoteAr", label: "cruise.transferNoteAr", fallback: "Transfer note (Arabic)", type: "textarea", cls: "full" },
       // The cabin rate rows are the price now, so the headline is optional —
       // filling in the rate table is what an operator actually does.
       { name: "priceFrom", label: "th.amount", fallback: "Headline \"from\" price (optional)", type: "number", nullable: true,
         helpKey: "help.cruisePriceFrom", help: "Leave blank once the cabin rates are filled in — the cheapest rate becomes the \"from\" price." },
       { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
+      // Without these two the rate table was unreachable: every boat is created
+      // with prices hidden, and there was no way in this form to turn them on,
+      // so the agent's cabin table was permanently empty and Single / Double /
+      // Triple never appeared anywhere in the company portal.
+      { name: "showPriceToAgents", label: "hotel.showPriceToAgents", fallback: "Show Prices to Agents", type: "checkbox",
+        checkKey: "cruise.showPricesOn", checkLabel: "Agents may see the cabin rates",
+        helpKey: "help.cruiseShowPrices", help: "Off, the agent sees no cabin rates at all — no Single, Double or Triple — only \"price on request\"." },
+      { name: "allowQuoteRequest", label: "hotel.allowQuoteRequest", fallback: "Allow Quote Request", type: "checkbox", default: true,
+        checkKey: "cruise.allowQuoteOn", checkLabel: "Agents may request a quote" },
       { name: "imageUrl", label: "activity.mainPhoto", fallback: "Main photo", type: "image", cls: "full" },
       { name: "galleryUrls", label: "cruise.gallery", fallback: "More photos", type: "gallery", cls: "full" },
     ],
@@ -1162,6 +1182,10 @@ const masterConfigs = {
       // this on save, so nothing downstream had to change.
       { name: "inclusions", label: "activityAdmin.inclusions", fallback: "Included / not included", type: "inclusions", cls: "full",
         helpKey: "help.inclusions", help: "One line per thing. Mark each as included or not included." },
+      // The programme, the same editor a cruise uses. A day trip leaves every
+      // row on day 1 and they read as stops; a multi-day package reads as days.
+      { name: "itinerary", label: "activity.itinerary", fallback: "Programme", type: "itinerary", cls: "full",
+        helpKey: "help.activityItinerary", help: "One row per stop, in the order the guests do them. Leave every row on day 1 for a day trip; number them 1, 2, 3… for a multi-day package." },
       { name: "transferIncluded", label: "activityAdmin.transferIncluded", fallback: "Transfer included in the price", type: "checkbox",
         helpKey: "help.activityTransfer", help: "Tick this when the price already collects the guests. When it does not, the company portal offers to add a transfer." },
       { name: "returnTime", label: "activityAdmin.returnTime", fallback: "Return time", type: "time",
@@ -1382,7 +1406,10 @@ function masterField(entity, fieldDef, row) {
     return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><select id="${id}">${hotels.map(h => `<option value="${h.id}" ${h.id === value ? "selected" : ""}>${escapeHtml(h.name)} - ${escapeHtml(h.city || "")}</option>`).join("")}</select>${help}</div>`;
   }
   if (fieldDef.type === "checkbox") {
-    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><label class="check-row"><input id="${id}" type="checkbox" ${value ? "checked" : ""}> ${t("status.ACTIVE")}</label>${help}</div>`;
+    // "Transfer included in the fare — [x] Active" reads as nonsense. A field
+    // may name what ticking it actually means; the rest keep the old wording.
+    const on = fieldDef.checkKey ? t(fieldDef.checkKey, fieldDef.checkLabel) : (fieldDef.checkLabel || t("status.ACTIVE"));
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><label class="check-row"><input id="${id}" type="checkbox" ${value ? "checked" : ""}> ${escapeHtml(on)}</label>${help}</div>`;
   }
   // The destination this record belongs to, drawn from the Destinations page —
   // one list, so a destination added there is instantly offered here. The ＋
@@ -1442,7 +1469,102 @@ function masterField(entity, fieldDef, row) {
       <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="incAddRow('${id}')">${icon("plus")}${t("activityAdmin.addInclusion","Add line")}</button>
       ${help}</div>`;
   }
+  // The day-by-day programme of a cruise. One row per day, held in a hidden
+  // JSON field so the whole editor stays inside the generic save path — the
+  // same trick the inclusions editor above uses.
+  if (fieldDef.type === "itinerary") {
+    const rows = itineraryRowsFrom(raw);
+    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label>
+      <input type="hidden" id="${id}" value="${escapeHtml(JSON.stringify(rows))}">
+      <div id="${id}_rows" class="itin-editor">${rows.map((r, i) => itineraryRowHtml(id, r, i)).join("")}</div>
+      <div id="${id}_empty" class="secondary-text" style="margin-top:6px;display:${rows.length ? "none" : "block"}">${t("cruise.noItinerary","No programme yet — add a row per day of the sailing.")}</div>
+      <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="itinAddRow('${id}')">${icon("plus")}${t("cruise.addDay","Add day")}</button>
+      ${help}</div>`;
+  }
   return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><input id="${id}" type="${fieldDef.type || "text"}" value="${escapeHtml(value)}" ${fieldDef.type === "number" ? 'step="0.01" min="0"' : ""} ${fieldDef.placeholder ? `placeholder="${escapeHtml(fieldDef.placeholder)}"` : ""}>${help}</div>`;
+}
+
+/**
+ * Read whatever the boat already holds into the editor's shape.
+ *
+ * A row saved before this existed has nothing at all, and one edited straight
+ * in the database may be missing a day number — it falls back to its position
+ * rather than being dropped, which is the same rule the server applies.
+ */
+function itineraryRowsFrom(raw) {
+  if (!Array.isArray(raw)) return [];
+  const rows = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const title = String(entry.title ?? "").trim();
+    const titleAr = String(entry.titleAr ?? "").trim();
+    const description = String(entry.description ?? "").trim();
+    const descriptionAr = String(entry.descriptionAr ?? "").trim();
+    if (!title && !titleAr && !description && !descriptionAr) continue;
+    const day = Number(entry.day);
+    rows.push({
+      day: Number.isInteger(day) && day >= 1 ? day : rows.length + 1,
+      title, titleAr, description, descriptionAr,
+    });
+  }
+  return rows;
+}
+
+function itineraryRowHtml(id, row, index) {
+  return `<div class="itin-row" data-index="${index}">
+    <div class="itin-row-day">
+      <label>${t("cruise.day","Day")}</label>
+      <input class="itin-day" type="number" min="1" step="1" value="${escapeHtml(row.day || index + 1)}" oninput="itinSync('${id}')">
+    </div>
+    <div class="itin-row-fields">
+      <input class="itin-title" value="${escapeHtml(row.title || "")}" placeholder="${escapeHtml(t("cruise.dayTitlePlaceholder","e.g. Edfu & Kom Ombo"))}" oninput="itinSync('${id}')">
+      <input class="itin-title-ar" value="${escapeHtml(row.titleAr || "")}" placeholder="${escapeHtml(t("cruise.dayTitlePlaceholderAr","Arabic (optional)"))}" oninput="itinSync('${id}')" dir="rtl">
+      <textarea class="itin-desc" rows="2" placeholder="${escapeHtml(t("cruise.dayDescPlaceholder","What the guests do that day"))}" oninput="itinSync('${id}')">${escapeHtml(row.description || "")}</textarea>
+      <textarea class="itin-desc-ar" rows="2" placeholder="${escapeHtml(t("cruise.dayDescPlaceholderAr","Arabic write-up (optional)"))}" oninput="itinSync('${id}')" dir="rtl">${escapeHtml(row.descriptionAr || "")}</textarea>
+    </div>
+    <button type="button" class="icon-button btn-icon" title="${t("btn.remove","Remove")}" onclick="itinRemoveRow('${id}', this)">${icon("trash-2")}</button>
+  </div>`;
+}
+
+function itinAddRow(id) {
+  const host = document.getElementById(id + "_rows");
+  if (!host) return;
+  const index = host.querySelectorAll(".itin-row").length;
+  host.insertAdjacentHTML("beforeend", itineraryRowHtml(id, { day: index + 1 }, index));
+  const added = host.lastElementChild;
+  refreshIcons(added);
+  added.querySelector(".itin-title")?.focus();
+  const empty = document.getElementById(id + "_empty");
+  if (empty) empty.style.display = "none";
+  itinSync(id);
+}
+
+function itinRemoveRow(id, btn) {
+  btn.closest(".itin-row")?.remove();
+  const host = document.getElementById(id + "_rows");
+  const empty = document.getElementById(id + "_empty");
+  if (empty) empty.style.display = host?.querySelectorAll(".itin-row").length ? "none" : "block";
+  itinSync(id);
+}
+
+/** Mirror the editor into its hidden field, so the generic save path sees it. */
+function itinSync(id) {
+  const host = document.getElementById(id + "_rows");
+  const field = document.getElementById(id);
+  if (!host || !field) return;
+  const rows = [...host.querySelectorAll(".itin-row")].map((row, i) => {
+    const day = parseInt(row.querySelector(".itin-day")?.value || "", 10);
+    return {
+      day: Number.isInteger(day) && day >= 1 ? day : i + 1,
+      title: row.querySelector(".itin-title")?.value.trim() || "",
+      titleAr: row.querySelector(".itin-title-ar")?.value.trim() || "",
+      description: row.querySelector(".itin-desc")?.value.trim() || "",
+      descriptionAr: row.querySelector(".itin-desc-ar")?.value.trim() || "",
+    };
+    // A row with nothing in any box is a line the admin left behind. It stays
+    // in the editor so nobody loses what they are typing, and is dropped here.
+  }).filter(r => r.title || r.titleAr || r.description || r.descriptionAr);
+  field.value = JSON.stringify(rows);
 }
 
 /**
@@ -1800,11 +1922,11 @@ function collectMasterPayload(entity) {
     if (fieldDef.type === "number") value = value === "" ? (fieldDef.nullable ? null : 0) : Number(value);
     if (fieldDef.type === "list") value = String(value || "").split(/[\n,]+/).map(item => item.trim()).filter(Boolean);
     if (fieldDef.type === "gallery") value = String(value || "").split(/\n+/).map(item => item.trim()).filter(Boolean);
-    if (fieldDef.type === "inclusions") {
+    if (fieldDef.type === "inclusions" || fieldDef.type === "itinerary") {
       try { value = JSON.parse(value || "[]"); } catch { value = []; }
     }
     if (fieldDef.nullable && value === "") value = null;
-    if (value !== "" || value === null || fieldDef.required || fieldDef.type === "number" || fieldDef.type === "list" || fieldDef.type === "gallery" || fieldDef.type === "inclusions") {
+    if (value !== "" || value === null || fieldDef.required || fieldDef.type === "number" || fieldDef.type === "list" || fieldDef.type === "gallery" || fieldDef.type === "inclusions" || fieldDef.type === "itinerary") {
       payload[fieldDef.name] = value;
     }
   }
@@ -4160,6 +4282,11 @@ async function renderCruises() {
         ? formatMoney(c.priceFrom, c.currency)
         : `<span class="secondary-text">${t("cruise.noRates","No cabin rates set yet")}</span>`;
     }],
+    // Priced but hidden is the state that had every agent seeing an empty cabin
+    // table, so the list says which of the two a boat is in.
+    ["hotel.showPriceToAgents", c => c.showPriceToAgents
+      ? `<span class="badge badge-confirmed">${icon("eye")} ${t("hotel.visible","Visible")}</span>`
+      : `<span class="badge badge-pending">${icon("eye-off")} ${t("hotel.hidden","Hidden")}</span>`],
     ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", c => `<div class="row-actions">
       <button class="btn btn-outline btn-sm" onclick="openCruiseRatesEditor('${c.id}')">${icon("table-2")}${t("cruise.cabinRates","Cabin Rates")}</button>

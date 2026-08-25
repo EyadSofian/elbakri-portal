@@ -915,6 +915,17 @@ model NileCruise {
   duration          Int               @default(4)
   description       String?           @db.Text
   descriptionAr     String?           @db.Text
+  // The day-by-day programme, as an ordered list:
+  //   [{ day, title, titleAr, description, descriptionAr }]
+  // A boat is sold on where it stops, not on a paragraph of prose — the write-up
+  // above never said which day Kom Ombo happens on, so every agent asked.
+  itinerary         Json?
+  // Does the fare collect the guests? When it does not, the portal offers the
+  // agent an "Add transfer" panel instead of leaving them to arrange it off-book
+  // — the same question, and the same answer, as an excursion.
+  transferIncluded  Boolean           @default(false)
+  transferNote      String?           @db.Text
+  transferNoteAr    String?           @db.Text
   imageUrl          String?           @db.Text
   galleryUrls       Json?
   // Kept only as the "from" headline. A boat is priced by its rate rows now —
@@ -988,45 +999,57 @@ model CruiseCabinRate {
 }
 
 model CruiseBooking {
-  id             String                  @id @default(cuid())
-  refNumber      String                  @unique
-  cruiseId       String
-  cruise         NileCruise              @relation(fields: [cruiseId], references: [id])
-  companyId      String
-  company        Company                 @relation(fields: [companyId], references: [id])
-  createdById    String
-  createdBy      User                    @relation("CruiseBookingCreatedBy", fields: [createdById], references: [id])
-  checkIn        DateTime
-  checkOut       DateTime
-  cabinType      CabinType               @default(STANDARD)
+  id                 String                  @id @default(cuid())
+  refNumber          String                  @unique
+  cruiseId           String
+  cruise             NileCruise              @relation(fields: [cruiseId], references: [id])
+  companyId          String
+  company            Company                 @relation(fields: [companyId], references: [id])
+  createdById        String
+  createdBy          User                    @relation("CruiseBookingCreatedBy", fields: [createdById], references: [id])
+  checkIn            DateTime
+  checkOut           DateTime
+  cabinType          CabinType               @default(STANDARD)
   // The priced row this booking was quoted from, and which of its three
   // occupancy prices was used. Matching a booking to a price by cabin *text*
   // was the old way and it silently repriced whenever a rate was renamed.
-  cabinRateId    String?
-  cabinRate      CruiseCabinRate?        @relation(fields: [cabinRateId], references: [id], onDelete: SetNull)
-  occupancy      String? // SINGLE | DOUBLE | TRIPLE
-  cabinCount     Int                     @default(1)
-  scheduleId     String?
-  schedule       CruiseSchedule?         @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
-  passengerNames Json?
-  adultsCount    Int                     @default(1)
-  childrenCount  Int                     @default(0)
-  addOns         CruiseBookingActivity[]
-  totalAmount    Decimal                 @db.Decimal(12, 2)
-  currency       String                  @default("USD")
-  sourceAmount   Decimal?                @db.Decimal(12, 2)
-  sourceCurrency String?
-  exchangeRate   Decimal?                @db.Decimal(18, 8)
-  exchangeRateAt DateTime?
-  status         BookingStatus           @default(PENDING)
-  notes          String?                 @db.Text
-  invoice        Invoice?
-  requestedAt    DateTime                @default(now())
-  confirmedAt    DateTime?
-  confirmedById  String?
-  confirmedBy    User?                   @relation("CruiseConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
+  cabinRateId        String?
+  cabinRate          CruiseCabinRate?        @relation(fields: [cabinRateId], references: [id], onDelete: SetNull)
+  occupancy          String? // SINGLE | DOUBLE | TRIPLE
+  cabinCount         Int                     @default(1)
+  scheduleId         String?
+  schedule           CruiseSchedule?         @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  passengerNames     Json?
+  adultsCount        Int                     @default(1)
+  childrenCount      Int                     @default(0)
+  // Transfer add-on — filled only when the fare does not already collect the
+  // guests and the agent asked for one. The route is captured as its own leg,
+  // exactly as an activity booking captures it, so a boat and an excursion
+  // booked on the same day read the same way on the voucher.
+  transferRequested  Boolean                 @default(false)
+  transferFromType   String? // HOTEL | AIRPORT | DESTINATION | ADDRESS
+  transferFromName   String?
+  transferToType     String?
+  transferToName     String?
+  transferPickupTime String? // "08:30" — when the driver collects them
+  transferReturnTime String?
+  transferNotes      String?                 @db.Text
+  addOns             CruiseBookingActivity[]
+  totalAmount        Decimal                 @db.Decimal(12, 2)
+  currency           String                  @default("USD")
+  sourceAmount       Decimal?                @db.Decimal(12, 2)
+  sourceCurrency     String?
+  exchangeRate       Decimal?                @db.Decimal(18, 8)
+  exchangeRateAt     DateTime?
+  status             BookingStatus           @default(PENDING)
+  notes              String?                 @db.Text
+  invoice            Invoice?
+  requestedAt        DateTime                @default(now())
+  confirmedAt        DateTime?
+  confirmedById      String?
+  confirmedBy        User?                   @relation("CruiseConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
   @@index([companyId])
   @@index([status])
@@ -1230,6 +1253,11 @@ model Activity {
   descriptionAr      String?                 @db.Text
   includes           Json?
   excludes           Json?
+  // The programme, as an ordered list:
+  //   [{ day, title, titleAr, description, descriptionAr }]
+  // The same shape a cruise carries. A day trip's rows all sit on day one and
+  // read as stops; a multi-day package reads as days.
+  itinerary          Json?
   // The same two lists as one ordered, marked set:
   //   [{ label, labelAr, included: true|false }]
   // `includes` / `excludes` above stay in step with it so vouchers, the older

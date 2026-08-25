@@ -43,6 +43,22 @@ const numField = z.preprocess(
 /** A list the form may send as an array, one string, or delimited text. */
 const listField = z.union([z.array(z.string()), z.string(), z.null()]).optional();
 
+/**
+ * The day-by-day programme. Only the shape is checked here — which rows are
+ * real, how they are numbered and how they sort is `readItinerary`'s job, so
+ * the form and the database can never disagree about what a programme is.
+ */
+const itineraryField = z.union([
+  z.array(z.object({
+    day: z.union([z.number(), z.string(), z.null()]).optional(),
+    title: z.string().max(300).nullable().optional(),
+    titleAr: z.string().max(300).nullable().optional(),
+    description: z.string().max(5000).nullable().optional(),
+    descriptionAr: z.string().max(5000).nullable().optional(),
+  }).passthrough()),
+  z.null(),
+]).optional();
+
 const cruiseShape = {
   name: z.string().min(2),
   nameAr: strField,
@@ -54,6 +70,12 @@ const cruiseShape = {
   duration: numField,
   description: strField,
   descriptionAr: strField,
+  itinerary: itineraryField,
+  // Does the fare already collect the guests? When it does not, the portal
+  // offers the agent an added transfer leg rather than leaving them to guess.
+  transferIncluded: z.boolean().optional(),
+  transferNote: strField,
+  transferNoteAr: strField,
   // The cabin rate rows are the price; this is only the optional headline.
   priceFrom: numField,
   currency: strField,

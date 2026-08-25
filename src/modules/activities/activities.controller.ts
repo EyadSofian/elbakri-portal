@@ -27,6 +27,7 @@ import {
   setInclusions,
 } from '../../shared/inclusions';
 import { readTransferAddOn } from '../../shared/transfer-addon';
+import { readItinerary } from '../../shared/itinerary';
 
 const activityInclude = {
   activity: { select: { id: true, name: true, city: true, category: true } },
@@ -73,7 +74,13 @@ export async function listActivities(req: Request, res: Response): Promise<void>
   await applyMarketPrice(activities, {
     entityType: 'ACTIVITY_CHILD', market, companyId, priceField: 'priceChild', currencyField: 'currency',
   });
-  res.json({ success: true, data: activities });
+  // The programme is normalised on the way out as well as in: a trip whose rows
+  // were written before this existed, or edited straight in the database, still
+  // reaches every reader as one ordered, gap-free list.
+  res.json({
+    success: true,
+    data: activities.map((activity) => ({ ...activity, itinerary: readItinerary(activity.itinerary) })),
+  });
 }
 
 /** Every way an excursion can be priced. A blank field means "not sold this
@@ -115,6 +122,16 @@ function applyInclusions(data: Record<string, unknown>, body: Record<string, unk
   data.inclusions = setInclusions(rows);
   data.includes = setJsonStringArray(includedLabels(rows));
   data.excludes = setJsonStringArray(excludedLabels(rows));
+}
+
+/**
+ * The programme, normalised on the way in — blank rows dropped, days numbered
+ * and ordered — so every reader downstream gets the same list and none of them
+ * has to re-derive it. An explicit null clears it.
+ */
+function applyItinerary(data: Record<string, unknown>, body: Record<string, unknown>): void {
+  if (body.itinerary === undefined) return;
+  data.itinerary = body.itinerary === null ? undefined : readItinerary(body.itinerary);
 }
 
 /** The transfer half of the catalogue form. */
@@ -202,6 +219,7 @@ export async function createActivity(req: Request, res: Response): Promise<void>
     if (body[f] !== undefined) data[f] = setJsonStringArray(body[f]);
   }
   applyInclusions(data, body);
+  applyItinerary(data, body);
   applyTransferFields(data, body);
   data.isConfirmableInApp = body.isConfirmableInApp !== undefined && body.isConfirmableInApp !== null
     ? Boolean(body.isConfirmableInApp)
@@ -235,6 +253,7 @@ export async function updateActivity(req: Request, res: Response): Promise<void>
     if (body[f] !== undefined) data[f] = setJsonStringArray(body[f]);
   }
   applyInclusions(data, body);
+  applyItinerary(data, body);
   applyTransferFields(data, body);
   if (body.isConfirmableInApp !== undefined) data.isConfirmableInApp = Boolean(body.isConfirmableInApp);
   if (body.isActive !== undefined && body.isActive !== null) data.isActive = Boolean(body.isActive);

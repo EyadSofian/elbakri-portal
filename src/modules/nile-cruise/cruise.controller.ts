@@ -17,6 +17,8 @@ import {
   isOccupancy,
   priceCruiseBooking,
 } from '../../shared/cruise-rates';
+import { readItinerary } from '../../shared/itinerary';
+import { readTransferAddOn } from '../../shared/transfer-addon';
 
 const cruiseInclude = {
   cruise: { select: { id: true, name: true, route: true, shipType: true } },
@@ -54,8 +56,14 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
       schedules: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
     },
   });
+  // The programme is normalised on the way out as well as in: a boat whose rows
+  // were written before this existed, or edited straight in the database, still
+  // reaches every reader as one ordered, gap-free list.
   if (caller.role === 'SUPERADMIN') {
-    res.json({ success: true, data: cruises });
+    res.json({
+      success: true,
+      data: cruises.map((cruise) => ({ ...cruise, itinerary: readItinerary(cruise.itinerary) })),
+    });
     return;
   }
 
@@ -76,7 +84,12 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
     const headline = cheapest?.amount ?? ov?.amount ?? cruise.priceFrom;
     return {
       ...cruise,
+      itinerary: readItinerary(cruise.itinerary),
       cabinRates: cruise.showPriceToAgents ? rates : [],
+      // Whether this boat HAS a priced rate table, regardless of whether the
+      // agent may see it. Without this the portal cannot tell "nobody has
+      // priced this boat" from "the prices are hidden from you", and it told
+      // the agent the first when it meant the second.
       hasRateMatrix: rates.length > 0,
       priceFrom: cruise.showPriceToAgents ? headline : null,
       currency: cheapest?.currency ?? ov?.currency ?? cruise.currency,
@@ -94,6 +107,7 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
  */
 const CRUISE_TEXT_FIELDS = [
   'name', 'nameAr', 'operator', 'description', 'descriptionAr', 'imageUrl',
+  'transferNote', 'transferNoteAr',
 ] as const;
 const CRUISE_LIST_FIELDS = ['departureDays', 'galleryUrls'] as const;
 
@@ -121,6 +135,13 @@ function cruiseData(body: Record<string, unknown>, forCreate: boolean): Record<s
     const n = raw === null || raw === '' ? null : Number(raw);
     data.priceFrom = n !== null && Number.isFinite(n) && n >= 0 ? new Decimal(n) : null;
   }
+  // The programme is normalised on the way in — blank rows dropped, days
+  // numbered and ordered — so every reader downstream gets the same list and
+  // none of them has to re-derive it. An explicit empty list clears it.
+  if (body.itinerary !== undefined) {
+    data.itinerary = body.itinerary === null ? undefined : readItinerary(body.itinerary);
+  }
+  if (body.transferIncluded !== undefined) data.transferIncluded = Boolean(body.transferIncluded);
   if (body.showPriceToAgents !== undefined) data.showPriceToAgents = Boolean(body.showPriceToAgents);
   if (body.allowQuoteRequest !== undefined) data.allowQuoteRequest = Boolean(body.allowQuoteRequest);
   if (body.isActive !== undefined) data.isActive = Boolean(body.isActive);
@@ -222,6 +243,16 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     totalAmount: number;
     currency?: string;
     notes?: string;
+    // The added transfer leg — only honoured when the fare does not already
+    // collect the guests. Same keys as an activity booking sends.
+    transferRequested?: boolean;
+    transferFromType?: string;
+    transferFromName?: string;
+    transferToType?: string;
+    transferToName?: string;
+    transferPickupTime?: string;
+    transferReturnTime?: string;
+    transferNotes?: string;
   };
   const companyId = body.companyId ?? caller.companyId!;
   if (!companyId) {
@@ -237,7 +268,7 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     if (!company.isActive) throw new Error('COMPANY_INACTIVE');
     const cruise = await prisma.nileCruise.findFirst({
       where: { id: body.cruiseId, isActive: true },
-      select: { id: true },
+      select: { id: true, transferIncluded: true },
     });
     if (!cruise) throw new Error('CRUISE_NOT_AVAILABLE');
 
@@ -289,6 +320,14 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
       if (Number.isFinite(amount) && amount > 0) sourceAmount = sourceAmount.add(new Decimal(amount));
     }
 
+    // A fare that already collects its guests can never carry an added
+    // transfer, whatever the payload says, so the boat's own flag — not the
+    // request — has the last word and the voucher cannot promise the same car
+    // twice.
+    const transfer = readTransferAddOn(body as unknown as Record<string, unknown>, {
+      transferIncluded: cruise.transferIncluded,
+    });
+
     // Explicit price in an explicit currency — used verbatim, no FX.
     const charge = explicitMoney(sourceAmount, sourceCurrency);
     const [refNumber, invoiceNumber] = await Promise.all([
@@ -314,6 +353,7 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
           passengerNames: setJsonStringArray(body.passengerNames),
           adultsCount,
           childrenCount,
+          ...transfer,
           addOns: {
             create: addOns.map((a, index) => ({
               activityId: a.activityId ?? null,

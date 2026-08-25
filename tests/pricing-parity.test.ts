@@ -8,6 +8,12 @@ import {
   compositionUnits,
   partyComposition,
 } from '../src/shared/activity-pricing';
+import {
+  OCCUPANCIES,
+  Occupancy,
+  cabinsNeeded,
+  priceCruiseBooking,
+} from '../src/shared/cruise-rates';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { loadPortal } = require('./helpers/load-portal') as {
@@ -113,4 +119,69 @@ test('the two sides agree on the case the operator asked about', () => {
   assert.deepEqual(server.map((l) => [l.basis, l.count]), [['DOUBLE', 2], ['SINGLE', 1]]);
   assert.equal(compositionTotal(server).toString(), '260');
   assert.equal(portal.actCompositionTotal(client), 260);
+});
+
+// ── A cruise cabin: the portal previews it, the desk charges it ─────────────
+
+test('portal and server fill the same number of cabins, for every party', () => {
+  // The portal works out how many cabins a party needs so the agent does not
+  // have to; the server works it out again when the booking is priced. If they
+  // ever drift, the agent quotes for two cabins and the client is billed three.
+  let compared = 0;
+  for (const occupancy of OCCUPANCIES) {
+    for (let pax = 1; pax <= 12; pax += 1) {
+      assert.equal(
+        portal.crCabinsNeeded(pax, occupancy),
+        cabinsNeeded(pax, occupancy),
+        `cabins disagree for ${pax} guests at ${occupancy}`,
+      );
+      compared += 1;
+    }
+  }
+  assert.equal(compared, OCCUPANCIES.length * 12, 'the sweep did not cover every occupancy');
+});
+
+test('portal and server reach the same cabin total', () => {
+  const row = {
+    id: 'r1',
+    cabinName: 'Standard',
+    market: null,
+    currency: 'USD',
+    singlePrice: new Decimal(900),
+    doublePrice: new Decimal(600),
+    triplePrice: null,
+    validFrom: null,
+    validTo: null,
+  };
+  const portalRow = { singlePrice: 900, doublePrice: 600, triplePrice: null };
+  for (const occupancy of ['SINGLE', 'DOUBLE'] as Occupancy[]) {
+    for (let pax = 1; pax <= 7; pax += 1) {
+      const server = priceCruiseBooking({ row, occupancy, pax })!;
+      const unit = portal.crCabinPrice(portalRow, occupancy) as number;
+      const cabins = portal.crCabinsNeeded(pax, occupancy) as number;
+      assert.equal(
+        String(unit * cabins),
+        server.total.toString(),
+        `total disagrees for ${pax} guests at ${occupancy}`,
+      );
+    }
+  }
+});
+
+test('both sides refuse to sell a cabin at an occupancy it has no price for', () => {
+  // A blank triple price means "not sold that way". Reading it as zero on
+  // either side would give the cabin away.
+  const row = {
+    id: 'r1',
+    cabinName: 'Standard',
+    market: null,
+    currency: 'USD',
+    singlePrice: new Decimal(900),
+    doublePrice: new Decimal(600),
+    triplePrice: null,
+    validFrom: null,
+    validTo: null,
+  };
+  assert.equal(priceCruiseBooking({ row, occupancy: 'TRIPLE', pax: 3 }), null);
+  assert.equal(portal.crCabinPrice({ triplePrice: null }, 'TRIPLE'), null);
 });

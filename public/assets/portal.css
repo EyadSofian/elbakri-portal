@@ -8100,6 +8100,100 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
   .inc-row { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* ── Admin: a cruise programme, one day at a time ─────────────────────────── */
+.itin-editor { display: grid; gap: 8px; }
+
+.itin-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-10);
+  background: var(--surface);
+}
+
+.itin-row-day { display: grid; gap: 4px; }
+.itin-row-day label { font-size: 11px; font-weight: 700; color: var(--text-muted); }
+.itin-row-day input { width: 100%; text-align: center; }
+
+.itin-row-fields { display: grid; gap: 6px; min-width: 0; }
+.itin-row-fields input,
+.itin-row-fields textarea { width: 100%; }
+
+/* The delete button sits level with the first line, not floating mid-row. */
+.itin-row > .icon-button { margin-block-start: 20px; }
+
+@media (max-width: 640px) {
+  .itin-row { grid-template-columns: 64px minmax(0, 1fr) auto; }
+}
+
+/* ── Portal: a cruise programme, and picking a cabin at an occupancy ─────── */
+.cr-itinerary {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cr-itinerary-day {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-10);
+  background: var(--surface);
+}
+
+.cr-itinerary-num {
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  color: var(--brand-navy-2, var(--text-secondary));
+}
+
+.cr-itinerary-body { min-width: 0; }
+
+/* Every priced cell is a choice — an unpriced one is not sold that way. */
+.cr-rate-table td.cr-cell,
+.cr-rate-table td.cr-cell-empty { text-align: center; }
+.cr-rate-table td.cr-cell-empty { color: var(--text-muted); }
+
+.cr-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-10);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cr-pick input { width: auto; margin: 0; }
+.cr-pick:has(input:checked) {
+  border-color: var(--brand-gold, var(--info));
+  background: var(--info-soft);
+}
+
+.cr-quote-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.cr-quote-line:empty { display: none; }
+.cr-quote-what { font-size: 12px; color: var(--text-secondary); }
+.cr-quote-total { font-size: 18px; font-weight: 800; color: var(--brand-navy-2, var(--text-primary)); }
+
 /* Admin: one cabin rate row / one sailing leg. */
 .cr-row {
   border: 1px solid var(--border);

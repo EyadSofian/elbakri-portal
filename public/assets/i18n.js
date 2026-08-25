@@ -1915,6 +1915,7 @@
       perParty: "per party",
       partiesCharged: "{n} × {label}",
       partyUnitHint: "A {label} covers {size} people — {pax} are charged as {breakdown}.",
+      itinerary: "Programme",
     });
     Object.assign(ar.activity, {
       chooseDest: "اختر الوجهة لعرض رحلاتها",
@@ -1941,6 +1942,7 @@
       perParty: "للمجموعة",
       partiesCharged: "{n} × {label}",
       partyUnitHint: "الـ{label} تكفي {size} أفراد — {pax} فردًا يُحسبوا {breakdown}.",
+      itinerary: "البرنامج",
     });
 
     en.transport = en.transport || {}; ar.transport = ar.transport || {};
@@ -2047,6 +2049,24 @@
       addToursHelp: "Excursions to run alongside the cruise. The description is shown to your client.",
       addTour: "Add tour",
       noRates: "No cabin rates set yet",
+      ratesHidden: "Cabin rates for this boat are quoted by the operations team — send a request and they will price it.",
+      pickCabinHelp: "Pick the cabin and how many share it — the price is per cabin, per sailing.",
+      cabinsHint: "Worked out from the passenger count — change it if they want the cabins split differently.",
+      itinerary: "Day-by-day programme",
+      day: "Day",
+      addDay: "Add day",
+      noItinerary: "No programme yet — add a row per day of the sailing.",
+      dayTitlePlaceholder: "e.g. Edfu & Kom Ombo",
+      dayTitlePlaceholderAr: "Arabic (optional)",
+      dayDescPlaceholder: "What the guests do that day",
+      dayDescPlaceholderAr: "Arabic write-up (optional)",
+      transfer: "Transfer",
+      transferIncluded: "Transfer included in the fare",
+      transferIncludedOn: "The fare collects the guests",
+      transferNote: "Transfer note",
+      transferNoteAr: "Transfer note (Arabic)",
+      showPricesOn: "Agents may see the cabin rates",
+      allowQuoteOn: "Agents may request a quote",
       gallery: "Photos",
     });
     Object.assign(ar.cruise, {
@@ -2066,6 +2086,24 @@
       addToursHelp: "رحلات تُنفَّذ بجانب الكروز، ويظهر شرحها للعميل.",
       addTour: "أضف تور",
       noRates: "لم تُحدَّد أسعار كبائن بعد",
+      ratesHidden: "أسعار كبائن هذه الرحلة يحددها فريق العمليات — أرسل طلبًا وسيتم تسعيرها لك.",
+      pickCabinHelp: "اختر الكابينة وعدد المقيمين بها — السعر لكل كابينة في الرحلة الواحدة.",
+      cabinsHint: "محسوب من عدد الركاب — غيّره لو العميل يريد توزيع الكبائن بشكل مختلف.",
+      itinerary: "البرنامج اليومي",
+      day: "اليوم",
+      addDay: "أضف يومًا",
+      noItinerary: "لا يوجد برنامج بعد — أضف صفًا لكل يوم من أيام الرحلة.",
+      dayTitlePlaceholder: "مثال: إدفو وكوم أمبو",
+      dayTitlePlaceholderAr: "بالعربية (اختياري)",
+      dayDescPlaceholder: "ماذا يفعل الضيوف في هذا اليوم",
+      dayDescPlaceholderAr: "الشرح بالعربية (اختياري)",
+      transfer: "الانتقالات",
+      transferIncluded: "الانتقالات مشمولة في السعر",
+      transferIncludedOn: "السعر يشمل استلام الضيوف",
+      transferNote: "ملاحظة الانتقالات",
+      transferNoteAr: "ملاحظة الانتقالات (بالعربية)",
+      showPricesOn: "السماح للوكلاء برؤية أسعار الكبائن",
+      allowQuoteOn: "السماح للوكلاء بطلب عرض سعر",
       gallery: "الصور",
     });
 
@@ -2099,6 +2137,11 @@
       photoTag: "Group photos under a name your agents will recognise — Sea View, Single Room, Aqua Park.",
       cruiseRates: "One row per cabin category, market and period. Leave a price blank when the cabin is not sold that way.",
       cruiseSchedule: "Which day the boat leaves and which day it is back. Add one row per leg.",
+      cruiseItinerary: "One row per day — where the boat is and what the guests do. Shown to the agent and carried into the quote.",
+      activityItinerary: "One row per stop, in the order the guests do them. Leave every row on day 1 for a day trip; number them 1, 2, 3… for a multi-day package.",
+      cruiseTransfer: "Tick this when the fare already collects the guests. When it does not, the company portal offers to add a transfer.",
+      cruiseTransferNote: "What the fare does and does not cover — e.g. \"Airport to pier only\".",
+      cruiseShowPrices: "Off, the agent sees no cabin rates at all — no Single, Double or Triple — only \"price on request\".",
     });
     Object.assign(ar.help, {
       feeNationality: "الجنسية التي ينطبق عليها هذا السعر. اتركه فارغًا ليشمل كل الجنسيات.",
@@ -2108,6 +2151,11 @@
       photoTag: "اجمع الصور تحت اسم يعرفه وكلاؤك — سي فيو، غرفة سنجل، أكوا بارك.",
       cruiseRates: "صف لكل نوع كابينة وسوق وفترة. اترك السعر فارغًا إذا لم تكن الكابينة تُباع بهذا الشكل.",
       cruiseSchedule: "يوم تحرك المركب ويوم عودته. أضف صفًا لكل رحلة.",
+      cruiseItinerary: "صف لكل يوم — أين تكون المركب وماذا يفعل الضيوف. يظهر للوكيل ويُرسل مع طلب عرض السعر.",
+      activityItinerary: "صف لكل محطة، بالترتيب الذي ينفّذه الضيوف. اترك كل الصفوف على اليوم ١ لرحلة اليوم الواحد؛ ورقّمها ١، ٢، ٣… للبرنامج متعدد الأيام.",
+      cruiseTransfer: "فعّل هذا إذا كان السعر يشمل استلام الضيوف بالفعل. وإن لم يكن، تعرض بوابة الشركات إضافة ترانسفير.",
+      cruiseTransferNote: "ما الذي يشمله السعر وما لا يشمله — مثال: «من المطار إلى الميناء فقط».",
+      cruiseShowPrices: "إذا كان مغلقًا، لن يرى الوكيل أي أسعار كبائن إطلاقًا — لا سنجل ولا دبل ولا تربل — بل «السعر عند الطلب» فقط.",
     });
     en.activityAdmin = en.activityAdmin || {}; ar.activityAdmin = ar.activityAdmin || {};
     Object.assign(en.activityAdmin, {
