@@ -120,6 +120,8 @@ export interface ActivityPackageItemData {
   transferReturnTime?: string | null;
   adultsCount?: number;
   childrenCount?: number;
+  pricingBasis?: string | null;
+  pricingUnits?: number;
   notes?: string | null;
 }
 
@@ -501,6 +503,9 @@ function packageSections(d: ActivityPackageVoucherData): { title: string; sectio
         row('Group Type', titleCase(it.groupType)),
         row('Adults', it.adultsCount),
         row('Children', it.childrenCount && it.childrenCount > 0 ? it.childrenCount : ''),
+        row('Pricing', it.pricingBasis === 'PER_PERSON'
+          ? 'Per person'
+          : it.pricingBasis ? `${titleCase(it.pricingBasis)} × ${it.pricingUnits ?? 1}` : ''),
         row('Transfer', it.transferRequested
           ? 'Added'
           : it.transferIncluded == null ? '' : it.transferIncluded ? 'Included' : 'Not included'),

@@ -1372,6 +1372,11 @@ model ActivityPackageItem {
   endTime            String? // optional — used for time-conflict validation
   adultsCount        Int             @default(1)
   childrenCount      Int             @default(0)
+  // Keep the price basis on each package line just like a standalone activity
+  // booking. A package may mix a per-person museum visit with a private double
+  // safari, so the basis belongs to the item rather than the package header.
+  pricingBasis       String?         @default("PER_PERSON")
+  pricingUnits       Int             @default(1)
   childAges          Json?
   hotelName          String?
   clientPhone        String?

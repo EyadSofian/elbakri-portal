@@ -79,7 +79,7 @@ const invoiceInclude = {
     select: {
       id: true, refNumber: true, clientName: true, adultsCount: true, childrenCount: true,
       totalAmount: true, currency: true, requestedAt: true, confirmedAt: true,
-      items: { select: { activityName: true, activityDate: true, city: true }, orderBy: { displayOrder: 'asc' as const } },
+      items: { select: { activityName: true, activityDate: true, city: true, pricingBasis: true, pricingUnits: true }, orderBy: { displayOrder: 'asc' as const } },
       company: { select: { name: true, address: true, taxId: true, email: true, phone: true } },
       voucher: { select: { id: true, voucherNumber: true } },
     },

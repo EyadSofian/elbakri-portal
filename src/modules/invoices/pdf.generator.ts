@@ -161,7 +161,13 @@ interface InvoiceData {
     totalAmount: unknown;
     currency: string;
     company: CompanyInfo;
-    items: { activityName: string; activityDate: Date; city?: string | null }[];
+    items: {
+      activityName: string;
+      activityDate: Date;
+      city?: string | null;
+      pricingBasis?: string | null;
+      pricingUnits?: number;
+    }[];
   } | null;
 }
 
@@ -282,7 +288,12 @@ ${request.package?.name ?? 'SIM package'} | Client: ${request.clientName}`;
   if (data.activityPackage) {
     const p = data.activityPackage;
     const list = p.items
-      .map((it) => `• ${it.activityName}${it.city ? ` (${it.city})` : ''} — ${new Date(it.activityDate).toLocaleDateString('en-GB')}`)
+      .map((it) => {
+        const pricing = it.pricingBasis === 'PER_PERSON'
+          ? 'per person'
+          : it.pricingBasis ? `${it.pricingUnits ?? 1} × ${it.pricingBasis.toLowerCase()}` : '';
+        return `• ${it.activityName}${it.city ? ` (${it.city})` : ''} — ${new Date(it.activityDate).toLocaleDateString('en-GB')}${pricing ? ` — ${pricing}` : ''}`;
+      })
       .join('\n');
     const description = `Activity Package — ${p.refNumber}${lifecycleDetails(p.requestedAt, p.confirmedAt)}\n${p.items.length} activities | Adults: ${p.adultsCount}${p.childrenCount ? ` | Children: ${p.childrenCount}` : ''}\n${list}`;
     return [{

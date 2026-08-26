@@ -121,6 +121,35 @@ test('the two sides agree on the case the operator asked about', () => {
   assert.equal(portal.actCompositionTotal(client), 260);
 });
 
+test('activity packages use the same party composition as single bookings', () => {
+  // The package modal used to ignore SINGLE / DOUBLE / TRIPLE completely and
+  // always multiply the adult price. Five guests on a double must be the same
+  // two doubles + one single in both entry points.
+  const result = portal.pkgPriceResult(5, 0, 'DOUBLE', {
+    currency: 'USD',
+    priceAdult: 50,
+    priceChild: 25,
+    partyPrices: { SINGLE: 60, DOUBLE: 100, TRIPLE: 120 },
+  }) as { total: number; lines: { basis: string; count: number }[] };
+  assert.equal(result.total, 260);
+  assert.deepEqual(plain(result.lines).map((line) => [line.basis, line.count]), [
+    ['DOUBLE', 2],
+    ['SINGLE', 1],
+  ]);
+});
+
+test('package per-person pricing distinguishes blank child price from zero', () => {
+  const freeChild = portal.pkgPriceResult(2, 1, 'PER_PERSON', {
+    currency: 'USD', priceAdult: 50, priceChild: 0, partyPrices: {},
+  }) as { total: number };
+  assert.equal(freeChild.total, 100, 'an explicit zero child price is real');
+
+  const missingChild = portal.pkgPriceResult(2, 1, 'PER_PERSON', {
+    currency: 'USD', priceAdult: 50, priceChild: null, partyPrices: {},
+  });
+  assert.equal(missingChild, null, 'a blank child price must go to request, not borrow the adult price');
+});
+
 // ── A cruise cabin: the portal previews it, the desk charges it ─────────────
 
 test('portal and server fill the same number of cabins, for every party', () => {

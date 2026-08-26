@@ -103,6 +103,8 @@ async function buildActivityPackageVoucherData(packageId: string): Promise<Vouch
       transferReturnTime: it.transferReturnTime,
       adultsCount: it.adultsCount,
       childrenCount: it.childrenCount,
+      pricingBasis: it.pricingBasis,
+      pricingUnits: it.pricingUnits,
       notes: it.notes,
     })),
   };

@@ -346,3 +346,14 @@ test('portal: the return-time hint only appears when a time was inherited', () =
     /Taken from the trip/,
   );
 });
+
+test('portal: an activity package sends its chosen pricing basis to the server', () => {
+  assert.match(dashboardSource, /pricingBasis:\s*i\.pricingBasis/);
+  assert.match(dashboardSource, /pricingBasis,\s*pricingLabel/);
+  assert.match(dashboardSource, /pkgPriceResult\(adultsCount, childrenCount, pricingBasis/);
+});
+
+test('portal: package child pricing never falls back to the adult price', () => {
+  assert.doesNotMatch(dashboardSource, /priceChild\s*\|\|\s*priceAdult/);
+  assert.match(dashboardSource, /children > 0 && ctx\.priceChild === null/);
+});

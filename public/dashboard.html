@@ -3962,6 +3962,7 @@ function activityPackageCartHtml() {
         <div class="primary-text">${escapeHtml(item.activityName)}</div>
         <div class="secondary-text">${escapeHtml(item.activityDate)} ${item.selectedTime ? "· " + escapeHtml(item.selectedTime) : ""}</div>
         <div class="secondary-text">${t("form.passengers","Passengers")}: ${formatNumber(item.adultsCount + item.childrenCount)}</div>
+        <div class="secondary-text">${t("activity.pricingBasis","Pricing")}: ${escapeHtml(item.pricingLabel || item.pricingBasis || "PER_PERSON")}${item.pricingBreakdown ? ` · ${escapeHtml(item.pricingBreakdown)}` : ""}</div>
         ${item.transferRequested ? `<div class="secondary-text">${icon("car")}&nbsp;${escapeHtml(item.transferFromName || "")}${item.transferPickupTime ? " · " + escapeHtml(item.transferPickupTime) : ""}</div>` : ""}
         <button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="removePackageActivity('${item.localId}')">${icon("trash-2")}${t("btn.remove","Remove")}</button>
       </div>`).join("")}
@@ -3980,6 +3981,10 @@ function removePackageActivity(localId) {
 async function openPackageActivityForm(activityId) {
   const activity = (state.activityPackageSource || []).find(a => a.id === activityId);
   if (!activity) return toast(t("empty.failed","Failed to load"), "error");
+  const priceAdult = activity.priceAdult === null || activity.priceAdult === undefined ? null : Number(activity.priceAdult);
+  const priceChild = activity.priceChild === null || activity.priceChild === undefined ? null : Number(activity.priceChild);
+  const partyPrices = actPartyPriceRows(activity);
+  const defaultBasis = priceAdult !== null ? "PER_PERSON" : (partyPrices[0]?.[0] || "PER_PERSON");
   const slots = Array.isArray(activity.timeSlots) ? activity.timeSlots : [];
   const groupRes = await apiFetch(`/group-types?${new URLSearchParams({
     scope: "ACTIVITY",
@@ -3995,26 +4000,108 @@ async function openPackageActivityForm(activityId) {
       <div class="form-field" id="pkgHotelField"><label>${t("th.hotel","Hotel Name")}</label><input id="pkgHotelName" value="${escapeHtml(state.activityPackageCart?.[0]?.hotelName || "")}"></div>
       <div class="form-field"><label>${t("form.date","Date")} *</label><input id="pkgDate" type="date"></div>
       <div class="form-field"><label>${t("form.time","Time")}</label>${slots.length ? `<select id="pkgTime"><option value="">${t("form.select","Select")}</option>${slots.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("")}</select>` : `<input id="pkgTime" placeholder="09:00">`}</div>
-      <div class="form-field"><label>${t("form.adults","Adults / Pax")} *</label><input id="pkgAdults" type="number" min="1" value="2" oninput="pkgUpdateTotal(${Number(activity.priceAdult)||0},${Number(activity.priceChild)||0},'${escapeHtml(activity.currency || "USD")}')"></div>
-      <div class="form-field"><label>${t("form.children","Children")}</label><input id="pkgChildren" type="number" min="0" value="0" oninput="pkgUpdateTotal(${Number(activity.priceAdult)||0},${Number(activity.priceChild)||0},'${escapeHtml(activity.currency || "USD")}');pkgUpdateChildAges()"></div>
+      <div class="form-field"><label>${t("form.adults","Adults / Pax")} *</label><input id="pkgAdults" type="number" min="1" value="2" oninput="pkgUpdateTotal()"></div>
+      <div class="form-field"><label>${t("form.children","Children")}</label><input id="pkgChildren" type="number" min="0" value="0" oninput="pkgUpdateTotal();pkgUpdateChildAges()"></div>
+      ${partyPrices.length ? `<div class="form-field full"><label>${t("activity.pricingBasis","How would you like to book?")}</label>
+        <div class="act-basis-grid">
+          ${priceAdult !== null ? `<label class="act-basis"><input type="radio" name="pkgBasis" value="PER_PERSON" ${defaultBasis === "PER_PERSON" ? "checked" : ""} onchange="pkgBasisChanged()"><span><b>${t("activity.perPerson","Per person")}</b><small>${formatPrice(priceAdult, activity.currency || "USD")} ${t("form.priceAdult","per adult")}</small></span></label>` : ""}
+          ${partyPrices.map(([basis, k, fb, v]) => `<label class="act-basis"><input type="radio" name="pkgBasis" value="${basis}" ${defaultBasis === basis ? "checked" : ""} onchange="pkgBasisChanged()"><span><b>${escapeHtml(t(k, fb))}</b><small>${formatPrice(Number(v), activity.currency || "USD")} ${t("activity.perParty","per party")}</small></span></label>`).join("")}
+        </div>
+        <small class="field-hint" id="pkgBasisHint">${t("activity.pricingBasisHint","A party price covers one party — a bigger group is charged for as many parties as it takes to seat everybody.")}</small>
+      </div>` : ""}
       <div class="form-field full" id="pkgChildAgesBox" style="display:none"></div>
-      <div class="form-field full"><label>${t("activity.actType","Service Type")}</label><div id="pkgGroupTypes" class="service-type-grid">${activityGroupTypeOptions(groupTypes)}</div></div>
+      <div class="form-field full"><label>${t("activity.actType","Service Type")}</label><div id="pkgGroupTypes" class="service-type-grid">${activityGroupTypeOptions(groupTypes, "pkgUpdateTotal()")}</div></div>
       ${activityTransferPanel(activity, "pkg")}
       <div class="form-field full"><label>${t("form.notes","Notes")}</label><textarea id="pkgNotes" rows="2"></textarea></div>
     </div>
     <div class="act-inc-wrap">${itineraryHtml(activity.itinerary, "activity.itinerary", "Programme")}${activityInclusionBoxes(activity)}</div>
     <div class="tr-price-card" style="margin-top:12px">
-      <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="pkgTotalPreview">${formatPrice((Number(activity.priceAdult)||0)*2, activity.currency || "USD")}</span></div>
+      <div class="tr-price-row pkg-perhead-row"><span>${t("form.priceAdult","Adult")}</span><span>${priceAdult === null ? "—" : formatPrice(priceAdult, activity.currency || "USD")} × <span id="pkgAdultCount">2</span></span></div>
+      ${priceChild !== null ? `<div class="tr-price-row pkg-perhead-row"><span>${t("form.priceChild","Child")}</span><span>${formatPrice(priceChild, activity.currency || "USD")} × <span id="pkgChildCount">0</span></span></div>` : ""}
+      <div class="tr-price-row pkg-party-row" id="pkgPartyRow" style="display:none"><span id="pkgPartyLabel"></span><span id="pkgPartyCalc"></span></div>
+      <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="pkgTotalPreview">—</span></div>
     </div>`, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel","Cancel")}</button>
-    <button class="btn btn-primary" onclick="addPackageActivity('${activity.id}')">${icon("plus")}${t("activity.addToPackage","Add to Package")}</button>`);
+    <button class="btn btn-primary" id="pkgAddBtn" onclick="addPackageActivity('${activity.id}')">${icon("plus")}${t("activity.addToPackage","Add to Package")}</button>`);
+
+  state.packageActivityContext = {
+    activityId: activity.id,
+    currency: activity.currency || "USD",
+    priceAdult,
+    priceChild,
+    partyPrices: { SINGLE: activity.priceSingle, DOUBLE: activity.priceDouble, TRIPLE: activity.priceTriple },
+    partyLabels: {
+      SINGLE: t("hotel.single","Single"),
+      DOUBLE: t("hotel.double","Double"),
+      TRIPLE: t("hotel.triple","Triple"),
+    },
+  };
+  pkgBasisChanged();
 }
 
-function pkgUpdateTotal(priceAdult, priceChild, currency) {
+function pkgBasis() {
+  return document.querySelector('input[name="pkgBasis"]:checked')?.value || "PER_PERSON";
+}
+
+function pkgPriceResult(adults, children, basis, ctx) {
+  if (!ctx) return null;
+  let total = 0;
+  let lines = [];
+  if (basis === "PER_PERSON") {
+    if (ctx.priceAdult === null || (children > 0 && ctx.priceChild === null)) return null;
+    total = adults * ctx.priceAdult + children * (ctx.priceChild ?? 0);
+  } else {
+    lines = actPartyComposition(adults + children, basis, ctx.partyPrices) || [];
+    if (!lines.length) return null;
+    total = actCompositionTotal(lines);
+  }
+  const selected = document.querySelector('#pkgGroupTypes input[name="actGroupType"]:checked');
+  const adjustmentType = selected?.dataset.adjustmentType || "NONE";
+  const adjustmentValue = Number(selected?.dataset.adjustmentValue || 0);
+  if (adjustmentType === "PERCENTAGE") total *= 1 + adjustmentValue / 100;
+  if (adjustmentType === "FIXED") total += adjustmentValue;
+  return { total, lines };
+}
+
+function pkgBasisChanged() {
+  const party = pkgBasis() !== "PER_PERSON";
+  document.querySelectorAll(".pkg-perhead-row").forEach(el => { el.style.display = party ? "none" : ""; });
+  const partyRow = document.getElementById("pkgPartyRow");
+  if (partyRow) partyRow.style.display = party ? "" : "none";
+  pkgUpdateTotal();
+}
+
+function pkgUpdateTotal() {
   const adults = Math.max(1, parseInt(document.getElementById("pkgAdults")?.value || "1"));
   const children = Math.max(0, parseInt(document.getElementById("pkgChildren")?.value || "0"));
+  const ctx = state.packageActivityContext;
+  const basis = pkgBasis();
+  const result = pkgPriceResult(adults, children, basis, ctx);
   const el = document.getElementById("pkgTotalPreview");
-  if (el) el.textContent = formatPrice((adults * priceAdult) + (children * (priceChild || priceAdult)), currency);
+  if (el) el.textContent = result
+    ? formatPrice(result.total, ctx?.currency || "USD")
+    : t("hotel.priceOnRequest","Price on request");
+  const button = document.getElementById("pkgAddBtn");
+  if (button) button.disabled = !result;
+  const ac = document.getElementById("pkgAdultCount");
+  if (ac) ac.textContent = adults;
+  const cc = document.getElementById("pkgChildCount");
+  if (cc) cc.textContent = children;
+  if (basis !== "PER_PERSON" && result) {
+    const breakdown = actCompositionLabel(result.lines, ctx?.partyLabels);
+    const label = document.getElementById("pkgPartyLabel");
+    const calc = document.getElementById("pkgPartyCalc");
+    if (label) label.textContent = breakdown;
+    if (calc) calc.textContent = result.lines
+      .map(line => `${formatPrice(line.unitPrice, ctx.currency)} × ${line.count}`)
+      .join("  +  ");
+    const hint = document.getElementById("pkgBasisHint");
+    if (hint) hint.textContent = t("activity.partyUnitHint","A {label} covers {size} people — {pax} are charged as {breakdown}.")
+      .replace("{label}", ctx.partyLabels?.[basis] || basis)
+      .replace("{size}", String(ACT_PARTY_SIZE[basis] || 1))
+      .replace("{pax}", String(adults + children))
+      .replace("{breakdown}", breakdown);
+  }
 }
 
 function pkgUpdateChildAges() {
@@ -4043,6 +4130,11 @@ function addPackageActivity(activityId) {
   const adultsCount = Math.max(1, parseInt(document.getElementById("pkgAdults")?.value || "1"));
   const childrenCount = Math.max(0, parseInt(document.getElementById("pkgChildren")?.value || "0"));
   if (!activityDate || !clientName || !clientPhone) return toast(t("toast.validationError","Check required fields"), "error");
+  const pricingBasis = pkgBasis();
+  const priceResult = pkgPriceResult(adultsCount, childrenCount, pricingBasis, state.packageActivityContext);
+  if (!priceResult) {
+    return toast(t("activity.priceUnavailableForParty","This activity is not priced for that passenger mix. Send a request instead."), "error");
+  }
   const conflict = (state.activityPackageCart || []).find(item => item.activityDate === activityDate && selectedTime && item.selectedTime === selectedTime);
   if (conflict) return toast(t("activity.timeConflict","This package already has a trip at the same date/time."), "error");
   const childAges = Array.from({length: childrenCount}, (_, i) =>
@@ -4062,6 +4154,13 @@ function addPackageActivity(activityId) {
     activityDate,
     selectedTime,
     groupTypeId: groupType?.value || undefined,
+    pricingBasis,
+    pricingLabel: pricingBasis === "PER_PERSON"
+      ? t("activity.perPerson","Per person")
+      : (state.packageActivityContext?.partyLabels?.[pricingBasis] || pricingBasis),
+    pricingBreakdown: pricingBasis === "PER_PERSON"
+      ? ""
+      : actCompositionLabel(priceResult.lines, state.packageActivityContext?.partyLabels),
     adultsCount,
     childrenCount,
     childAges: childrenCount > 0 ? childAges : undefined,
@@ -4075,7 +4174,7 @@ function addPackageActivity(activityId) {
     ...transfer,
     notes: document.getElementById("pkgNotes")?.value.trim() || undefined,
     city: activity.city || undefined,
-    totalPreview: adultsCount * (Number(activity.priceAdult) || 0) + childrenCount * (Number(activity.priceChild || activity.priceAdult) || 0),
+    totalPreview: priceResult.total,
     currency: activity.currency || "USD",
   });
   closeModal();
@@ -4102,6 +4201,7 @@ async function submitActivityPackage() {
       activityDate: i.activityDate,
       selectedTime: i.selectedTime || undefined,
       groupTypeId: i.groupTypeId,
+      pricingBasis: i.pricingBasis,
       adultsCount: i.adultsCount,
       childrenCount: i.childrenCount,
       childAges: i.childAges && i.childAges.length ? i.childAges : undefined,
@@ -4419,8 +4519,12 @@ async function openActivityDetails(id) {
   const a = all.find(x => x.id === id);
   if (!a) { toast("Activity not found", "error"); return; }
 
-  const priceAdult = Number(a.priceAdult) || 0;
-  const priceChild = Number(a.priceChild) || priceAdult;
+  const hasAdultPrice = a.priceAdult !== null && a.priceAdult !== undefined;
+  const hasChildPrice = a.priceChild !== null && a.priceChild !== undefined;
+  const priceAdult = hasAdultPrice ? Number(a.priceAdult) : 0;
+  // Zero is a real configured child price. A blank child price is kept as an
+  // unavailable combination instead of quietly borrowing the adult rate.
+  const priceChild = hasChildPrice ? Number(a.priceChild) : 0;
   const currency   = a.currency || "USD";
   // A trip that already collects its guests is never offered an added transfer.
   const transferIncluded = actTransferIncluded(a);
@@ -4513,7 +4617,7 @@ async function openActivityDetails(id) {
       </div>
       <div class="tr-price-card" style="margin-top:12px">
         <div class="tr-price-row act-perhead-row"><span>${t("form.priceAdult","Adult")}</span><span>${formatPrice(priceAdult, currency)} × <span id="actAdultCount">2</span></span></div>
-        ${priceChild > 0 ? `<div class="tr-price-row act-perhead-row"><span>${t("form.priceChild","Child")}</span><span>${formatPrice(priceChild, currency)} × <span id="actChildCount">0</span></span></div>` : ""}
+        ${hasChildPrice ? `<div class="tr-price-row act-perhead-row"><span>${t("form.priceChild","Child")}</span><span>${formatPrice(priceChild, currency)} × <span id="actChildCount">0</span></span></div>` : ""}
         <div class="tr-price-row act-party-row" id="actPartyRow" style="display:none"><span id="actPartyLabel"></span><span id="actPartyCalc"></span></div>
         <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="actTotalPreview">${formatPrice(2*priceAdult, currency)}</span></div>
       </div>
@@ -4536,6 +4640,8 @@ async function openActivityDetails(id) {
     destinationId: a.destinationId || "",
     priceAdult,
     priceChild,
+    hasAdultPrice,
+    hasChildPrice,
     currency,
     transferIncluded,
     partyPrices: { SINGLE: a.priceSingle, DOUBLE: a.priceDouble, TRIPLE: a.priceTriple },
@@ -4549,7 +4655,7 @@ async function openActivityDetails(id) {
   actBasisChanged();
 }
 
-function activityGroupTypeOptions(options) {
+function activityGroupTypeOptions(options, onChange = "actCalcTotalFromContext()") {
   return (options || []).map((option, index) => {
     const adjustment = Number(option.adjustmentValue || 0);
     const suffix = option.adjustmentType === "PERCENTAGE" && adjustment
@@ -4562,7 +4668,7 @@ function activityGroupTypeOptions(options) {
         data-code="${escapeHtml(option.code)}"
         data-adjustment-type="${escapeHtml(option.adjustmentType || "NONE")}"
         data-adjustment-value="${adjustment}" ${index === 0 ? "checked" : ""}
-        onchange="actCalcTotalFromContext()">
+        onchange="${escapeHtml(onChange)}">
       <span class="service-type-option__body">
         <span class="service-type-option__title">${escapeHtml(state.lang === "ar" ? (option.labelAr || option.labelEn) : option.labelEn)}</span>
         ${option.descriptionEn || option.descriptionAr ? `<span class="service-type-option__desc">${escapeHtml(state.lang === "ar" ? (option.descriptionAr || option.descriptionEn || "") : (option.descriptionEn || ""))}</span>` : ""}
@@ -4624,6 +4730,21 @@ function actCalcTotal(priceAdult, priceChild, currency) {
   const children = Math.max(0, parseInt(document.getElementById("actChildren")?.value || "0"));
   const basis = actBasis();
   const ctx = state.activityBookingContext || {};
+  const priceUnavailable = basis === "PER_PERSON"
+    && (ctx.hasAdultPrice === false || (children > 0 && ctx.hasChildPrice === false));
+  if (priceUnavailable) {
+    const el = document.getElementById("actTotalPreview");
+    if (el) el.textContent = t("hotel.priceOnRequest","Price on request");
+    const submit = document.getElementById("submitActivityBtn");
+    if (submit) submit.disabled = true;
+    const ac = document.getElementById("actAdultCount");
+    if (ac) ac.textContent = adults;
+    const cc = document.getElementById("actChildCount");
+    if (cc) cc.textContent = children;
+    return;
+  }
+  const submit = document.getElementById("submitActivityBtn");
+  if (submit) submit.disabled = false;
   let total;
   if (basis === "PER_PERSON") {
     total = adults * priceAdult + children * priceChild;
@@ -4701,6 +4822,11 @@ async function _submitActivityBooking(activityId, activityName, priceAdult, pric
 
   if (!date || !clientName || !clientPhone) {
     toast(t("transport.requiredFields","Please fill: date, client name and phone"), "error");
+    return;
+  }
+  const ctx = state.activityBookingContext || {};
+  if (actBasis() === "PER_PERSON" && (ctx.hasAdultPrice === false || (children > 0 && ctx.hasChildPrice === false))) {
+    toast(t("activity.priceUnavailableForParty","This activity is not priced for that passenger mix. Send a request instead."), "error");
     return;
   }
 

@@ -11,6 +11,14 @@ import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 import { debitWallet, refundWallet } from '../../shared/wallet';
 import { TransferAddOn, readTransferAddOn } from '../../shared/transfer-addon';
+import {
+  PricingBasis,
+  availableBases,
+  compositionTotal,
+  compositionUnits,
+  isPartyBasis,
+  partyComposition,
+} from '../../shared/activity-pricing';
 
 const packageInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -60,6 +68,7 @@ interface ItemInput {
   groupTypeId?: string;
   adultsCount?: number;
   childrenCount?: number;
+  pricingBasis?: string;
   childAges?: number[];
   hotelName?: string;
   clientPhone?: string;
@@ -177,6 +186,7 @@ export async function createActivityPackage(req: Request, res: Response): Promis
     activityId: string; activityName: string; city: string | null;
     activityDate: Date; selectedTime: string | null; endTime: string | null;
     adultsCount: number; childrenCount: number; childAges: number[] | null;
+    pricingBasis: PricingBasis; pricingUnits: number;
     hotelName: string | null; clientPhone: string | null;
     groupTypeId: string | null; groupTypeLabel: string | null; activityType: string | null;
     transferIncluded: boolean | null; notes: string | null; lineAmount: Decimal;
@@ -188,7 +198,8 @@ export async function createActivityPackage(req: Request, res: Response): Promis
     const it = body.items[i];
     const activity = await prisma.activity.findUnique({
       where: { id: it.activityId },
-      select: { id: true, name: true, city: true, priceAdult: true, priceChild: true, currency: true,
+      select: { id: true, name: true, city: true, priceAdult: true, priceChild: true,
+        priceSingle: true, priceDouble: true, priceTriple: true, currency: true,
         isActive: true, isConfirmableInApp: true, destinationId: true,
         transferIncluded: true, returnTime: true },
     });
@@ -216,33 +227,63 @@ export async function createActivityPackage(req: Request, res: Response): Promis
       ? applicableTypes.find((o) => o.id === it.groupTypeId)
       : applicableTypes[0];
 
-    const linePriceCtx = { market: company.market, companyId, pax: adults + children, date: activityDate };
-    // A blank price means the activity is not sold that way — pricing the line
-    // at zero would quietly give it away, so the package is refused instead.
-    if (adults > 0 && activity.priceAdult == null) {
-      res.status(400).json({ success: false, error: 'PRICE_ON_REQUEST', message: `"${activity.name}" has no per-adult price configured. Please submit a quote request.` });
+    const basis = String(it.pricingBasis ?? 'PER_PERSON').toUpperCase() as PricingBasis;
+    if (basis !== 'PER_PERSON' && !isPartyBasis(basis)) {
+      res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: `Unknown pricing basis on activity #${i + 1}.` });
       return;
     }
-    if (children > 0 && activity.priceChild == null) {
-      res.status(400).json({ success: false, error: 'PRICE_ON_REQUEST', message: `"${activity.name}" has no per-child price configured. Please submit a quote request.` });
+    if (!availableBases(activity).includes(basis)) {
+      res.status(400).json({
+        success: false,
+        error: 'PRICE_ON_REQUEST',
+        message: `"${activity.name}" is not sold that way. Please submit a quote request.`,
+      });
       return;
     }
-    const [adultPrice, childPrice] = await Promise.all([
-      resolveMarketMoney('ACTIVITY_ADULT', activity.id, linePriceCtx, activity.priceAdult ?? new Decimal(0), activity.currency),
-      resolveMarketMoney('ACTIVITY_CHILD', activity.id, linePriceCtx, activity.priceChild ?? new Decimal(0), activity.currency),
-    ]);
+
+    let sourceAmountRaw: Decimal;
+    let lineCurrency: string;
+    let pricingUnits = 1;
+    if (basis === 'PER_PERSON') {
+      // Blank and zero are deliberately different: zero is a configured free
+      // child/adult price, while blank means the operator does not sell it per
+      // head and the package must not silently invent a price.
+      if (adults > 0 && activity.priceAdult == null) {
+        res.status(400).json({ success: false, error: 'PRICE_ON_REQUEST', message: `"${activity.name}" has no per-adult price configured. Please submit a quote request.` });
+        return;
+      }
+      if (children > 0 && activity.priceChild == null) {
+        res.status(400).json({ success: false, error: 'PRICE_ON_REQUEST', message: `"${activity.name}" has no per-child price configured. Please submit a quote request.` });
+        return;
+      }
+      const linePriceCtx = { market: company.market, companyId, pax: adults + children, date: activityDate };
+      const [adultPrice, childPrice] = await Promise.all([
+        resolveMarketMoney('ACTIVITY_ADULT', activity.id, linePriceCtx, activity.priceAdult ?? new Decimal(0), activity.currency),
+        resolveMarketMoney('ACTIVITY_CHILD', activity.id, linePriceCtx, activity.priceChild ?? new Decimal(0), activity.currency),
+      ]);
+      lineCurrency = adultPrice.currency;
+      if (children > 0 && childPrice.currency !== lineCurrency) {
+        res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: `Adult and child prices for "${activity.name}" use different currencies. Align them.` });
+        return;
+      }
+      sourceAmountRaw = adultPrice.amount.mul(adults).add(childPrice.amount.mul(children));
+    } else {
+      const partyLines = partyComposition(adults + children, basis, activity);
+      if (partyLines === null) {
+        res.status(400).json({ success: false, error: 'PRICE_ON_REQUEST', message: `"${activity.name}" is not sold at that party size. Please submit a quote request.` });
+        return;
+      }
+      pricingUnits = compositionUnits(partyLines);
+      sourceAmountRaw = compositionTotal(partyLines);
+      lineCurrency = activity.currency;
+    }
     // No silent FX (Finding 5/§6): every line — and the whole package — must share ONE currency.
-    const lineCurrency = adultPrice.currency;
-    if (children > 0 && childPrice.currency !== lineCurrency) {
-      res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: `Adult and child prices for "${activity.name}" use different currencies. Align them.` });
-      return;
-    }
     if (packageCurrency === null) packageCurrency = lineCurrency;
     else if (packageCurrency !== lineCurrency) {
       res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: `Package activities resolve to different currencies (${packageCurrency} vs ${lineCurrency}). All activities in a package must share one currency.` });
       return;
     }
-    let lineAmount = adultPrice.amount.mul(adults).add(childPrice.amount.mul(children));
+    let lineAmount = sourceAmountRaw;
     if (groupType) lineAmount = applyGroupAdjustment(lineAmount, groupType);
     lineAmount = lineAmount.toDecimalPlaces(2);
     packageTotal = packageTotal.add(lineAmount);
@@ -256,6 +297,8 @@ export async function createActivityPackage(req: Request, res: Response): Promis
       endTime: it.endTime ?? null,
       adultsCount: adults,
       childrenCount: children,
+      pricingBasis: basis,
+      pricingUnits,
       childAges: Array.isArray(it.childAges) ? it.childAges : null,
       hotelName: it.hotelName ?? body.hotelName ?? null,
       clientPhone: it.clientPhone ?? body.clientPhone ?? null,
@@ -312,6 +355,8 @@ export async function createActivityPackage(req: Request, res: Response): Promis
               endTime: l.endTime,
               adultsCount: l.adultsCount,
               childrenCount: l.childrenCount,
+              pricingBasis: l.pricingBasis,
+              pricingUnits: l.pricingUnits,
               childAges: l.childAges ?? undefined,
               // The pickup point is the hotel question, so it is not asked twice.
               hotelName: l.transfer.transferRequested ? null : l.hotelName,
