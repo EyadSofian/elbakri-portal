@@ -126,6 +126,24 @@ export const DEMO_ACTIVITIES = [
   { id: 'ac1', name: 'Hot Air Balloon — Luxor', nameAr: 'البالون الطائر — الأقصر', category: 'ADVENTURE', basePrice: 95, currency: 'USD', isActive: true, durationHours: 3, destinationId: 'd4', destination: DEMO_DESTINATIONS[3], transferIncluded: true },
   { id: 'ac2', name: 'Pyramids & Sphinx half day', nameAr: 'الأهرامات وأبو الهول', category: 'CULTURAL', basePrice: 55, currency: 'USD', isActive: true, durationHours: 5, destinationId: 'd1', destination: DEMO_DESTINATIONS[0], transferIncluded: true },
   { id: 'ac3', name: 'Red Sea snorkelling trip', nameAr: 'رحلة سنوركلينج', category: 'WATER_SPORTS', basePrice: 40, currency: 'USD', isActive: true, durationHours: 6, destinationId: 'd2', destination: DEMO_DESTINATIONS[1], transferIncluded: true },
+  // Mirrors the production SAFARI price shape so preview/browser QA exercises
+  // the exact bug that was reported: every enabled basis is selectable, zero
+  // child price stays free, and Double/Triple grow with the passenger count.
+  {
+    id: 'ac4', name: 'SAFARI', nameAr: 'ســفـارى', city: 'SHARM EL SHEIKH',
+    category: 'DESERT_SAFARI', basePrice: 20, priceAdult: 20, priceChild: 0,
+    priceSingle: 20, priceDouble: 25, priceTriple: 55, currency: 'USD',
+    isActive: true, isConfirmableInApp: true, duration: '3 hours', durationHours: 3,
+    timeSlots: ['04:00 AM', '01:00 PM', '03:00 PM'], returnTime: '18:00',
+    destinationId: 'd3', destination: DEMO_DESTINATIONS[2], transferIncluded: false,
+    inclusions: [
+      { label: 'Quad bike', labelAr: 'بيتش باجي', included: true },
+      { label: 'Transfer', labelAr: 'الانتقالات', included: false },
+    ],
+    includes: ['Quad bike'], excludes: ['Transfer'], galleryUrls: [],
+    description: 'Sharm El Sheikh desert safari with flexible departure times.',
+    descriptionAr: 'رحلة سفاري في صحراء شرم الشيخ بمواعيد تحرك مرنة.',
+  },
 ];
 
 export const DEMO_AIRPORTS = [

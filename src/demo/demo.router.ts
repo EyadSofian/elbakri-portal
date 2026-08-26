@@ -144,7 +144,17 @@ export function createDemoRouter(): Router {
   router.get('/offers', (_req, res) => res.json(ok(DEMO_OFFERS)));
   router.get('/offers/:id', (req, res) => res.json(ok(DEMO_OFFERS.find((o) => o.id === req.params.id) ?? DEMO_OFFERS[0])));
   router.get('/cruises', (_req, res) => res.json(ok(DEMO_CRUISES)));
-  router.get('/activities', (_req, res) => res.json(ok(DEMO_ACTIVITIES)));
+  router.get('/activities', (req, res) => {
+    // Preview mode must respect the same destination filter as production;
+    // otherwise choosing Sharm in the destination-first flow misleadingly
+    // renders every activity in Egypt underneath it.
+    const destinationId = req.query.destinationId ? String(req.query.destinationId) : null;
+    const city = req.query.city ? String(req.query.city).trim().toLowerCase() : null;
+    const rows = DEMO_ACTIVITIES.filter((activity) =>
+      (!destinationId || activity.destinationId === destinationId)
+      && (!city || String(activity.city ?? '').trim().toLowerCase() === city));
+    res.json(ok(rows));
+  });
   router.get('/airports', (_req, res) => res.json(ok(DEMO_AIRPORTS)));
   router.get('/sim-card/packages', (_req, res) => res.json(ok(DEMO_SIM_PACKAGES)));
   router.get('/reports/overview', (_req, res) => res.json(ok(DEMO_REPORT_OVERVIEW)));
