@@ -6,7 +6,11 @@ import {
   normalizeSecurityNationality,
   securityNationalityLabel,
 } from '../src/shared/security-nationalities';
-import { pickVisaFeeRow, visaFeeSpecificity } from '../src/modules/visa/visa.controller';
+import {
+  pickVisaFeeRow,
+  visaApplicationNeedsRepricing,
+  visaFeeSpecificity,
+} from '../src/modules/visa/visa.controller';
 
 // Approvals are filed for three nationalities only, and each can be priced on
 // its own. The row that matches the request most closely wins.
@@ -105,4 +109,36 @@ test('pickVisaFeeRow: ties go to the first row, which is the most recently edite
 
 test('pickVisaFeeRow: nothing matching is null — the desk quotes it by hand', () => {
   assert.equal(pickVisaFeeRow([]), null);
+});
+
+// ── Application edits must keep the invoice in step with the request ─────────
+
+test('changing the nationality reprices an existing approval', () => {
+  assert.equal(
+    visaApplicationNeedsRepricing(
+      { nationality: 'IRAQI' },
+      { nationality: 'LEBANESE' },
+    ),
+    true,
+  );
+});
+
+test('leaving the nationality unchanged does not regenerate the invoice', () => {
+  assert.equal(
+    visaApplicationNeedsRepricing(
+      { nationality: 'SYRIAN' },
+      { nationality: 'SYRIAN' },
+    ),
+    false,
+  );
+});
+
+test('non-pricing edits do not accidentally trigger repricing', () => {
+  assert.equal(
+    visaApplicationNeedsRepricing(
+      { passportNumber: 'P123' },
+      { nationality: 'IRAQI' },
+    ),
+    false,
+  );
 });

@@ -2035,6 +2035,8 @@
     Object.assign(en.cruise, {
       schedules: "Departures",
       schedulesHelp: "When the boat leaves and when it is back.",
+      from: "From",
+      back: "Back",
       departureDay: "Departs",
       returnDay: "Returns",
       nights: "Nights",
@@ -2072,6 +2074,8 @@
     Object.assign(ar.cruise, {
       schedules: "مواعيد التحرك",
       schedulesHelp: "متى تتحرك الرحلة ومتى تعود.",
+      from: "من",
+      back: "العودة",
       departureDay: "يوم التحرك",
       returnDay: "يوم العودة",
       nights: "عدد الليالي",

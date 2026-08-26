@@ -1541,7 +1541,12 @@ function cruiseScheduleSummary(c) {
   const list = (c.schedules || []).filter(sc => sc.isActive !== false);
   if (!list.length) return `<span class="secondary-text">—</span>`;
   return list.slice(0, 3).map(sc =>
-    `<div style="font-size:12px">${escapeHtml(weekdayLabel(sc.departureDay))} → ${escapeHtml(weekdayLabel(sc.returnDay))}<span class="secondary-text"> · ${formatNumber(sc.nights)} ${t("cruise.nights","Nights")}</span></div>`
+    `<div class="cr-schedule-summary-row">
+      <span><small>${t("cruise.from","From")}</small><b>${escapeHtml(weekdayLabel(sc.departureDay))}</b></span>
+      <span class="cr-schedule-summary-arrow">${icon("arrow-right")}</span>
+      <span><small>${t("cruise.back","Back")}</small><b>${escapeHtml(weekdayLabel(sc.returnDay))}</b></span>
+      <em>${formatNumber(sc.nights)} ${t("cruise.nights","Nights")}</em>
+    </div>`
   ).join("") + (list.length > 3 ? `<div class="secondary-text">+${formatNumber(list.length - 3)}</div>` : "");
 }
 
@@ -1588,13 +1593,21 @@ async function openCruiseDetails(id) {
 
     <div class="form-field full" style="margin-top:14px">
       <label>${t("cruise.schedules","Departures")}</label>
-      ${schedules.length ? `<div class="act-basis-grid">
-        ${schedules.map((sc, i) => `<label class="act-basis">
+      ${schedules.length ? `<div class="cr-sailing-grid">
+        ${schedules.map((sc, i) => `<label class="cr-sailing-card">
           <input type="radio" name="crSchedule" value="${escapeHtml(sc.id)}" ${i === 0 ? "checked" : ""}>
-          <span>
-            <b>${escapeHtml(weekdayLabel(sc.departureDay))} → ${escapeHtml(weekdayLabel(sc.returnDay))}</b>
-            <small>${formatNumber(sc.nights)} ${t("cruise.nights","Nights")}${sc.label ? " · " + escapeHtml(locName(sc.label, sc.labelAr)) : ""}</small>
+          <span class="cr-sailing-route">
+            <span class="cr-sailing-stop cr-sailing-stop--from">
+              <small>${t("cruise.from","From")}</small>
+              <b>${escapeHtml(weekdayLabel(sc.departureDay))}</b>
+            </span>
+            <span class="cr-sailing-arrow">${icon("arrow-right")}</span>
+            <span class="cr-sailing-stop cr-sailing-stop--back">
+              <small>${t("cruise.back","Back")}</small>
+              <b>${escapeHtml(weekdayLabel(sc.returnDay))}</b>
+            </span>
           </span>
+          <span class="cr-sailing-meta">${formatNumber(sc.nights)} ${t("cruise.nights","Nights")}${sc.label ? " · " + escapeHtml(locName(sc.label, sc.labelAr)) : ""}</span>
         </label>`).join("")}
       </div>` : `<div class="secondary-text">${t("cruise.schedulesHelp","When the boat leaves and when it is back.")}</div>`}
     </div>
@@ -1903,6 +1916,10 @@ function crRequestQuote(cruiseId) {
   ].filter(Boolean);
   state.quotePrefillNotes = lines.join("\n");
   state.quotePrefillPax = selection?.pax;
+  // Keep the transfer as structured data as it moves into the quote form.
+  // Notes are useful to a human, but Transport needs the real From / Back /
+  // Pickup fields in order to put the car in its operations queue.
+  state.quotePrefillTransfer = transfer;
   closeModal();
   openQuoteRequestModal("CRUISE", cruiseId, cruise?.name || "");
 }
@@ -2303,6 +2320,7 @@ const REQUEST_FORM_TARGETS = {
       mealPlan: v.mealPlan || undefined,
       childAges: Array.isArray(v.childAges) ? v.childAges.map(Number) : undefined,
       customerNotes: v.notes, contactPreference: "whatsapp", currency: "USD", customFields: custom,
+      ...(ctx.transfer || { transferRequested: false }),
     }),
     success: rfQuoteSuccess,
   },
@@ -2418,11 +2436,15 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
   // carry one screen's selection into the next, unrelated, quote request.
   const prefillNotes = state.quotePrefillNotes || "";
   const prefillPax = state.quotePrefillPax;
+  const prefillTransfer = state.quotePrefillTransfer || { transferRequested: false };
   state.quotePrefillNotes = "";
   state.quotePrefillPax = undefined;
+  state.quotePrefillTransfer = undefined;
 
   const rfTpl = await rfLoadTemplate(rfTarget);
-  if (rfTpl) return rfOpenModal(rfTarget, rfTpl, { serviceType, serviceId, serviceName, prefillNotes, prefillPax });
+  if (rfTpl) return rfOpenModal(rfTarget, rfTpl, {
+    serviceType, serviceId, serviceName, prefillNotes, prefillPax, transfer: prefillTransfer,
+  });
 
   // Fallback: original hardcoded quote form.
   const isHotel = serviceType === "HOTEL";
@@ -2502,6 +2524,7 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
       customerNotes: notes,
       contactPreference: "whatsapp",
       currency: "USD",
+      ...prefillTransfer,
     };
 
     document.getElementById("submitQuoteBtn").disabled = true;
@@ -4501,7 +4524,7 @@ async function openActivityDetails(id) {
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
     ${a.isConfirmableInApp !== false
       ? `<button class="btn btn-primary" id="submitActivityBtn">${icon("calendar-check")}&nbsp;${t("btn.submitRequest","Submit Request")}</button>`
-      : `<button class="btn btn-outline" onclick="closeModal();openQuoteRequestModal('MULTI_SERVICE','${a.id}',${inlineJsonArg(a.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Quote Request")}</button>`}`);
+      : `<button class="btn btn-primary" id="submitActivityQuoteBtn" onclick="_submitActivityQuoteRequest('${a.id}',${inlineJsonArg(a.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Quote Request")}</button>`}`);
 
   // wire up submit
   const submitBtn = document.getElementById("submitActivityBtn");
@@ -4715,6 +4738,94 @@ async function _submitActivityBooking(activityId, activityName, priceAdult, pric
     serviceSuccessModal(res.data.refNumber, res.data.voucher);
   } else {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.innerHTML = `${icon("calendar-check")}&nbsp;${t("btn.submitRequest","Submit Request")}`; }
+  }
+}
+
+/**
+ * Price-on-request excursions still use the details the agent has just filled
+ * in — especially the transfer leg. The old flow closed this complete form and
+ * opened a second generic quote form, silently losing pickup/from/back/time.
+ */
+async function _submitActivityQuoteRequest(activityId, activityName) {
+  const date        = document.getElementById("actDate")?.value;
+  const clientName  = document.getElementById("actClientName")?.value.trim();
+  const clientPhone = document.getElementById("actClientPhone")?.value.trim();
+  const hotelName   = document.getElementById("actHotelName")?.value.trim();
+  const adults      = Math.max(1, parseInt(document.getElementById("actAdults")?.value || "1"));
+  const children    = Math.max(0, parseInt(document.getElementById("actChildren")?.value || "0"));
+  const notes       = document.getElementById("actNotes")?.value.trim();
+  const selectedTime = document.getElementById("actSelectedTime")?.value || undefined;
+  const childAges = Array.from({ length: children }, (_, i) =>
+    parseInt(document.getElementById(`actChildAge_${i}`)?.value || "7")
+  );
+
+  if (!date || !clientName || !clientPhone) {
+    toast(t("transport.requiredFields","Please fill: date, client name and phone"), "error");
+    return;
+  }
+  const transfer = actCollectTransfer("act");
+  if (transfer === null) {
+    toast(t("activity.transferFromRequired","Enter where the driver should collect them"), "error");
+    document.getElementById("actTransferFrom")?.focus();
+    return;
+  }
+
+  const button = document.getElementById("submitActivityQuoteBtn");
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("btn.saving","Saving...")}`;
+  }
+  const waWindow = reserveWhatsAppWindow();
+  const res = await apiFetch("/quote-requests", {
+    method: "POST",
+    body: JSON.stringify({
+      serviceType: "MULTI_SERVICE",
+      serviceId: activityId,
+      activityId,
+      serviceName: activityName,
+      checkIn: date,
+      checkOut: date,
+      adultsCount: adults,
+      childrenCount: children,
+      childAges: children ? childAges : undefined,
+      customerNotes: notes || undefined,
+      contactPreference: "whatsapp",
+      currency: "USD",
+      customFields: {
+        clientName,
+        clientPhone,
+        hotelName: transfer.transferRequested ? undefined : (hotelName || undefined),
+        selectedTime,
+        pricingBasis: actBasis(),
+      },
+      ...transfer,
+    }),
+  });
+
+  if (res?.success) {
+    const ref = res.data.refNumber;
+    const waUrl = buildWhatsAppQuoteUrl({
+      ref,
+      serviceType: "ACTIVITY",
+      serviceName: activityName,
+      checkIn: date,
+      adults,
+      children: children || undefined,
+      notes: [notes, transfer.transferRequested
+        ? `${transfer.transferFromName} → ${transfer.transferToName || transfer.transferFromName}`
+        : null].filter(Boolean).join(" | ") || undefined,
+    });
+    closeModal();
+    toast(`✅ ${t("toast.quoteSubmitted","Quote request submitted")} — ${ref}`, "success");
+    loadMyQuotesBadge();
+    redirectToWhatsApp(waUrl, waWindow);
+  } else {
+    if (waWindow && !waWindow.closed) waWindow.close();
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = `${icon("send")}&nbsp;${t("btn.requestQuote","Quote Request")}`;
+      refreshIcons(button);
+    }
   }
 }
 

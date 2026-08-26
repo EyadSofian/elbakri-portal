@@ -1,8 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { loadPortal } = require('./helpers/load-portal');
 
 const portal = loadPortal('dashboard.html');
+const dashboardSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
 
 /**
  * Values built inside the sandbox carry that context's own Array/Object
@@ -171,6 +174,9 @@ test('portal: a cruise schedule reads departure → return with its night count'
   assert.match(html, /Monday/);
   assert.match(html, /Thursday/);
   assert.match(html, /3/);
+  assert.match(html, /From/);
+  assert.match(html, /Back/);
+  assert.match(html, /cr-schedule-summary-row/);
 });
 
 // ── Picking a cabin AND how many share it ───────────────────────────────────
@@ -309,8 +315,20 @@ test('portal: a fare that collects the guests is never offered an added transfer
 test('portal: a fare that does not collect them asks where the driver goes', () => {
   const html = portal.transferPanel({ prefix: 'cr', included: false });
   assert.match(html, /crTransferFrom/);
+  assert.match(html, /crTransferTo/);
+  assert.match(html, /crTransferPickup/);
+  assert.match(html, /crTransferReturn/);
   assert.match(html, /crTransferRequested/);
   assert.match(html, /Add transfer/);
+});
+
+test('portal: a cruise transfer stays structured when the quote form opens', () => {
+  // If either hand-off disappears, From/Back survive only as prose in Notes
+  // and Transport can no longer place the requested car in its queue.
+  assert.match(dashboardSource, /state\.quotePrefillTransfer = transfer/);
+  assert.match(dashboardSource, /const prefillTransfer = state\.quotePrefillTransfer/);
+  assert.match(dashboardSource, /\.\.\.prefillTransfer/);
+  assert.match(dashboardSource, /\.\.\.\(ctx\.transfer \|\| \{ transferRequested: false \}\)/);
 });
 
 test('portal: the operator\'s own transfer wording is shown, and escaped', () => {

@@ -13,6 +13,13 @@ import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 import { debitWallet, refundWallet } from '../../shared/wallet';
+import {
+  activityTransferOperation,
+  cruiseTransferOperation,
+  packageTransferOperation,
+  quoteTransferOperation,
+  sortTransferOperations,
+} from '../../shared/transfer-operations';
 
 const transportInclude = {
   company: { select: { id: true, name: true, email: true } },
@@ -44,6 +51,75 @@ export async function listTransportBookings(req: Request, res: Response): Promis
     prisma.transportBooking.count({ where }),
   ]);
   res.json({ success: true, data: bookings, meta: paginateMeta(total, page, limit) });
+}
+
+/**
+ * Transfers requested as an add-on to another service.
+ *
+ * They are deliberately not TransportBooking rows yet: nobody has selected a
+ * vehicle or authoritative rate for them, so creating a zero-priced booking
+ * would make the transport ledger lie. This read-only operations queue puts
+ * every requested car in the Transport tab while its parent booking/quote
+ * remains the source of truth for lifecycle and client details.
+ */
+export async function listTransferAddOns(_req: Request, res: Response): Promise<void> {
+  const [activities, packageItems, cruises, quotes] = await Promise.all([
+    prisma.activityBooking.findMany({
+      where: { transferRequested: true },
+      take: 200,
+      orderBy: { requestedAt: 'desc' },
+      include: {
+        activity: { select: { name: true } },
+        company: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.activityPackageItem.findMany({
+      where: { transferRequested: true },
+      take: 200,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        activity: { select: { name: true } },
+        package: {
+          include: { company: { select: { id: true, name: true } } },
+        },
+      },
+    }),
+    prisma.cruiseBooking.findMany({
+      where: { transferRequested: true },
+      take: 200,
+      orderBy: { requestedAt: 'desc' },
+      include: {
+        cruise: { select: { name: true } },
+        company: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.quoteRequest.findMany({
+      where: { transferRequested: true },
+      take: 200,
+      orderBy: { requestedAt: 'desc' },
+      include: { company: { select: { id: true, name: true } } },
+    }),
+  ]);
+
+  const rows = sortTransferOperations([
+    ...activities.map(activityTransferOperation),
+    ...packageItems.map(packageTransferOperation),
+    ...cruises.map(cruiseTransferOperation),
+    ...quotes.map(quoteTransferOperation),
+  ]);
+  res.json({
+    success: true,
+    data: rows,
+    meta: {
+      total: rows.length,
+      counts: {
+        activities: activities.length,
+        packageItems: packageItems.length,
+        cruises: cruises.length,
+        quotes: quotes.length,
+      },
+    },
+  });
 }
 
 /** GET /api/transport-rates/quote — client-side price preview (server-authoritative) */

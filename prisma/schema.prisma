@@ -694,51 +694,63 @@ model BookingCounter {
 // ─────────────────────────────────────────────
 
 model QuoteRequest {
-  id                String             @id @default(cuid())
-  refNumber         String             @unique
-  serviceType       QuoteServiceType
-  status            QuoteRequestStatus @default(NEW)
-  companyId         String
-  company           Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  createdById       String
-  createdBy         User               @relation("QuoteRequestCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  destinationId     String?
-  destination       Destination?       @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  destinationName   String?
-  hotelId           String?
-  hotel             Hotel?             @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  id                 String             @id @default(cuid())
+  refNumber          String             @unique
+  serviceType        QuoteServiceType
+  status             QuoteRequestStatus @default(NEW)
+  companyId          String
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdById        String
+  createdBy          User               @relation("QuoteRequestCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  destinationId      String?
+  destination        Destination?       @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  destinationName    String?
+  hotelId            String?
+  hotel              Hotel?             @relation(fields: [hotelId], references: [id], onDelete: SetNull)
   // Service identity for non-hotel services (soft refs — no FK constraint for flexibility)
-  serviceId         String? // cruiseId, activityId, or transportRateId as plain text
-  serviceName       String? // Human-readable display name of the quoted service
-  cruiseId          String? // NileCruise.id — soft reference
-  activityId        String? // Activity.id — soft reference
-  checkIn           DateTime?
-  checkOut          DateTime?
-  adultsCount       Int                @default(1)
-  childrenCount     Int                @default(0)
-  infantsCount      Int                @default(0)
-  roomsCount        Int?
-  nationality       String?
-  travelFrom        String?
-  mealPlan          MealPlan?
-  childAges         Json?
-  budget            Decimal?           @db.Decimal(12, 2)
-  quotedAmount      Decimal?           @db.Decimal(12, 2)
-  currency          String             @default("USD")
-  customerNotes     String?            @db.Text
-  internalNotes     String?            @db.Text
-  contactPreference String?
-  customFields      Json? // dynamic fields captured by the Request Form Builder template
-  assignedToId      String?
-  assignedTo        User?              @relation("QuoteRequestAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-  respondedAt       DateTime?
-  closedAt          DateTime?
-  requestedAt       DateTime           @default(now())
-  confirmedAt       DateTime?
-  confirmedById     String?
-  confirmedBy       User?              @relation("QuoteConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  serviceId          String? // cruiseId, activityId, or transportRateId as plain text
+  serviceName        String? // Human-readable display name of the quoted service
+  cruiseId           String? // NileCruise.id — soft reference
+  activityId         String? // Activity.id — soft reference
+  checkIn            DateTime?
+  checkOut           DateTime?
+  adultsCount        Int                @default(1)
+  childrenCount      Int                @default(0)
+  infantsCount       Int                @default(0)
+  roomsCount         Int?
+  nationality        String?
+  travelFrom         String?
+  mealPlan           MealPlan?
+  childAges          Json?
+  budget             Decimal?           @db.Decimal(12, 2)
+  quotedAmount       Decimal?           @db.Decimal(12, 2)
+  currency           String             @default("USD")
+  customerNotes      String?            @db.Text
+  internalNotes      String?            @db.Text
+  contactPreference  String?
+  // Optional transfer leg requested alongside a quote. Keeping it on the
+  // quote means an unpriced activity still reaches the Transport operations
+  // queue instead of losing the pickup answers when it leaves the activity
+  // form.
+  transferRequested  Boolean            @default(false)
+  transferFromType   String?
+  transferFromName   String?
+  transferToType     String?
+  transferToName     String?
+  transferPickupTime String?
+  transferReturnTime String?
+  transferNotes      String?            @db.Text
+  customFields       Json? // dynamic fields captured by the Request Form Builder template
+  assignedToId       String?
+  assignedTo         User?              @relation("QuoteRequestAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  respondedAt        DateTime?
+  closedAt           DateTime?
+  requestedAt        DateTime           @default(now())
+  confirmedAt        DateTime?
+  confirmedById      String?
+  confirmedBy        User?              @relation("QuoteConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([companyId])
   @@index([status])
@@ -747,6 +759,7 @@ model QuoteRequest {
   @@index([createdAt])
   @@index([assignedToId])
   @@index([confirmedById])
+  @@index([transferRequested])
 }
 
 model QuoteRequestCounter {

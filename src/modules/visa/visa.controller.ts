@@ -400,9 +400,21 @@ export async function createVisaApplication(req: Request, res: Response): Promis
 
 /** Editing any of these changes what the approval costs, so the fee and the
  *  invoice behind it have to be recalculated rather than left stale. */
-const REPRICING_FIELDS = [
-  'visaType', 'destinationCountry', 'destinationCity', 'processingType', 'paxCount',
+export const VISA_REPRICING_FIELDS = [
+  'visaType', 'destinationCountry', 'destinationCity', 'nationality', 'processingType', 'paxCount',
 ] as const;
+
+/** Keep the edit path on the same pricing inputs as a new application. In
+ * particular, changing Lebanese -> Iraqi is a price change even when the
+ * airport and hotel stay exactly the same. */
+export function visaApplicationNeedsRepricing(
+  update: Record<string, unknown>,
+  existing: Record<string, unknown>,
+): boolean {
+  return VISA_REPRICING_FIELDS.some(
+    (field) => update[field] !== undefined && update[field] !== existing[field],
+  );
+}
 
 export async function updateVisaApplication(req: Request, res: Response): Promise<void> {
   const body = req.body as UpdateVisaApplicationInput;
@@ -435,7 +447,10 @@ export async function updateVisaApplication(req: Request, res: Response): Promis
 
   // Reprice when a pricing input moved — but never rewrite an invoice that has
   // already been paid, since the money on it has moved.
-  const repriced = REPRICING_FIELDS.some((f) => body[f] !== undefined && body[f] !== (existing as Record<string, unknown>)[f]);
+  const repriced = visaApplicationNeedsRepricing(
+    body as Record<string, unknown>,
+    existing as unknown as Record<string, unknown>,
+  );
   let didReprice = false;
   if (repriced) {
     if (existing.invoice && existing.invoice.status === 'PAID') {
@@ -456,6 +471,7 @@ export async function updateVisaApplication(req: Request, res: Response): Promis
         body.destinationCity !== undefined ? body.destinationCity : existing.destinationCity,
         (body.processingType ?? existing.processingType) as ProcessingType,
         paxCount,
+        body.nationality ?? existing.nationality,
       );
       const charge = explicitMoney(sourcePrice.amount, sourcePrice.currency);
       Object.assign(data, {
@@ -485,7 +501,7 @@ export async function updateVisaApplication(req: Request, res: Response): Promis
         res.status(400).json({
           success: false,
           error: 'PRICE_NOT_CONFIGURED',
-          message: 'No active security approval fee is configured for this location and type',
+          message: 'No active security approval fee is configured for this nationality, location and type',
         });
         return;
       }

@@ -4349,8 +4349,8 @@ function crScheduleRowHtml(sc) {
     .join("");
   return `<div class="cr-row">
     <div class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:8px">
-      <div class="form-field"><label>${t("cruise.departureDay","Departs")}</label><select class="cr-dep">${dayOpts(sc.departureDay || "MONDAY")}</select></div>
-      <div class="form-field"><label>${t("cruise.returnDay","Returns")}</label><select class="cr-ret">${dayOpts(sc.returnDay || "THURSDAY")}</select></div>
+      <div class="form-field"><label>${t("cruise.from","From")} · ${t("cruise.departureDay","Departs")}</label><select class="cr-dep">${dayOpts(sc.departureDay || "MONDAY")}</select></div>
+      <div class="form-field"><label>${t("cruise.back","Back")} · ${t("cruise.returnDay","Returns")}</label><select class="cr-ret">${dayOpts(sc.returnDay || "THURSDAY")}</select></div>
       <div class="form-field"><label>${t("cruise.nights","Nights")}</label><input class="cr-nights" type="number" min="1" value="${escapeHtml(sc.nights ?? "")}" placeholder="auto"></div>
       <div class="form-field"><label>${t("form.name","Label")}</label><input class="cr-sched-label" value="${escapeHtml(sc.label || "")}" placeholder="${escapeHtml(t("form.optional","optional"))}"></div>
     </div>
@@ -5227,6 +5227,12 @@ async function renderTransport() {
           <th>Ref</th><th>Route</th><th>Pax / Lead</th><th>Vehicle</th><th>Pickup</th><th>Flight</th><th>Amount</th><th>Status</th><th>Actions</th>
         </tr></thead><tbody id="trBookingsTbody">${skeletonRows(9, 8)}</tbody></table></div>
       </section>
+      <section class="table-card" style="margin-top:16px">
+        <div class="table-toolbar"><div><strong>${t("transport.addOnQueue", "Transfer Add-ons")}</strong><div class="secondary-text" id="trAddOnsMeta">${t("transport.addOnQueueHelp", "Transfers requested with activities, packages, cruises and quote requests.")}</div></div></div>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>${t("th.ref", "Ref")}</th><th>${t("th.service", "Service")}</th><th>${t("th.route", "Route")}</th><th>${t("th.pickup", "Pickup")}</th><th>${t("transport.return", "Return")}</th><th>${t("transport.passengers", "Pax / Lead")}</th><th>${t("th.status", "Status")}</th><th>${t("th.actions", "Actions")}</th>
+        </tr></thead><tbody id="trAddOnsTbody">${skeletonRows(8, 6)}</tbody></table></div>
+      </section>
     </div>
     <div id="trTypesSection" style="display:none">
       <section class="table-card">
@@ -5279,8 +5285,12 @@ function trShowTab(tab) {
 }
 
 async function loadAdminTransportBookings() {
-  const res = await apiFetch("/transport-bookings?limit=100");
+  const [res, addOnRes] = await Promise.all([
+    apiFetch("/transport-bookings?limit=100"),
+    apiFetch("/transport-bookings/add-ons"),
+  ]);
   const bookings = res?.data || [];
+  const addOns = addOnRes?.data || [];
   const tbody = document.getElementById("trBookingsTbody");
   const meta  = document.getElementById("trBookingsMeta");
   if (meta) meta.textContent = `${formatNumber(bookings.length)} bookings`;
@@ -5302,7 +5312,33 @@ async function loadAdminTransportBookings() {
       ${b.voucher?.id ? `<button class="btn btn-outline btn-sm" title="Regenerate Voucher" onclick="regenerateVoucher('${b.voucher.id}')">${icon("refresh-cw")}</button>` : ""}
     </td>
   </tr>`).join("") : `<tr><td colspan="9">${emptyBlock("empty.noData")}</td></tr>`;
+
+  const addOnBody = document.getElementById("trAddOnsTbody");
+  const addOnMeta = document.getElementById("trAddOnsMeta");
+  if (addOnMeta) addOnMeta.textContent = addOns.length
+    ? `${formatNumber(addOns.length)} ${t("transport.addOnRequests", "transfer requests waiting in the service queue")}`
+    : t("transport.addOnQueueHelp", "Transfers requested with activities, packages, cruises and quote requests.");
+  if (addOnBody) addOnBody.innerHTML = addOns.length ? addOns.map(row => {
+    const sourcePage = row.sourceType === "CRUISE" ? "cruises"
+      : row.sourceType === "QUOTE_REQUEST" ? "quote-requests"
+        : "activities";
+    const sourceLabel = row.sourceType === "ACTIVITY_PACKAGE" ? t("activity.packageMode", "Activity Package")
+      : row.sourceType === "CRUISE" ? t("nav.cruises", "Nile Cruise")
+        : row.sourceType === "QUOTE_REQUEST" ? t("nav.quotes", "Quote Request")
+          : t("nav.activities", "Activity");
+    return `<tr>
+      <td><span class="primary-text">${escapeHtml(row.refNumber)}</span><div class="secondary-text">${escapeHtml(sourceLabel)}</div></td>
+      <td><strong>${escapeHtml(row.serviceName || "—")}</strong><div class="secondary-text">${escapeHtml(row.company?.name || "—")}</div></td>
+      <td>${escapeHtml(row.fromName || "—")} → ${escapeHtml(row.toName || "—")}<div class="secondary-text">${escapeHtml(row.fromType || "")}${row.toType ? ` → ${escapeHtml(row.toType)}` : ""}</div></td>
+      <td>${formatDate(row.serviceDate)}${row.pickupTime ? `<div class="secondary-text">${icon("clock")}&nbsp;${escapeHtml(row.pickupTime)}</div>` : ""}</td>
+      <td>${row.returnTime ? `<strong>${escapeHtml(row.returnTime)}</strong>` : `<span class="secondary-text">—</span>`}</td>
+      <td>${row.clientName ? `<strong>${escapeHtml(row.clientName)}</strong><br>` : ""}${escapeHtml(row.contactNumber || "—")}<div class="secondary-text">${formatNumber(row.passengerCount || 1)} pax</div></td>
+      <td>${statusBadge(row.status)}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="setPage('${sourcePage}')">${icon("external-link")}${t("btn.open", "Open source")}</button></td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="8">${emptyBlock("empty.noData")}</td></tr>`;
   refreshIcons(tbody);
+  if (addOnBody) refreshIcons(addOnBody);
 }
 
 async function adminConfirmTransport(id) {

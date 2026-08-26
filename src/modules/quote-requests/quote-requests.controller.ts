@@ -4,6 +4,7 @@ import { QuoteRequestStatus, QuoteServiceType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
+import { readTransferAddOn } from '../../shared/transfer-addon';
 
 const quoteInclude = {
   company: { select: { id: true, name: true, email: true, tier: true } },
@@ -109,6 +110,14 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     currency?: string;
     customerNotes?: string;
     contactPreference?: string;
+    transferRequested?: boolean;
+    transferFromType?: string;
+    transferFromName?: string;
+    transferToType?: string;
+    transferToName?: string;
+    transferPickupTime?: string;
+    transferReturnTime?: string;
+    transferNotes?: string;
     customFields?: unknown;
   };
 
@@ -131,6 +140,30 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
   }
 
   const refNumber = await generateQuoteRef();
+
+  // A price-on-request activity uses the same add-transfer panel as an
+  // in-app booking. Resolve the catalogue flag before storing it so a service
+  // that already includes a car can never reach Transport as a duplicate.
+  let transferIncluded = false;
+  let serviceReturnTime: string | null = null;
+  if (body.transferRequested && body.activityId) {
+    const activity = await prisma.activity.findUnique({
+      where: { id: body.activityId },
+      select: { transferIncluded: true, returnTime: true },
+    });
+    transferIncluded = activity?.transferIncluded ?? false;
+    serviceReturnTime = activity?.returnTime ?? null;
+  } else if (body.transferRequested && body.cruiseId) {
+    const cruise = await prisma.nileCruise.findUnique({
+      where: { id: body.cruiseId },
+      select: { transferIncluded: true },
+    });
+    transferIncluded = cruise?.transferIncluded ?? false;
+  }
+  const transfer = readTransferAddOn(body as unknown as Record<string, unknown>, {
+    transferIncluded,
+    activityReturnTime: serviceReturnTime,
+  });
 
   const quote = await prisma.quoteRequest.create({
     data: {
@@ -159,6 +192,7 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       currency: body.currency ?? 'USD',
       customerNotes: body.customerNotes ?? null,
       contactPreference: body.contactPreference ?? null,
+      ...transfer,
       customFields: sanitizeCustomFields(body.customFields) ?? undefined,
     },
     include: quoteInclude,

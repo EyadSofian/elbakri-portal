@@ -6,6 +6,13 @@ import {
   readTransferAddOn,
   resolveReturnTime,
 } from '../src/shared/transfer-addon';
+import {
+  activityTransferOperation,
+  cruiseTransferOperation,
+  packageTransferOperation,
+  quoteTransferOperation,
+  sortTransferOperations,
+} from '../src/shared/transfer-operations';
 
 // A trip that says "transfer not included" can carry one: where the driver
 // collects the clients, where they go back, and when.
@@ -141,4 +148,77 @@ test('readTransferAddOn: NO_TRANSFER is never handed out by reference', () => {
   assert.notEqual(a, b);
   assert.notEqual(a, NO_TRANSFER);
   assert.deepEqual(a, b);
+});
+
+// ── Transport operations queue ─────────────────────────────────────────
+
+test('an activity add-on becomes a transport operations row', () => {
+  const row = activityTransferOperation({
+    id: 'ab1', refNumber: 'ACT-1', transferRequested: true,
+    transferFromType: 'HOTEL', transferFromName: 'Nile Hotel',
+    transferToName: 'Nile Hotel', transferPickupTime: '08:00', transferReturnTime: '17:00',
+    activity: { name: 'Pyramids' }, company: { id: 'c1', name: 'Atlas' },
+    clientName: 'Mona', clientPhone: '+20100', adultsCount: 2, childrenCount: 1,
+    activityDate: '2026-09-01', requestedAt: '2026-08-20', status: 'PENDING',
+  });
+  assert.equal(row?.sourceType, 'ACTIVITY');
+  assert.equal(row?.serviceName, 'Pyramids');
+  assert.equal(row?.passengerCount, 3);
+  assert.equal(row?.fromName, 'Nile Hotel');
+  assert.equal(row?.returnTime, '17:00');
+});
+
+test('a package line keeps the package reference in the transport queue', () => {
+  const row = packageTransferOperation({
+    id: 'line1', transferRequested: true, transferFromName: 'Garden City',
+    activityName: 'Museum', adultsCount: 1, childrenCount: 0,
+    package: {
+      id: 'pkg1', refNumber: 'PKG-2026-0001', status: 'PENDING',
+      clientName: 'Omar', company: { id: 'c1', name: 'Atlas' },
+    },
+  });
+  assert.equal(row?.sourceType, 'ACTIVITY_PACKAGE');
+  assert.equal(row?.parentId, 'pkg1');
+  assert.equal(row?.refNumber, 'PKG-2026-0001');
+});
+
+test('a quote request keeps its client fields and transfer leg for operations', () => {
+  const row = quoteTransferOperation({
+    id: 'q1', refNumber: 'QR-2026-0001', transferRequested: true,
+    transferFromName: 'Zamalek', transferToName: 'Zamalek',
+    serviceName: 'Cairo food tour', adultsCount: 2, childrenCount: 0,
+    customFields: { clientName: 'Layla', clientPhone: '+9613' },
+  });
+  assert.equal(row?.sourceType, 'QUOTE_REQUEST');
+  assert.equal(row?.clientName, 'Layla');
+  assert.equal(row?.contactNumber, '+9613');
+});
+
+test('a cruise add-on carries its sailing date and lead passenger to transport', () => {
+  const row = cruiseTransferOperation({
+    id: 'cb1', refNumber: 'CRU-2026-0001', transferRequested: true,
+    transferFromName: 'Luxor Airport', transferPickupTime: '11:30',
+    cruise: { name: 'Royal Nile' }, passengerNames: ['Nadine', 'Karim'],
+    adultsCount: 2, childrenCount: 0, checkIn: '2026-10-05', status: 'PENDING',
+  });
+  assert.equal(row?.sourceType, 'CRUISE');
+  assert.equal(row?.serviceDate, '2026-10-05');
+  assert.equal(row?.clientName, 'Nadine');
+  assert.equal(row?.passengerCount, 2);
+});
+
+test('services that did not request a transfer never enter the queue', () => {
+  assert.equal(activityTransferOperation({ id: 'ab2', refNumber: 'ACT-2', transferRequested: false }), null);
+});
+
+test('the transport queue is ordered by when the transfer was requested', () => {
+  const older = activityTransferOperation({
+    id: 'old', refNumber: 'ACT-OLD', transferRequested: true,
+    transferFromName: 'A', requestedAt: '2026-08-01',
+  });
+  const newer = activityTransferOperation({
+    id: 'new', refNumber: 'ACT-NEW', transferRequested: true,
+    transferFromName: 'B', requestedAt: '2026-08-25',
+  });
+  assert.deepEqual(sortTransferOperations([older, newer]).map((row) => row.refNumber), ['ACT-NEW', 'ACT-OLD']);
 });

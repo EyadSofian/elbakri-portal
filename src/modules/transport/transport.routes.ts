@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireRole } from '../../middleware/role';
 import {
   listTransportBookings,
+  listTransferAddOns,
   createTransportBooking,
   confirmTransportBooking,
   cancelTransportBooking,
@@ -14,6 +15,7 @@ import {
 const router = Router();
 
 router.get('/', listTransportBookings);
+router.get('/add-ons', requireRole('SUPERADMIN'), listTransferAddOns);
 router.post('/', createTransportBooking);
 router.patch('/:id/confirm', requireRole('SUPERADMIN'), confirmTransportBooking);
 router.patch('/:id/cancel', cancelTransportBooking);
