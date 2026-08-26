@@ -13,6 +13,7 @@ import {
   normalizeWeekday,
   priceCruiseBooking,
   rateApplies,
+  validateCruiseRateInput,
 } from '../src/shared/cruise-rates';
 
 // A Nile cruise is priced the way a hotel is: one row per cabin category, per
@@ -38,6 +39,37 @@ function row(over: Partial<CruiseRateRow> = {}): CruiseRateRow {
 }
 
 const MARCH = new Date('2026-03-15');
+
+// ── Admin period validation ────────────────────────────────────────────────
+
+test('a cruise pricing period accepts From / To and any priced occupancy', () => {
+  assert.equal(validateCruiseRateInput({
+    validFrom: '2026-10-01',
+    validTo: '2027-04-30',
+    singlePrice: 400,
+  }), null);
+});
+
+test('a cruise pricing period supports open-ended dates like a hotel rate', () => {
+  assert.equal(validateCruiseRateInput({ validFrom: '2026-10-01', doublePrice: 300 }), null);
+  assert.equal(validateCruiseRateInput({ validTo: '2027-04-30', doublePrice: 300 }), null);
+});
+
+test('a cruise pricing period refuses reversed or invalid dates', () => {
+  assert.equal(validateCruiseRateInput({
+    validFrom: '2027-04-30', validTo: '2026-10-01', doublePrice: 300,
+  }), 'INVALID_PERIOD_RANGE');
+  assert.equal(validateCruiseRateInput({
+    validFrom: 'not-a-date', validTo: '2027-04-30', doublePrice: 300,
+  }), 'INVALID_PERIOD_DATE');
+});
+
+test('a cruise rate row needs one valid Single, Double or Triple amount', () => {
+  assert.equal(validateCruiseRateInput({ validFrom: null, validTo: null }), 'OCCUPANCY_PRICE_REQUIRED');
+  assert.equal(validateCruiseRateInput({ doublePrice: -1 }), 'INVALID_OCCUPANCY_PRICE');
+  assert.equal(validateCruiseRateInput({ triplePrice: 'abc' }), 'INVALID_OCCUPANCY_PRICE');
+  assert.equal(validateCruiseRateInput({ doublePrice: 0 }), null, 'zero is explicit, not blank');
+});
 
 // ── rateApplies ─────────────────────────────────────────────────────────────
 

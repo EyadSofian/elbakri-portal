@@ -1123,8 +1123,6 @@ const masterConfigs = {
       { name: "operator", label: "form.operator", fallback: "Operator" },
       { name: "cabins", label: "form.cabins", fallback: "Cabins", type: "number", default: 40 },
       { name: "route", label: "th.route", type: "select", default: "LUXOR_ASWAN", options: ["LUXOR_ASWAN", "ASWAN_LUXOR", "LUXOR_ASWAN_LUXOR"] },
-      { name: "departureDays", label: "form.departureDays", fallback: "Departure Days", type: "list", cls: "full", helpKey: "help.daysExample", help: "Example: Monday, Thursday" },
-      { name: "duration", label: "form.duration", fallback: "Duration", type: "number", default: 4 },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
       // The programme, day by day. It used to be typed into the description as
       // one paragraph, which no voucher could list and no agent could read
@@ -1137,11 +1135,6 @@ const masterConfigs = {
       { name: "transferNote", label: "cruise.transferNote", fallback: "Transfer note", type: "textarea", cls: "full",
         helpKey: "help.cruiseTransferNote", help: "What the fare does and does not cover — e.g. \"Airport to pier only\"." },
       { name: "transferNoteAr", label: "cruise.transferNoteAr", fallback: "Transfer note (Arabic)", type: "textarea", cls: "full" },
-      // The cabin rate rows are the price now, so the headline is optional —
-      // filling in the rate table is what an operator actually does.
-      { name: "priceFrom", label: "th.amount", fallback: "Headline \"from\" price (optional)", type: "number", nullable: true,
-        helpKey: "help.cruisePriceFrom", help: "Leave blank once the cabin rates are filled in — the cheapest rate becomes the \"from\" price." },
-      { name: "currency", label: "form.currency", type: "select", default: "USD", options: PORTAL_CURRENCIES },
       // Without these two the rate table was unreachable: every boat is created
       // with prices hidden, and there was no way in this form to turn them on,
       // so the agent's cabin table was permanently empty and Single / Double /
@@ -1154,7 +1147,6 @@ const masterConfigs = {
       { name: "imageUrl", label: "activity.mainPhoto", fallback: "Main photo", type: "image", cls: "full" },
       { name: "galleryUrls", label: "cruise.gallery", fallback: "More photos", type: "gallery", cls: "full" },
     ],
-    marketPrices: [{ entityType: "CRUISE", baseField: "priceFrom", label: "Price From" }],
   },
   activities: {
     titleKey: "nav.activities",
@@ -1784,8 +1776,23 @@ async function showMasterModal(entity, id = "") {
   // before the markup is generated — otherwise it renders empty on first open.
   if (masterConfigs[entity].fields.some(f => f.type === "destinationSelect")) await ensureDestinationOptions();
   const rows = state.cache[entity + "Rows"] || [];
-  const row = id ? rows.find(item => item.id === id) : null;
+  let row = id ? rows.find(item => item.id === id) : null;
   const title = `${id ? t("btn.edit") : t("btn.addNew")} ${t(cfg.titleKey)}`;
+
+  // The catalogue list intentionally contains only active rows for the agent
+  // view. Editing must fetch the complete tables, including disabled periods,
+  // or saving this combined form would silently delete them.
+  if (entity === "cruises" && id) {
+    const [rateRes, scheduleRes] = await Promise.all([
+      apiFetch(`/cruises/${id}/rates`).catch(() => null),
+      apiFetch(`/cruises/${id}/schedules`).catch(() => null),
+    ]);
+    row = {
+      ...(row || {}),
+      cabinRates: rateRes?.data || row?.cabinRates || [],
+      schedules: scheduleRes?.data || row?.schedules || [],
+    };
+  }
 
   // Prefetch existing per-market price overrides when editing
   const mpData = {};
@@ -1800,11 +1807,40 @@ async function showMasterModal(entity, id = "") {
   const body = `<div class="form-section"><div class="form-section-title">${t("form.basicInfo")}</div><div class="form-grid">
     ${cfg.fields.map(fieldDef => masterField(entity, fieldDef, row)).join("")}
   </div></div>
+  ${entity === "cruises" ? cruiseCatalogueFormSection(row) : ""}
   ${cfg.marketPrices ? marketPriceSection(entity, cfg, mpData, id) : ""}`;
   openModal(title, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
-    <button class="btn btn-primary" onclick="saveMasterRecord('${entity}', '${id}')">${t("btn.save")}</button>
+    <button class="btn btn-primary" id="masterSaveBtn" onclick="saveMasterRecord('${entity}', '${id}')">${t("btn.save")}</button>
   `);
+  if (entity === "cruises") crSyncRateTitles();
+}
+
+/**
+ * The sailing legs and the period prices belong to the cruise itself, so they
+ * are edited in the same create/edit form. The old form showed a headline
+ * amount and a comma-separated departure list, then asked the operator to save
+ * and open a second modal to enter the real answer. This is the real answer.
+ */
+function cruiseCatalogueFormSection(row) {
+  const schedules = Array.isArray(row?.schedules) && row.schedules.length ? row.schedules : [{}];
+  const rates = Array.isArray(row?.cabinRates) && row.cabinRates.length ? row.cabinRates : [{}];
+  return `
+    <div class="form-section cruise-catalogue-section">
+      <div class="form-section-title">${t("cruise.sailingLegs","From / To schedule")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("cruise.sailingLegsHelp","Add every sailing leg: the day it leaves, the day it returns and the number of nights.")}</div>
+      <div id="crSchedRows">${schedules.map(crScheduleRowHtml).join("")}</div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="crAddScheduleRow()">${icon("plus")}${t("cruise.addSchedule","Add departure")}</button>
+    </div>
+    <div class="form-section cruise-catalogue-section">
+      <div class="form-section-title">${t("cruise.pricingPeriods","Pricing periods")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("cruise.pricingPeriodsHelp","One row per cabin, market and period. Set From / To, then the Single, Double and Triple cabin prices.")}</div>
+      <div class="cr-period-toolbar">
+        <button type="button" class="btn btn-primary btn-sm" onclick="crAddRateRow()">${icon("plus")}${t("cruise.addCabinRate","Add cabin rate")}</button>
+        <span class="secondary-text" id="crRatesCount"></span>
+      </div>
+      <div id="crRateRows">${rates.map(crRateRowHtml).join("")}</div>
+    </div>`;
 }
 
 // Explicit price-matrix editor. Each row is an admin-defined selling price
@@ -1940,10 +1976,21 @@ async function saveMasterRecord(entity, id = "") {
     toast(t("toast.validationError"), "error");
     return;
   }
+  const cruiseCatalogue = entity === "cruises" ? {
+    schedules: crCollectScheduleRows(),
+    rates: crCollectRateRows(),
+  } : null;
+  if (cruiseCatalogue && !crValidateCatalogue(cruiseCatalogue)) return;
+  // A cruise is priced only by its period rows. Clear any legacy headline the
+  // first time an older boat is saved in the new editor.
+  if (entity === "cruises") payload.priceFrom = null;
+  const saveBtn = document.getElementById("masterSaveBtn");
+  setBtnLoading(saveBtn, true, "btn.saving");
   const res = await apiFetch(id ? `${cfg.endpoint}/${id}` : cfg.endpoint, {
     method: id ? "PATCH" : "POST",
     body: JSON.stringify(payload),
   });
+  if (!res?.success) { setBtnLoading(saveBtn, false); return; }
   if (res?.success) {
     // Persist the Egyptian override. International customers use the base price.
     const savedId = id || res.data?.id;
@@ -1958,6 +2005,18 @@ async function saveMasterRecord(entity, id = "") {
         }).catch(() => null);
       }
     }
+    if (cruiseCatalogue && savedId) {
+      const [rateRes, scheduleRes] = await Promise.all([
+        apiFetch(`/cruises/${savedId}/rates`, { method: "PUT", body: JSON.stringify({ rates: cruiseCatalogue.rates }) }),
+        apiFetch(`/cruises/${savedId}/schedules`, { method: "PUT", body: JSON.stringify({ schedules: cruiseCatalogue.schedules }) }),
+      ]);
+      if (!rateRes?.success || !scheduleRes?.success) {
+        setBtnLoading(saveBtn, false);
+        toast(t("cruise.catalogueSaveFailed","The cruise was saved, but its periods could not be saved. Please try again."), "error");
+        return;
+      }
+    }
+    setBtnLoading(saveBtn, false);
     closeModal();
     toast(id ? t("toast.updated") : t("toast.created"), "success");
     setPage(entity);
@@ -4269,18 +4328,16 @@ async function renderCruises() {
     ["th.type", c => escapeHtml(c.shipType)],
     ["th.route", c => escapeHtml(c.route)],
     ["cruise.schedules", c => adminCruiseScheduleSummary(c)],
-    ["th.amount", c => {
-      // The rate rows are the price; the headline is only what an operator may
-      // have typed before there were any, so it is the fallback, not the answer.
+    ["cruise.cabinRates", c => {
+      // Period rows are the only price. A missing matrix is a request, never a
+      // stale headline amount left over from the retired field.
       const rates = c.cabinRates || [];
       const prices = rates.flatMap(r => [r.singlePrice, r.doublePrice, r.triplePrice])
         .map(Number).filter(n => Number.isFinite(n));
       if (prices.length) {
         return `<span class="numeric">${formatMoney(Math.min(...prices), rates[0].currency)}</span><div class="secondary-text">${formatNumber(rates.length)} ${t("cruise.cabinRates","Cabin Rates")}</div>`;
       }
-      return c.priceFrom != null
-        ? formatMoney(c.priceFrom, c.currency)
-        : `<span class="secondary-text">${t("cruise.noRates","No cabin rates set yet")}</span>`;
+      return `<span class="secondary-text">${t("cruise.noRates","No cabin rates set yet")}</span>`;
     }],
     // Priced but hidden is the state that had every agent seeing an empty cabin
     // table, so the list says which of the two a boat is in.
@@ -4288,10 +4345,7 @@ async function renderCruises() {
       ? `<span class="badge badge-confirmed">${icon("eye")} ${t("hotel.visible","Visible")}</span>`
       : `<span class="badge badge-pending">${icon("eye-off")} ${t("hotel.hidden","Hidden")}</span>`],
     ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
-    ["th.actions", c => `<div class="row-actions">
-      <button class="btn btn-outline btn-sm" onclick="openCruiseRatesEditor('${c.id}')">${icon("table-2")}${t("cruise.cabinRates","Cabin Rates")}</button>
-      ${masterRowActions("cruises", c)}
-    </div>`],
+    ["th.actions", c => masterRowActions("cruises", c)],
   ], masterActions("cruises"));
 }
 
@@ -4316,39 +4370,13 @@ const CRUISE_MARKETS = [["", "All markets"], ["EGYPTIAN", "Egyptian"], ["FOREIGN
 const CRUISE_CABIN_TYPES = ["STANDARD", "DELUXE", "SUITE", "PRESIDENTIAL"];
 const CRUISE_WEEKDAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
 
-async function openCruiseRatesEditor(cruiseId) {
-  const cruise = (state.cache.cruisesRows || []).find(c => c.id === cruiseId);
-  const [rateRes, schedRes] = await Promise.all([
-    apiFetch(`/cruises/${cruiseId}/rates`),
-    apiFetch(`/cruises/${cruiseId}/schedules`),
-  ]);
-  const rates = rateRes?.data || [];
-  const schedules = schedRes?.data || [];
-
-  openModal(`${t("cruise.cabinRates","Cabin Rates")} — ${escapeHtml(cruise?.name || "")}`, `
-    <div class="form-section">
-      <div class="form-section-title">${t("cruise.schedules","Departures")}</div>
-      <div class="secondary-text" style="margin-bottom:10px">${t("help.cruiseSchedule","Which day the boat leaves and which day it is back. Add one row per leg.")}</div>
-      <div id="crSchedRows">${schedules.map(crScheduleRowHtml).join("")}</div>
-      <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="crAddScheduleRow()">${icon("plus")}${t("cruise.addSchedule","Add departure")}</button>
-    </div>
-    <div class="form-section" style="margin-top:18px">
-      <div class="form-section-title">${t("cruise.cabinRates","Cabin Rates")}</div>
-      <div class="secondary-text" style="margin-bottom:10px">${t("help.cruiseRates","One row per cabin category, market and period. Leave a price blank when the cabin is not sold that way.")}</div>
-      <div id="crRateRows">${rates.map(crRateRowHtml).join("")}</div>
-      <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="crAddRateRow()">${icon("plus")}${t("cruise.addCabinRate","Add cabin rate")}</button>
-    </div>`, `
-    <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
-    <button class="btn btn-primary" onclick="crSaveRatesEditor('${cruiseId}')">${t("btn.save")}</button>`);
-}
-
 function crScheduleRowHtml(sc) {
   sc = sc || {};
   const dayOpts = (selected) => CRUISE_WEEKDAYS
     .map(d => `<option value="${d}" ${String(selected || "").toUpperCase() === d ? "selected" : ""}>${escapeHtml(t("weekday." + d, d))}</option>`)
     .join("");
   return `<div class="cr-row">
-    <div class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:8px">
+    <div class="form-grid cr-schedule-row-grid">
       <div class="form-field"><label>${t("cruise.from","From")} · ${t("cruise.departureDay","Departs")}</label><select class="cr-dep">${dayOpts(sc.departureDay || "MONDAY")}</select></div>
       <div class="form-field"><label>${t("cruise.back","Back")} · ${t("cruise.returnDay","Returns")}</label><select class="cr-ret">${dayOpts(sc.returnDay || "THURSDAY")}</select></div>
       <div class="form-field"><label>${t("cruise.nights","Nights")}</label><input class="cr-nights" type="number" min="1" value="${escapeHtml(sc.nights ?? "")}" placeholder="auto"></div>
@@ -4373,22 +4401,26 @@ function crRateRowHtml(r) {
     .map(c => `<option value="${c}" ${(r.currency || "USD") === c ? "selected" : ""}>${c}</option>`)
     .join("");
   const dateVal = (v) => (v ? String(v).slice(0, 10) : "");
-  return `<div class="cr-row">
-    <div class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:8px">
-      <div class="form-field"><label>${t("cruise.cabinName","Cabin")}</label><input class="cr-cabin" value="${escapeHtml(r.cabinName || "")}" placeholder="Standard Cabin"></div>
-      <div class="form-field"><label>${t("th.type","Type")}</label><select class="cr-cabin-type">${cabinOpts}</select></div>
-      <div class="form-field"><label>${t("market.label","Market")}</label><select class="cr-market">${marketOpts}</select></div>
+  return `<div class="cr-row cr-period-row">
+    <div class="cr-period-head">
+      <strong class="cr-rate-title"></strong>
+      <button type="button" class="btn btn-outline btn-sm" onclick="crDuplicateRate(this)">${icon("copy")}${t("hotel.duplicateRate","Duplicate")}</button>
+    </div>
+    <div class="form-grid cr-rate-row-grid">
+      <div class="form-field full"><label>${t("cruise.cabinName","Cabin")} <span class="required">*</span></label><input class="cr-cabin" value="${escapeHtml(r.cabinName || "")}" placeholder="Standard Cabin" oninput="crSyncRateTitles()"></div>
+      <div class="form-field"><label>${t("th.type","Type")}</label><select class="cr-cabin-type" onchange="crSyncRateTitles()">${cabinOpts}</select></div>
+      <div class="form-field"><label>${t("market.label","Market")}</label><select class="cr-market" onchange="crSyncRateTitles()">${marketOpts}</select></div>
       <div class="form-field"><label>${t("form.currency","Currency")}</label><select class="cr-cur">${curOpts}</select></div>
       <div class="form-field"><label>${t("hotel.single","Single")}</label><input class="cr-single" type="number" step="0.01" min="0" value="${escapeHtml(r.singlePrice ?? "")}"></div>
       <div class="form-field"><label>${t("hotel.double","Double")}</label><input class="cr-double" type="number" step="0.01" min="0" value="${escapeHtml(r.doublePrice ?? "")}"></div>
       <div class="form-field"><label>${t("hotel.triple","Triple")}</label><input class="cr-triple" type="number" step="0.01" min="0" value="${escapeHtml(r.triplePrice ?? "")}"></div>
-      <div class="form-field"><label>${t("form.validFrom","Valid from")}</label><input class="cr-from" type="date" value="${dateVal(r.validFrom)}"></div>
-      <div class="form-field"><label>${t("form.validTo","Valid to")}</label><input class="cr-to" type="date" value="${dateVal(r.validTo)}"></div>
+      <div class="form-field"><label>${t("form.validFrom","Valid from")}</label><input class="cr-from" type="date" value="${dateVal(r.validFrom)}" oninput="crSyncRateTitles()"></div>
+      <div class="form-field"><label>${t("form.validTo","Valid to")}</label><input class="cr-to" type="date" value="${dateVal(r.validTo)}" oninput="crSyncRateTitles()"></div>
       <div class="form-field full"><label>${t("placeholder.notes","Notes")}</label><input class="cr-notes" value="${escapeHtml(r.notes || "")}"></div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
       <label class="check-row"><input type="checkbox" class="cr-rate-active" ${r.isActive === false ? "" : "checked"}> ${t("form.active","Active")}</label>
-      <button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-row').remove()">${t("btn.remove","Remove")}</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="crRemoveRate(this)">${icon("trash-2")}${t("btn.remove","Remove")}</button>
     </div>
   </div>`;
 }
@@ -4404,42 +4436,121 @@ function crAddRateRow() {
   const host = document.getElementById("crRateRows");
   if (!host) return;
   host.insertAdjacentHTML("beforeend", crRateRowHtml({}));
-  refreshIcons(host.lastElementChild);
+  const added = host.lastElementChild;
+  refreshIcons(added);
+  crSyncRateTitles();
+  added?.scrollIntoView({ behavior: "smooth", block: "center" });
+  added?.querySelector(".cr-cabin")?.focus();
 }
 
-async function crSaveRatesEditor(cruiseId) {
-  const num = (el) => (el && el.value !== "" ? Number(el.value) : null);
-  const schedules = [...document.querySelectorAll("#crSchedRows .cr-row")].map(row => ({
+function crRemoveRate(btn) {
+  btn.closest(".cr-period-row")?.remove();
+  crSyncRateTitles();
+}
+
+/** Copy cabin / market / currency / prices, then clear the period dates. */
+function crDuplicateRate(btn) {
+  const row = btn.closest(".cr-period-row");
+  if (!row) return;
+  const g = sel => row.querySelector(sel);
+  const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
+  const copy = {
+    cabinName: g(".cr-cabin")?.value || "",
+    cabinType: g(".cr-cabin-type")?.value || "STANDARD",
+    market: g(".cr-market")?.value || null,
+    currency: g(".cr-cur")?.value || "USD",
+    singlePrice: num(".cr-single"),
+    doublePrice: num(".cr-double"),
+    triplePrice: num(".cr-triple"),
+    notes: g(".cr-notes")?.value || "",
+  };
+  const tmp = document.createElement("div");
+  tmp.innerHTML = crRateRowHtml(copy);
+  const added = tmp.firstElementChild;
+  row.after(added);
+  refreshIcons(added);
+  crSyncRateTitles();
+  added.scrollIntoView({ behavior: "smooth", block: "center" });
+  added.querySelector(".cr-from")?.focus();
+}
+
+/** Keep a long season list readable: cabin · market · From → To. */
+function crSyncRateTitles() {
+  const rows = [...document.querySelectorAll("#crRateRows .cr-period-row")];
+  rows.forEach((row, i) => {
+    const g = sel => row.querySelector(sel);
+    const cabin = g(".cr-cabin")?.value.trim() || t("cruise.cabinName","Cabin");
+    const marketEl = g(".cr-market");
+    const market = marketEl?.options?.[marketEl.selectedIndex]?.textContent?.trim() || t("market.ALL","All markets");
+    const from = g(".cr-from")?.value || "…";
+    const to = g(".cr-to")?.value || "…";
+    const title = row.querySelector(".cr-rate-title");
+    if (title) title.textContent = `${i + 1}. ${cabin} · ${market} · ${from} → ${to}`;
+  });
+  const count = document.getElementById("crRatesCount");
+  if (count) count.textContent = `${t("cruise.periodCount","Pricing periods")}: ${formatNumber(rows.length)}`;
+}
+
+function crCollectScheduleRows() {
+  return [...document.querySelectorAll("#crSchedRows .cr-row")].map(row => ({
     departureDay: row.querySelector(".cr-dep")?.value,
     returnDay: row.querySelector(".cr-ret")?.value,
-    nights: num(row.querySelector(".cr-nights")),
+    nights: row.querySelector(".cr-nights")?.value === "" ? null : Number(row.querySelector(".cr-nights")?.value),
     label: row.querySelector(".cr-sched-label")?.value.trim() || null,
     isActive: row.querySelector(".cr-sched-active")?.checked !== false,
   }));
-  // A row with no cabin name prices nothing an agent could pick, so it is not
-  // sent — the same rule the server applies, applied before the round trip.
-  const rates = [...document.querySelectorAll("#crRateRows .cr-row")].map(row => ({
-    cabinName: row.querySelector(".cr-cabin")?.value.trim() || "",
-    cabinType: row.querySelector(".cr-cabin-type")?.value,
-    market: row.querySelector(".cr-market")?.value || null,
-    currency: row.querySelector(".cr-cur")?.value || "USD",
-    singlePrice: num(row.querySelector(".cr-single")),
-    doublePrice: num(row.querySelector(".cr-double")),
-    triplePrice: num(row.querySelector(".cr-triple")),
-    validFrom: row.querySelector(".cr-from")?.value || null,
-    validTo: row.querySelector(".cr-to")?.value || null,
-    notes: row.querySelector(".cr-notes")?.value.trim() || null,
-    isActive: row.querySelector(".cr-rate-active")?.checked !== false,
-  })).filter(r => r.cabinName);
+}
 
-  const [rateRes, schedRes] = await Promise.all([
-    apiFetch(`/cruises/${cruiseId}/rates`, { method: "PUT", body: JSON.stringify({ rates }) }),
-    apiFetch(`/cruises/${cruiseId}/schedules`, { method: "PUT", body: JSON.stringify({ schedules }) }),
-  ]);
-  if (!rateRes?.success || !schedRes?.success) return;
-  closeModal();
-  toast(t("toast.updated"), "success");
-  renderCruises();
+function crCollectRateRows() {
+  return [...document.querySelectorAll("#crRateRows .cr-period-row")].map(row => {
+    const g = sel => row.querySelector(sel);
+    const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
+    return {
+      cabinName: g(".cr-cabin")?.value.trim() || "",
+      cabinType: g(".cr-cabin-type")?.value,
+      market: g(".cr-market")?.value || null,
+      currency: g(".cr-cur")?.value || "USD",
+      singlePrice: num(".cr-single"),
+      doublePrice: num(".cr-double"),
+      triplePrice: num(".cr-triple"),
+      validFrom: g(".cr-from")?.value || null,
+      validTo: g(".cr-to")?.value || null,
+      notes: g(".cr-notes")?.value.trim() || null,
+      isActive: g(".cr-rate-active")?.checked !== false,
+    };
+  }).filter(row => row.cabinName);
+}
+
+function crValidateCatalogue({ schedules, rates }) {
+  if (!schedules.length) {
+    toast(t("cruise.scheduleRequired","Add at least one From / Back sailing schedule."), "error");
+    return false;
+  }
+  if (schedules.some(schedule => schedule.nights != null && (!Number.isFinite(schedule.nights) || schedule.nights < 1))) {
+    toast(t("toast.validationError","Check required fields"), "error");
+    return false;
+  }
+  const showPrices = document.getElementById("m_cruises_showPriceToAgents")?.checked === true;
+  if (showPrices && !rates.length) {
+    toast(t("cruise.rateRequired","Add at least one cabin pricing period before showing prices to agents."), "error");
+    return false;
+  }
+  for (const rate of rates) {
+    if (rate.validFrom && rate.validTo && new Date(rate.validTo) < new Date(rate.validFrom)) {
+      toast(t("toast.invalidDateRange","Valid To must be after Valid From"), "error");
+      return false;
+    }
+    if (rate.singlePrice == null && rate.doublePrice == null && rate.triplePrice == null) {
+      toast(t("cruise.occupancyPriceRequired","Enter at least one Single, Double or Triple price in every rate row."), "error");
+      return false;
+    }
+    const prices = [rate.singlePrice, rate.doublePrice, rate.triplePrice].filter(value => value != null);
+    if (prices.some(value => !Number.isFinite(value) || value < 0)) {
+      toast(t("toast.validationError","Check required fields"), "error");
+      return false;
+    }
+  }
+  return true;
 }
 
 // Which destination the catalogue is filtered to ("" = all, "__none__" = the

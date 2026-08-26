@@ -40,6 +40,43 @@ export interface CruiseRateRow {
   isActive?: boolean;
 }
 
+export type CruiseRateInputError =
+  | 'INVALID_PERIOD_DATE'
+  | 'INVALID_PERIOD_RANGE'
+  | 'INVALID_OCCUPANCY_PRICE'
+  | 'OCCUPANCY_PRICE_REQUIRED';
+
+/**
+ * Validate one admin rate row before a replace-all save can delete the old
+ * table. The browser performs the same checks for a useful message, but the API
+ * remains the source of truth for imports and direct requests.
+ */
+export function validateCruiseRateInput(row: {
+  validFrom?: unknown;
+  validTo?: unknown;
+  singlePrice?: unknown;
+  doublePrice?: unknown;
+  triplePrice?: unknown;
+}): CruiseRateInputError | null {
+  const present = (value: unknown) => value !== null && value !== undefined && String(value).trim() !== '';
+  const hasFrom = present(row.validFrom);
+  const hasTo = present(row.validTo);
+  const from = hasFrom ? new Date(String(row.validFrom)) : null;
+  const to = hasTo ? new Date(String(row.validTo)) : null;
+  if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) return 'INVALID_PERIOD_DATE';
+  // One-sided and all-year rows are deliberately supported, just like hotel
+  // rates. From / To are both visible; blank means that side is open.
+  if (from && to && to < from) return 'INVALID_PERIOD_RANGE';
+
+  const prices = [row.singlePrice, row.doublePrice, row.triplePrice];
+  const supplied = prices.filter(present);
+  if (!supplied.length) return 'OCCUPANCY_PRICE_REQUIRED';
+  if (supplied.some((value) => !Number.isFinite(Number(value)) || Number(value) < 0)) {
+    return 'INVALID_OCCUPANCY_PRICE';
+  }
+  return null;
+}
+
 /**
  * INTERNATIONAL and FOREIGN are the same audience under two names — rows were
  * written under both before the markets list settled, and a guest priced under

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { CabinType, Market } from '@prisma/client';
 import { prisma } from '../../config/db';
-import { normalizeWeekday, nightsBetween } from '../../shared/cruise-rates';
+import { normalizeWeekday, nightsBetween, validateCruiseRateInput } from '../../shared/cruise-rates';
 
 /**
  * The catalogue half of a Nile cruise: the cabin rate rows that price it, and
@@ -86,6 +86,11 @@ export async function saveCruiseRates(req: Request, res: Response): Promise<void
   const clean = posted
     .map((r) => ({ ...r, cabinName: String(r.cabinName ?? '').trim() }))
     .filter((r) => r.cabinName.length > 0);
+  const invalid = clean.map(validateCruiseRateInput).find((error) => error !== null);
+  if (invalid) {
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: invalid });
+    return;
+  }
 
   const rates = await prisma.$transaction(async (tx) => {
     await tx.cruiseCabinRate.deleteMany({ where: { cruiseId } });
@@ -145,6 +150,14 @@ export async function saveCruiseSchedules(req: Request, res: Response): Promise<
     }))
     .filter((s): s is { raw: ScheduleInput; departureDay: NonNullable<ReturnType<typeof normalizeWeekday>>; returnDay: NonNullable<ReturnType<typeof normalizeWeekday>> } =>
       s.departureDay !== null && s.returnDay !== null);
+  if (!clean.length || clean.length !== posted.length) {
+    res.status(400).json({
+      success: false,
+      error: 'VALIDATION_ERROR',
+      message: 'Every cruise needs at least one valid From / Back sailing schedule',
+    });
+    return;
+  }
 
   const schedules = await prisma.$transaction(async (tx) => {
     await tx.cruiseSchedule.deleteMany({ where: { cruiseId } });
@@ -168,10 +181,20 @@ export async function saveCruiseSchedules(req: Request, res: Response): Promise<
         },
       });
     }
-    return tx.cruiseSchedule.findMany({
+    const saved = await tx.cruiseSchedule.findMany({
       where: { cruiseId },
       orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
     });
+    // Keep the legacy summary columns truthful for exports and older sheet
+    // integrations. The structured schedule remains the source of truth.
+    await tx.nileCruise.update({
+      where: { id: cruiseId },
+      data: {
+        departureDays: saved.map((s) => s.departureDay),
+        duration: saved[0]?.nights ?? 1,
+      },
+    });
+    return saved;
   });
   res.json({ success: true, data: schedules });
 }

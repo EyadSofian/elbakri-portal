@@ -137,3 +137,14 @@ test('a cruise with no headline price is still valid — the rate rows are the p
   const parsed = createCruiseSchema.parse({ name: 'Nile Goddess', priceFrom: '' }) as Record<string, unknown>;
   assert.equal(parsed.priceFrom, null);
 });
+
+test('the cruise form uses structured schedules and pricing periods, not the retired amount fields', () => {
+  const fields = masterConfigFields('cruises');
+  for (const retired of ['departureDays', 'duration', 'priceFrom', 'currency']) {
+    assert.equal(fields.includes(retired), false, `${retired} is still visible in the cruise form`);
+  }
+  assert.match(admin, /function cruiseCatalogueFormSection\b/);
+  assert.match(admin, /id="crSchedRows"/);
+  assert.match(admin, /id="crRateRows"/);
+  assert.match(admin, /payload\.priceFrom = null/);
+});

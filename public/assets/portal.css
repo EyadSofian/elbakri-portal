@@ -8267,3 +8267,73 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
   margin-bottom: 8px;
   background: var(--surface);
 }
+
+/* The cruise editor now keeps the sailing legs and seasonal cabin matrix in
+   the same form as the boat. Operators should see the real From / Back and
+   From / To answers before they press Save, not a headline amount followed by
+   a second modal. */
+.cruise-catalogue-section {
+  position: relative;
+  overflow: hidden;
+}
+
+.cruise-catalogue-section::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--brand-accent);
+}
+
+.cr-schedule-row-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cr-period-toolbar,
+.cr-period-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cr-period-toolbar { margin-bottom: 10px; }
+
+.cr-period-row {
+  padding: 14px;
+  margin-bottom: 12px;
+  border-color: var(--border-strong, var(--border));
+  box-shadow: 0 7px 20px rgb(15 23 42 / 4%);
+}
+
+.cr-period-head {
+  margin: -2px 0 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cr-rate-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.cr-rate-row-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .cr-schedule-row-grid,
+  .cr-rate-row-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .cr-schedule-row-grid,
+  .cr-rate-row-grid { grid-template-columns: minmax(0, 1fr); }
+  .cr-period-head > .btn { width: 100%; justify-content: center; }
+}

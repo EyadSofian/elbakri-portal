@@ -1961,6 +1961,7 @@
 
     en.hotel = en.hotel || {}; ar.hotel = ar.hotel || {};
     Object.assign(en.hotel, {
+      showPriceToAgents: "Show prices to agents",
       photoTags: "Photo albums",
       photoTagsHelp: "Photos filed under a name — sea view, single room, anything you like.",
       addPhotoTag: "Add album",
@@ -1970,6 +1971,7 @@
       noPhotoTags: "No albums yet",
     });
     Object.assign(ar.hotel, {
+      showPriceToAgents: "إظهار الأسعار للوكلاء",
       photoTags: "ألبومات الصور",
       photoTagsHelp: "صور تحت اسم معيّن — سي فيو، غرفة سنجل، أو أي تصنيف تختاره.",
       addPhotoTag: "أضف ألبوم",
@@ -2035,6 +2037,15 @@
     Object.assign(en.cruise, {
       schedules: "Departures",
       schedulesHelp: "When the boat leaves and when it is back.",
+      sailingLegs: "From / Back schedule",
+      sailingLegsHelp: "Add every sailing leg: the day it leaves, the day it returns and the number of nights.",
+      pricingPeriods: "Seasonal cabin pricing",
+      periodCount: "Pricing periods",
+      pricingPeriodsHelp: "One row per cabin, market and period. Set From / To, then the Single, Double and Triple cabin prices.",
+      catalogueSaveFailed: "The cruise was saved, but its periods could not be saved. Please try again.",
+      scheduleRequired: "Add at least one From / Back sailing schedule.",
+      rateRequired: "Add at least one cabin pricing period before showing prices to agents.",
+      occupancyPriceRequired: "Enter at least one Single, Double or Triple price in every rate row.",
       from: "From",
       back: "Back",
       departureDay: "Departs",
@@ -2074,6 +2085,15 @@
     Object.assign(ar.cruise, {
       schedules: "مواعيد التحرك",
       schedulesHelp: "متى تتحرك الرحلة ومتى تعود.",
+      sailingLegs: "مواعيد التحرك والعودة",
+      sailingLegsHelp: "أضف كل رحلة: يوم التحرك، يوم العودة، وعدد الليالي.",
+      pricingPeriods: "فترات تسعير الكبائن",
+      periodCount: "فترات التسعير",
+      pricingPeriodsHelp: "صف لكل كابينة وسوق وفترة. حدّد من وإلى ثم أسعار السنجل والدبل والتربل.",
+      catalogueSaveFailed: "تم حفظ الكروز، لكن تعذر حفظ الفترات. حاول مرة أخرى.",
+      scheduleRequired: "أضف موعد تحرك وعودة واحدًا على الأقل.",
+      rateRequired: "أضف فترة تسعير كابينة واحدة على الأقل قبل إظهار الأسعار للوكلاء.",
+      occupancyPriceRequired: "أدخل سعر سنجل أو دبل أو تربل واحدًا على الأقل في كل صف.",
       from: "من",
       back: "العودة",
       departureDay: "يوم التحرك",
@@ -2110,6 +2130,10 @@
       allowQuoteOn: "السماح للوكلاء بطلب عرض سعر",
       gallery: "الصور",
     });
+
+    en.form = en.form || {}; ar.form = ar.form || {};
+    Object.assign(en.form, { active: "Active" });
+    Object.assign(ar.form, { active: "نشط" });
 
     en.weekday = en.weekday || {}; ar.weekday = ar.weekday || {};
     Object.assign(en.weekday, {

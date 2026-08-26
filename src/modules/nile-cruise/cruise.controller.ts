@@ -6,7 +6,7 @@ import { sendEmail } from '../../shared/email.templates';
 import { generateInvoiceNumber, generateRef, paginate, paginateMeta } from '../../shared/helpers';
 import { setJsonStringArray } from '../../shared/json-array';
 import { explicitMoney, invoiceMoneySnapshotData } from '../../shared/money';
-import { resolvePriceContext, resolveMarketPriceMap } from '../../shared/pricing';
+import { resolvePriceContext } from '../../shared/pricing';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { buildInvoiceTotals } from '../../shared/invoicing';
 import { debitWallet, refundWallet } from '../../shared/wallet';
@@ -72,16 +72,12 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
   const on = req.query.date ? new Date(String(req.query.date)) : new Date();
   const sailingDate = Number.isNaN(on.getTime()) ? new Date() : on;
 
-  const { market, companyId } = await resolvePriceContext(req);
-  const marketOverrides = await resolveMarketPriceMap('CRUISE', cruises.map((cruise) => cruise.id), { market, companyId });
+  const { market } = await resolvePriceContext(req);
   const data = cruises.map((cruise) => {
-    const ov = marketOverrides.get(cruise.id);
-    // The rate rows are the price. `priceFrom` on the row is only a headline an
-    // operator may have typed years ago, so it is the last fallback, not the
-    // first — a boat with a rate table is quoted from its rate table.
+    // The period rows are the price. The retired headline amount and its old
+    // generic market overrides never substitute for a missing cabin period.
     const rates = applicableRates(cruise.cabinRates, market, sailingDate);
     const cheapest = fromPrice(cruise.cabinRates, market, sailingDate);
-    const headline = cheapest?.amount ?? ov?.amount ?? cruise.priceFrom;
     return {
       ...cruise,
       itinerary: readItinerary(cruise.itinerary),
@@ -91,8 +87,8 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
       // priced this boat" from "the prices are hidden from you", and it told
       // the agent the first when it meant the second.
       hasRateMatrix: rates.length > 0,
-      priceFrom: cruise.showPriceToAgents ? headline : null,
-      currency: cheapest?.currency ?? ov?.currency ?? cruise.currency,
+      priceFrom: cruise.showPriceToAgents ? (cheapest?.amount ?? null) : null,
+      currency: cheapest?.currency ?? cruise.currency,
       priceVisible: cruise.showPriceToAgents,
       canRequestQuote: cruise.allowQuoteRequest,
     };
