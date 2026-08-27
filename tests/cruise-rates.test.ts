@@ -16,6 +16,7 @@ import {
   normalizeWeekday,
   priceCruiseBooking,
   priceCruisePerPerson,
+  programmePeriodsHaveBothAudiences,
   rateApplies,
   validateCruiseRateInput,
 } from '../src/shared/cruise-rates';
@@ -213,6 +214,19 @@ test('Nile cruises expose only Egyptian/EGP and Foreign/USD audiences', () => {
     assert.equal(cruiseAudience(market), 'FOREIGN');
     assert.equal(cruiseAudienceCurrency(cruiseAudience(market)), 'USD');
   }
+});
+
+test('each programme price period has both Egyptian and foreign tariffs', () => {
+  assert.equal(programmePeriodsHaveBothAudiences([
+    { market: 'EGYPTIAN', validFrom: '2026-10-01', validTo: '2026-12-20' },
+    { market: 'FOREIGN', validFrom: '2026-10-01', validTo: '2026-12-20' },
+    { market: 'EGYPTIAN', validFrom: '2026-12-21', validTo: '2027-04-30' },
+    { market: 'FOREIGN', validFrom: '2026-12-21', validTo: '2027-04-30' },
+  ]), true);
+  assert.equal(programmePeriodsHaveBothAudiences([
+    { market: 'EGYPTIAN', validFrom: '2026-10-01', validTo: '2026-12-20' },
+    { market: 'FOREIGN', validFrom: '2026-12-21', validTo: '2027-04-30' },
+  ]), false);
 });
 
 test('cruise supplements follow hotel semantics on the per-person fare total', () => {

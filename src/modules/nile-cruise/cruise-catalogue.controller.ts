@@ -2,7 +2,12 @@ import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
 import { CabinType, HotelSupplementType, Market, Prisma } from '@prisma/client';
 import { prisma } from '../../config/db';
-import { normalizeWeekday, nightsBetween, validateCruiseRateInput } from '../../shared/cruise-rates';
+import {
+  normalizeWeekday,
+  nightsBetween,
+  programmePeriodsHaveBothAudiences,
+  validateCruiseRateInput,
+} from '../../shared/cruise-rates';
 import { readItinerary } from '../../shared/itinerary';
 
 /**
@@ -324,6 +329,10 @@ export async function saveCruiseProgrammes(req: Request, res: Response): Promise
     }
     if (!markets.has('EGYPTIAN') || !markets.has('FOREIGN')) {
       res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: `${programme.name} needs an Egyptian/EGP tariff and a Foreign/USD tariff` });
+      return;
+    }
+    if (!programmePeriodsHaveBothAudiences(programme.rates)) {
+      res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: `${programme.name}: every price period needs both Egyptian/EGP and Foreign/USD prices` });
       return;
     }
   }

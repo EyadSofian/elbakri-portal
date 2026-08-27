@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createActivitySchema, updateActivitySchema } from '../src/modules/activities/activities.schema';
-import { ACTIVITY_WRITABLE_FIELDS } from '../src/modules/activities/activities.controller';
+import {
+  ACTIVITY_WRITABLE_FIELDS,
+  validatePaidTransferConfiguration,
+} from '../src/modules/activities/activities.controller';
 
 /**
  * The schema and the controller have to agree on what an activity is.
@@ -128,4 +131,25 @@ test('a partial edit does not wipe the other optional fields either', () => {
   for (const untouched of ['inclusions', 'transferIncluded', 'returnTime', 'timeSlots', 'galleryUrls']) {
     assert.equal(untouched in parsed, false, `${untouched} was silently cleared`);
   }
+});
+
+test('a paid activity transfer needs its price and both route ends', () => {
+  assert.match(validatePaidTransferConfiguration({ transferIncluded: false }) || '', /price/i);
+  assert.match(validatePaidTransferConfiguration({ transferIncluded: false, transferPrice: 18 }) || '', /pickup/i);
+  assert.match(validatePaidTransferConfiguration({
+    transferIncluded: false,
+    transferPrice: 18,
+    transferFromName: 'Cairo hotel',
+  }) || '', /return/i);
+  assert.equal(validatePaidTransferConfiguration({
+    transferIncluded: false,
+    transferPrice: 18,
+    transferFromName: 'Cairo hotel',
+    transferToName: 'Activity point',
+  }), null);
+});
+
+test('imports that do not select paid transfer stay backward compatible', () => {
+  assert.equal(validatePaidTransferConfiguration({ name: 'Imported activity' }), null);
+  assert.equal(validatePaidTransferConfiguration({ transferIncluded: true }), null);
 });

@@ -1536,6 +1536,19 @@ function weekdayLabel(day) {
   return t("weekday." + String(day || "").toUpperCase(), String(day || ""));
 }
 
+function crDateInputValue(value) {
+  const date = value instanceof Date ? value : new Date(String(value || "") + "T12:00:00");
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+}
+
+function crReturnDate(departure, nights) {
+  const date = new Date(String(departure || "") + "T12:00:00");
+  if (Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + Math.max(1, Number(nights) || 1));
+  return crDateInputValue(date);
+}
+
 /** "Mon → Thu · 3 nights", one line per leg. */
 function cruiseScheduleSummary(c) {
   const list = (c.schedules || []).filter(sc => sc.isActive !== false);
@@ -1551,12 +1564,11 @@ function cruiseScheduleSummary(c) {
 }
 
 /**
- * One boat: its photos, when it sails, what each cabin costs at each occupancy,
- * and the tours the client wants alongside it.
+ * One boat: its photos, sailing legs, programmes and per-person fares.
  *
  * A cruise is still quoted by the operations team, so this ends in a quote
- * request — but the request now carries the leg, the cabin, the occupancy and
- * the tours, instead of a name and a hope.
+ * request — but the request now carries the leg, programme, sharing basis and
+ * transfer selection instead of an unstructured boat name.
  */
 async function openCruiseDetails(id) {
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === id);
@@ -1583,8 +1595,12 @@ async function openCruiseDetails(id) {
     </div>
     ${description ? `<div class="act-description">${escapeHtml(description)}</div>` : ""}
 
-    <div class="form-field full" style="margin-top:14px">
-      <label>${t("cruise.schedules","Departures")}</label>
+    <section class="cr-booking-step">
+      <div class="cr-booking-step__title"><span>1</span><div><strong>${t("cruise.schedules","Choose From / Back")}</strong><small>${t("cruise.sailingLegsHelp","The programme and prices change with the 3/4-night sailing.")}</small></div></div>
+      <div class="form-field" style="margin-bottom:10px">
+        <label>${t("cruise.sailingDate","Sailing date")}</label>
+        <input id="crSailingDate" type="date" value="${crDateInputValue(new Date())}" onchange="crSailingDateChanged()">
+      </div>
       ${schedules.length ? `<div class="cr-sailing-grid">
         ${schedules.map((sc, i) => `<label class="cr-sailing-card">
           <input type="radio" name="crSchedule" value="${escapeHtml(sc.id)}" ${i === 0 ? "checked" : ""} onchange="crScheduleChanged()">
@@ -1602,34 +1618,62 @@ async function openCruiseDetails(id) {
           <span class="cr-sailing-meta">${formatNumber(sc.nights)} ${t("cruise.nights","Nights")}${sc.label ? " · " + escapeHtml(locName(sc.label, sc.labelAr)) : ""}</span>
         </label>`).join("")}
       </div>` : `<div class="secondary-text">${t("cruise.schedulesHelp","When the boat leaves and when it is back.")}</div>`}
-    </div>
+    </section>
 
-    <div class="form-field full" style="margin-top:14px">
-      <label>${t("cruise.programme","Programme")}</label>
+    <section class="cr-booking-step">
+      <div class="cr-booking-step__title"><span>2</span><div><strong>${t("cruise.programme","Cruise only or programme")}</strong><small>${t("cruise.cruiseOnlyHelp","A programme includes its transfer; cruise-only can add a separately priced transfer.")}</small></div></div>
       <div id="crProgrammeHost"></div>
-    </div>
+      <div id="crProgrammeDetails"></div>
+    </section>
 
-    <div id="crProgrammeDetails"></div>
-
-    <div class="form-grid" style="margin-top:14px">
-      <div class="form-field">
-        <label>${t("form.adults","Adults")} *</label>
-        <input id="crAdults" type="number" min="1" value="2" oninput="crUpdateQuote()">
+    <section class="cr-booking-step">
+      <div class="cr-booking-step__title"><span>3</span><div><strong>${t("cruise.perPersonRates","Guests and per-person price")}</strong><small>${t("cruise.perPersonHelp","Single, Double and Triple are sharing bases; every amount shown is per person.")}</small></div></div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>${t("form.adults","Adults")} *</label>
+          <input id="crAdults" type="number" min="1" value="2" oninput="crUpdateQuote()">
+        </div>
+        <div class="form-field">
+          <label>${t("form.children","Children")}</label>
+          <input id="crChildren" type="number" min="0" value="0" oninput="crUpdateQuote()">
+        </div>
       </div>
-      <div class="form-field">
-        <label>${t("form.children","Children")}</label>
-        <input id="crChildren" type="number" min="0" value="0" oninput="crUpdateQuote()">
-      </div>
-    </div>
-
-    <div id="crFareHost"></div>
-    <div id="crSupplementsHost"></div>
-    <div id="crTransferHost"></div>
-    <div id="crQuoteLine" class="cr-quote-line"></div>`;
+      <div id="crFareHost"></div>
+      <div id="crSupplementsHost"></div>
+      <div id="crTransferHost"></div>
+      <div id="crQuoteLine" class="cr-quote-line"></div>
+    </section>`;
 
   openModal(escapeHtml(locName(cruise.name, cruise.nameAr)), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
     <button class="btn btn-primary" onclick="crRequestQuote('${cruise.id}')">${icon("send")}&nbsp;${t("btn.requestQuote","Request Quote")}</button>`);
+  crScheduleChanged();
+}
+
+/** Reload period pricing for the actual sailing date, then pick the matching
+ * departure leg when one exists. This keeps a future season from being priced
+ * with today's row. */
+async function crSailingDateChanged() {
+  const date = document.getElementById("crSailingDate")?.value;
+  const cruiseId = state.cruiseSelection?.cruiseId;
+  if (!date || !cruiseId) return;
+  const res = await apiFetch(`/cruises?date=${encodeURIComponent(date)}`);
+  const fresh = (res?.data || []).find(cruise => cruise.id === cruiseId);
+  if (fresh) {
+    const index = (state.cache.cruisesRows || []).findIndex(cruise => cruise.id === cruiseId);
+    if (index >= 0) state.cache.cruisesRows[index] = fresh;
+  }
+  const jsDay = new Date(date + "T12:00:00").getDay();
+  const day = ["SUNDAY","MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"][jsDay];
+  const updatedCruise = fresh || (state.cache.cruisesRows || []).find(cruise => cruise.id === cruiseId);
+  const matching = (updatedCruise?.schedules || []).find(schedule => schedule.departureDay === day);
+  if (matching) {
+    // Avoid relying on CSS.escape: compare values directly so this also works
+    // in older WebKit builds used by some travel desks.
+    const radio = [...document.querySelectorAll('input[name="crSchedule"]')]
+      .find(input => input.value === matching.id);
+    if (radio) radio.checked = true;
+  }
   crScheduleChanged();
 }
 
@@ -1966,73 +2010,11 @@ function crUpdateQuote() {
     <div class="cr-quote-total">${formatPrice(sel.total, sel.currency)}</div>`;
 }
 
-/** One "add tour" line: which excursion, when, for how many, plus its write-up. */
-function crAddTourRow() {
-  const host = document.getElementById("crTours");
-  if (!host) return;
-  const rowId = "crTour_" + Math.random().toString(36).slice(2, 8);
-  const options = (state.cruiseTourOptions || [])
-    .map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}${a.city ? " — " + escapeHtml(a.city) : ""}</option>`)
-    .join("");
-  const wrap = document.createElement("div");
-  wrap.className = "cr-tour-row";
-  wrap.id = rowId;
-  wrap.innerHTML = `
-    <div class="form-grid">
-      <div class="form-field">
-        <label>${t("nav.activities","Activity")}</label>
-        <select class="cr-tour-activity" onchange="crTourPicked('${rowId}')">
-          <option value="">${t("form.select","Select")}</option>${options}
-        </select>
-      </div>
-      <div class="form-field">
-        <label>${t("form.date","Date")}</label>
-        <input type="date" class="cr-tour-date">
-      </div>
-      <div class="form-field">
-        <label>${t("form.passengers","Passengers")}</label>
-        <input type="number" min="1" value="2" class="cr-tour-pax">
-      </div>
-      <div class="form-field full">
-        <label>${t("form.description","Description")}</label>
-        <textarea rows="2" class="cr-tour-desc" placeholder="${escapeHtml(t("cruise.addToursHelp","Excursions to run alongside the cruise. The description is shown to your client."))}"></textarea>
-      </div>
-    </div>
-    <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('${rowId}').remove()">${icon("trash-2")}&nbsp;${t("btn.remove","Remove")}</button>`;
-  host.appendChild(wrap);
-  refreshIcons(wrap);
-}
-
-/** Picking an excursion fills its own write-up in, so the agent rarely types. */
-function crTourPicked(rowId) {
-  const row = document.getElementById(rowId);
-  if (!row) return;
-  const id = row.querySelector(".cr-tour-activity")?.value;
-  const activity = (state.cruiseTourOptions || []).find(a => a.id === id);
-  const desc = row.querySelector(".cr-tour-desc");
-  if (!activity || !desc || desc.value.trim()) return;
-  desc.value = locName(activity.description, activity.descriptionAr) || "";
-}
-
-function crCollectTours() {
-  return [...document.querySelectorAll(".cr-tour-row")].map(row => {
-    const select = row.querySelector(".cr-tour-activity");
-    const name = select?.selectedOptions?.[0]?.textContent?.trim() || "";
-    if (!select?.value) return null;
-    return {
-      activityId: select.value,
-      name,
-      description: row.querySelector(".cr-tour-desc")?.value.trim() || undefined,
-      activityDate: row.querySelector(".cr-tour-date")?.value || undefined,
-      paxCount: Math.max(1, parseInt(row.querySelector(".cr-tour-pax")?.value || "1")),
-    };
-  }).filter(Boolean);
-}
-
 /**
  * Hand the whole selection to the quote-request flow. A cruise is priced by the
  * operations team, so this stays a request — but it now carries the leg, the
- * cabin and the tours rather than only the boat's name.
+ * selected programme, per-person fare and transfer rather than only the boat's
+ * name.
  */
 function crRequestQuote(cruiseId) {
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === cruiseId);
@@ -2076,6 +2058,10 @@ function crRequestQuote(cruiseId) {
   ].filter(Boolean);
   state.quotePrefillNotes = lines.join("\n");
   state.quotePrefillPax = selection?.pax;
+  state.quotePrefillCheckIn = document.getElementById("crSailingDate")?.value || undefined;
+  state.quotePrefillCheckOut = state.quotePrefillCheckIn && schedule
+    ? crReturnDate(state.quotePrefillCheckIn, schedule.nights)
+    : undefined;
   // Keep the transfer as structured data as it moves into the quote form.
   // Notes are useful to a human, but Transport needs the real From / Back /
   // Pickup fields in order to put the car in its operations queue.
@@ -2212,8 +2198,8 @@ function rfControl(f, ctx) {
     case "nationality-select":
       return nationalitySelectHtml(id, dv, ph);
     case "textarea": {
-      // A screen that already collected a selection (a cruise leg, a cabin and
-      // occupancy, an added transfer, the tours to run alongside it) hands it
+      // A screen that already collected a selection (a cruise leg, programme,
+      // sharing basis and transfer) hands it
       // over here. The hardcoded fallback form has always done this; the
       // template path dropped it, so everything the agent picked on the cruise
       // screen reached the desk as a bare boat name.
@@ -2264,7 +2250,12 @@ function rfControl(f, ctx) {
       const val = seeded != null ? seeded : (dv != null ? dv : (f.type === "number" ? "" : 1));
       return `<input id="${id}" type="number"${minAttr}${maxAttr}${stepAttr} value="${escapeHtml(val)}"${phAttr} oninput="rfFieldChanged('${f.key}')">`;
     }
-    case "date":     return `<input id="${id}" type="date" value="${escapeHtml(dv || "")}">`;
+    case "date": {
+      const seeded = f.key === "checkIn" ? ctx.prefillCheckIn
+        : f.key === "checkOut" ? ctx.prefillCheckOut
+        : null;
+      return `<input id="${id}" type="date" value="${escapeHtml(seeded || dv || "")}">`;
+    }
     case "time":     return `<input id="${id}" type="time" value="${escapeHtml(dv || "")}">`;
     case "datetime": return `<input id="${id}" type="datetime-local" value="${escapeHtml(dv || "")}">`;
     case "hidden":   return `<input id="${id}" type="hidden" value="${escapeHtml(dv || "")}">`;
@@ -2596,14 +2587,18 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
   // carry one screen's selection into the next, unrelated, quote request.
   const prefillNotes = state.quotePrefillNotes || "";
   const prefillPax = state.quotePrefillPax;
+  const prefillCheckIn = state.quotePrefillCheckIn || "";
+  const prefillCheckOut = state.quotePrefillCheckOut || "";
   const prefillTransfer = state.quotePrefillTransfer || { transferRequested: false };
   state.quotePrefillNotes = "";
   state.quotePrefillPax = undefined;
+  state.quotePrefillCheckIn = undefined;
+  state.quotePrefillCheckOut = undefined;
   state.quotePrefillTransfer = undefined;
 
   const rfTpl = await rfLoadTemplate(rfTarget);
   if (rfTpl) return rfOpenModal(rfTarget, rfTpl, {
-    serviceType, serviceId, serviceName, prefillNotes, prefillPax, transfer: prefillTransfer,
+    serviceType, serviceId, serviceName, prefillNotes, prefillPax, prefillCheckIn, prefillCheckOut, transfer: prefillTransfer,
   });
 
   // Fallback: original hardcoded quote form.
@@ -2619,9 +2614,9 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
       <div class="form-field"><label>${t("form.nationality","Nationality")} *</label>
         <input id="qrNationality" list="nationalityList" placeholder="${t("form.nationalityPlaceholder","e.g. Egyptian")}"></div>
       <div class="form-field"><label>${t("form.checkIn","Check-in Date")} *</label>
-        <input id="qrCheckIn" type="date"></div>
+        <input id="qrCheckIn" type="date" value="${escapeHtml(prefillCheckIn)}"></div>
       <div class="form-field"><label>${t("form.checkOut","Check-out Date")} *</label>
-        <input id="qrCheckOut" type="date"></div>
+        <input id="qrCheckOut" type="date" value="${escapeHtml(prefillCheckOut)}"></div>
       <div class="form-field"><label>${t("form.adults","Adults / Pax")} *</label>
         <input id="qrAdults" type="number" min="1" value="${escapeHtml(prefillPax || 2)}"></div>
       <div class="form-field"><label>${t("form.children","Children")}</label>
@@ -2636,7 +2631,7 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
       <div id="childAgesContainer" class="form-field full" style="display:none"></div>
       <div class="form-field full"><label>${t("form.notes","Notes / Special Requests")}</label>
         <!-- A screen that already collected a selection (a cruise leg, a cabin,
-             the tours to run alongside it) hands it over here so the agent does
+             the selected programme and transfer) hands it over here so the agent does
              not retype what they just picked. -->
         <textarea id="qrNotes" rows="3" placeholder="${t("form.notesPlaceholder","Room preferences, dietary needs, accessibility...")}">${escapeHtml(prefillNotes)}</textarea></div>
     </div>`;
@@ -4143,7 +4138,15 @@ function activityPackageCartHtml() {
 
 function removePackageActivity(localId) {
   state.activityPackageCart = (state.activityPackageCart || []).filter(item => item.localId !== localId);
-  renderActivityPackagePicker();
+  renderCurrentActivityPackageDestination();
+}
+
+/** Keep the cart beside the catalogue after every add/remove. Returning to the
+ * destination picker made a successful add look as if nothing had happened. */
+function renderCurrentActivityPackageDestination() {
+  const selected = state.selectedActivityDest;
+  if (selected) return renderActivityPackageByDest(selected.id, selected.name);
+  return renderActivityPackagePicker();
 }
 
 async function openPackageActivityForm(activityId) {
@@ -4178,7 +4181,7 @@ async function openPackageActivityForm(activityId) {
         <small class="field-hint" id="pkgBasisHint">${t("activity.pricingBasisHint","A party price covers one party — a bigger group is charged for as many parties as it takes to seat everybody.")}</small>
       </div>` : ""}
       <div class="form-field full" id="pkgChildAgesBox" style="display:none"></div>
-      <div class="form-field full"><label>${t("activity.actType","Service Type")}</label><div id="pkgGroupTypes" class="service-type-grid">${activityGroupTypeOptions(groupTypes, "pkgUpdateTotal()")}</div></div>
+      ${groupTypes.length ? `<div class="form-field full"><label>${t("activity.actType","Service Type")}</label><div id="pkgGroupTypes" class="service-type-grid">${activityGroupTypeOptions(groupTypes, "pkgUpdateTotal()")}</div></div>` : ""}
       ${activityTransferPanel(activity, "pkg")}
       <div class="form-field full"><label>${t("form.notes","Notes")}</label><textarea id="pkgNotes" rows="2"></textarea></div>
     </div>
@@ -4360,7 +4363,7 @@ function addPackageActivity(activityId) {
     currency: activity.currency || "USD",
   });
   closeModal();
-  renderActivityPackagePicker();
+  renderCurrentActivityPackageDestination();
 }
 
 async function submitActivityPackage() {
@@ -4940,7 +4943,15 @@ function actCalcTotal(priceAdult, priceChild, currency) {
     const el = document.getElementById("actTotalPreview");
     if (el) el.textContent = t("hotel.priceOnRequest","Price on request");
     const submit = document.getElementById("submitActivityBtn");
-    if (submit) submit.disabled = true;
+    if (submit) {
+      // An unpriced transfer is still a valid request. Route it to the quote
+      // desk instead of leaving the main button disabled with no next step.
+      submit.disabled = priceUnavailable;
+      submit.innerHTML = transferUnavailable && !priceUnavailable
+        ? `${icon("send")}&nbsp;${t("btn.requestQuote","Quote Request")}`
+        : `${icon("calendar-check")}&nbsp;${t("btn.submitRequest","Submit Request")}`;
+      refreshIcons(submit);
+    }
     const ac = document.getElementById("actAdultCount");
     if (ac) ac.textContent = adults;
     const cc = document.getElementById("actChildCount");
@@ -4948,7 +4959,11 @@ function actCalcTotal(priceAdult, priceChild, currency) {
     return;
   }
   const submit = document.getElementById("submitActivityBtn");
-  if (submit) submit.disabled = false;
+  if (submit) {
+    submit.disabled = false;
+    submit.innerHTML = `${icon("calendar-check")}&nbsp;${t("btn.submitRequest","Submit Request")}`;
+    refreshIcons(submit);
+  }
   let total;
   if (basis === "PER_PERSON") {
     total = adults * priceAdult + children * priceChild;
@@ -5043,6 +5058,13 @@ async function _submitActivityBooking(activityId, activityName, priceAdult, pric
     document.getElementById("actTransferFrom")?.focus();
     return;
   }
+  // Old catalogue rows can pre-date transfer pricing. Do not post a direct
+  // booking that the API must reject; preserve the filled From / To / times and
+  // send the same complete form as a quote request.
+  if (transfer.transferRequested && ctx.transferPrice == null) {
+    await _submitActivityQuoteRequest(activityId, activityName);
+    return;
+  }
 
   const submitBtn = document.getElementById("submitActivityBtn");
   if (submitBtn) { submitBtn.disabled = true; submitBtn.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("btn.saving","Saving...")}`; }
@@ -5101,7 +5123,7 @@ async function _submitActivityQuoteRequest(activityId, activityName) {
     return;
   }
 
-  const button = document.getElementById("submitActivityQuoteBtn");
+  const button = document.getElementById("submitActivityQuoteBtn") || document.getElementById("submitActivityBtn");
   if (button) {
     button.disabled = true;
     button.innerHTML = `<span class="btn-spinner"></span>&nbsp;${t("btn.saving","Saving...")}`;

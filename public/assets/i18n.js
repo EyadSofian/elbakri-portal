@@ -913,6 +913,9 @@
     priority: "Priority", imageUrl: "Image URL", ctaAction: "CTA Page (service key)",
     ctaLabel: "CTA Button Label", validDates: "Valid Dates",
     titleAr: "Arabic Title", descAr: "Arabic Description",
+    offers: "Offers", packages: "Packages", noPackages: "No active packages at the moment",
+    newOffer: "New Offer", newPackage: "New Package", packageComponents: "Package components",
+    packageStepsHelp: "Build it in four clear steps", pricePeriods: "Price periods",
   };
   ar.offers = {
     popup: "عرض خاص", dontShow: "لا تُظهر اليوم", viewOffer: "عرض العرض",
@@ -920,6 +923,9 @@
     priority: "الأولوية", imageUrl: "رابط الصورة", ctaAction: "صفحة CTA (مفتاح الخدمة)",
     ctaLabel: "نص زر CTA", validDates: "تواريخ الصلاحية",
     titleAr: "العنوان بالعربية", descAr: "الوصف بالعربية",
+    offers: "العروض", packages: "الباكدجات", noPackages: "لا توجد باكدجات متاحة حاليًا",
+    newOffer: "إنشاء عرض", newPackage: "إنشاء باكدج", packageComponents: "مكونات الباكدج",
+    packageStepsHelp: "كوّن الباكدج في أربع خطوات واضحة", pricePeriods: "فترات الأسعار",
   };
 
   // ── Destination image upload (Phase 2) ─────────────────────────────────────

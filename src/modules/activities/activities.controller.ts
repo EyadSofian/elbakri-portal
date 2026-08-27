@@ -147,6 +147,23 @@ function applyTransferFields(data: Record<string, unknown>, body: Record<string,
 }
 
 /**
+ * A transfer marked as a paid add-on must be bookable as one complete service.
+ * The agent needs a fixed booking price and both ends of the default route;
+ * allowing only the flag to save creates an Add transfer button that can do
+ * nothing but fail later in the booking API.
+ *
+ * Imports/sheet syncs that do not touch `transferIncluded` remain compatible.
+ * The rule applies when a caller explicitly selects "not included / paid".
+ */
+export function validatePaidTransferConfiguration(body: Record<string, unknown>): string | null {
+  if (body.transferIncluded !== false) return null;
+  if (priceOrNull(body.transferPrice) === null) return 'Transfer price is required when transfer is a paid add-on.';
+  if (!String(body.transferFromName ?? '').trim()) return 'Transfer pickup point is required when transfer is a paid add-on.';
+  if (!String(body.transferToName ?? '').trim()) return 'Transfer return point is required when transfer is a paid add-on.';
+  return null;
+}
+
+/**
  * The catalogue is organised by destination, so `destinationId` is the field
  * that decides where an excursion appears. `city` stays as the human label and
  * is kept in step with the chosen destination — it is what the agency search,
@@ -214,6 +231,11 @@ export const ACTIVITY_WRITABLE_FIELDS = [
 
 export async function createActivity(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
+  const transferError = validatePaidTransferConfiguration(body);
+  if (transferError) {
+    res.status(400).json({ success: false, error: 'ACTIVITY_TRANSFER_INCOMPLETE', message: transferError });
+    return;
+  }
   const data: Record<string, unknown> = {};
   applyScalarFields(data, body);
   for (const f of ACTIVITY_PRICE_FIELDS) data[f] = priceOrNull(body[f]);
@@ -246,6 +268,11 @@ export async function createActivity(req: Request, res: Response): Promise<void>
 
 export async function updateActivity(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
+  const transferError = validatePaidTransferConfiguration(body);
+  if (transferError) {
+    res.status(400).json({ success: false, error: 'ACTIVITY_TRANSFER_INCOMPLETE', message: transferError });
+    return;
+  }
   const data: Record<string, unknown> = {};
   applyScalarFields(data, body);
   for (const f of ACTIVITY_PRICE_FIELDS) {

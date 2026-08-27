@@ -1425,23 +1425,21 @@ function masterField(entity, fieldDef, row) {
       <div class="activity-transfer-admin__choices" role="radiogroup" aria-label="${escapeHtml(t("activityAdmin.transferTitle", "Activity transfer"))}">
         <label class="activity-transfer-choice activity-transfer-choice--included ${included ? "is-selected" : ""}" id="${id}_yesChoice">
           <input type="radio" name="${id}_mode" value="included" ${included ? "checked" : ""} onchange="adminActivityTransferMode(true)">
-          <span class="activity-transfer-choice__mark">${icon("check")}</span>
-          <span><b>${t("activityAdmin.includedInPrice", "Included in price")}</b><small>${t("activityAdmin.includedInPriceHelp", "No extra charge or separate transfer form for the agent.")}</small></span>
+          <span><b>${t("activityAdmin.includedInPrice", "Included in price")}</b></span>
         </label>
         <label class="activity-transfer-choice activity-transfer-choice--extra ${included ? "" : "is-selected"}" id="${id}_noChoice">
           <input type="radio" name="${id}_mode" value="extra" ${included ? "" : "checked"} onchange="adminActivityTransferMode(false)">
-          <span class="activity-transfer-choice__mark">${icon("plus")}</span>
-          <span><b>${t("activityAdmin.notIncludedPaid", "Not included · paid add-on")}</b><small>${t("activityAdmin.notIncludedPaidHelp", "The agent can add it and the price is added once to the booking.")}</small></span>
+          <span><b>${t("activityAdmin.notIncludedPaid", "Not included · paid add-on")}</b></span>
         </label>
       </div>
       <div class="activity-transfer-admin__details" id="${id}_details" ${included ? "hidden" : ""}>
-        <div class="activity-transfer-admin__notice">${icon("info")}<span>${t("activityAdmin.transferDetailsHelp", "Set the fixed transfer price and its default route. The agent may enter the exact hotel or address when booking.")}</span></div>
         <div class="form-grid activity-transfer-admin__grid">
-          <div class="form-field"><label>${t("activityAdmin.transferPrice", "Transfer price")} · ${escapeHtml(currency)}</label><input id="${fieldId("transferPrice")}" type="number" min="0" step="0.01" value="${escapeHtml(price)}" placeholder="0.00"><small class="field-hint">${t("activityAdmin.pricePerBooking", "Fixed price once per booking")}</small></div>
-          <div class="form-field"><label>${t("activityAdmin.returnTime", "Return time")}</label><input id="${fieldId("returnTime")}" type="time" value="${escapeHtml(actTimeValueAdmin(returnTime))}"><small class="field-hint">${t("activityAdmin.returnTimeHelp", "Prefills the return transfer time")}</small></div>
-          <div class="form-field"><label>${t("activityAdmin.transferFrom", "Default pickup from")}</label><input id="${fieldId("transferFromName")}" value="${escapeHtml(from)}" placeholder="${escapeHtml(t("activityAdmin.transferFromPlaceholder", "Hotel / area / address"))}"></div>
-          <div class="form-field"><label>${t("activityAdmin.transferTo", "Default return to")}</label><input id="${fieldId("transferToName")}" value="${escapeHtml(to)}" placeholder="${escapeHtml(t("activityAdmin.transferToPlaceholder", "Activity point / hotel / area"))}"></div>
+          <div class="form-field"><label>${t("activityAdmin.transferPrice", "Transfer price")} · ${escapeHtml(currency)} <span class="required">*</span></label><input id="${fieldId("transferPrice")}" type="number" min="0" step="0.01" value="${escapeHtml(price)}" placeholder="0.00"><small class="field-hint">${t("activityAdmin.pricePerBooking", "Fixed price once per booking")}</small></div>
+          <div class="form-field"><label>${t("activityAdmin.transferFrom", "Pickup from")} <span class="required">*</span></label><input id="${fieldId("transferFromName")}" value="${escapeHtml(from)}" placeholder="${escapeHtml(t("activityAdmin.transferFromPlaceholder", "Hotel / area / address"))}"></div>
+          <div class="form-field"><label>${t("activityAdmin.transferTo", "Return to")} <span class="required">*</span></label><input id="${fieldId("transferToName")}" value="${escapeHtml(to)}" placeholder="${escapeHtml(t("activityAdmin.transferToPlaceholder", "Activity point / hotel / area"))}"></div>
+          <div class="form-field"><label>${t("activityAdmin.returnTime", "Activity return time")}</label><input id="${fieldId("returnTime")}" type="time" value="${escapeHtml(actTimeValueAdmin(returnTime))}"><small class="field-hint">${t("activityAdmin.returnTimeHelp", "Prefills the return transfer time")}</small></div>
         </div>
+        <div class="activity-transfer-admin__hint">${t("activityAdmin.transferDetailsHelp", "The price is added once to the booking. The agent can replace the default pickup and return points when booking.")}</div>
       </div>
     </div>`;
   }
@@ -1877,11 +1875,12 @@ async function showMasterModal(entity, id = "") {
     }
   }
 
-  const body = `<div class="form-section"><div class="form-section-title">${t("form.basicInfo")}</div><div class="form-grid">
+  const basicSection = `<div class="form-section"><div class="form-section-title">${t("form.basicInfo")}</div><div class="form-grid">
     ${cfg.fields.map(fieldDef => masterField(entity, fieldDef, row)).join("")}
-  </div></div>
-  ${entity === "cruises" ? cruiseCatalogueFormSection(row) : ""}
-  ${cfg.marketPrices ? marketPriceSection(entity, cfg, mpData, id) : ""}`;
+  </div></div>`;
+  const body = entity === "cruises"
+    ? cruiseCatalogueFormSection(row, basicSection)
+    : `${basicSection}${cfg.marketPrices ? marketPriceSection(entity, cfg, mpData, id) : ""}`;
   openModal(title, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
     <button class="btn btn-primary" id="masterSaveBtn" onclick="saveMasterRecord('${entity}', '${id}')">${t("btn.save")}</button>
@@ -1895,20 +1894,28 @@ async function showMasterModal(entity, id = "") {
  * amount and a comma-separated departure list, then asked the operator to save
  * and open a second modal to enter the real answer. This is the real answer.
  */
-function cruiseCatalogueFormSection(row) {
+function cruiseCatalogueFormSection(row, basicSection = "") {
   const schedules = Array.isArray(row?.schedules) && row.schedules.length ? row.schedules : [{}];
   window._crEditorSchedules = schedules;
   const rates = Array.isArray(row?.cabinRates) ? row.cabinRates : [];
   const programmes = Array.isArray(row?.programmes) ? row.programmes : [];
   const transferRates = Array.isArray(row?.transferRates) ? row.transferRates : [];
   return `
-    <div class="form-section cruise-catalogue-section">
+    <div class="cr-editor-tabs" role="tablist" aria-label="${escapeHtml(t("nav.cruises", "Nile cruise editor"))}">
+      <button type="button" class="cr-editor-tab is-active" onclick="crEditorTab('basic',this)"><span>1</span>${t("form.basicInfo", "Basic")}</button>
+      <button type="button" class="cr-editor-tab" onclick="crEditorTab('schedules',this)"><span>2</span>${t("cruise.sailingLegs", "From / Back")}</button>
+      <button type="button" class="cr-editor-tab" onclick="crEditorTab('rates',this)"><span>3</span>${t("cruise.cruiseOnlyPricing", "Cruise-only prices")}</button>
+      <button type="button" class="cr-editor-tab" onclick="crEditorTab('programmes',this)"><span>4</span>${t("cruise.programmes", "Programmes")}</button>
+      <button type="button" class="cr-editor-tab" onclick="crEditorTab('transfers',this)"><span>5</span>${t("cruise.transferOnly", "Optional transfer")}</button>
+    </div>
+    <div data-cr-editor-panel="basic">${basicSection}</div>
+    <div class="form-section cruise-catalogue-section" data-cr-editor-panel="schedules" hidden>
       <div class="form-section-title">${t("cruise.sailingLegs","From / To schedule")}</div>
       <div class="secondary-text" style="margin-bottom:10px">${t("cruise.sailingLegsHelp","Add every sailing leg: the day it leaves, the day it returns and the number of nights.")}</div>
       <div id="crSchedRows">${schedules.map(crScheduleRowHtml).join("")}</div>
       <button type="button" class="btn btn-outline btn-sm" onclick="crAddScheduleRow()">${icon("plus")}${t("cruise.addSchedule","Add departure")}</button>
     </div>
-    <div class="form-section cruise-catalogue-section">
+    <div class="form-section cruise-catalogue-section" data-cr-editor-panel="rates" hidden>
       <div class="form-section-title">${t("cruise.cruiseOnlyPricing","Cruise only · per-person pricing")}</div>
       <div class="secondary-text" style="margin-bottom:10px">${t("cruise.pricingPeriodsHelp","Each period belongs to one 3/4-night schedule. Single, Double, Triple and Child are per-person prices; Egyptian is always EGP and Foreign is always USD.")}</div>
       <div class="cr-period-toolbar">
@@ -1917,18 +1924,26 @@ function cruiseCatalogueFormSection(row) {
       </div>
       <div id="crRateRows">${rates.map(crRateRowHtml).join("")}</div>
     </div>
-    <div class="form-section cruise-catalogue-section">
+    <div class="form-section cruise-catalogue-section" data-cr-editor-panel="programmes" hidden>
       <div class="form-section-title">${t("cruise.programmes","Programmes")}</div>
       <div class="secondary-text" style="margin-bottom:10px">${t("cruise.programmesHelp","A programme is tied to one exact sailing leg and includes its transfer. Add both Egyptian/EGP and Foreign/USD per-person tariffs.")}</div>
       <div id="crProgrammeRows">${programmes.map(crProgrammeCardHtml).join("")}</div>
       <button type="button" class="btn btn-primary btn-sm" onclick="crAddProgramme()">${icon("plus")}${t("cruise.addProgramme","Add programme")}</button>
     </div>
-    <div class="form-section cruise-catalogue-section">
+    <div class="form-section cruise-catalogue-section" data-cr-editor-panel="transfers" hidden>
       <div class="form-section-title">${t("cruise.transferOnly","Cruise-only transfer")}</div>
       <div class="secondary-text" style="margin-bottom:10px">${t("cruise.transferOnlyHelp","Optional, separately priced From → To transfer. It is offered only when the client does not choose a programme.")}</div>
       <div id="crTransferRateRows">${transferRates.map(crTransferRateRowHtml).join("")}</div>
       <button type="button" class="btn btn-outline btn-sm" onclick="crAddTransferRate()">${icon("plus")}${t("cruise.addTransferRate","Add transfer price")}</button>
     </div>`;
+}
+
+function crEditorTab(name, button) {
+  document.querySelectorAll("[data-cr-editor-panel]").forEach(panel => {
+    panel.hidden = panel.dataset.crEditorPanel !== name;
+  });
+  document.querySelectorAll(".cr-editor-tab").forEach(tab => tab.classList.toggle("is-active", tab === button));
+  document.querySelector(".modal-body")?.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // Explicit price-matrix editor. Each row is an admin-defined selling price
@@ -2063,6 +2078,24 @@ async function saveMasterRecord(entity, id = "") {
   if (!payload) {
     toast(t("toast.validationError"), "error");
     return;
+  }
+  // "Not included" is a sellable paid add-on, not a label. Refuse the save
+  // until it has everything the booking needs; otherwise the agent sees an
+  // Add transfer button that can only fail with "price not configured".
+  if (entity === "activities" && payload.transferIncluded === false) {
+    const requiredTransferFields = [
+      ["transferPrice", "activityAdmin.transferPrice", "Transfer price"],
+      ["transferFromName", "activityAdmin.transferFrom", "Pickup from"],
+      ["transferToName", "activityAdmin.transferTo", "Return to"],
+    ];
+    const missing = requiredTransferFields.find(([field]) => payload[field] === null || payload[field] === "" || payload[field] === undefined);
+    if (missing) {
+      const input = document.getElementById(`m_activities_${missing[0]}`);
+      toast(`${t("toast.validationError", "Check required fields")}: ${t(missing[1], missing[2])}`, "error");
+      input?.scrollIntoView({ behavior: "smooth", block: "center" });
+      input?.focus();
+      return;
+    }
   }
   const cruiseCatalogue = entity === "cruises" ? {
     schedules: crCollectScheduleRows(),
@@ -4609,22 +4642,49 @@ function crProgrammeDayHtml(day) {
   </div>`;
 }
 
-function crProgrammeRateHtml(rate) {
+function crProgrammeRateHtml(rate, fixedMarket) {
   rate = rate || {};
-  const market = rate.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
+  const market = fixedMarket === "EGYPTIAN" || rate.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
   const currency = market === "EGYPTIAN" ? "EGP" : "USD";
-  const dateVal = value => value ? String(value).slice(0,10) : "";
-  return `<div class="cr-programme-rate" style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:8px">
+  return `<div class="cr-programme-rate cr-programme-market-rate" data-market="${market}">
+    <input class="cr-market" type="hidden" value="${market}"><input class="cr-cur" type="hidden" value="${currency}">
+    <div class="cr-programme-market-title"><strong>${market === "EGYPTIAN" ? t("market.EGYPTIAN", "Egyptians") : t("market.FOREIGN", "Foreigners")}</strong><span>${currency}</span></div>
     <div class="form-grid cr-rate-row-grid">
-      <div class="form-field"><label>${t("market.label","Market")}</label><select class="cr-market" onchange="crRateMarketChanged(this)">${CRUISE_MARKETS.map(([value,label]) => `<option value="${value}" ${market === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></div>
-      <div class="form-field"><label>${t("form.currency","Currency")}</label><input class="cr-cur" value="${currency}" readonly></div>
       <div class="form-field"><label>${t("hotel.single","Single")} · ${t("cruise.perPerson","per person")}</label><input class="cr-single" type="number" min="0" step="0.01" value="${escapeHtml(rate.singlePrice ?? "")}"></div>
       <div class="form-field"><label>${t("hotel.double","Double")} · ${t("cruise.perPerson","per person")}</label><input class="cr-double" type="number" min="0" step="0.01" value="${escapeHtml(rate.doublePrice ?? "")}"></div>
       <div class="form-field"><label>${t("hotel.triple","Triple")} · ${t("cruise.perPerson","per person")}</label><input class="cr-triple" type="number" min="0" step="0.01" value="${escapeHtml(rate.triplePrice ?? "")}"></div>
       <div class="form-field"><label>${t("form.child","Child")} · ${t("cruise.perPerson","per person")}</label><input class="cr-child" type="number" min="0" step="0.01" value="${escapeHtml(rate.childPrice ?? "")}"></div>
-      <div class="form-field"><label>${t("form.validFrom","Valid from")}</label><input class="cr-from" type="date" value="${dateVal(rate.validFrom)}"></div>
-      <div class="form-field"><label>${t("form.validTo","Valid to")}</label><input class="cr-to" type="date" value="${dateVal(rate.validTo)}"></div>
       ${crRateSupplementsHtml(rate, currency)}
+    </div>
+  </div>`;
+}
+
+function crProgrammePeriods(rates) {
+  const source = Array.isArray(rates) ? rates : [];
+  if (!source.length) return [{ validFrom: null, validTo: null, egyptian: {}, foreign: {} }];
+  const grouped = new Map();
+  source.forEach(rate => {
+    const validFrom = rate.validFrom ? String(rate.validFrom).slice(0,10) : "";
+    const validTo = rate.validTo ? String(rate.validTo).slice(0,10) : "";
+    const key = `${validFrom}|${validTo}`;
+    if (!grouped.has(key)) grouped.set(key, { validFrom, validTo, egyptian: {}, foreign: {} });
+    grouped.get(key)[rate.market === "EGYPTIAN" ? "egyptian" : "foreign"] = rate;
+  });
+  return [...grouped.values()];
+}
+
+function crProgrammePricePeriodHtml(period) {
+  period = period || {};
+  const dateVal = value => value ? String(value).slice(0,10) : "";
+  return `<div class="cr-programme-price-period">
+    <div class="cr-period-head"><strong>${t("cruise.pricePeriod","Price period")}</strong><button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-programme-price-period').remove()">${icon("trash-2")}${t("btn.remove","Remove")}</button></div>
+    <div class="form-grid cr-programme-period-dates">
+      <div class="form-field"><label>${t("form.validFrom","Valid from")}</label><input class="cr-period-from" type="date" value="${dateVal(period.validFrom)}"></div>
+      <div class="form-field"><label>${t("form.validTo","Valid to")}</label><input class="cr-period-to" type="date" value="${dateVal(period.validTo)}"></div>
+    </div>
+    <div class="cr-programme-market-grid">
+      ${crProgrammeRateHtml(period.egyptian, "EGYPTIAN")}
+      ${crProgrammeRateHtml(period.foreign, "FOREIGN")}
     </div>
   </div>`;
 }
@@ -4632,9 +4692,7 @@ function crProgrammeRateHtml(rate) {
 function crProgrammeCardHtml(programme) {
   programme = programme || {};
   const scheduleIndex = programme.scheduleIndex ?? crScheduleIndexForId(programme.scheduleId);
-  const rates = Array.isArray(programme.rates) && programme.rates.length
-    ? programme.rates
-    : [{ market:"EGYPTIAN" }, { market:"FOREIGN" }];
+  const periods = crProgrammePeriods(programme.rates);
   const itinerary = Array.isArray(programme.itinerary) && programme.itinerary.length ? programme.itinerary : [{ day:1 }];
   return `<div class="cr-programme-card" style="border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;background:var(--surface-muted)">
     <div class="cr-period-head"><strong>${t("cruise.programme","Programme")}</strong><button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-programme-card').remove()">${icon("trash-2")}${t("btn.remove","Remove")}</button></div>
@@ -4648,7 +4706,9 @@ function crProgrammeCardHtml(programme) {
     <div class="secondary-text" style="margin-top:8px">${t("cruise.programmeTransferIncluded","Transfer is included automatically when this programme is selected.")}</div>
     <div class="cr-programme-days">${itinerary.map(crProgrammeDayHtml).join("")}</div>
     <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="crAddProgrammeDay(this)">${icon("plus")}${t("cruise.addDay","Add day")}</button>
-    <div class="cr-programme-rates" style="margin-top:10px">${rates.map(crProgrammeRateHtml).join("")}</div>
+    <div class="cr-programme-pricing-head"><strong>${t("cruise.perPersonRates","Per-person price periods")}</strong><span>${t("cruise.programmeMarketsRequired","Egyptians in EGP · Foreigners in USD")}</span></div>
+    <div class="cr-programme-rates">${periods.map(crProgrammePricePeriodHtml).join("")}</div>
+    <button type="button" class="btn btn-outline btn-sm" onclick="crAddProgrammePricePeriod(this)">${icon("plus")}${t("cruise.addFarePeriod","Add price period")}</button>
   </div>`;
 }
 
@@ -4685,6 +4745,14 @@ function crAddProgrammeDay(btn) {
   if (!host) return;
   host.insertAdjacentHTML("beforeend", crProgrammeDayHtml({ day: host.children.length + 1 }));
   refreshIcons(host.lastElementChild);
+}
+
+function crAddProgrammePricePeriod(btn) {
+  const host = btn.closest(".cr-programme-card")?.querySelector(".cr-programme-rates");
+  if (!host) return;
+  host.insertAdjacentHTML("beforeend", crProgrammePricePeriodHtml({}));
+  refreshIcons(host.lastElementChild);
+  host.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function crAddTransferRate() {
@@ -4814,17 +4882,20 @@ function crCollectRateRows() {
 }
 
 function crCollectProgrammeRates(card) {
-  return [...card.querySelectorAll(":scope > .cr-programme-rates > .cr-programme-rate")].map(row => {
-    const g = sel => row.querySelector(sel);
-    const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
-    return {
-      market: g(".cr-market")?.value || "FOREIGN",
-      currency: g(".cr-cur")?.value || "USD",
-      singlePrice: num(".cr-single"), doublePrice: num(".cr-double"), triplePrice: num(".cr-triple"),
-      childPrice: num(".cr-child"), supplements: crCollectSupplements(row),
-      validFrom: g(".cr-from")?.value || null, validTo: g(".cr-to")?.value || null,
-      isActive: true,
-    };
+  return [...card.querySelectorAll(":scope > .cr-programme-rates > .cr-programme-price-period")].flatMap(period => {
+    const validFrom = period.querySelector(".cr-period-from")?.value || null;
+    const validTo = period.querySelector(".cr-period-to")?.value || null;
+    return [...period.querySelectorAll(":scope > .cr-programme-market-grid > .cr-programme-rate")].map(row => {
+      const g = sel => row.querySelector(sel);
+      const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
+      return {
+        market: g(".cr-market")?.value || "FOREIGN",
+        currency: g(".cr-cur")?.value || "USD",
+        singlePrice: num(".cr-single"), doublePrice: num(".cr-double"), triplePrice: num(".cr-triple"),
+        childPrice: num(".cr-child"), supplements: crCollectSupplements(row),
+        validFrom, validTo, isActive: true,
+      };
+    });
   });
 }
 
@@ -6642,10 +6713,10 @@ async function renderOffers() {
   const offers = res?.data || [];
   const isPackage = offerAdminTab === "PACKAGE";
 
-  content(pageHeader(`<button class="btn btn-primary" onclick="openOfferForm('', '${offerAdminTab}')">${icon("plus")}&nbsp;${isPackage ? "New Package" : "New Offer"}</button>`) + `
+  content(pageHeader(`<button class="btn btn-primary" onclick="openOfferForm('', '${offerAdminTab}')">${icon("plus")}&nbsp;${isPackage ? t("offers.newPackage", "New Package") : t("offers.newOffer", "New Offer")}</button>`) + `
     <div class="admin-tab-bar">
-      <button class="btn ${!isPackage ? "btn-primary" : "btn-outline"}" onclick="setOfferAdminTab('OFFER')">${icon("tag")}&nbsp;Offers</button>
-      <button class="btn ${isPackage ? "btn-primary" : "btn-outline"}" onclick="setOfferAdminTab('PACKAGE')">${icon("package")}&nbsp;Packages</button>
+      <button class="btn ${!isPackage ? "btn-primary" : "btn-outline"}" onclick="setOfferAdminTab('OFFER')">${icon("tag")}&nbsp;${t("offers.offers", "Offers")}</button>
+      <button class="btn ${isPackage ? "btn-primary" : "btn-outline"}" onclick="setOfferAdminTab('PACKAGE')">${icon("package")}&nbsp;${t("offers.packages", "Packages")}</button>
     </div>
     <section class="table-card">
       <div class="table-scroll"><table class="data-table"><thead><tr>
@@ -6690,13 +6761,13 @@ async function openOfferForm(id, forcedKind = offerAdminTab) {
     <div class="form-field full"><label>Description (EN)</label><textarea id="ofDesc" rows="2">${escapeHtml(o?.description||"")}</textarea></div>
     <div class="form-field full"><label>${t("offers.descAr","Arabic Description")}</label><textarea id="ofDescAr" rows="2">${escapeHtml(o?.descriptionAr||"")}</textarea></div>
     <div class="form-field full"><label>${t("offers.imageUrl","Image URL")}</label><input id="ofImg" value="${escapeHtml(o?.imageUrl||"")}" placeholder="https://..."></div>
-    ${isPackage ? `<div class="form-field full">
-      <label>Package Components</label>
-      <div class="admin-tab-bar" id="ofPackageTabs">
-        <button type="button" class="btn btn-primary" data-of-tab="hotels" onclick="ofShowPackageTab('hotels')">${icon("hotel")}&nbsp;Hotels</button>
-        <button type="button" class="btn btn-outline" data-of-tab="transfers" onclick="ofShowPackageTab('transfers')">${icon("car")}&nbsp;Transfers</button>
-        <button type="button" class="btn btn-outline" data-of-tab="activities" onclick="ofShowPackageTab('activities')">${icon("ticket")}&nbsp;Activities</button>
-        <button type="button" class="btn btn-outline" data-of-tab="pricing" onclick="ofShowPackageTab('pricing')">${icon("badge-dollar-sign")}&nbsp;Price Periods</button>
+    ${isPackage ? `<div class="form-field full of-package-editor">
+      <div class="of-package-editor__heading"><strong>${t("offers.packageComponents", "Package components")}</strong><span>${t("offers.packageStepsHelp", "Build it in four clear steps")}</span></div>
+      <div class="of-package-tabs" id="ofPackageTabs" role="tablist">
+        <button type="button" class="of-package-tab is-active" data-of-tab="hotels" onclick="ofShowPackageTab('hotels')"><span>1</span>${icon("hotel")}<b>${t("nav.hotels", "Hotels")}</b></button>
+        <button type="button" class="of-package-tab" data-of-tab="transfers" onclick="ofShowPackageTab('transfers')"><span>2</span>${icon("car")}<b>${t("nav.transport", "Transfers")}</b></button>
+        <button type="button" class="of-package-tab" data-of-tab="activities" onclick="ofShowPackageTab('activities')"><span>3</span>${icon("ticket")}<b>${t("nav.activities", "Activities")}</b></button>
+        <button type="button" class="of-package-tab" data-of-tab="pricing" onclick="ofShowPackageTab('pricing')"><span>4</span>${icon("badge-dollar-sign")}<b>${t("offers.pricePeriods", "Price periods")}</b></button>
       </div>
       <div id="ofPanelHotels" class="of-package-panel"><div id="ofHotelRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddHotelRow()">${icon("plus")}&nbsp;Add hotel</button></div>
       <div id="ofPanelTransfers" class="of-package-panel" style="display:none"><div id="ofTransferRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddTransferRow()">${icon("plus")}&nbsp;Add transfer</button></div>
@@ -6740,8 +6811,7 @@ function ofShowPackageTab(tab) {
     if (panel) panel.style.display = key === tab ? "block" : "none";
   });
   document.querySelectorAll("[data-of-tab]").forEach(btn => {
-    btn.classList.toggle("btn-primary", btn.dataset.ofTab === tab);
-    btn.classList.toggle("btn-outline", btn.dataset.ofTab !== tab);
+    btn.classList.toggle("is-active", btn.dataset.ofTab === tab);
   });
 }
 

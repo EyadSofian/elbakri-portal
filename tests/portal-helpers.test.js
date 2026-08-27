@@ -6,6 +6,7 @@ const { loadPortal } = require('./helpers/load-portal');
 
 const portal = loadPortal('dashboard.html');
 const dashboardSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
+const adminSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'admin.html'), 'utf8');
 
 /**
  * Values built inside the sandbox carry that context's own Array/Object
@@ -175,6 +176,11 @@ test('portal: cssUrl escapes a quote so a background-image cannot break out', ()
 
 test('portal: weekdayLabel spells a stored day out', () => {
   assert.equal(portal.weekdayLabel('MONDAY'), 'Monday');
+});
+
+test('portal: the cruise return date follows the selected 3/4-night schedule', () => {
+  assert.equal(portal.crReturnDate('2026-08-31', 4), '2026-09-04');
+  assert.equal(portal.crReturnDate('2026-09-04', 3), '2026-09-07');
 });
 
 test('portal: a cruise with no schedule says so rather than rendering blank', () => {
@@ -382,6 +388,30 @@ test('portal: an activity package sends its chosen pricing basis to the server',
   assert.match(dashboardSource, /pricingBasis:\s*i\.pricingBasis/);
   assert.match(dashboardSource, /pricingBasis,\s*pricingLabel/);
   assert.match(dashboardSource, /pkgPriceResult\(adultsCount, childrenCount, pricingBasis/);
+});
+
+test('portal: adding or removing a package item keeps the current destination and cart visible', () => {
+  assert.match(dashboardSource, /function renderCurrentActivityPackageDestination/);
+  assert.match(dashboardSource, /closeModal\(\);\s*renderCurrentActivityPackageDestination\(\);/);
+  assert.match(dashboardSource, /filter\(item => item\.localId !== localId\);\s*renderCurrentActivityPackageDestination\(\);/);
+});
+
+test('portal: the activity package choice and destination-first flow are permanently rendered', () => {
+  assert.match(dashboardSource, /renderActivities\('package'\)/);
+  assert.match(dashboardSource, /return renderActivityDestinations\(\s*"renderActivityPackageByDest"/);
+});
+
+test('offers: admin and client both split Offers from Packages', () => {
+  assert.match(adminSource, /setOfferAdminTab\('OFFER'\)/);
+  assert.match(adminSource, /setOfferAdminTab\('PACKAGE'\)/);
+  assert.match(dashboardSource, /setOfferClientTab\('OFFER'\)/);
+  assert.match(dashboardSource, /setOfferClientTab\('PACKAGE'\)/);
+});
+
+test('offers: the package editor exposes hotel, transfer, activity and price-period steps', () => {
+  for (const tab of ['hotels', 'transfers', 'activities', 'pricing']) {
+    assert.match(adminSource, new RegExp(`data-of-tab="${tab}"`));
+  }
 });
 
 test('portal: package child pricing never falls back to the adult price', () => {

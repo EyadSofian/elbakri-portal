@@ -2,10 +2,10 @@ import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
 import { sendError } from '../../shared/http';
 
-const offerKind = (value: unknown) => String(value ?? '').toUpperCase() === 'PACKAGE' ? 'PACKAGE' : 'OFFER';
+export const offerKind = (value: unknown) => String(value ?? '').toUpperCase() === 'PACKAGE' ? 'PACKAGE' : 'OFFER';
 const jsonRows = (value: unknown) => Array.isArray(value) ? value.slice(0, 100) : [];
 
-function packageData(source: Record<string, unknown>) {
+export function packageData(source: Record<string, unknown>) {
   const hotels = jsonRows(source.hotelItems).map((raw) => {
     const row = raw as Record<string, unknown>;
     const name = String(row?.name ?? '').trim();

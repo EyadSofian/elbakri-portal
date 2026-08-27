@@ -94,6 +94,24 @@ export function cruiseAudienceCurrency(audience: CruiseAudience): 'EGP' | 'USD' 
   return audience === 'EGYPTIAN' ? 'EGP' : 'USD';
 }
 
+/** Every programme season is entered as one visible pair: Egyptians/EGP and
+ * foreigners/USD. Checking only the programme as a whole would accept an EGP
+ * summer row beside a USD winter row, leaving both seasons half-priced. */
+export function programmePeriodsHaveBothAudiences(rows: Array<{
+  market?: unknown;
+  validFrom?: unknown;
+  validTo?: unknown;
+}>): boolean {
+  if (!rows.length) return false;
+  const periods = new Map<string, Set<CruiseAudience>>();
+  for (const row of rows) {
+    const key = `${String(row.validFrom ?? '').slice(0, 10)}|${String(row.validTo ?? '').slice(0, 10)}`;
+    if (!periods.has(key)) periods.set(key, new Set());
+    periods.get(key)!.add(String(row.market ?? '').toUpperCase() === 'EGYPTIAN' ? 'EGYPTIAN' : 'FOREIGN');
+  }
+  return [...periods.values()].every(markets => markets.has('EGYPTIAN') && markets.has('FOREIGN'));
+}
+
 /**
  * INTERNATIONAL and FOREIGN are the same audience under two names — rows were
  * written under both before the markets list settled, and a guest priced under
