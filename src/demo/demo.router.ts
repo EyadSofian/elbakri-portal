@@ -140,9 +140,34 @@ export function createDemoRouter(): Router {
   router.get('/admin/wallet/platform', (_req, res) => res.json(ok({ balance: DEMO_REPORT_OVERVIEW.platformWalletBalance, currency: 'EGP', transactions: DEMO_TRANSACTIONS })));
   router.get('/quote-requests', (req, res) => res.json(page(scoped(DEMO_QUOTES, req))));
   router.get('/quote-requests/:id', (req, res) => res.json(ok(DEMO_QUOTES.find((q) => q.id === req.params.id) ?? DEMO_QUOTES[0])));
-  router.get('/offers/active', (_req, res) => res.json(ok(DEMO_OFFERS[0])));
-  router.get('/offers', (_req, res) => res.json(ok(DEMO_OFFERS)));
+  router.get('/offers/active', (_req, res) => res.json(ok(DEMO_OFFERS.find((offer) => offer.kind === 'OFFER') ?? null)));
+  router.get('/offers', (req, res) => {
+    const kind = req.query.kind ? String(req.query.kind).toUpperCase() : null;
+    res.json(ok(kind ? DEMO_OFFERS.filter((offer) => offer.kind === kind) : DEMO_OFFERS));
+  });
   router.get('/offers/:id', (req, res) => res.json(ok(DEMO_OFFERS.find((o) => o.id === req.params.id) ?? DEMO_OFFERS[0])));
+  // The combined cruise editor loads these four child collections separately.
+  // Model them explicitly in preview mode so opening an existing cruise never
+  // replaces its real From / Back / nights values with an empty default row.
+  router.get('/cruises/:id/schedules', (req, res) => {
+    const cruise = DEMO_CRUISES.find((row) => row.id === req.params.id);
+    res.json(ok(cruise?.schedules ?? []));
+  });
+  router.get('/cruises/:id/rates', (req, res) => {
+    const cruise = DEMO_CRUISES.find((row) => row.id === req.params.id);
+    res.json(ok(cruise?.cabinRates ?? []));
+  });
+  router.get('/cruises/:id/programmes', (req, res) => {
+    const cruise = DEMO_CRUISES.find((row) => row.id === req.params.id);
+    res.json(ok(cruise?.programmes ?? []));
+  });
+  router.get('/cruises/:id/transfer-rates', (req, res) => {
+    const cruise = DEMO_CRUISES.find((row) => row.id === req.params.id);
+    res.json(ok(cruise?.transferRates ?? []));
+  });
+  router.get('/cruises/:id', (req, res) => {
+    res.json(ok(DEMO_CRUISES.find((row) => row.id === req.params.id) ?? DEMO_CRUISES[0]));
+  });
   router.get('/cruises', (_req, res) => res.json(ok(DEMO_CRUISES)));
   router.get('/activities', (req, res) => {
     // Preview mode must respect the same destination filter as production;

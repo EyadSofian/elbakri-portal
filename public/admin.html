@@ -1124,24 +1124,16 @@ const masterConfigs = {
       { name: "cabins", label: "form.cabins", fallback: "Cabins", type: "number", default: 40 },
       { name: "route", label: "th.route", type: "select", default: "LUXOR_ASWAN", options: ["LUXOR_ASWAN", "ASWAN_LUXOR", "LUXOR_ASWAN_LUXOR"] },
       { name: "description", label: "form.description", type: "textarea", cls: "full" },
-      // The programme, day by day. It used to be typed into the description as
-      // one paragraph, which no voucher could list and no agent could read
-      // without asking which day a stop fell on.
-      { name: "itinerary", label: "cruise.itinerary", fallback: "Day-by-day programme", type: "itinerary", cls: "full",
-        helpKey: "help.cruiseItinerary", help: "One row per day — where the boat is and what the guests do. Shown to the agent and carried into the quote." },
-      { name: "transferIncluded", label: "cruise.transferIncluded", fallback: "Transfer included in the fare", type: "checkbox",
-        checkKey: "cruise.transferIncludedOn", checkLabel: "The fare collects the guests",
-        helpKey: "help.cruiseTransfer", help: "Tick this when the fare already collects the guests. When it does not, the company portal offers to add a transfer." },
-      { name: "transferNote", label: "cruise.transferNote", fallback: "Transfer note", type: "textarea", cls: "full",
-        helpKey: "help.cruiseTransferNote", help: "What the fare does and does not cover — e.g. \"Airport to pier only\"." },
-      { name: "transferNoteAr", label: "cruise.transferNoteAr", fallback: "Transfer note (Arabic)", type: "textarea", cls: "full" },
+      // Programmes and transfers are schedule-bound catalogue sections below.
+      // Keeping them out of Basic avoids one boat-level itinerary leaking from
+      // the three-night leg into the four-night leg.
       // Without these two the rate table was unreachable: every boat is created
       // with prices hidden, and there was no way in this form to turn them on,
       // so the agent's cabin table was permanently empty and Single / Double /
       // Triple never appeared anywhere in the company portal.
       { name: "showPriceToAgents", label: "hotel.showPriceToAgents", fallback: "Show Prices to Agents", type: "checkbox",
-        checkKey: "cruise.showPricesOn", checkLabel: "Agents may see the cabin rates",
-        helpKey: "help.cruiseShowPrices", help: "Off, the agent sees no cabin rates at all — no Single, Double or Triple — only \"price on request\"." },
+        checkKey: "cruise.showPricesOn", checkLabel: "Agents may see the per-person fares",
+        helpKey: "help.cruiseShowPrices", help: "Off, agents see price on request. On, they see only Egyptian/EGP or Foreign/USD fares for their company." },
       { name: "allowQuoteRequest", label: "hotel.allowQuoteRequest", fallback: "Allow Quote Request", type: "checkbox", default: true,
         checkKey: "cruise.allowQuoteOn", checkLabel: "Agents may request a quote" },
       { name: "imageUrl", label: "activity.mainPhoto", fallback: "Main photo", type: "image", cls: "full" },
@@ -1783,14 +1775,18 @@ async function showMasterModal(entity, id = "") {
   // view. Editing must fetch the complete tables, including disabled periods,
   // or saving this combined form would silently delete them.
   if (entity === "cruises" && id) {
-    const [rateRes, scheduleRes] = await Promise.all([
+    const [rateRes, scheduleRes, programmeRes, transferRes] = await Promise.all([
       apiFetch(`/cruises/${id}/rates`).catch(() => null),
       apiFetch(`/cruises/${id}/schedules`).catch(() => null),
+      apiFetch(`/cruises/${id}/programmes`).catch(() => null),
+      apiFetch(`/cruises/${id}/transfer-rates`).catch(() => null),
     ]);
     row = {
       ...(row || {}),
       cabinRates: rateRes?.data || row?.cabinRates || [],
       schedules: scheduleRes?.data || row?.schedules || [],
+      programmes: programmeRes?.data || row?.programmes || [],
+      transferRates: transferRes?.data || row?.transferRates || [],
     };
   }
 
@@ -1824,7 +1820,10 @@ async function showMasterModal(entity, id = "") {
  */
 function cruiseCatalogueFormSection(row) {
   const schedules = Array.isArray(row?.schedules) && row.schedules.length ? row.schedules : [{}];
-  const rates = Array.isArray(row?.cabinRates) && row.cabinRates.length ? row.cabinRates : [{}];
+  window._crEditorSchedules = schedules;
+  const rates = Array.isArray(row?.cabinRates) ? row.cabinRates : [];
+  const programmes = Array.isArray(row?.programmes) ? row.programmes : [];
+  const transferRates = Array.isArray(row?.transferRates) ? row.transferRates : [];
   return `
     <div class="form-section cruise-catalogue-section">
       <div class="form-section-title">${t("cruise.sailingLegs","From / To schedule")}</div>
@@ -1833,13 +1832,25 @@ function cruiseCatalogueFormSection(row) {
       <button type="button" class="btn btn-outline btn-sm" onclick="crAddScheduleRow()">${icon("plus")}${t("cruise.addSchedule","Add departure")}</button>
     </div>
     <div class="form-section cruise-catalogue-section">
-      <div class="form-section-title">${t("cruise.pricingPeriods","Pricing periods")}</div>
-      <div class="secondary-text" style="margin-bottom:10px">${t("cruise.pricingPeriodsHelp","One row per cabin, market and period. Set From / To, then the Single, Double and Triple cabin prices.")}</div>
+      <div class="form-section-title">${t("cruise.cruiseOnlyPricing","Cruise only · per-person pricing")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("cruise.pricingPeriodsHelp","Each period belongs to one 3/4-night schedule. Single, Double, Triple and Child are per-person prices; Egyptian is always EGP and Foreign is always USD.")}</div>
       <div class="cr-period-toolbar">
-        <button type="button" class="btn btn-primary btn-sm" onclick="crAddRateRow()">${icon("plus")}${t("cruise.addCabinRate","Add cabin rate")}</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="crAddRateRow()">${icon("plus")}${t("cruise.addFarePeriod","Add fare period")}</button>
         <span class="secondary-text" id="crRatesCount"></span>
       </div>
       <div id="crRateRows">${rates.map(crRateRowHtml).join("")}</div>
+    </div>
+    <div class="form-section cruise-catalogue-section">
+      <div class="form-section-title">${t("cruise.programmes","Programmes")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("cruise.programmesHelp","A programme is tied to one exact sailing leg and includes its transfer. Add both Egyptian/EGP and Foreign/USD per-person tariffs.")}</div>
+      <div id="crProgrammeRows">${programmes.map(crProgrammeCardHtml).join("")}</div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="crAddProgramme()">${icon("plus")}${t("cruise.addProgramme","Add programme")}</button>
+    </div>
+    <div class="form-section cruise-catalogue-section">
+      <div class="form-section-title">${t("cruise.transferOnly","Cruise-only transfer")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("cruise.transferOnlyHelp","Optional, separately priced From → To transfer. It is offered only when the client does not choose a programme.")}</div>
+      <div id="crTransferRateRows">${transferRates.map(crTransferRateRowHtml).join("")}</div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="crAddTransferRate()">${icon("plus")}${t("cruise.addTransferRate","Add transfer price")}</button>
     </div>`;
 }
 
@@ -1979,6 +1990,8 @@ async function saveMasterRecord(entity, id = "") {
   const cruiseCatalogue = entity === "cruises" ? {
     schedules: crCollectScheduleRows(),
     rates: crCollectRateRows(),
+    programmes: crCollectProgrammes(),
+    transferRates: crCollectTransferRates(),
   } : null;
   if (cruiseCatalogue && !crValidateCatalogue(cruiseCatalogue)) return;
   // A cruise is priced only by its period rows. Clear any legacy headline the
@@ -2006,13 +2019,36 @@ async function saveMasterRecord(entity, id = "") {
       }
     }
     if (cruiseCatalogue && savedId) {
-      const [rateRes, scheduleRes] = await Promise.all([
-        apiFetch(`/cruises/${savedId}/rates`, { method: "PUT", body: JSON.stringify({ rates: cruiseCatalogue.rates }) }),
-        apiFetch(`/cruises/${savedId}/schedules`, { method: "PUT", body: JSON.stringify({ schedules: cruiseCatalogue.schedules }) }),
-      ]);
-      if (!rateRes?.success || !scheduleRes?.success) {
+      // Schedules are replaced and receive new ids, so save them first and map
+      // every fare/programme/transfer from its visible row index to the saved id.
+      const scheduleRes = await apiFetch(`/cruises/${savedId}/schedules`, {
+        method: "PUT", body: JSON.stringify({ schedules: cruiseCatalogue.schedules }),
+      });
+      if (!scheduleRes?.success) {
         setBtnLoading(saveBtn, false);
         toast(t("cruise.catalogueSaveFailed","The cruise was saved, but its periods could not be saved. Please try again."), "error");
+        return;
+      }
+      const savedSchedules = scheduleRes.data || [];
+      const withScheduleId = row => ({
+        ...row,
+        scheduleId: savedSchedules[row.scheduleIndex]?.id || null,
+        scheduleIndex: undefined,
+      });
+      const rates = cruiseCatalogue.rates.map(withScheduleId);
+      const programmes = cruiseCatalogue.programmes.map(programme => ({
+        ...withScheduleId(programme),
+        rates: programme.rates,
+      }));
+      const transferRates = cruiseCatalogue.transferRates.map(withScheduleId);
+      const [rateRes, programmeRes, transferRes] = await Promise.all([
+        apiFetch(`/cruises/${savedId}/rates`, { method: "PUT", body: JSON.stringify({ rates }) }),
+        apiFetch(`/cruises/${savedId}/programmes`, { method: "PUT", body: JSON.stringify({ programmes }) }),
+        apiFetch(`/cruises/${savedId}/transfer-rates`, { method: "PUT", body: JSON.stringify({ rates: transferRates }) }),
+      ]);
+      if (!rateRes?.success || !programmeRes?.success || !transferRes?.success) {
+        setBtnLoading(saveBtn, false);
+        toast(t("cruise.catalogueSaveFailed","The cruise was saved, but its programmes or prices could not be saved. Please try again."), "error");
         return;
       }
     }
@@ -4335,9 +4371,9 @@ async function renderCruises() {
       const prices = rates.flatMap(r => [r.singlePrice, r.doublePrice, r.triplePrice])
         .map(Number).filter(n => Number.isFinite(n));
       if (prices.length) {
-        return `<span class="numeric">${formatMoney(Math.min(...prices), rates[0].currency)}</span><div class="secondary-text">${formatNumber(rates.length)} ${t("cruise.cabinRates","Cabin Rates")}</div>`;
+        return `<span class="numeric">${formatMoney(Math.min(...prices), rates[0].currency)}</span><div class="secondary-text">${formatNumber(rates.length)} ${t("cruise.cabinRates","Per-person fares")}</div>`;
       }
-      return `<span class="secondary-text">${t("cruise.noRates","No cabin rates set yet")}</span>`;
+      return `<span class="secondary-text">${t("cruise.noRates","No per-person fares set yet")}</span>`;
     }],
     // Priced but hidden is the state that had every agent seeing an empty cabin
     // table, so the list says which of the two a boat is in.
@@ -4361,12 +4397,12 @@ function adminCruiseScheduleSummary(c) {
   ).join("") + (list.length > 3 ? `<div class="secondary-text">+${formatNumber(list.length - 3)}</div>` : "");
 }
 
-/* ── Cruise cabin rates and sailing schedule ───────────────────────────────
-   A boat is priced the way a hotel is: one row per cabin category, market and
-   period, with a price per occupancy. Both tables are saved as a whole set, so
+/* ── Cruise per-person fares and sailing schedule ──────────────────────────
+   A boat is priced the way a hotel is: one row per fare plan, market and
+   period, with a per-person price for each sharing basis. Both tables are saved as a whole set, so
    the editor is a plain list the admin adds to, reorders and deletes from. */
 
-const CRUISE_MARKETS = [["", "All markets"], ["EGYPTIAN", "Egyptian"], ["FOREIGN", "Foreign"], ["GULF", "Gulf"], ["INTERNATIONAL", "International"], ["MIDDLE_EAST", "Middle East"], ["NORTH_AFRICA", "North Africa"], ["ARAB_48", "Arab 48"]];
+const CRUISE_MARKETS = [["EGYPTIAN", "Egyptian · EGP"], ["FOREIGN", "Foreign · USD"]];
 const CRUISE_CABIN_TYPES = ["STANDARD", "DELUXE", "SUITE", "PRESIDENTIAL"];
 const CRUISE_WEEKDAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
 
@@ -4375,31 +4411,65 @@ function crScheduleRowHtml(sc) {
   const dayOpts = (selected) => CRUISE_WEEKDAYS
     .map(d => `<option value="${d}" ${String(selected || "").toUpperCase() === d ? "selected" : ""}>${escapeHtml(t("weekday." + d, d))}</option>`)
     .join("");
-  return `<div class="cr-row">
+  return `<div class="cr-row" data-schedule-id="${escapeHtml(sc.id || "")}">
     <div class="form-grid cr-schedule-row-grid">
-      <div class="form-field"><label>${t("cruise.from","From")} · ${t("cruise.departureDay","Departs")}</label><select class="cr-dep">${dayOpts(sc.departureDay || "MONDAY")}</select></div>
-      <div class="form-field"><label>${t("cruise.back","Back")} · ${t("cruise.returnDay","Returns")}</label><select class="cr-ret">${dayOpts(sc.returnDay || "THURSDAY")}</select></div>
-      <div class="form-field"><label>${t("cruise.nights","Nights")}</label><input class="cr-nights" type="number" min="1" value="${escapeHtml(sc.nights ?? "")}" placeholder="auto"></div>
+      <div class="form-field"><label>${t("cruise.from","From")} · ${t("cruise.departureDay","Departs")}</label><select class="cr-dep" onchange="crRefreshScheduleSelects()">${dayOpts(sc.departureDay || "MONDAY")}</select></div>
+      <div class="form-field"><label>${t("cruise.back","Back")} · ${t("cruise.returnDay","Returns")}</label><select class="cr-ret" onchange="crRefreshScheduleSelects()">${dayOpts(sc.returnDay || "THURSDAY")}</select></div>
+      <div class="form-field"><label>${t("cruise.nights","Nights")}</label><input class="cr-nights" type="number" min="1" value="${escapeHtml(sc.nights ?? "")}" placeholder="auto" oninput="crRefreshScheduleSelects()"></div>
       <div class="form-field"><label>${t("form.name","Label")}</label><input class="cr-sched-label" value="${escapeHtml(sc.label || "")}" placeholder="${escapeHtml(t("form.optional","optional"))}"></div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
       <label class="check-row"><input type="checkbox" class="cr-sched-active" ${sc.isActive === false ? "" : "checked"}> ${t("form.active","Active")}</label>
-      <button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-row').remove()">${t("btn.remove","Remove")}</button>
+      <button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-row').remove();crRefreshScheduleSelects()">${t("btn.remove","Remove")}</button>
     </div>
+  </div>`;
+}
+
+function crScheduleIndexForId(id) {
+  const list = window._crEditorSchedules || [];
+  const index = list.findIndex(schedule => schedule.id && schedule.id === id);
+  return index >= 0 ? index : 0;
+}
+
+function crScheduleOptions(selectedIndex) {
+  const rows = [...document.querySelectorAll("#crSchedRows .cr-row")];
+  const source = rows.length ? rows.map((row, index) => ({
+    index,
+    label: `${row.querySelector(".cr-dep")?.value || "From"} → ${row.querySelector(".cr-ret")?.value || "Back"} · ${row.querySelector(".cr-nights")?.value || "?"} nights`,
+  })) : (window._crEditorSchedules || []).map((schedule, index) => ({
+    index,
+    label: `${schedule.departureDay || "From"} → ${schedule.returnDay || "Back"} · ${schedule.nights || "?"} nights`,
+  }));
+  return source.map(item => `<option value="${item.index}" ${Number(selectedIndex) === item.index ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
+}
+
+function crSupplementRowHtml(supp, currency) {
+  supp = supp || {};
+  const types = ["FIXED_AMOUNT","PERCENTAGE","TOTAL_PRICE","TEXT_ONLY"];
+  return `<div class="cr-supp-row" style="display:grid;grid-template-columns:1.4fr 1fr 1fr auto;gap:6px;align-items:end;margin-top:6px">
+    <div class="form-field"><label>${t("hotel.supplement","Supplement")}</label><input class="cr-supp-name" value="${escapeHtml(supp.name || "")}" placeholder="Upper deck"></div>
+    <div class="form-field"><label>${t("th.type","Type")}</label><select class="cr-supp-type">${types.map(type => `<option value="${type}" ${supp.type === type ? "selected" : ""}>${type.replace(/_/g," ")}</option>`).join("")}</select></div>
+    <div class="form-field"><label>${t("form.amount","Amount")} · ${escapeHtml(currency)}</label><input class="cr-supp-amount" type="number" min="0" step="0.01" value="${escapeHtml(supp.amount ?? "")}"></div>
+    <button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-supp-row').remove()">${icon("trash-2")}</button>
+  </div>`;
+}
+
+function crRateSupplementsHtml(r, currency) {
+  const rows = Array.isArray(r?.supplements) ? r.supplements : [];
+  return `<div class="full cr-supp-box" data-currency="${escapeHtml(currency)}" style="border-top:1px dashed var(--border);padding-top:8px">
+    <div class="cr-supp-rows">${rows.map(supp => crSupplementRowHtml(supp, currency)).join("")}</div>
+    <button type="button" class="btn btn-outline btn-sm" onclick="crAddSupplement(this)">${icon("plus")}${t("hotel.addSupplement","Add supplement")}</button>
   </div>`;
 }
 
 function crRateRowHtml(r) {
   r = r || {};
+  const market = r.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
   const marketOpts = CRUISE_MARKETS
-    .map(([v, l]) => `<option value="${v}" ${String(r.market || "") === v ? "selected" : ""}>${escapeHtml(t("market." + (v || "ALL"), l))}</option>`)
+    .map(([v, l]) => `<option value="${v}" ${market === v ? "selected" : ""}>${escapeHtml(t("market." + v, l))}</option>`)
     .join("");
-  const cabinOpts = CRUISE_CABIN_TYPES
-    .map(v => `<option value="${v}" ${(r.cabinType || "STANDARD") === v ? "selected" : ""}>${escapeHtml(v.replace(/_/g, " "))}</option>`)
-    .join("");
-  const curOpts = PRICE_CURRENCIES
-    .map(c => `<option value="${c}" ${(r.currency || "USD") === c ? "selected" : ""}>${c}</option>`)
-    .join("");
+  const currency = market === "EGYPTIAN" ? "EGP" : "USD";
+  const scheduleIndex = r.scheduleIndex ?? crScheduleIndexForId(r.scheduleId);
   const dateVal = (v) => (v ? String(v).slice(0, 10) : "");
   return `<div class="cr-row cr-period-row">
     <div class="cr-period-head">
@@ -4407,16 +4477,18 @@ function crRateRowHtml(r) {
       <button type="button" class="btn btn-outline btn-sm" onclick="crDuplicateRate(this)">${icon("copy")}${t("hotel.duplicateRate","Duplicate")}</button>
     </div>
     <div class="form-grid cr-rate-row-grid">
-      <div class="form-field full"><label>${t("cruise.cabinName","Cabin")} <span class="required">*</span></label><input class="cr-cabin" value="${escapeHtml(r.cabinName || "")}" placeholder="Standard Cabin" oninput="crSyncRateTitles()"></div>
-      <div class="form-field"><label>${t("th.type","Type")}</label><select class="cr-cabin-type" onchange="crSyncRateTitles()">${cabinOpts}</select></div>
-      <div class="form-field"><label>${t("market.label","Market")}</label><select class="cr-market" onchange="crSyncRateTitles()">${marketOpts}</select></div>
-      <div class="form-field"><label>${t("form.currency","Currency")}</label><select class="cr-cur">${curOpts}</select></div>
-      <div class="form-field"><label>${t("hotel.single","Single")}</label><input class="cr-single" type="number" step="0.01" min="0" value="${escapeHtml(r.singlePrice ?? "")}"></div>
-      <div class="form-field"><label>${t("hotel.double","Double")}</label><input class="cr-double" type="number" step="0.01" min="0" value="${escapeHtml(r.doublePrice ?? "")}"></div>
-      <div class="form-field"><label>${t("hotel.triple","Triple")}</label><input class="cr-triple" type="number" step="0.01" min="0" value="${escapeHtml(r.triplePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("cruise.fareName","Fare plan")} <span class="required">*</span></label><input class="cr-cabin" value="${escapeHtml(r.cabinName || "Cruise only")}" placeholder="Cruise only" oninput="crSyncRateTitles()"></div>
+      <div class="form-field"><label>${t("cruise.sailing","From / Back")}</label><select class="cr-rate-schedule" onchange="crSyncRateTitles()">${crScheduleOptions(scheduleIndex)}</select></div>
+      <div class="form-field"><label>${t("market.label","Market")}</label><select class="cr-market" onchange="crRateMarketChanged(this);crSyncRateTitles()">${marketOpts}</select></div>
+      <div class="form-field"><label>${t("form.currency","Currency")}</label><input class="cr-cur" value="${currency}" readonly></div>
+      <div class="form-field"><label>${t("hotel.single","Single")} · ${t("cruise.perPerson","per person")}</label><input class="cr-single" type="number" step="0.01" min="0" value="${escapeHtml(r.singlePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("hotel.double","Double")} · ${t("cruise.perPerson","per person")}</label><input class="cr-double" type="number" step="0.01" min="0" value="${escapeHtml(r.doublePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("hotel.triple","Triple")} · ${t("cruise.perPerson","per person")}</label><input class="cr-triple" type="number" step="0.01" min="0" value="${escapeHtml(r.triplePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("form.child","Child")} · ${t("cruise.perPerson","per person")}</label><input class="cr-child" type="number" step="0.01" min="0" value="${escapeHtml(r.childPrice ?? "")}"></div>
       <div class="form-field"><label>${t("form.validFrom","Valid from")}</label><input class="cr-from" type="date" value="${dateVal(r.validFrom)}" oninput="crSyncRateTitles()"></div>
       <div class="form-field"><label>${t("form.validTo","Valid to")}</label><input class="cr-to" type="date" value="${dateVal(r.validTo)}" oninput="crSyncRateTitles()"></div>
       <div class="form-field full"><label>${t("placeholder.notes","Notes")}</label><input class="cr-notes" value="${escapeHtml(r.notes || "")}"></div>
+      ${crRateSupplementsHtml(r, currency)}
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
       <label class="check-row"><input type="checkbox" class="cr-rate-active" ${r.isActive === false ? "" : "checked"}> ${t("form.active","Active")}</label>
@@ -4425,11 +4497,140 @@ function crRateRowHtml(r) {
   </div>`;
 }
 
+function crAddSupplement(btn) {
+  const box = btn.closest(".cr-supp-box");
+  const host = box?.querySelector(".cr-supp-rows");
+  if (!host) return;
+  host.insertAdjacentHTML("beforeend", crSupplementRowHtml({}, box.dataset.currency || "USD"));
+  refreshIcons(host.lastElementChild);
+}
+
+function crRateMarketChanged(select) {
+  const owner = select.closest(".cr-period-row, .cr-programme-rate, .cr-transfer-rate-row");
+  const currency = select.value === "EGYPTIAN" ? "EGP" : "USD";
+  const cur = owner?.querySelector(".cr-cur");
+  if (cur) cur.value = currency;
+  const transferLabel = owner?.querySelector(".cr-transfer-price-label");
+  if (transferLabel) transferLabel.textContent = `${t("form.amount","Price")} · ${currency}`;
+  const box = owner?.querySelector(".cr-supp-box");
+  if (box) {
+    box.dataset.currency = currency;
+    box.querySelectorAll(".cr-supp-amount").forEach(input => {
+      const label = input.closest(".form-field")?.querySelector("label");
+      if (label) label.textContent = `${t("form.amount","Amount")} · ${currency}`;
+    });
+  }
+}
+
+function crProgrammeDayHtml(day) {
+  day = day || {};
+  return `<div class="cr-programme-day" style="display:grid;grid-template-columns:70px 1fr 1fr auto;gap:6px;align-items:end;margin-top:6px">
+    <div class="form-field"><label>${t("cruise.day","Day")}</label><input class="cr-prog-day-num" type="number" min="1" value="${escapeHtml(day.day || 1)}"></div>
+    <div class="form-field"><label>${t("form.name","Title")}</label><input class="cr-prog-day-title" value="${escapeHtml(day.title || "")}"></div>
+    <div class="form-field"><label>${t("form.description","Description")}</label><input class="cr-prog-day-desc" value="${escapeHtml(day.description || "")}"></div>
+    <button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-programme-day').remove()">${icon("trash-2")}</button>
+  </div>`;
+}
+
+function crProgrammeRateHtml(rate) {
+  rate = rate || {};
+  const market = rate.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
+  const currency = market === "EGYPTIAN" ? "EGP" : "USD";
+  const dateVal = value => value ? String(value).slice(0,10) : "";
+  return `<div class="cr-programme-rate" style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-top:8px">
+    <div class="form-grid cr-rate-row-grid">
+      <div class="form-field"><label>${t("market.label","Market")}</label><select class="cr-market" onchange="crRateMarketChanged(this)">${CRUISE_MARKETS.map(([value,label]) => `<option value="${value}" ${market === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></div>
+      <div class="form-field"><label>${t("form.currency","Currency")}</label><input class="cr-cur" value="${currency}" readonly></div>
+      <div class="form-field"><label>${t("hotel.single","Single")} · ${t("cruise.perPerson","per person")}</label><input class="cr-single" type="number" min="0" step="0.01" value="${escapeHtml(rate.singlePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("hotel.double","Double")} · ${t("cruise.perPerson","per person")}</label><input class="cr-double" type="number" min="0" step="0.01" value="${escapeHtml(rate.doublePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("hotel.triple","Triple")} · ${t("cruise.perPerson","per person")}</label><input class="cr-triple" type="number" min="0" step="0.01" value="${escapeHtml(rate.triplePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("form.child","Child")} · ${t("cruise.perPerson","per person")}</label><input class="cr-child" type="number" min="0" step="0.01" value="${escapeHtml(rate.childPrice ?? "")}"></div>
+      <div class="form-field"><label>${t("form.validFrom","Valid from")}</label><input class="cr-from" type="date" value="${dateVal(rate.validFrom)}"></div>
+      <div class="form-field"><label>${t("form.validTo","Valid to")}</label><input class="cr-to" type="date" value="${dateVal(rate.validTo)}"></div>
+      ${crRateSupplementsHtml(rate, currency)}
+    </div>
+  </div>`;
+}
+
+function crProgrammeCardHtml(programme) {
+  programme = programme || {};
+  const scheduleIndex = programme.scheduleIndex ?? crScheduleIndexForId(programme.scheduleId);
+  const rates = Array.isArray(programme.rates) && programme.rates.length
+    ? programme.rates
+    : [{ market:"EGYPTIAN" }, { market:"FOREIGN" }];
+  const itinerary = Array.isArray(programme.itinerary) && programme.itinerary.length ? programme.itinerary : [{ day:1 }];
+  return `<div class="cr-programme-card" style="border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;background:var(--surface-muted)">
+    <div class="cr-period-head"><strong>${t("cruise.programme","Programme")}</strong><button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-programme-card').remove()">${icon("trash-2")}${t("btn.remove","Remove")}</button></div>
+    <div class="form-grid">
+      <div class="form-field"><label>${t("form.name","Name")} *</label><input class="cr-prog-name" value="${escapeHtml(programme.name || "")}" placeholder="3 nights classic programme"></div>
+      <div class="form-field"><label>${t("form.nameAr","Arabic name")}</label><input class="cr-prog-name-ar" value="${escapeHtml(programme.nameAr || "")}" dir="rtl"></div>
+      <div class="form-field"><label>${t("cruise.sailing","From / Back")}</label><select class="cr-prog-schedule">${crScheduleOptions(scheduleIndex)}</select></div>
+      <div class="form-field"><label>${t("cruise.transferRoute","Included transfer")}</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><input class="cr-prog-transfer-from" value="${escapeHtml(programme.transferFromName || "")}" placeholder="From"><input class="cr-prog-transfer-to" value="${escapeHtml(programme.transferToName || "")}" placeholder="To"></div></div>
+      <div class="form-field full"><label>${t("form.description","Description")}</label><textarea class="cr-prog-desc" rows="2">${escapeHtml(programme.description || "")}</textarea></div>
+    </div>
+    <div class="secondary-text" style="margin-top:8px">${t("cruise.programmeTransferIncluded","Transfer is included automatically when this programme is selected.")}</div>
+    <div class="cr-programme-days">${itinerary.map(crProgrammeDayHtml).join("")}</div>
+    <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="crAddProgrammeDay(this)">${icon("plus")}${t("cruise.addDay","Add day")}</button>
+    <div class="cr-programme-rates" style="margin-top:10px">${rates.map(crProgrammeRateHtml).join("")}</div>
+  </div>`;
+}
+
+function crTransferRateRowHtml(rate) {
+  rate = rate || {};
+  const market = rate.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
+  const currency = market === "EGYPTIAN" ? "EGP" : "USD";
+  const scheduleIndex = rate.scheduleIndex ?? crScheduleIndexForId(rate.scheduleId);
+  const dateVal = value => value ? String(value).slice(0,10) : "";
+  return `<div class="cr-row cr-transfer-rate-row">
+    <div class="form-grid">
+      <div class="form-field"><label>${t("cruise.sailing","From / Back")}</label><select class="cr-transfer-schedule">${crScheduleOptions(scheduleIndex)}</select></div>
+      <div class="form-field"><label>${t("market.label","Market")}</label><select class="cr-market" onchange="crRateMarketChanged(this)">${CRUISE_MARKETS.map(([value,label]) => `<option value="${value}" ${market === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></div>
+      <div class="form-field"><label>${t("form.from","From")}</label><input class="cr-transfer-from" value="${escapeHtml(rate.fromLocation || "")}" placeholder="Cairo Airport"></div>
+      <div class="form-field"><label>${t("form.to","To")}</label><input class="cr-transfer-to" value="${escapeHtml(rate.toLocation || "")}" placeholder="Luxor pier"></div>
+      <div class="form-field"><label class="cr-transfer-price-label">${t("form.amount","Price")} · ${currency}</label><input class="cr-transfer-amount" type="number" min="0" step="0.01" value="${escapeHtml(rate.amount ?? "")}"></div>
+      <input class="cr-cur" type="hidden" value="${currency}">
+      <div class="form-field"><label>${t("form.validFrom","Valid from")}</label><input class="cr-from" type="date" value="${dateVal(rate.validFrom)}"></div>
+      <div class="form-field"><label>${t("form.validTo","Valid to")}</label><input class="cr-to" type="date" value="${dateVal(rate.validTo)}"></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end"><button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-transfer-rate-row').remove()">${icon("trash-2")}${t("btn.remove","Remove")}</button></div>
+  </div>`;
+}
+
+function crAddProgramme() {
+  const host = document.getElementById("crProgrammeRows");
+  if (!host) return;
+  host.insertAdjacentHTML("beforeend", crProgrammeCardHtml({}));
+  refreshIcons(host.lastElementChild);
+}
+
+function crAddProgrammeDay(btn) {
+  const host = btn.closest(".cr-programme-card")?.querySelector(".cr-programme-days");
+  if (!host) return;
+  host.insertAdjacentHTML("beforeend", crProgrammeDayHtml({ day: host.children.length + 1 }));
+  refreshIcons(host.lastElementChild);
+}
+
+function crAddTransferRate() {
+  const host = document.getElementById("crTransferRateRows");
+  if (!host) return;
+  host.insertAdjacentHTML("beforeend", crTransferRateRowHtml({ market:"FOREIGN" }));
+  refreshIcons(host.lastElementChild);
+}
+
 function crAddScheduleRow() {
   const host = document.getElementById("crSchedRows");
   if (!host) return;
   host.insertAdjacentHTML("beforeend", crScheduleRowHtml({}));
   refreshIcons(host.lastElementChild);
+  crRefreshScheduleSelects();
+}
+
+function crRefreshScheduleSelects() {
+  document.querySelectorAll(".cr-rate-schedule,.cr-prog-schedule,.cr-transfer-schedule").forEach(select => {
+    const current = select.value;
+    select.innerHTML = crScheduleOptions(current);
+    select.value = current;
+  });
 }
 
 function crAddRateRow() {
@@ -4456,12 +4657,14 @@ function crDuplicateRate(btn) {
   const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
   const copy = {
     cabinName: g(".cr-cabin")?.value || "",
-    cabinType: g(".cr-cabin-type")?.value || "STANDARD",
-    market: g(".cr-market")?.value || null,
+    scheduleIndex: Number(g(".cr-rate-schedule")?.value || 0),
+    market: g(".cr-market")?.value || "FOREIGN",
     currency: g(".cr-cur")?.value || "USD",
     singlePrice: num(".cr-single"),
     doublePrice: num(".cr-double"),
     triplePrice: num(".cr-triple"),
+    childPrice: num(".cr-child"),
+    supplements: crCollectSupplements(row),
     notes: g(".cr-notes")?.value || "",
   };
   const tmp = document.createElement("div");
@@ -4474,7 +4677,7 @@ function crDuplicateRate(btn) {
   added.querySelector(".cr-from")?.focus();
 }
 
-/** Keep a long season list readable: cabin · market · From → To. */
+/** Keep a long season list readable: fare · schedule · market · period. */
 function crSyncRateTitles() {
   const rows = [...document.querySelectorAll("#crRateRows .cr-period-row")];
   rows.forEach((row, i) => {
@@ -4482,13 +4685,23 @@ function crSyncRateTitles() {
     const cabin = g(".cr-cabin")?.value.trim() || t("cruise.cabinName","Cabin");
     const marketEl = g(".cr-market");
     const market = marketEl?.options?.[marketEl.selectedIndex]?.textContent?.trim() || t("market.ALL","All markets");
+    const scheduleEl = g(".cr-rate-schedule");
+    const schedule = scheduleEl?.options?.[scheduleEl.selectedIndex]?.textContent?.trim() || "—";
     const from = g(".cr-from")?.value || "…";
     const to = g(".cr-to")?.value || "…";
     const title = row.querySelector(".cr-rate-title");
-    if (title) title.textContent = `${i + 1}. ${cabin} · ${market} · ${from} → ${to}`;
+    if (title) title.textContent = `${i + 1}. ${cabin} · ${schedule} · ${market} · ${from} → ${to}`;
   });
   const count = document.getElementById("crRatesCount");
   if (count) count.textContent = `${t("cruise.periodCount","Pricing periods")}: ${formatNumber(rows.length)}`;
+}
+
+function crCollectSupplements(owner) {
+  return [...owner.querySelectorAll(":scope .cr-supp-row")].map(row => ({
+    name: row.querySelector(".cr-supp-name")?.value.trim() || "",
+    type: row.querySelector(".cr-supp-type")?.value || "TEXT_ONLY",
+    amount: row.querySelector(".cr-supp-amount")?.value === "" ? null : Number(row.querySelector(".cr-supp-amount")?.value),
+  })).filter(row => row.name);
 }
 
 function crCollectScheduleRows() {
@@ -4507,12 +4720,14 @@ function crCollectRateRows() {
     const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
     return {
       cabinName: g(".cr-cabin")?.value.trim() || "",
-      cabinType: g(".cr-cabin-type")?.value,
-      market: g(".cr-market")?.value || null,
+      scheduleIndex: Number(g(".cr-rate-schedule")?.value || 0),
+      market: g(".cr-market")?.value || "FOREIGN",
       currency: g(".cr-cur")?.value || "USD",
       singlePrice: num(".cr-single"),
       doublePrice: num(".cr-double"),
       triplePrice: num(".cr-triple"),
+      childPrice: num(".cr-child"),
+      supplements: crCollectSupplements(row),
       validFrom: g(".cr-from")?.value || null,
       validTo: g(".cr-to")?.value || null,
       notes: g(".cr-notes")?.value.trim() || null,
@@ -4521,7 +4736,53 @@ function crCollectRateRows() {
   }).filter(row => row.cabinName);
 }
 
-function crValidateCatalogue({ schedules, rates }) {
+function crCollectProgrammeRates(card) {
+  return [...card.querySelectorAll(":scope > .cr-programme-rates > .cr-programme-rate")].map(row => {
+    const g = sel => row.querySelector(sel);
+    const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
+    return {
+      market: g(".cr-market")?.value || "FOREIGN",
+      currency: g(".cr-cur")?.value || "USD",
+      singlePrice: num(".cr-single"), doublePrice: num(".cr-double"), triplePrice: num(".cr-triple"),
+      childPrice: num(".cr-child"), supplements: crCollectSupplements(row),
+      validFrom: g(".cr-from")?.value || null, validTo: g(".cr-to")?.value || null,
+      isActive: true,
+    };
+  });
+}
+
+function crCollectProgrammes() {
+  return [...document.querySelectorAll("#crProgrammeRows .cr-programme-card")].map(card => ({
+    name: card.querySelector(".cr-prog-name")?.value.trim() || "",
+    nameAr: card.querySelector(".cr-prog-name-ar")?.value.trim() || null,
+    description: card.querySelector(".cr-prog-desc")?.value.trim() || null,
+    scheduleIndex: Number(card.querySelector(".cr-prog-schedule")?.value || 0),
+    transferFromName: card.querySelector(".cr-prog-transfer-from")?.value.trim() || null,
+    transferToName: card.querySelector(".cr-prog-transfer-to")?.value.trim() || null,
+    itinerary: [...card.querySelectorAll(".cr-programme-day")].map(day => ({
+      day: Number(day.querySelector(".cr-prog-day-num")?.value || 1),
+      title: day.querySelector(".cr-prog-day-title")?.value.trim() || null,
+      description: day.querySelector(".cr-prog-day-desc")?.value.trim() || null,
+    })),
+    rates: crCollectProgrammeRates(card),
+    isActive: true,
+  })).filter(programme => programme.name);
+}
+
+function crCollectTransferRates() {
+  return [...document.querySelectorAll("#crTransferRateRows .cr-transfer-rate-row")].map(row => ({
+    scheduleIndex: Number(row.querySelector(".cr-transfer-schedule")?.value || 0),
+    market: row.querySelector(".cr-market")?.value || "FOREIGN",
+    fromLocation: row.querySelector(".cr-transfer-from")?.value.trim() || "",
+    toLocation: row.querySelector(".cr-transfer-to")?.value.trim() || "",
+    amount: row.querySelector(".cr-transfer-amount")?.value === "" ? null : Number(row.querySelector(".cr-transfer-amount")?.value),
+    validFrom: row.querySelector(".cr-from")?.value || null,
+    validTo: row.querySelector(".cr-to")?.value || null,
+    isActive: true,
+  })).filter(rate => rate.fromLocation || rate.toLocation || rate.amount != null);
+}
+
+function crValidateCatalogue({ schedules, rates, programmes, transferRates }) {
   if (!schedules.length) {
     toast(t("cruise.scheduleRequired","Add at least one From / Back sailing schedule."), "error");
     return false;
@@ -4531,11 +4792,15 @@ function crValidateCatalogue({ schedules, rates }) {
     return false;
   }
   const showPrices = document.getElementById("m_cruises_showPriceToAgents")?.checked === true;
-  if (showPrices && !rates.length) {
-    toast(t("cruise.rateRequired","Add at least one cabin pricing period before showing prices to agents."), "error");
+  if (showPrices && !rates.length && !programmes.length) {
+    toast(t("cruise.rateRequired","Add at least one cruise-only fare or programme before showing prices to agents."), "error");
     return false;
   }
   for (const rate of rates) {
+    if (!schedules[rate.scheduleIndex]) {
+      toast(t("cruise.programmeScheduleRequired","Every fare needs a valid From / Back schedule."), "error");
+      return false;
+    }
     if (rate.validFrom && rate.validTo && new Date(rate.validTo) < new Date(rate.validFrom)) {
       toast(t("toast.invalidDateRange","Valid To must be after Valid From"), "error");
       return false;
@@ -4544,10 +4809,28 @@ function crValidateCatalogue({ schedules, rates }) {
       toast(t("cruise.occupancyPriceRequired","Enter at least one Single, Double or Triple price in every rate row."), "error");
       return false;
     }
-    const prices = [rate.singlePrice, rate.doublePrice, rate.triplePrice].filter(value => value != null);
+    const prices = [rate.singlePrice, rate.doublePrice, rate.triplePrice, rate.childPrice].filter(value => value != null);
     if (prices.some(value => !Number.isFinite(value) || value < 0)) {
       toast(t("toast.validationError","Check required fields"), "error");
       return false;
+    }
+  }
+  for (const programme of programmes) {
+    if (!schedules[programme.scheduleIndex] || !programme.name || !programme.transferFromName || !programme.transferToName) {
+      toast(t("cruise.programmeScheduleRequired","Every programme needs a name, From / Back schedule and included transfer route."), "error"); return false;
+    }
+    const markets = new Set(programme.rates.map(rate => rate.market));
+    if (!markets.has("EGYPTIAN") || !markets.has("FOREIGN")) {
+      toast(t("cruise.programmeMarketsRequired","Every programme needs Egyptian/EGP and Foreign/USD prices."), "error"); return false;
+    }
+    for (const rate of programme.rates) {
+      if (rate.validFrom && rate.validTo && new Date(rate.validTo) < new Date(rate.validFrom)) return toast(t("toast.invalidDateRange","Valid To must be after Valid From"), "error"), false;
+      if ([rate.singlePrice,rate.doublePrice,rate.triplePrice].every(value => value == null)) return toast(t("cruise.occupancyPriceRequired","Enter at least one Single, Double or Triple per-person price."), "error"), false;
+    }
+  }
+  for (const rate of transferRates) {
+    if (!schedules[rate.scheduleIndex] || !rate.fromLocation || !rate.toLocation || !Number.isFinite(rate.amount) || rate.amount < 0) {
+      toast(t("cruise.transferRateInvalid","Check transfer From, To, market, schedule and price."), "error"); return false;
     }
   }
   return true;
@@ -6267,17 +6550,29 @@ async function updateSimStatus(id, status) {
 }
 
 // ─── Offers CRUD ─────────────────────────────────────────────────────────────
+let offerAdminTab = "OFFER";
+
+function setOfferAdminTab(kind) {
+  offerAdminTab = kind === "PACKAGE" ? "PACKAGE" : "OFFER";
+  renderOffers();
+}
+
 async function renderOffers() {
   const capturedToken = state.renderToken;
   state.page = "offers";
-  const res = await apiFetch("/offers?limit=100");
+  const res = await apiFetch(`/offers?limit=100&kind=${offerAdminTab}`);
   if (state.renderToken !== capturedToken) return;
   const offers = res?.data || [];
+  const isPackage = offerAdminTab === "PACKAGE";
 
-  content(pageHeader(`<button class="btn btn-primary" onclick="openOfferForm()">${icon("plus")}&nbsp;New Offer</button>`) + `
+  content(pageHeader(`<button class="btn btn-primary" onclick="openOfferForm('', '${offerAdminTab}')">${icon("plus")}&nbsp;${isPackage ? "New Package" : "New Offer"}</button>`) + `
+    <div class="admin-tab-bar">
+      <button class="btn ${!isPackage ? "btn-primary" : "btn-outline"}" onclick="setOfferAdminTab('OFFER')">${icon("tag")}&nbsp;Offers</button>
+      <button class="btn ${isPackage ? "btn-primary" : "btn-outline"}" onclick="setOfferAdminTab('PACKAGE')">${icon("package")}&nbsp;Packages</button>
+    </div>
     <section class="table-card">
       <div class="table-scroll"><table class="data-table"><thead><tr>
-        <th>Title</th><th>Service</th><th>Valid From</th><th>Valid To</th><th>Priority</th><th>Status</th><th>Actions</th>
+        <th>Title</th><th>${isPackage ? "Components" : "Service"}</th><th>Valid From</th><th>Valid To</th><th>Priority</th><th>Status</th><th>Actions</th>
       </tr></thead><tbody>
         ${offers.map(o => `<tr>
           <td>
@@ -6285,13 +6580,15 @@ async function renderOffers() {
             ${o.titleAr ? `<div class="secondary-text">${escapeHtml(o.titleAr)}</div>` : ""}
             ${o.imageUrl ? `<div style="margin-top:4px"><img src="${escapeHtml(o.imageUrl)}" style="height:36px;border-radius:4px;object-fit:cover" onerror="this.style.display='none'"></div>` : ""}
           </td>
-          <td>${escapeHtml(o.serviceType || "—")}</td>
+          <td>${isPackage
+            ? `${(o.hotelItems || []).length} hotels · ${(o.transferItems || []).length} transfers · ${(o.activityItems || []).length} activities · ${(o.pricingPeriods || []).length} price periods`
+            : escapeHtml(o.serviceType || "—")}</td>
           <td>${o.validFrom ? formatDate(o.validFrom) : "—"}</td>
           <td>${o.validTo ? formatDate(o.validTo) : "—"}</td>
           <td><strong>${o.priority}</strong></td>
           <td>${statusBadge(o.isActive ? "ACTIVE" : "INACTIVE")}</td>
           <td style="display:flex;gap:6px">
-            <button class="btn btn-outline btn-sm" onclick="openOfferForm('${o.id}')">${icon("edit-2")}</button>
+            <button class="btn btn-outline btn-sm" onclick="openOfferForm('${o.id}', '${offerAdminTab}')">${icon("edit-2")}</button>
             <button class="btn btn-outline btn-sm" onclick="toggleOffer('${o.id}',${!o.isActive})">${o.isActive ? icon("eye-off") : icon("eye")}</button>
             <button class="btn btn-danger btn-sm" onclick="deleteOffer('${o.id}')">${icon("trash-2")}</button>
           </td>
@@ -6300,19 +6597,35 @@ async function renderOffers() {
     </section>`);
 }
 
-async function openOfferForm(id) {
+async function openOfferForm(id, forcedKind = offerAdminTab) {
   let o = null;
   if (id) {
     const res = await apiFetch(`/offers/${id}`);
     o = res?.data;
   }
+  const kind = o?.kind === "PACKAGE" || forcedKind === "PACKAGE" ? "PACKAGE" : "OFFER";
+  const isPackage = kind === "PACKAGE";
   const serviceTypes = ["hotels","transport","activities","security-approval","airport-assist","sim-card","cruises",""];
   const body = `<div class="form-grid">
+    <input type="hidden" id="ofKind" value="${kind}">
     <div class="form-field"><label>Title (EN) *</label><input id="ofTitle" value="${escapeHtml(o?.title||"")}"></div>
     <div class="form-field"><label>${t("offers.titleAr","Arabic Title")}</label><input id="ofTitleAr" value="${escapeHtml(o?.titleAr||"")}"></div>
     <div class="form-field full"><label>Description (EN)</label><textarea id="ofDesc" rows="2">${escapeHtml(o?.description||"")}</textarea></div>
     <div class="form-field full"><label>${t("offers.descAr","Arabic Description")}</label><textarea id="ofDescAr" rows="2">${escapeHtml(o?.descriptionAr||"")}</textarea></div>
     <div class="form-field full"><label>${t("offers.imageUrl","Image URL")}</label><input id="ofImg" value="${escapeHtml(o?.imageUrl||"")}" placeholder="https://..."></div>
+    ${isPackage ? `<div class="form-field full">
+      <label>Package Components</label>
+      <div class="admin-tab-bar" id="ofPackageTabs">
+        <button type="button" class="btn btn-primary" data-of-tab="hotels" onclick="ofShowPackageTab('hotels')">${icon("hotel")}&nbsp;Hotels</button>
+        <button type="button" class="btn btn-outline" data-of-tab="transfers" onclick="ofShowPackageTab('transfers')">${icon("car")}&nbsp;Transfers</button>
+        <button type="button" class="btn btn-outline" data-of-tab="activities" onclick="ofShowPackageTab('activities')">${icon("ticket")}&nbsp;Activities</button>
+        <button type="button" class="btn btn-outline" data-of-tab="pricing" onclick="ofShowPackageTab('pricing')">${icon("badge-dollar-sign")}&nbsp;Price Periods</button>
+      </div>
+      <div id="ofPanelHotels" class="of-package-panel"><div id="ofHotelRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddHotelRow()">${icon("plus")}&nbsp;Add hotel</button></div>
+      <div id="ofPanelTransfers" class="of-package-panel" style="display:none"><div id="ofTransferRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddTransferRow()">${icon("plus")}&nbsp;Add transfer</button></div>
+      <div id="ofPanelActivities" class="of-package-panel" style="display:none"><div id="ofActivityRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddActivityRow()">${icon("plus")}&nbsp;Add activity</button></div>
+      <div id="ofPanelPricing" class="of-package-panel" style="display:none"><div id="ofPricingRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddPricingRow()">${icon("plus")}&nbsp;Add price period</button></div>
+    </div>` : ""}
     <div class="form-field"><label>${t("offers.ctaLabel","CTA Label")} (EN)</label><input id="ofCtaLabel" value="${escapeHtml(o?.ctaLabel||"")}"></div>
     <div class="form-field"><label>CTA Label (AR)</label><input id="ofCtaLabelAr" value="${escapeHtml(o?.ctaLabelAr||"")}"></div>
     <div class="form-field"><label>${t("offers.ctaAction","CTA Page")}</label>
@@ -6330,13 +6643,110 @@ async function openOfferForm(id) {
     <div class="form-field"><label>${t("offers.priority","Priority")} (higher = shown first)</label><input id="ofPriority" type="number" value="${o?.priority??0}"></div>
     <div class="form-field"><label><input type="checkbox" id="ofActive" ${!o||o.isActive?"checked":""}> Active</label></div>
   </div>`;
-  openModal(id ? "Edit Offer" : "New Offer", body, `
+  openModal(id ? `Edit ${isPackage ? "Package" : "Offer"}` : `New ${isPackage ? "Package" : "Offer"}`, body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
     <button class="btn btn-primary" onclick="saveOffer('${id||""}')">${t("btn.save")}</button>`, "modal-wide");
+  if (isPackage) {
+    (o?.hotelItems || []).forEach(ofAddHotelRow);
+    (o?.transferItems || []).forEach(ofAddTransferRow);
+    (o?.activityItems || []).forEach(ofAddActivityRow);
+    (o?.pricingPeriods || []).forEach(ofAddPricingRow);
+    if (!(o?.hotelItems || []).length) ofAddHotelRow();
+    if (!(o?.pricingPeriods || []).length) ofAddPricingRow();
+  }
+  refreshIcons();
+}
+
+function ofShowPackageTab(tab) {
+  ["hotels","transfers","activities","pricing"].forEach(key => {
+    const panel = document.getElementById(`ofPanel${key[0].toUpperCase()}${key.slice(1)}`);
+    if (panel) panel.style.display = key === tab ? "block" : "none";
+  });
+  document.querySelectorAll("[data-of-tab]").forEach(btn => {
+    btn.classList.toggle("btn-primary", btn.dataset.ofTab === tab);
+    btn.classList.toggle("btn-outline", btn.dataset.ofTab !== tab);
+  });
+}
+
+function ofRowWrap(hostId, className, fields) {
+  const host = document.getElementById(hostId);
+  if (!host) return null;
+  const row = document.createElement("div");
+  row.className = `${className} panel`;
+  row.style.cssText = "padding:14px;margin:10px 0";
+  row.innerHTML = `<div class="form-grid">${fields}</div><button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.${className}').remove()">${icon("trash-2")}&nbsp;Remove</button>`;
+  host.appendChild(row);
+  refreshIcons(row);
+  return row;
+}
+
+function ofAddHotelRow(value = {}) {
+  ofRowWrap("ofHotelRows", "of-hotel-row", `
+    <div class="form-field"><label>Hotel name *</label><input class="of-hotel-name" value="${escapeHtml(value.name || "")}"></div>
+    <div class="form-field"><label>Hotel ID (optional)</label><input class="of-hotel-id" value="${escapeHtml(value.hotelId || "")}"></div>
+    <div class="form-field"><label>Nights</label><input type="number" min="1" class="of-hotel-nights" value="${escapeHtml(value.nights || 1)}"></div>
+    <div class="form-field"><label>Meal plan</label><input class="of-hotel-meal" value="${escapeHtml(value.mealPlan || "")}"></div>`);
+}
+
+function ofAddTransferRow(value = {}) {
+  ofRowWrap("ofTransferRows", "of-transfer-row", `
+    <div class="form-field"><label>From *</label><input class="of-transfer-from" value="${escapeHtml(value.from || "")}"></div>
+    <div class="form-field"><label>To *</label><input class="of-transfer-to" value="${escapeHtml(value.to || "")}"></div>
+    <div class="form-field"><label>Vehicle / notes</label><input class="of-transfer-vehicle" value="${escapeHtml(value.vehicleType || "")}"></div>`);
+}
+
+function ofAddActivityRow(value = {}) {
+  ofRowWrap("ofActivityRows", "of-activity-row", `
+    <div class="form-field"><label>Activity name *</label><input class="of-activity-name" value="${escapeHtml(value.name || "")}"></div>
+    <div class="form-field"><label>Activity ID (optional)</label><input class="of-activity-id" value="${escapeHtml(value.activityId || "")}"></div>
+    <div class="form-field"><label>Day / date</label><input class="of-activity-date" value="${escapeHtml(value.date || "")}" placeholder="Day 2 or 2026-10-01"></div>`);
+}
+
+function ofAddPricingRow(value = {}) {
+  const market = value.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
+  const row = ofRowWrap("ofPricingRows", "of-pricing-row", `
+    <div class="form-field"><label>From *</label><input type="date" class="of-price-from" value="${escapeHtml(value.validFrom ? String(value.validFrom).slice(0,10) : "")}"></div>
+    <div class="form-field"><label>To *</label><input type="date" class="of-price-to" value="${escapeHtml(value.validTo ? String(value.validTo).slice(0,10) : "")}"></div>
+    <div class="form-field"><label>Market *</label><select class="of-price-market" onchange="ofSyncPriceCurrency(this)"><option value="FOREIGN" ${market === "FOREIGN" ? "selected" : ""}>Foreign</option><option value="EGYPTIAN" ${market === "EGYPTIAN" ? "selected" : ""}>Egyptian</option></select></div>
+    <div class="form-field"><label>Currency</label><input class="of-price-currency" value="${market === "EGYPTIAN" ? "EGP" : "USD"}" readonly></div>
+    <div class="form-field"><label>Single *</label><input type="number" min="0" step="0.01" class="of-price-single" value="${escapeHtml(value.singlePrice ?? "")}"></div>
+    <div class="form-field"><label>Double *</label><input type="number" min="0" step="0.01" class="of-price-double" value="${escapeHtml(value.doublePrice ?? "")}"></div>
+    <div class="form-field"><label>Triple *</label><input type="number" min="0" step="0.01" class="of-price-triple" value="${escapeHtml(value.triplePrice ?? "")}"></div>
+    <div class="form-field"><label>Child *</label><input type="number" min="0" step="0.01" class="of-price-child" value="${escapeHtml(value.childPrice ?? "")}"></div>`);
+  if (row) ofSyncPriceCurrency(row.querySelector(".of-price-market"));
+}
+
+function ofSyncPriceCurrency(select) {
+  const currency = select?.closest(".of-pricing-row")?.querySelector(".of-price-currency");
+  if (currency) currency.value = select.value === "EGYPTIAN" ? "EGP" : "USD";
+}
+
+function ofCollectPackageRows() {
+  const numberOrNull = value => value === "" ? null : Number(value);
+  return {
+    hotelItems: [...document.querySelectorAll(".of-hotel-row")].map(row => ({
+      name: row.querySelector(".of-hotel-name").value.trim(), hotelId: row.querySelector(".of-hotel-id").value.trim() || undefined,
+      nights: Math.max(1, parseInt(row.querySelector(".of-hotel-nights").value || "1")), mealPlan: row.querySelector(".of-hotel-meal").value.trim() || undefined,
+    })).filter(row => row.name),
+    transferItems: [...document.querySelectorAll(".of-transfer-row")].map(row => ({
+      from: row.querySelector(".of-transfer-from").value.trim(), to: row.querySelector(".of-transfer-to").value.trim(), vehicleType: row.querySelector(".of-transfer-vehicle").value.trim() || undefined,
+    })).filter(row => row.from && row.to),
+    activityItems: [...document.querySelectorAll(".of-activity-row")].map(row => ({
+      name: row.querySelector(".of-activity-name").value.trim(), activityId: row.querySelector(".of-activity-id").value.trim() || undefined, date: row.querySelector(".of-activity-date").value.trim() || undefined,
+    })).filter(row => row.name),
+    pricingPeriods: [...document.querySelectorAll(".of-pricing-row")].map(row => ({
+      validFrom: row.querySelector(".of-price-from").value, validTo: row.querySelector(".of-price-to").value,
+      market: row.querySelector(".of-price-market").value, currency: row.querySelector(".of-price-currency").value,
+      singlePrice: numberOrNull(row.querySelector(".of-price-single").value), doublePrice: numberOrNull(row.querySelector(".of-price-double").value),
+      triplePrice: numberOrNull(row.querySelector(".of-price-triple").value), childPrice: numberOrNull(row.querySelector(".of-price-child").value),
+    })),
+  };
 }
 
 async function saveOffer(id) {
+  const kind = document.getElementById("ofKind").value;
   const payload = {
+    kind,
     title: document.getElementById("ofTitle").value.trim(),
     titleAr: document.getElementById("ofTitleAr").value.trim() || null,
     description: document.getElementById("ofDesc").value.trim() || null,
@@ -6351,7 +6761,14 @@ async function saveOffer(id) {
     priority: parseInt(document.getElementById("ofPriority").value || "0"),
     isActive: document.getElementById("ofActive").checked,
   };
+  if (kind === "PACKAGE") Object.assign(payload, ofCollectPackageRows());
   if (!payload.title) { toast(t("toast.validationError"), "error"); return; }
+  if (kind === "PACKAGE") {
+    if (!payload.hotelItems.length) { toast("Add at least one hotel to the package", "error"); ofShowPackageTab("hotels"); return; }
+    if (!payload.pricingPeriods.length || payload.pricingPeriods.some(period => !period.validFrom || !period.validTo || period.validTo < period.validFrom || [period.singlePrice, period.doublePrice, period.triplePrice, period.childPrice].some(price => price == null || price < 0))) {
+      toast("Complete every package price period and its Single / Double / Triple / Child prices", "error"); ofShowPackageTab("pricing"); return;
+    }
+  }
   const method = id ? "PATCH" : "POST";
   const url = id ? `/offers/${id}` : "/offers";
   const res = await apiFetch(url, { method, body: JSON.stringify(payload) });

@@ -830,8 +830,8 @@
   ar.nav.airportAssist = "مساعدة المطار";
   en.nav.simCard = "SIM Card";
   ar.nav.simCard = "شريحة الاتصال";
-  en.nav.offers = "Offers";
-  ar.nav.offers = "العروض";
+  en.nav.offers = "Offers & Packages";
+  ar.nav.offers = "العروض والباقات";
 
   en.page.securityApprovalTitle = "Security Approval";
   ar.page.securityApprovalTitle = "الموافقة الأمنية";
@@ -845,10 +845,10 @@
   ar.page.simCardTitle = "شريحة الاتصال";
   en.page.simCardSub = "Egyptian SIM packages for your clients";
   ar.page.simCardSub = "باقات شريحة الاتصال المصرية لعملائكم";
-  en.page.offersTitle = "Offers & Promotions";
-  ar.page.offersTitle = "العروض والترويج";
-  en.page.offersSub = "Manage promotional offers shown to company users";
-  ar.page.offersSub = "إدارة العروض الترويجية المعروضة لمستخدمي الشركات";
+  en.page.offersTitle = "Offers & Packages";
+  ar.page.offersTitle = "العروض والباقات";
+  en.page.offersSub = "Browse offers and ready-made travel packages";
+  ar.page.offersSub = "تصفح العروض وباقات السفر الجاهزة";
 
   // ── Security Approval types ────────────────────────────────────────────────
   en.securityApproval = {
@@ -2039,31 +2039,31 @@
       schedulesHelp: "When the boat leaves and when it is back.",
       sailingLegs: "From / Back schedule",
       sailingLegsHelp: "Add every sailing leg: the day it leaves, the day it returns and the number of nights.",
-      pricingPeriods: "Seasonal cabin pricing",
+      pricingPeriods: "Seasonal per-person pricing",
       periodCount: "Pricing periods",
-      pricingPeriodsHelp: "One row per cabin, market and period. Set From / To, then the Single, Double and Triple cabin prices.",
+      pricingPeriodsHelp: "One row per fare plan, sailing leg, market and period. Single, Double, Triple and Child are all per-person prices.",
       catalogueSaveFailed: "The cruise was saved, but its periods could not be saved. Please try again.",
       scheduleRequired: "Add at least one From / Back sailing schedule.",
-      rateRequired: "Add at least one cabin pricing period before showing prices to agents.",
+      rateRequired: "Add at least one per-person fare period or programme before showing prices to agents.",
       occupancyPriceRequired: "Enter at least one Single, Double or Triple price in every rate row.",
       from: "From",
       back: "Back",
       departureDay: "Departs",
       returnDay: "Returns",
       nights: "Nights",
-      cabinRates: "Cabin Rates",
-      cabinRatesHelp: "One row per cabin category, market and period — priced by how many share the cabin.",
-      cabinName: "Cabin",
-      addCabinRate: "Add cabin rate",
+      cabinRates: "Per-person fares",
+      cabinRatesHelp: "One row per fare plan, sailing leg, market and period — every occupancy amount is per person.",
+      cabinName: "Fare plan",
+      addCabinRate: "Add fare period",
       addSchedule: "Add departure",
       occupancy: "Occupancy",
       cabins: "Cabins",
       addTours: "Add Tours / Activities",
       addToursHelp: "Excursions to run alongside the cruise. The description is shown to your client.",
       addTour: "Add tour",
-      noRates: "No cabin rates set yet",
-      ratesHidden: "Cabin rates for this boat are quoted by the operations team — send a request and they will price it.",
-      pickCabinHelp: "Pick the cabin and how many share it — the price is per cabin, per sailing.",
+      noRates: "No per-person fares set yet",
+      ratesHidden: "Per-person fares for this boat are quoted by the operations team — send a request and they will price it.",
+      pickCabinHelp: "Pick the fare plan and sharing basis — every displayed amount is per person, per sailing.",
       cabinsHint: "Worked out from the passenger count — change it if they want the cabins split differently.",
       itinerary: "Day-by-day programme",
       day: "Day",
@@ -2078,7 +2078,7 @@
       transferIncludedOn: "The fare collects the guests",
       transferNote: "Transfer note",
       transferNoteAr: "Transfer note (Arabic)",
-      showPricesOn: "Agents may see the cabin rates",
+      showPricesOn: "Agents may see the per-person fares",
       allowQuoteOn: "Agents may request a quote",
       gallery: "Photos",
     });
@@ -2087,31 +2087,31 @@
       schedulesHelp: "متى تتحرك الرحلة ومتى تعود.",
       sailingLegs: "مواعيد التحرك والعودة",
       sailingLegsHelp: "أضف كل رحلة: يوم التحرك، يوم العودة، وعدد الليالي.",
-      pricingPeriods: "فترات تسعير الكبائن",
+      pricingPeriods: "فترات التسعير للفرد",
       periodCount: "فترات التسعير",
-      pricingPeriodsHelp: "صف لكل كابينة وسوق وفترة. حدّد من وإلى ثم أسعار السنجل والدبل والتربل.",
+      pricingPeriodsHelp: "صف لكل خطة سعر وموعد رحلة وسوق وفترة. أسعار السنجل والدبل والتربل والأطفال كلها للفرد.",
       catalogueSaveFailed: "تم حفظ الكروز، لكن تعذر حفظ الفترات. حاول مرة أخرى.",
       scheduleRequired: "أضف موعد تحرك وعودة واحدًا على الأقل.",
-      rateRequired: "أضف فترة تسعير كابينة واحدة على الأقل قبل إظهار الأسعار للوكلاء.",
+      rateRequired: "أضف فترة سعر للفرد أو برنامجًا واحدًا على الأقل قبل إظهار الأسعار للوكلاء.",
       occupancyPriceRequired: "أدخل سعر سنجل أو دبل أو تربل واحدًا على الأقل في كل صف.",
       from: "من",
       back: "العودة",
       departureDay: "يوم التحرك",
       returnDay: "يوم العودة",
       nights: "عدد الليالي",
-      cabinRates: "أسعار الكبائن",
-      cabinRatesHelp: "صف لكل نوع كابينة وسوق وفترة — بسعر حسب عدد المشاركين في الكابينة.",
-      cabinName: "الكابينة",
-      addCabinRate: "أضف سعر كابينة",
+      cabinRates: "الأسعار للفرد",
+      cabinRatesHelp: "صف لكل خطة سعر وموعد رحلة وسوق وفترة — وكل سعر إشغال محسوب للفرد.",
+      cabinName: "خطة السعر",
+      addCabinRate: "أضف فترة سعر",
       addSchedule: "أضف موعد تحرك",
       occupancy: "نوع الإقامة",
       cabins: "عدد الكبائن",
       addTours: "أضف تورز / أنشطة",
       addToursHelp: "رحلات تُنفَّذ بجانب الكروز، ويظهر شرحها للعميل.",
       addTour: "أضف تور",
-      noRates: "لم تُحدَّد أسعار كبائن بعد",
-      ratesHidden: "أسعار كبائن هذه الرحلة يحددها فريق العمليات — أرسل طلبًا وسيتم تسعيرها لك.",
-      pickCabinHelp: "اختر الكابينة وعدد المقيمين بها — السعر لكل كابينة في الرحلة الواحدة.",
+      noRates: "لم تُحدَّد أسعار للفرد بعد",
+      ratesHidden: "أسعار هذه الرحلة للفرد يحددها فريق العمليات — أرسل طلبًا وسيتم تسعيرها لك.",
+      pickCabinHelp: "اختر خطة السعر ونوع الإقامة — كل مبلغ ظاهر محسوب للفرد في الرحلة.",
       cabinsHint: "محسوب من عدد الركاب — غيّره لو العميل يريد توزيع الكبائن بشكل مختلف.",
       itinerary: "البرنامج اليومي",
       day: "اليوم",
@@ -2126,7 +2126,7 @@
       transferIncludedOn: "السعر يشمل استلام الضيوف",
       transferNote: "ملاحظة الانتقالات",
       transferNoteAr: "ملاحظة الانتقالات (بالعربية)",
-      showPricesOn: "السماح للوكلاء برؤية أسعار الكبائن",
+      showPricesOn: "السماح للوكلاء برؤية الأسعار للفرد",
       allowQuoteOn: "السماح للوكلاء بطلب عرض سعر",
       gallery: "الصور",
     });
@@ -2163,13 +2163,13 @@
       activityReturnTime: "When the trip drops the guests back — it fills in the pickup time of a return transfer.",
       inclusions: "One line per thing. Mark each as included or not included.",
       photoTag: "Group photos under a name your agents will recognise — Sea View, Single Room, Aqua Park.",
-      cruiseRates: "One row per cabin category, market and period. Leave a price blank when the cabin is not sold that way.",
+      cruiseRates: "One row per fare plan, sailing leg, market and period. Every Single, Double, Triple and Child amount is per person.",
       cruiseSchedule: "Which day the boat leaves and which day it is back. Add one row per leg.",
       cruiseItinerary: "One row per day — where the boat is and what the guests do. Shown to the agent and carried into the quote.",
       activityItinerary: "One row per stop, in the order the guests do them. Leave every row on day 1 for a day trip; number them 1, 2, 3… for a multi-day package.",
       cruiseTransfer: "Tick this when the fare already collects the guests. When it does not, the company portal offers to add a transfer.",
       cruiseTransferNote: "What the fare does and does not cover — e.g. \"Airport to pier only\".",
-      cruiseShowPrices: "Off, the agent sees no cabin rates at all — no Single, Double or Triple — only \"price on request\".",
+      cruiseShowPrices: "Off, the agent sees no per-person fares at all — no Single, Double, Triple or Child — only \"price on request\".",
     });
     Object.assign(ar.help, {
       feeNationality: "الجنسية التي ينطبق عليها هذا السعر. اتركه فارغًا ليشمل كل الجنسيات.",
@@ -2177,13 +2177,13 @@
       activityReturnTime: "موعد رجوع الضيوف من الرحلة — يُستخدم لملء موعد استلام ترانسفير العودة.",
       inclusions: "سطر لكل بند، مع تحديد إن كان مشمولًا أو غير مشمول.",
       photoTag: "اجمع الصور تحت اسم يعرفه وكلاؤك — سي فيو، غرفة سنجل، أكوا بارك.",
-      cruiseRates: "صف لكل نوع كابينة وسوق وفترة. اترك السعر فارغًا إذا لم تكن الكابينة تُباع بهذا الشكل.",
+      cruiseRates: "صف لكل خطة سعر وموعد رحلة وسوق وفترة. كل مبلغ سنجل ودبل وتربل وأطفال محسوب للفرد.",
       cruiseSchedule: "يوم تحرك المركب ويوم عودته. أضف صفًا لكل رحلة.",
       cruiseItinerary: "صف لكل يوم — أين تكون المركب وماذا يفعل الضيوف. يظهر للوكيل ويُرسل مع طلب عرض السعر.",
       activityItinerary: "صف لكل محطة، بالترتيب الذي ينفّذه الضيوف. اترك كل الصفوف على اليوم ١ لرحلة اليوم الواحد؛ ورقّمها ١، ٢، ٣… للبرنامج متعدد الأيام.",
       cruiseTransfer: "فعّل هذا إذا كان السعر يشمل استلام الضيوف بالفعل. وإن لم يكن، تعرض بوابة الشركات إضافة ترانسفير.",
       cruiseTransferNote: "ما الذي يشمله السعر وما لا يشمله — مثال: «من المطار إلى الميناء فقط».",
-      cruiseShowPrices: "إذا كان مغلقًا، لن يرى الوكيل أي أسعار كبائن إطلاقًا — لا سنجل ولا دبل ولا تربل — بل «السعر عند الطلب» فقط.",
+      cruiseShowPrices: "إذا كان مغلقًا، لن يرى الوكيل أي أسعار للفرد إطلاقًا — لا سنجل ولا دبل ولا تربل ولا أطفال — بل «السعر عند الطلب» فقط.",
     });
     en.activityAdmin = en.activityAdmin || {}; ar.activityAdmin = ar.activityAdmin || {};
     Object.assign(en.activityAdmin, {

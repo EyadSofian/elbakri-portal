@@ -8257,7 +8257,7 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
 
 .cr-quote-line:empty { display: none; }
 .cr-quote-what { font-size: 12px; color: var(--text-secondary); }
-.cr-quote-total { font-size: 18px; font-weight: 800; color: var(--brand-navy-2, var(--text-primary)); }
+.cr-quote-total { font-size: 18px; font-weight: 800; color: var(--text-primary); }
 
 /* Admin: one cabin rate row / one sailing leg. */
 .cr-row {

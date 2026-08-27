@@ -953,6 +953,8 @@ model NileCruise {
   bookings          CruiseBooking[]
   schedules         CruiseSchedule[]
   cabinRates        CruiseCabinRate[]
+  programmes        CruiseProgramme[]
+  transferRates     CruiseTransferRate[]
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -974,6 +976,9 @@ model CruiseSchedule {
   isActive     Boolean         @default(true)
   displayOrder Int             @default(0)
   bookings     CruiseBooking[]
+  rates        CruiseCabinRate[]
+  programmes   CruiseProgramme[]
+  transferRates CruiseTransferRate[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -991,13 +996,22 @@ model CruiseCabinRate {
   id            String          @id @default(cuid())
   cruiseId      String
   cruise        NileCruise      @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
-  cabinName     String // free text — e.g. "Standard Cabin", "Royal Suite"
+  scheduleId    String?
+  schedule      CruiseSchedule? @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  // Kept under its legacy column name so old rows and exports survive. In the
+  // new editor this is the fare-plan label ("Cruise only", "Deluxe deck"),
+  // never a multiplier: every occupancy amount below is PER PERSON.
+  cabinName     String
   cabinType     CabinType       @default(STANDARD)
   market        Market? // null = applies to ALL markets
   currency      String          @default("USD")
   singlePrice   Decimal?        @db.Decimal(10, 2)
   doublePrice   Decimal?        @db.Decimal(10, 2)
   triplePrice   Decimal?        @db.Decimal(10, 2)
+  childPrice    Decimal?        @db.Decimal(10, 2)
+  // Same four supplement modes as hotels. Stored with the rate so duplicating
+  // a season keeps its own extras without creating global cross-season rows.
+  supplements   Json?
   validFrom     DateTime?
   validTo       DateTime?
   isActive      Boolean         @default(true)
@@ -1009,6 +1023,92 @@ model CruiseCabinRate {
 
   @@index([cruiseId])
   @@index([cruiseId, isActive])
+  @@index([scheduleId])
+}
+
+// A programme belongs to one exact sailing leg. A Monday → Thursday three-
+// night itinerary must never appear against a four-night leg, and its prices
+// are therefore nested under the programme rather than the boat.
+model CruiseProgramme {
+  id                String                 @id @default(cuid())
+  cruiseId          String
+  cruise            NileCruise             @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
+  scheduleId        String
+  schedule          CruiseSchedule         @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  name              String
+  nameAr            String?
+  description       String?                @db.Text
+  descriptionAr     String?                @db.Text
+  itinerary         Json?
+  // Selecting a programme includes its transfer. Cruise-only customers may
+  // instead buy one of CruiseTransferRate's explicitly priced routes.
+  transferIncluded  Boolean                @default(true)
+  transferFromName  String?
+  transferToName    String?
+  isActive          Boolean                @default(true)
+  displayOrder      Int                    @default(0)
+  rates             CruiseProgrammeRate[]
+  bookings          CruiseBooking[]
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  @@index([cruiseId])
+  @@index([scheduleId])
+  @@index([cruiseId, isActive])
+}
+
+// Exactly two audiences are sold for a programme: Egyptian in EGP and everyone
+// else in USD. Single / Double / Triple describe the sharing arrangement but
+// remain per-person prices; children have their own per-person amount.
+model CruiseProgrammeRate {
+  id            String           @id @default(cuid())
+  programmeId   String
+  programme     CruiseProgramme  @relation(fields: [programmeId], references: [id], onDelete: Cascade)
+  market        Market
+  currency      String
+  singlePrice   Decimal?         @db.Decimal(10, 2)
+  doublePrice   Decimal?         @db.Decimal(10, 2)
+  triplePrice   Decimal?         @db.Decimal(10, 2)
+  childPrice    Decimal?         @db.Decimal(10, 2)
+  supplements   Json?
+  validFrom     DateTime?
+  validTo       DateTime?
+  notes         String?          @db.Text
+  isActive      Boolean          @default(true)
+  displayOrder  Int              @default(0)
+  bookings      CruiseBooking[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([programmeId])
+  @@index([programmeId, market, isActive])
+}
+
+// Optional transfer sold only with "Cruise only". A programme's transfer is
+// already included, so the client can never be charged for both.
+model CruiseTransferRate {
+  id            String          @id @default(cuid())
+  cruiseId      String
+  cruise        NileCruise      @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
+  scheduleId    String
+  schedule      CruiseSchedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  market        Market
+  fromLocation  String
+  toLocation    String
+  amount        Decimal         @db.Decimal(10, 2)
+  currency      String
+  validFrom     DateTime?
+  validTo       DateTime?
+  notes         String?         @db.Text
+  isActive      Boolean         @default(true)
+  displayOrder  Int             @default(0)
+  bookings      CruiseBooking[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([cruiseId])
+  @@index([scheduleId])
+  @@index([cruiseId, market, isActive])
 }
 
 model CruiseBooking {
@@ -1028,6 +1128,15 @@ model CruiseBooking {
   // was the old way and it silently repriced whenever a rate was renamed.
   cabinRateId        String?
   cabinRate          CruiseCabinRate?        @relation(fields: [cabinRateId], references: [id], onDelete: SetNull)
+  programmeId        String?
+  programme          CruiseProgramme?        @relation(fields: [programmeId], references: [id], onDelete: SetNull)
+  programmeRateId    String?
+  programmeRate      CruiseProgrammeRate?    @relation(fields: [programmeRateId], references: [id], onDelete: SetNull)
+  transferRateId     String?
+  transferRate       CruiseTransferRate?     @relation(fields: [transferRateId], references: [id], onDelete: SetNull)
+  selectedSupplements Json?
+  adultUnitPrice     Decimal?                 @db.Decimal(10, 2)
+  childUnitPrice     Decimal?                 @db.Decimal(10, 2)
   occupancy          String? // SINGLE | DOUBLE | TRIPLE
   cabinCount         Int                     @default(1)
   scheduleId         String?
@@ -1068,6 +1177,9 @@ model CruiseBooking {
   @@index([status])
   @@index([confirmedById])
   @@index([cabinRateId])
+  @@index([programmeId])
+  @@index([programmeRateId])
+  @@index([transferRateId])
   @@index([scheduleId])
 }
 
@@ -1672,6 +1784,13 @@ model Offer {
   description   String?   @db.Text
   descriptionAr String?   @db.Text
   imageUrl      String?   @db.Text
+  // OFFER and PACKAGE share the catalogue surface but are intentionally shown
+  // in separate tabs to admins and clients.
+  kind          String    @default("OFFER")
+  hotelItems    Json?
+  transferItems Json?
+  activityItems Json?
+  pricingPeriods Json?
   serviceType   String?
   ctaLabel      String?
   ctaLabelAr    String?

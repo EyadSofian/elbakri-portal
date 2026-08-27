@@ -112,14 +112,32 @@ export const DEMO_QUOTES = [
 ];
 
 export const DEMO_OFFERS = [
-  { id: 'o1', title: 'Red Sea — 20% off August', titleAr: 'البحر الأحمر — خصم ٢٠٪', description: 'Selected 5-star resorts in Hurghada and Marsa Alam.', descriptionAr: 'منتجعات ٥ نجوم مختارة في الغردقة ومرسى علم.', imageUrl: null, validFrom: '2026-08-01', validTo: '2026-08-31', isActive: true, ctaLabel: 'Browse hotels', ctaAction: 'hotels' },
-  { id: 'o2', title: 'Nile cruise early booking', titleAr: 'حجز مبكر لرحلات النيل', description: 'Book 60 days ahead for a free cabin upgrade.', descriptionAr: 'احجز قبل ٦٠ يوم واحصل على ترقية كابينة مجانية.', imageUrl: null, validFrom: '2026-08-01', validTo: '2026-10-31', isActive: true, ctaLabel: 'See cruises', ctaAction: 'cruises' },
+  { id: 'o1', kind: 'OFFER', title: 'Red Sea — 20% off August', titleAr: 'البحر الأحمر — خصم ٢٠٪', description: 'Selected 5-star resorts in Hurghada and Marsa Alam.', descriptionAr: 'منتجعات ٥ نجوم مختارة في الغردقة ومرسى علم.', imageUrl: null, validFrom: '2026-08-01', validTo: '2026-08-31', priority: 0, isActive: true, ctaLabel: 'Browse hotels', ctaAction: 'hotels' },
+  { id: 'o2', kind: 'OFFER', title: 'Nile cruise early booking', titleAr: 'حجز مبكر لرحلات النيل', description: 'Book 60 days ahead for an upgrade.', descriptionAr: 'احجز قبل ٦٠ يوم واحصل على ترقية.', imageUrl: null, validFrom: '2026-08-01', validTo: '2026-10-31', priority: 0, isActive: true, ctaLabel: 'See cruises', ctaAction: 'cruises' },
+  { id: 'p1', kind: 'PACKAGE', title: 'Cairo & Nile Highlights', titleAr: 'باقة القاهرة والنيل', description: 'Hotel, transfers and activities in one ready package.', descriptionAr: 'فندق وانتقالات وأنشطة في باقة واحدة.', imageUrl: null, validFrom: '2026-08-01', validTo: '2026-12-31', priority: 0, isActive: true,
+    hotelItems: [{ name: 'Cairo Downtown Hotel', nights: 3, mealPlan: 'BB' }],
+    transferItems: [{ from: 'Cairo Airport', to: 'Hotel', vehicleType: 'Sedan' }],
+    activityItems: [{ name: 'Pyramids & Sphinx', date: 'Day 2' }],
+    pricingPeriods: [
+      { validFrom: '2026-08-01', validTo: '2026-12-31', market: 'FOREIGN', currency: 'USD', singlePrice: 820, doublePrice: 610, triplePrice: 540, childPrice: 280 },
+      { validFrom: '2026-08-01', validTo: '2026-12-31', market: 'EGYPTIAN', currency: 'EGP', singlePrice: 26500, doublePrice: 19800, triplePrice: 17400, childPrice: 8900 },
+    ] },
 ];
 
 export const DEMO_CRUISES = [
-  { id: 'cr1', name: 'MS Nile Dawn', nameAr: 'إم إس نايل داون', shipType: 'DELUXE', route: 'LUXOR_ASWAN', nights: 4, basePrice: 815, currency: 'USD', isActive: true, cabins: 62, description: 'Luxor to Aswan, four nights.' },
-  { id: 'cr2', name: 'MS Royal Lotus', nameAr: 'إم إس رويال لوتس', shipType: 'LUXURY', route: 'ASWAN_LUXOR', nights: 3, basePrice: 690, currency: 'USD', isActive: true, cabins: 48, description: 'Aswan to Luxor, three nights.' },
-  { id: 'cr3', name: 'MS Sun Ray', nameAr: 'إم إس صن راي', shipType: 'STANDARD', route: 'LUXOR_ASWAN', nights: 4, basePrice: 540, currency: 'USD', isActive: true, cabins: 54, description: 'Value option, four nights.' },
+  { id: 'cr1', name: 'MS Nile Dawn', nameAr: 'إم إس نايل داون', shipType: 'CRUISE', route: 'LUXOR_ASWAN', currency: 'USD', isActive: true, cabins: 62, description: 'Luxor to Aswan.', showPriceToAgents: true, priceVisible: true, hasRateMatrix: true, priceFrom: 510,
+    schedules: [{ id: 'sc1', departureDay: 'MONDAY', returnDay: 'FRIDAY', nights: 4, label: 'Four nights', isActive: true }],
+    cabinRates: [{ id: 'crr1', scheduleId: 'sc1', cabinName: 'Cruise only · Autumn', market: 'FOREIGN', currency: 'USD', singlePrice: 760, doublePrice: 590, triplePrice: 510, childPrice: 270, supplements: [{ name: 'Upper deck', type: 'FIXED_AMOUNT', amount: 35, currency: 'USD' }] }],
+    programmes: [{ id: 'cp1', scheduleId: 'sc1', name: 'Classic 4-night programme', nameAr: 'برنامج كلاسيك ٤ ليالي', transferFromName: 'Luxor Airport', transferToName: 'Nile Cruise Pier', transferIncluded: true, hasRates: true,
+      itinerary: [{ day: 1, title: 'Luxor embarkation' }, { day: 2, title: 'Edfu & Kom Ombo' }, { day: 4, title: 'Aswan' }],
+      rates: [
+        { id: 'cpr1-egp', market: 'EGYPTIAN', currency: 'EGP', singlePrice: 46000, doublePrice: 36000, triplePrice: 32000, childPrice: 16500, supplements: [] },
+        { id: 'cpr1', market: 'FOREIGN', currency: 'USD', singlePrice: 920, doublePrice: 720, triplePrice: 640, childPrice: 330, supplements: [] },
+      ] }],
+    transferRates: [{ id: 'ctr1', scheduleId: 'sc1', market: 'FOREIGN', fromLocation: 'Luxor Airport', toLocation: 'Nile Cruise Pier', amount: 45, currency: 'USD' }] },
+  { id: 'cr2', name: 'MS Royal Lotus', nameAr: 'إم إس رويال لوتس', shipType: 'CRUISE', route: 'ASWAN_LUXOR', currency: 'USD', isActive: true, cabins: 48, description: 'Aswan to Luxor.', showPriceToAgents: true, priceVisible: true, hasRateMatrix: true, priceFrom: 460,
+    schedules: [{ id: 'sc2', departureDay: 'FRIDAY', returnDay: 'MONDAY', nights: 3, isActive: true }],
+    cabinRates: [{ id: 'crr2', scheduleId: 'sc2', cabinName: 'Cruise only', market: 'FOREIGN', currency: 'USD', singlePrice: 680, doublePrice: 520, triplePrice: 460, childPrice: 240, supplements: [] }], programmes: [], transferRates: [] },
 ];
 
 export const DEMO_ACTIVITIES = [

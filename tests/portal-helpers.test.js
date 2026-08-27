@@ -212,14 +212,14 @@ test('portal: crCabinsNeeded treats a nonsense party as one cabin, not zero', ()
 });
 
 test('portal: an unpriced boat says the rates are hidden, not that none exist', () => {
-  // "No cabin rates set yet" was a lie whenever the boat WAS priced and the
+  // "No per-person fares set yet" is a lie whenever the boat IS priced and the
   // rates were simply not shown to this agent.
   const hidden = portal.cruiseCabinPicker({ hasRateMatrix: true, priceVisible: false }, []);
   assert.match(hidden, /operations team/);
-  assert.doesNotMatch(hidden, /No cabin rates set yet/);
+  assert.doesNotMatch(hidden, /No per-person fares set yet/);
 
   const unpriced = portal.cruiseCabinPicker({ hasRateMatrix: false, priceVisible: true }, []);
-  assert.match(unpriced, /No cabin rates set yet/);
+  assert.match(unpriced, /No per-person fares set yet/);
 
   // Prices hidden from this agent: they cannot know whether the boat is priced,
   // so "nobody has priced it" is not ours to say either way.
@@ -253,6 +253,23 @@ test('portal: a cabin name is escaped, never injected', () => {
   ]);
   assert.doesNotMatch(html, /<img onerror/);
   assert.match(html, /&lt;img/);
+});
+
+test('portal: the current cruise picker labels occupancy prices per person and shows child price', () => {
+  const html = portal.crPerPersonFarePicker({}, [
+    { id: 'r1', cabinName: 'Winter', currency: 'USD', singlePrice: 900, doublePrice: 600, triplePrice: 500, childPrice: 225 },
+  ]);
+  assert.match(html, /per person/);
+  assert.match(html, /per child/);
+  assert.match(html, /value="r1\|DOUBLE"/);
+  assert.doesNotMatch(html, /per cabin/);
+});
+
+test('portal: a programme fare with no child rate visibly stays unpriced', () => {
+  const html = portal.crPerPersonFarePicker({}, [
+    { id: 'r1', cabinName: 'Summer', currency: 'USD', doublePrice: 600, childPrice: null },
+  ]);
+  assert.match(html, /<td>—<\/td>/);
 });
 
 // ── The day-by-day programme ────────────────────────────────────────────────

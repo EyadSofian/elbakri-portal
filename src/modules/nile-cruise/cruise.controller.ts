@@ -1,4 +1,4 @@
-import { BookingStatus, CruiseRoute, ShipType } from '@prisma/client';
+import { BookingStatus, CruiseRoute, Prisma, ShipType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
@@ -12,10 +12,12 @@ import { buildInvoiceTotals } from '../../shared/invoicing';
 import { debitWallet, refundWallet } from '../../shared/wallet';
 import {
   Occupancy,
+  applyCruiseSupplements,
   applicableRates,
+  cruiseAudience,
   fromPrice,
   isOccupancy,
-  priceCruiseBooking,
+  priceCruisePerPerson,
 } from '../../shared/cruise-rates';
 import { readItinerary } from '../../shared/itinerary';
 import { readTransferAddOn } from '../../shared/transfer-addon';
@@ -23,6 +25,9 @@ import { readTransferAddOn } from '../../shared/transfer-addon';
 const cruiseInclude = {
   cruise: { select: { id: true, name: true, route: true, shipType: true } },
   cabinRate: { select: { id: true, cabinName: true, cabinType: true, currency: true } },
+  programme: { select: { id: true, name: true, nameAr: true, transferFromName: true, transferToName: true } },
+  programmeRate: { select: { id: true, market: true, currency: true } },
+  transferRate: { select: { id: true, fromLocation: true, toLocation: true, amount: true, currency: true } },
   schedule: { select: { id: true, departureDay: true, returnDay: true, nights: true, label: true, labelAr: true } },
   addOns: { orderBy: { displayOrder: 'asc' as const } },
   company: { select: { id: true, name: true, email: true } },
@@ -54,6 +59,12 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
     include: {
       cabinRates: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
       schedules: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
+      programmes: {
+        where: { isActive: true },
+        include: { rates: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] } },
+        orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+      },
+      transferRates: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
     },
   });
   // The programme is normalised on the way out as well as in: a boat whose rows
@@ -62,7 +73,14 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
   if (caller.role === 'SUPERADMIN') {
     res.json({
       success: true,
-      data: cruises.map((cruise) => ({ ...cruise, itinerary: readItinerary(cruise.itinerary) })),
+      data: cruises.map((cruise) => ({
+        ...cruise,
+        itinerary: readItinerary(cruise.itinerary),
+        programmes: cruise.programmes.map((programme) => ({
+          ...programme,
+          itinerary: readItinerary(programme.itinerary),
+        })),
+      })),
     });
     return;
   }
@@ -73,20 +91,50 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
   const sailingDate = Number.isNaN(on.getTime()) ? new Date() : on;
 
   const { market } = await resolvePriceContext(req);
+  const cruiseMarket = cruiseAudience(market) === 'EGYPTIAN' ? 'EGYPTIAN' : 'FOREIGN';
   const data = cruises.map((cruise) => {
     // The period rows are the price. The retired headline amount and its old
     // generic market overrides never substitute for a missing cabin period.
-    const rates = applicableRates(cruise.cabinRates, market, sailingDate);
-    const cheapest = fromPrice(cruise.cabinRates, market, sailingDate);
+    const rates = applicableRates(cruise.cabinRates, cruiseMarket, sailingDate);
+    const programmes = cruise.programmes.map((programme) => {
+      const programmeRates = applicableRates(programme.rates.map((rate) => ({
+        ...rate,
+        cabinName: programme.name,
+      })), cruiseMarket, sailingDate);
+      return {
+        ...programme,
+        itinerary: readItinerary(programme.itinerary),
+        rates: cruise.showPriceToAgents ? programmeRates : [],
+        hasRates: programmeRates.length > 0,
+      };
+    });
+    const transferRates = cruise.transferRates.filter((rate) => {
+      if (rate.market !== cruiseMarket) return false;
+      if (rate.validFrom && rate.validFrom > sailingDate) return false;
+      if (rate.validTo && rate.validTo < sailingDate) return false;
+      return true;
+    });
+    const baseCheapest = fromPrice(cruise.cabinRates, cruiseMarket, sailingDate);
+    const programmeCheapest = programmes.reduce<{ amount: Decimal; currency: string } | null>((best, programme) => {
+      const candidate = fromPrice((programme.rates || []).map((rate) => ({ ...rate, cabinName: programme.name })), cruiseMarket, sailingDate);
+      if (!candidate) return best;
+      return !best || candidate.amount.lt(best.amount) ? candidate : best;
+    }, null);
+    const cheapest = !baseCheapest ? programmeCheapest
+      : !programmeCheapest || baseCheapest.amount.lte(programmeCheapest.amount) ? baseCheapest : programmeCheapest;
     return {
       ...cruise,
       itinerary: readItinerary(cruise.itinerary),
       cabinRates: cruise.showPriceToAgents ? rates : [],
+      programmes,
+      transferRates: cruise.showPriceToAgents ? transferRates : [],
+      pricingAudience: cruiseMarket,
+      pricingBasis: 'PER_PERSON',
       // Whether this boat HAS a priced rate table, regardless of whether the
       // agent may see it. Without this the portal cannot tell "nobody has
       // priced this boat" from "the prices are hidden from you", and it told
       // the agent the first when it meant the second.
-      hasRateMatrix: rates.length > 0,
+      hasRateMatrix: rates.length > 0 || programmes.some((programme) => programme.hasRates),
       priceFrom: cruise.showPriceToAgents ? (cheapest?.amount ?? null) : null,
       currency: cheapest?.currency ?? cruise.currency,
       priceVisible: cruise.showPriceToAgents,
@@ -221,6 +269,10 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     // what the row is multiplied by. `totalAmount` stays accepted for the boats
     // that have no rate table yet, where the desk still types the figure.
     cabinRateId?: string;
+    programmeId?: string;
+    programmeRateId?: string;
+    transferRateId?: string;
+    selectedSupplements?: string[];
     occupancy?: string;
     cabinCount?: number;
     scheduleId?: string;
@@ -259,7 +311,7 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
   try {
     const company = await prisma.company.findUniqueOrThrow({
       where: { id: companyId },
-      select: { isActive: true, currency: true, email: true },
+      select: { isActive: true, currency: true, email: true, market: true },
     });
     if (!company.isActive) throw new Error('COMPANY_INACTIVE');
     const cruise = await prisma.nileCruise.findFirst({
@@ -268,37 +320,91 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     });
     if (!cruise) throw new Error('CRUISE_NOT_AVAILABLE');
 
+    const checkIn = new Date(body.checkIn);
+    const checkOut = new Date(body.checkOut);
+    if (Number.isNaN(checkIn.getTime()) || Number.isNaN(checkOut.getTime()) || checkOut <= checkIn) {
+      throw new Error('INVALID_DATES');
+    }
+    const schedule = body.scheduleId
+      ? await prisma.cruiseSchedule.findFirst({ where: { id: body.scheduleId, cruiseId: body.cruiseId, isActive: true } })
+      : null;
+    if (body.scheduleId && !schedule) throw new Error('SCHEDULE_NOT_AVAILABLE');
+
     const adultsCount = Math.max(1, body.adultsCount ?? 1);
     const childrenCount = Math.max(0, body.childrenCount ?? 0);
     const pax = adultsCount + childrenCount;
 
-    // Where the money comes from. A boat with a rate table is priced FROM that
-    // table — the row, the occupancy and the number of cabins — so a typo in a
-    // hand-typed total cannot quietly undercut a contract. Only a boat with no
-    // rate row still takes the figure the desk enters.
+    // Cruise-only and programme fares share one rule: Single / Double / Triple
+    // are per-person amounts for the selected sharing arrangement.
     const rate = body.cabinRateId
       ? await prisma.cruiseCabinRate.findFirst({
         where: { id: body.cabinRateId, cruiseId: body.cruiseId, isActive: true },
       })
       : null;
     if (body.cabinRateId && !rate) throw new Error('RATE_NOT_AVAILABLE');
+    if (rate?.scheduleId && rate.scheduleId !== body.scheduleId) throw new Error('RATE_NOT_AVAILABLE');
+    if (Boolean(body.programmeId) !== Boolean(body.programmeRateId) || (body.programmeId && !body.scheduleId)) {
+      throw new Error('PROGRAMME_RATE_NOT_AVAILABLE');
+    }
+    const programmeRate = body.programmeRateId
+      ? await prisma.cruiseProgrammeRate.findFirst({
+        where: {
+          id: body.programmeRateId,
+          isActive: true,
+          programme: {
+            id: body.programmeId,
+            cruiseId: body.cruiseId,
+            isActive: true,
+            ...(body.scheduleId ? { scheduleId: body.scheduleId } : {}),
+          },
+        },
+        include: { programme: true },
+      })
+      : null;
+    if (body.programmeRateId && !programmeRate) throw new Error('PROGRAMME_RATE_NOT_AVAILABLE');
+    if (rate && programmeRate) throw new Error('PICK_ONE_FARE');
+
+    const expectedMarket = cruiseAudience(company.market) === 'EGYPTIAN' ? 'EGYPTIAN' : 'FOREIGN';
+    const chosenRate = programmeRate ?? rate;
+    if (chosenRate?.market && chosenRate.market !== expectedMarket
+      && !(expectedMarket === 'FOREIGN' && chosenRate.market === 'INTERNATIONAL')) {
+      throw new Error('RATE_NOT_AVAILABLE');
+    }
+    if (chosenRate && ((chosenRate.validFrom && chosenRate.validFrom > checkIn)
+      || (chosenRate.validTo && chosenRate.validTo < checkIn))) throw new Error('RATE_NOT_AVAILABLE');
 
     let occupancy: Occupancy | null = null;
-    let cabinCount = Math.max(1, body.cabinCount ?? 1);
+    const cabinCount = 1; // legacy export field; never a price multiplier
     let sourceAmount: Decimal;
     let sourceCurrency: string;
+    let adultUnitPrice: Decimal | null = null;
+    let childUnitPrice: Decimal | null = null;
+    let selectedSupplements: Record<string, unknown>[] = [];
 
-    if (rate) {
+    if (chosenRate) {
       const requested = String(body.occupancy ?? 'DOUBLE').toUpperCase();
       if (!isOccupancy(requested)) throw new Error('INVALID_OCCUPANCY');
       occupancy = requested as Occupancy;
-      const priced = priceCruiseBooking({ row: rate, occupancy, pax, cabins: body.cabinCount });
-      // A blank occupancy price means the cabin is not sold that way — pricing
-      // it at zero would give the cabin away.
+      const row = { ...chosenRate, cabinName: programmeRate?.programme.name ?? rate?.cabinName ?? 'Cruise fare' };
+      const priced = priceCruisePerPerson({ row, occupancy, adults: adultsCount, children: childrenCount });
       if (!priced) throw new Error('OCCUPANCY_NOT_SOLD');
-      cabinCount = priced.cabins;
       sourceAmount = priced.total;
       sourceCurrency = priced.currency;
+      adultUnitPrice = priced.adultUnitPrice;
+      childUnitPrice = priced.childUnitPrice;
+
+      const availableSupplements = Array.isArray(chosenRate.supplements)
+        ? chosenRate.supplements as Record<string, unknown>[] : [];
+      const wanted = new Set((body.selectedSupplements || []).map(String));
+      selectedSupplements = availableSupplements.filter((supplement) => wanted.has(String(supplement.name ?? '')));
+      const supplemented = applyCruiseSupplements(sourceAmount, pax, sourceCurrency, selectedSupplements.map((supplement) => ({
+        name: String(supplement.name ?? ''),
+        type: String(supplement.type ?? 'TEXT_ONLY') as 'FIXED_AMOUNT' | 'PERCENTAGE' | 'TOTAL_PRICE' | 'TEXT_ONLY',
+        amount: supplement.amount as number | string | null | undefined,
+        currency: supplement.currency as string | null | undefined,
+      })));
+      if (!supplemented) throw new Error('INVALID_SUPPLEMENT');
+      sourceAmount = supplemented;
     } else {
       if (!body.totalAmount || body.totalAmount <= 0) throw new Error('INVALID_TOTAL');
       sourceAmount = new Decimal(body.totalAmount);
@@ -316,13 +422,40 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
       if (Number.isFinite(amount) && amount > 0) sourceAmount = sourceAmount.add(new Decimal(amount));
     }
 
-    // A fare that already collects its guests can never carry an added
-    // transfer, whatever the payload says, so the boat's own flag — not the
-    // request — has the last word and the voucher cannot promise the same car
-    // twice.
-    const transfer = readTransferAddOn(body as unknown as Record<string, unknown>, {
-      transferIncluded: cruise.transferIncluded,
-    });
+    // A programme already includes its transfer. Cruise-only customers may add
+    // one explicit, admin-priced From → To route; free-text transfer prices are
+    // never trusted by the booking API.
+    let transferRate = null;
+    if (!programmeRate && body.transferRateId) {
+      if (!body.scheduleId) throw new Error('SCHEDULE_NOT_AVAILABLE');
+      transferRate = await prisma.cruiseTransferRate.findFirst({
+        where: {
+          id: body.transferRateId,
+          cruiseId: body.cruiseId,
+          market: expectedMarket,
+          isActive: true,
+          scheduleId: body.scheduleId,
+        },
+      });
+      if (!transferRate) throw new Error('TRANSFER_RATE_NOT_AVAILABLE');
+      if ((transferRate.validFrom && transferRate.validFrom > checkIn)
+        || (transferRate.validTo && transferRate.validTo < checkIn)) throw new Error('TRANSFER_RATE_NOT_AVAILABLE');
+      if (transferRate.currency !== sourceCurrency) throw new Error('MIXED_CURRENCY');
+      sourceAmount = sourceAmount.add(transferRate.amount);
+    }
+    if (!programmeRate && body.transferRequested && !transferRate) throw new Error('TRANSFER_RATE_REQUIRED');
+    const transfer = programmeRate
+      ? readTransferAddOn({}, { transferIncluded: true })
+      : transferRate
+        ? {
+          transferRequested: true,
+          transferFromType: 'ADDRESS', transferFromName: transferRate.fromLocation,
+          transferToType: 'ADDRESS', transferToName: transferRate.toLocation,
+          transferPickupTime: body.transferPickupTime ?? null,
+          transferReturnTime: body.transferReturnTime ?? null,
+          transferNotes: body.transferNotes ?? transferRate.notes,
+        }
+        : readTransferAddOn(body as unknown as Record<string, unknown>, { transferIncluded: false });
 
     // Explicit price in an explicit currency — used verbatim, no FX.
     const charge = explicitMoney(sourceAmount, sourceCurrency);
@@ -337,12 +470,20 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
           cruiseId: body.cruiseId,
           companyId,
           createdById: caller.id,
-          checkIn: new Date(body.checkIn),
-          checkOut: new Date(body.checkOut),
+          checkIn,
+          checkOut,
           cabinType: rate?.cabinType
             ?? (body.cabinType as 'STANDARD' | 'DELUXE' | 'SUITE' | 'PRESIDENTIAL')
             ?? 'STANDARD',
           cabinRateId: rate?.id ?? null,
+          programmeId: programmeRate?.programme.id ?? null,
+          programmeRateId: programmeRate?.id ?? null,
+          transferRateId: transferRate?.id ?? null,
+          selectedSupplements: selectedSupplements.length
+            ? selectedSupplements as unknown as Prisma.InputJsonValue
+            : undefined,
+          adultUnitPrice,
+          childUnitPrice,
           occupancy,
           cabinCount,
           scheduleId: body.scheduleId ?? null,
@@ -403,7 +544,10 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     const message = String((error as Error).message);
     if ([
       'COMPANY_INACTIVE', 'INVALID_TOTAL', 'CRUISE_NOT_AVAILABLE',
-      'RATE_NOT_AVAILABLE', 'INVALID_OCCUPANCY', 'OCCUPANCY_NOT_SOLD',
+      'INVALID_DATES', 'SCHEDULE_NOT_AVAILABLE',
+      'RATE_NOT_AVAILABLE', 'PROGRAMME_RATE_NOT_AVAILABLE', 'PICK_ONE_FARE',
+      'INVALID_OCCUPANCY', 'OCCUPANCY_NOT_SOLD', 'INVALID_SUPPLEMENT',
+      'TRANSFER_RATE_NOT_AVAILABLE', 'TRANSFER_RATE_REQUIRED', 'MIXED_CURRENCY',
     ].includes(message)) {
       res.status(400).json({ success: false, error: message });
     } else {

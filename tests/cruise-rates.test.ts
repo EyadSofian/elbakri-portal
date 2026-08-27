@@ -3,15 +3,19 @@ import assert from 'node:assert/strict';
 import { Decimal } from '@prisma/client/runtime/library';
 import {
   CruiseRateRow,
+  applyCruiseSupplements,
   applicableRates,
   availableOccupancies,
   cabinPrice,
   cabinsNeeded,
   fromPrice,
   isOccupancy,
+  cruiseAudience,
+  cruiseAudienceCurrency,
   nightsBetween,
   normalizeWeekday,
   priceCruiseBooking,
+  priceCruisePerPerson,
   rateApplies,
   validateCruiseRateInput,
 } from '../src/shared/cruise-rates';
@@ -180,6 +184,49 @@ test('priceCruiseBooking: an unsold occupancy returns null, not a free cruise', 
     priceCruiseBooking({ row: row({ triplePrice: null }), occupancy: 'TRIPLE', pax: 3 }),
     null,
   );
+});
+
+// ── Current selling rule: per person, with explicit child price ─────────────
+
+test('priceCruisePerPerson: Double is a sharing basis and every adult is charged', () => {
+  const priced = priceCruisePerPerson({ row: row(), occupancy: 'DOUBLE', adults: 4 })!;
+  assert.equal(priced.adultUnitPrice.toString(), '300');
+  assert.equal(priced.total.toString(), '1200');
+});
+
+test('priceCruisePerPerson: children use their own explicit per-person price', () => {
+  const priced = priceCruisePerPerson({
+    row: row({ childPrice: D(125) }), occupancy: 'TRIPLE', adults: 3, children: 2,
+  })!;
+  assert.equal(priced.total.toString(), '1000');
+  assert.equal(priced.childUnitPrice!.toString(), '125');
+});
+
+test('priceCruisePerPerson: a child without a child tariff is price-on-request, never free', () => {
+  assert.equal(priceCruisePerPerson({ row: row(), occupancy: 'DOUBLE', adults: 2, children: 1 }), null);
+});
+
+test('Nile cruises expose only Egyptian/EGP and Foreign/USD audiences', () => {
+  assert.equal(cruiseAudience('EGYPTIAN'), 'EGYPTIAN');
+  assert.equal(cruiseAudienceCurrency(cruiseAudience('EGYPTIAN')), 'EGP');
+  for (const market of ['FOREIGN', 'INTERNATIONAL', 'GULF'] as const) {
+    assert.equal(cruiseAudience(market), 'FOREIGN');
+    assert.equal(cruiseAudienceCurrency(cruiseAudience(market)), 'USD');
+  }
+});
+
+test('cruise supplements follow hotel semantics on the per-person fare total', () => {
+  const total = applyCruiseSupplements(D(1000), 4, 'USD', [
+    { name: 'Christmas', type: 'PERCENTAGE', amount: 10 },
+    { name: 'Gala dinner', type: 'FIXED_AMOUNT', amount: 25, currency: 'USD' },
+  ]);
+  assert.equal(total!.toString(), '1200');
+});
+
+test('a cruise supplement in another explicit currency is refused', () => {
+  assert.equal(applyCruiseSupplements(D(1000), 2, 'USD', [
+    { name: 'Gala dinner', type: 'FIXED_AMOUNT', amount: 25, currency: 'EGP' },
+  ]), null);
 });
 
 // ── fromPrice ───────────────────────────────────────────────────────────────

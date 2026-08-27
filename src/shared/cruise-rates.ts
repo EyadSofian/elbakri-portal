@@ -35,6 +35,7 @@ export interface CruiseRateRow {
   singlePrice: Decimal | null;
   doublePrice: Decimal | null;
   triplePrice: Decimal | null;
+  childPrice?: Decimal | null;
   validFrom: Date | null;
   validTo: Date | null;
   isActive?: boolean;
@@ -57,6 +58,7 @@ export function validateCruiseRateInput(row: {
   singlePrice?: unknown;
   doublePrice?: unknown;
   triplePrice?: unknown;
+  childPrice?: unknown;
 }): CruiseRateInputError | null {
   const present = (value: unknown) => value !== null && value !== undefined && String(value).trim() !== '';
   const hasFrom = present(row.validFrom);
@@ -74,7 +76,22 @@ export function validateCruiseRateInput(row: {
   if (supplied.some((value) => !Number.isFinite(Number(value)) || Number(value) < 0)) {
     return 'INVALID_OCCUPANCY_PRICE';
   }
+  if (present(row.childPrice) && (!Number.isFinite(Number(row.childPrice)) || Number(row.childPrice) < 0)) {
+    return 'INVALID_OCCUPANCY_PRICE';
+  }
   return null;
+}
+
+/** The two selling audiences used by Nile cruises. Every non-Egyptian company
+ * deliberately resolves to the same foreign USD tariff. */
+export type CruiseAudience = 'EGYPTIAN' | 'FOREIGN';
+
+export function cruiseAudience(market: Market | null | undefined): CruiseAudience {
+  return market === 'EGYPTIAN' ? 'EGYPTIAN' : 'FOREIGN';
+}
+
+export function cruiseAudienceCurrency(audience: CruiseAudience): 'EGP' | 'USD' {
+  return audience === 'EGYPTIAN' ? 'EGP' : 'USD';
 }
 
 /**
@@ -150,6 +167,62 @@ export function priceCruiseBooking(input: {
     ? Math.floor(input.cabins)
     : cabinsNeeded(input.pax, input.occupancy);
   return { total: unitPrice.mul(cabins), cabins, unitPrice, currency: input.row.currency };
+}
+
+/**
+ * Nile-cruise occupancy prices are per person, not per cabin. "Double" means
+ * the adult is sharing a double; it does not turn two guests into one billing
+ * unit. Children use their explicit per-person price and blank never means 0.
+ */
+export function priceCruisePerPerson(input: {
+  row: CruiseRateRow;
+  occupancy: Occupancy;
+  adults: number;
+  children?: number;
+}): { total: Decimal; adultUnitPrice: Decimal; childUnitPrice: Decimal | null; currency: string } | null {
+  const adultUnitPrice = cabinPrice(input.row, input.occupancy);
+  if (adultUnitPrice == null) return null;
+  const adults = Math.max(1, Math.floor(input.adults) || 1);
+  const children = Math.max(0, Math.floor(input.children ?? 0) || 0);
+  const childUnitPrice = input.row.childPrice ?? null;
+  if (children > 0 && childUnitPrice == null) return null;
+  return {
+    total: adultUnitPrice.mul(adults).add((childUnitPrice ?? new Decimal(0)).mul(children)),
+    adultUnitPrice,
+    childUnitPrice,
+    currency: input.row.currency,
+  };
+}
+
+export type CruiseSupplementType = 'FIXED_AMOUNT' | 'PERCENTAGE' | 'TOTAL_PRICE' | 'TEXT_ONLY';
+export interface CruiseSupplement {
+  name: string;
+  type: CruiseSupplementType;
+  amount?: Decimal | number | string | null;
+  currency?: string | null;
+}
+
+/** Apply selected cruise supplements with hotel-compatible semantics. Fixed
+ * and total-price rows are per passenger; percentages apply to the fare total. */
+export function applyCruiseSupplements(
+  base: Decimal,
+  pax: number,
+  currency: string,
+  supplements: CruiseSupplement[],
+): Decimal | null {
+  let total = base;
+  const heads = Math.max(1, Math.floor(pax) || 1);
+  for (const supplement of supplements) {
+    if (supplement.type === 'TEXT_ONLY') continue;
+    const amount = supplement.amount === null || supplement.amount === undefined || supplement.amount === ''
+      ? null : new Decimal(supplement.amount);
+    if (amount == null || amount.isNegative()) return null;
+    if (supplement.currency && supplement.currency !== currency && supplement.type !== 'PERCENTAGE') return null;
+    if (supplement.type === 'PERCENTAGE') total = total.add(base.mul(amount).div(100));
+    else if (supplement.type === 'FIXED_AMOUNT') total = total.add(amount.mul(heads));
+    else if (supplement.type === 'TOTAL_PRICE') total = amount.mul(heads);
+  }
+  return total.toDecimalPlaces(2);
 }
 
 /**

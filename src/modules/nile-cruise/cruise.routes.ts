@@ -8,6 +8,8 @@ import {
 } from './cruise.controller';
 import {
   listCruiseRates, saveCruiseRates, listCruiseSchedules, saveCruiseSchedules,
+  listCruiseProgrammes, saveCruiseProgrammes,
+  listCruiseTransferRates, saveCruiseTransferRates,
 } from './cruise-catalogue.controller';
 
 const router = Router();
@@ -24,6 +26,10 @@ router.get('/cruises/:id/rates', listCruiseRates);
 router.put('/cruises/:id/rates', requireRole('SUPERADMIN'), saveCruiseRates);
 router.get('/cruises/:id/schedules', listCruiseSchedules);
 router.put('/cruises/:id/schedules', requireRole('SUPERADMIN'), saveCruiseSchedules);
+router.get('/cruises/:id/programmes', listCruiseProgrammes);
+router.put('/cruises/:id/programmes', requireRole('SUPERADMIN'), saveCruiseProgrammes);
+router.get('/cruises/:id/transfer-rates', listCruiseTransferRates);
+router.put('/cruises/:id/transfer-rates', requireRole('SUPERADMIN'), saveCruiseTransferRates);
 
 router.get('/cruise-bookings', listCruiseBookings);
 router.post('/cruise-bookings', createCruiseBooking);
