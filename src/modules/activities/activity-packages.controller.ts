@@ -190,6 +190,7 @@ export async function createActivityPackage(req: Request, res: Response): Promis
     hotelName: string | null; clientPhone: string | null;
     groupTypeId: string | null; groupTypeLabel: string | null; activityType: string | null;
     transferIncluded: boolean | null; notes: string | null; lineAmount: Decimal;
+    transferAmount: Decimal | null;
     transfer: TransferAddOn;
   }[] = [];
   let packageTotal = new Decimal(0);
@@ -201,7 +202,8 @@ export async function createActivityPackage(req: Request, res: Response): Promis
       select: { id: true, name: true, city: true, priceAdult: true, priceChild: true,
         priceSingle: true, priceDouble: true, priceTriple: true, currency: true,
         isActive: true, isConfirmableInApp: true, destinationId: true,
-        transferIncluded: true, returnTime: true },
+        transferIncluded: true, transferPrice: true, transferFromName: true,
+        transferToName: true, returnTime: true },
     });
     if (!activity || !activity.isActive) {
       res.status(404).json({ success: false, error: 'NOT_FOUND', message: `Activity #${i + 1} not found or inactive` });
@@ -283,8 +285,37 @@ export async function createActivityPackage(req: Request, res: Response): Promis
       res.status(400).json({ success: false, error: 'MIXED_CURRENCY', message: `Package activities resolve to different currencies (${packageCurrency} vs ${lineCurrency}). All activities in a package must share one currency.` });
       return;
     }
+    const transfer = readTransferAddOn({
+      ...(it as unknown as Record<string, unknown>),
+      transferFromName: it.transferFromName || activity.transferFromName,
+      transferToName: it.transferToName || activity.transferToName,
+    }, {
+      transferIncluded: activity.transferIncluded,
+      activityReturnTime: activity.returnTime,
+    });
+    if (transfer.transferRequested && !transfer.transferFromName) {
+      res.status(400).json({
+        success: false,
+        error: 'VALIDATION_ERROR',
+        message: `The transfer for "${activity.name}" needs a pickup point.`,
+      });
+      return;
+    }
+    if (transfer.transferRequested && activity.transferPrice == null) {
+      res.status(400).json({
+        success: false,
+        error: 'TRANSFER_PRICE_NOT_CONFIGURED',
+        message: `The transfer for "${activity.name}" has no price configured. Please send a quote request.`,
+      });
+      return;
+    }
+    const transferAmount = transfer.transferRequested
+      ? activity.transferPrice!.toDecimalPlaces(2)
+      : null;
+
     let lineAmount = sourceAmountRaw;
     if (groupType) lineAmount = applyGroupAdjustment(lineAmount, groupType);
+    if (transferAmount) lineAmount = lineAmount.add(transferAmount);
     lineAmount = lineAmount.toDecimalPlaces(2);
     packageTotal = packageTotal.add(lineAmount);
 
@@ -308,10 +339,8 @@ export async function createActivityPackage(req: Request, res: Response): Promis
       // The catalogue row decides: a trip that already collects its guests can
       // never also carry an added transfer, whatever the line asked for.
       transferIncluded: activity.transferIncluded || (it.transferIncluded ?? null),
-      transfer: readTransferAddOn(it as unknown as Record<string, unknown>, {
-        transferIncluded: activity.transferIncluded,
-        activityReturnTime: activity.returnTime,
-      }),
+      transfer,
+      transferAmount,
       notes: it.notes ?? null,
       lineAmount,
     });
@@ -366,6 +395,7 @@ export async function createActivityPackage(req: Request, res: Response): Promis
               activityType: l.activityType,
               transferIncluded: l.transferIncluded,
               ...l.transfer,
+              transferAmount: l.transferAmount,
               notes: l.notes,
               lineAmount: l.lineAmount,
               currency,

@@ -1170,10 +1170,15 @@ const masterConfigs = {
       // row on day 1 and they read as stops; a multi-day package reads as days.
       { name: "itinerary", label: "activity.itinerary", fallback: "Programme", type: "itinerary", cls: "full",
         helpKey: "help.activityItinerary", help: "One row per stop, in the order the guests do them. Leave every row on day 1 for a day trip; number them 1, 2, 3… for a multi-day package." },
-      { name: "transferIncluded", label: "activityAdmin.transferIncluded", fallback: "Transfer included in the price", type: "checkbox",
-        helpKey: "help.activityTransfer", help: "Tick this when the price already collects the guests. When it does not, the company portal offers to add a transfer." },
-      { name: "returnTime", label: "activityAdmin.returnTime", fallback: "Return time", type: "time",
-        helpKey: "help.activityReturnTime", help: "When the trip drops the guests back — it fills in the pickup time of a return transfer." },
+      // One deliberate card replaces the generic "label + Active checkbox"
+      // that read as two unrelated statements and overlapped in RTL. The other
+      // fields are rendered inside it but remain in this config so the ordinary
+      // payload collector and schema-parity test still see every saved value.
+      { name: "transferIncluded", label: "activityAdmin.transferIncluded", fallback: "Activity transfer", type: "activityTransfer", cls: "full" },
+      { name: "transferPrice", label: "activityAdmin.transferPrice", fallback: "Transfer price", type: "number", nullable: true, render: false },
+      { name: "transferFromName", label: "activityAdmin.transferFrom", fallback: "From", nullable: true, render: false },
+      { name: "transferToName", label: "activityAdmin.transferTo", fallback: "To", nullable: true, render: false },
+      { name: "returnTime", label: "activityAdmin.returnTime", fallback: "Return time", type: "time", nullable: true, render: false },
       // An excursion is sold per person, per party, or both. Leave a field blank
       // when the activity is not sold that way — blank is not zero.
       { name: "priceAdult", label: "form.priceAdult", fallback: "Adult Price", type: "number", nullable: true, helpKey: "help.blankNotSold", help: "Leave blank if this trip is not sold per person" },
@@ -1358,6 +1363,32 @@ function masterRowActions(entity, row) {
   </div>`;
 }
 
+function actTimeValueAdmin(raw) {
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i.exec(String(raw ?? "").trim());
+  if (!m) return "";
+  let hour = Number(m[1]);
+  const minute = Number(m[2]);
+  const suffix = (m[3] || "").toUpperCase();
+  if (suffix === "PM" && hour !== 12) hour += 12;
+  if (suffix === "AM" && hour === 12) hour = 0;
+  if (hour > 23 || minute > 59) return "";
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+/** Keep the real saved checkbox and the two clear status cards in lockstep. */
+function adminActivityTransferMode(included) {
+  const input = document.getElementById("m_activities_transferIncluded");
+  const card = document.getElementById("m_activities_transferIncluded_card");
+  const details = document.getElementById("m_activities_transferIncluded_details");
+  const yes = document.getElementById("m_activities_transferIncluded_yesChoice");
+  const no = document.getElementById("m_activities_transferIncluded_noChoice");
+  if (input) input.checked = included;
+  if (card) card.dataset.included = included ? "1" : "0";
+  if (details) details.hidden = included;
+  yes?.classList.toggle("is-selected", included);
+  no?.classList.toggle("is-selected", !included);
+}
+
 function masterField(entity, fieldDef, row) {
   const id = `m_${entity.replace(/[^a-z0-9]/gi, "_")}_${fieldDef.name}`;
   const raw = row?.[fieldDef.name] ?? fieldDef.default ?? "";
@@ -1368,6 +1399,52 @@ function masterField(entity, fieldDef, row) {
   const helpText = fieldDef.helpKey ? t(fieldDef.helpKey, fieldDef.help) : fieldDef.help;
   const help = helpText ? `<div class="secondary-text" style="margin-top:4px">${escapeHtml(helpText)}</div>` : "";
   const label = `${t(fieldDef.label, fieldDef.fallback || fieldDef.name)} ${required}`;
+
+  // Some values are part of a purpose-built compound editor. They still have
+  // field definitions (and real input ids) for collection, but must not render
+  // a second standalone input underneath the card.
+  if (fieldDef.render === false) return "";
+
+  if (fieldDef.type === "activityTransfer") {
+    const included = Boolean(value);
+    const fieldId = (name) => `m_${entity.replace(/[^a-z0-9]/gi, "_")}_${name}`;
+    const price = row?.transferPrice ?? "";
+    const from = row?.transferFromName ?? "";
+    const to = row?.transferToName ?? "";
+    const returnTime = row?.returnTime ?? "";
+    const currency = row?.currency || "USD";
+    return `<div class="form-field full activity-transfer-admin" id="${id}_card" data-included="${included ? "1" : "0"}">
+      <input id="${id}" type="checkbox" ${included ? "checked" : ""} hidden>
+      <div class="activity-transfer-admin__heading">
+        <div>
+          <div class="activity-transfer-admin__title">${t("activityAdmin.transferTitle", "Activity transfer")}</div>
+          <div class="secondary-text">${t("activityAdmin.transferDecisionHelp", "Choose whether pickup is already covered by the activity price.")}</div>
+        </div>
+        <span class="activity-transfer-admin__currency">${escapeHtml(currency)}</span>
+      </div>
+      <div class="activity-transfer-admin__choices" role="radiogroup" aria-label="${escapeHtml(t("activityAdmin.transferTitle", "Activity transfer"))}">
+        <label class="activity-transfer-choice activity-transfer-choice--included ${included ? "is-selected" : ""}" id="${id}_yesChoice">
+          <input type="radio" name="${id}_mode" value="included" ${included ? "checked" : ""} onchange="adminActivityTransferMode(true)">
+          <span class="activity-transfer-choice__mark">${icon("check")}</span>
+          <span><b>${t("activityAdmin.includedInPrice", "Included in price")}</b><small>${t("activityAdmin.includedInPriceHelp", "No extra charge or separate transfer form for the agent.")}</small></span>
+        </label>
+        <label class="activity-transfer-choice activity-transfer-choice--extra ${included ? "" : "is-selected"}" id="${id}_noChoice">
+          <input type="radio" name="${id}_mode" value="extra" ${included ? "" : "checked"} onchange="adminActivityTransferMode(false)">
+          <span class="activity-transfer-choice__mark">${icon("plus")}</span>
+          <span><b>${t("activityAdmin.notIncludedPaid", "Not included · paid add-on")}</b><small>${t("activityAdmin.notIncludedPaidHelp", "The agent can add it and the price is added once to the booking.")}</small></span>
+        </label>
+      </div>
+      <div class="activity-transfer-admin__details" id="${id}_details" ${included ? "hidden" : ""}>
+        <div class="activity-transfer-admin__notice">${icon("info")}<span>${t("activityAdmin.transferDetailsHelp", "Set the fixed transfer price and its default route. The agent may enter the exact hotel or address when booking.")}</span></div>
+        <div class="form-grid activity-transfer-admin__grid">
+          <div class="form-field"><label>${t("activityAdmin.transferPrice", "Transfer price")} · ${escapeHtml(currency)}</label><input id="${fieldId("transferPrice")}" type="number" min="0" step="0.01" value="${escapeHtml(price)}" placeholder="0.00"><small class="field-hint">${t("activityAdmin.pricePerBooking", "Fixed price once per booking")}</small></div>
+          <div class="form-field"><label>${t("activityAdmin.returnTime", "Return time")}</label><input id="${fieldId("returnTime")}" type="time" value="${escapeHtml(actTimeValueAdmin(returnTime))}"><small class="field-hint">${t("activityAdmin.returnTimeHelp", "Prefills the return transfer time")}</small></div>
+          <div class="form-field"><label>${t("activityAdmin.transferFrom", "Default pickup from")}</label><input id="${fieldId("transferFromName")}" value="${escapeHtml(from)}" placeholder="${escapeHtml(t("activityAdmin.transferFromPlaceholder", "Hotel / area / address"))}"></div>
+          <div class="form-field"><label>${t("activityAdmin.transferTo", "Default return to")}</label><input id="${fieldId("transferToName")}" value="${escapeHtml(to)}" placeholder="${escapeHtml(t("activityAdmin.transferToPlaceholder", "Activity point / hotel / area"))}"></div>
+        </div>
+      </div>
+    </div>`;
+  }
 
   if (fieldDef.type === "textarea" || fieldDef.type === "list") {
     return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><textarea id="${id}" rows="3">${escapeHtml(value)}</textarea>${help}</div>`;
@@ -1961,7 +2038,7 @@ function collectMasterPayload(entity) {
     const id = `m_${entity.replace(/[^a-z0-9]/gi, "_")}_${fieldDef.name}`;
     const el = document.getElementById(id);
     if (!el) continue;
-    let value = fieldDef.type === "checkbox" ? el.checked : el.value.trim();
+    let value = (fieldDef.type === "checkbox" || fieldDef.type === "activityTransfer") ? el.checked : el.value.trim();
     if (fieldDef.required && (value === "" || value === null || value === undefined)) valid = false;
     // A blank number is only a zero when the field must carry one. Where blank
     // means "not sold this way" — an excursion with no triple price, say — it

@@ -86,7 +86,7 @@ export async function listActivities(req: Request, res: Response): Promise<void>
 /** Every way an excursion can be priced. A blank field means "not sold this
  *  way" — it must stay null rather than becoming a zero, or the activity would
  *  read as free. */
-const ACTIVITY_PRICE_FIELDS = ['priceAdult', 'priceChild', 'priceSingle', 'priceDouble', 'priceTriple'] as const;
+const ACTIVITY_PRICE_FIELDS = ['priceAdult', 'priceChild', 'priceSingle', 'priceDouble', 'priceTriple', 'transferPrice'] as const;
 
 function priceOrNull(v: unknown): Decimal | null {
   if (v === null || v === undefined || v === '') return null;
@@ -98,7 +98,9 @@ function priceOrNull(v: unknown): Decimal | null {
 const ACTIVITY_LIST_FIELDS = ['timeSlots', 'includes', 'excludes', 'galleryUrls'] as const;
 
 /** Text and flag fields describing the transfer half of the catalogue form. */
-const ACTIVITY_TRANSFER_FIELDS = ['transferNote', 'transferNoteAr', 'returnTime'] as const;
+const ACTIVITY_TRANSFER_FIELDS = [
+  'transferNote', 'transferNoteAr', 'returnTime', 'transferFromName', 'transferToName',
+] as const;
 
 
 /**
@@ -347,6 +349,9 @@ export async function createActivityBooking(req: Request, res: Response): Promis
       isConfirmableInApp: true,
       destinationId: true,
       transferIncluded: true,
+      transferPrice: true,
+      transferFromName: true,
+      transferToName: true,
       returnTime: true,
     },
   });
@@ -463,15 +468,37 @@ export async function createActivityBooking(req: Request, res: Response): Promis
     priceCurrency = activity.currency;
   }
 
-  const snap = explicitMoney(applyGroupAdjustment(sourceAmountRaw, groupType), priceCurrency);
-  const { currency, sourceCurrency, sourceAmount, totalAmount, exchangeRate, exchangeRateAt } = snap;
-
-  // A trip that already collects its guests can never carry an added transfer,
-  // so the flag on the catalogue row — not the payload — has the last word.
-  const transfer = readTransferAddOn(body as unknown as Record<string, unknown>, {
+  // A paid transfer is one fixed add-on for the booking, not a per-passenger
+  // price and not part of the activity-type percentage/fixed adjustment.
+  const transfer = readTransferAddOn({
+    ...(body as unknown as Record<string, unknown>),
+    transferFromName: body.transferFromName || activity.transferFromName,
+    transferToName: body.transferToName || activity.transferToName,
+  }, {
     transferIncluded: activity.transferIncluded,
     activityReturnTime: activity.returnTime,
   });
+  let transferAmount: Decimal | null = null;
+  let chargedAmount = applyGroupAdjustment(sourceAmountRaw, groupType);
+  if (transfer.transferRequested) {
+    if (!transfer.transferFromName) {
+      res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Transfer pickup point is required.' });
+      return;
+    }
+    if (activity.transferPrice == null) {
+      res.status(400).json({
+        success: false,
+        error: 'TRANSFER_PRICE_NOT_CONFIGURED',
+        message: 'This activity transfer has no price configured. Please send a quote request.',
+      });
+      return;
+    }
+    transferAmount = activity.transferPrice.toDecimalPlaces(2);
+    chargedAmount = chargedAmount.add(transferAmount);
+  }
+
+  const snap = explicitMoney(chargedAmount, priceCurrency);
+  const { currency, sourceCurrency, sourceAmount, totalAmount, exchangeRate, exchangeRateAt } = snap;
 
   try {
     const refNumber = await generateRef(prisma, 'ACT');
@@ -498,6 +525,7 @@ export async function createActivityBooking(req: Request, res: Response): Promis
         // so the standalone hotel field is not asked for and stays empty.
         hotelName: transfer.transferRequested ? null : (body.hotelName ?? null),
         ...transfer,
+        transferAmount,
         passengerNames: setJsonStringArray(body.passengerNames),
         totalAmount,   // server-calculated
         currency,

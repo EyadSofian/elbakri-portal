@@ -3790,7 +3790,164 @@ html[lang="ar"] .act-inc-box-title { text-transform: none; letter-spacing: 0; }
 .act-transfer-state--on  { color: var(--success); }
 .act-transfer-state--off { color: var(--warning, var(--text-muted)); }
 
+.act-transfer-price-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .act-transfer-fields { margin-top: 12px; }
+
+/* Admin activity transfer — a status decision plus its paid add-on details.
+   Purpose-built instead of the generic checkbox so RTL labels never collide
+   with an unrelated "Active" caption and the selected state is unmistakable. */
+.activity-transfer-admin {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--surface) 0%, var(--surface-muted) 100%);
+  overflow: hidden;
+}
+
+.activity-transfer-admin__heading,
+.activity-transfer-admin__choices,
+.activity-transfer-choice,
+.activity-transfer-admin__notice {
+  min-width: 0;
+}
+
+.activity-transfer-admin__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.activity-transfer-admin__title {
+  margin-bottom: 3px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.activity-transfer-admin__currency {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .06em;
+}
+
+.activity-transfer-admin__choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.activity-transfer-choice {
+  display: grid !important;
+  grid-template-columns: auto 1fr;
+  align-items: start !important;
+  gap: 10px;
+  min-height: 88px;
+  margin: 0;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.activity-transfer-choice input {
+  position: absolute;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.activity-transfer-choice__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.activity-transfer-choice__mark svg { width: 14px; height: 14px; stroke-width: 3; }
+.activity-transfer-choice b { display: block; margin: 1px 0 4px; color: var(--text-primary); font-size: 13px; line-height: 1.35; }
+.activity-transfer-choice small { display: block; color: var(--text-muted); font-size: 11px; font-weight: 500; line-height: 1.55; }
+
+.activity-transfer-choice--included.is-selected {
+  border-color: color-mix(in srgb, var(--success) 52%, var(--border));
+  background: var(--success-soft, var(--surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.activity-transfer-choice--included.is-selected .activity-transfer-choice__mark {
+  border-color: var(--success);
+  background: var(--success);
+  color: #fff;
+}
+
+.activity-transfer-choice--extra.is-selected {
+  border-color: var(--brand-accent);
+  background: color-mix(in srgb, var(--brand-accent) 8%, var(--surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand-accent) 12%, transparent);
+}
+
+.activity-transfer-choice--extra.is-selected .activity-transfer-choice__mark {
+  border-color: var(--brand-accent);
+  background: var(--brand-accent);
+  color: #fff;
+}
+
+.activity-transfer-admin__details {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.activity-transfer-admin__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--info-soft);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.activity-transfer-admin__notice svg { flex: 0 0 auto; width: 15px; height: 15px; margin-top: 1px; }
+.activity-transfer-admin__grid { margin-top: 0; }
+
+@media (max-width: 700px) {
+  .activity-transfer-admin { padding: 14px; }
+  .activity-transfer-admin__choices { grid-template-columns: 1fr; }
+  .activity-transfer-admin__heading { align-items: center; }
+}
 
 /* The party breakdown line in the price summary ("Double × 3"). */
 .act-party-row span:first-child { font-weight: 600; }

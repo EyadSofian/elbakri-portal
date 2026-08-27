@@ -4187,6 +4187,7 @@ async function openPackageActivityForm(activityId) {
       <div class="tr-price-row pkg-perhead-row"><span>${t("form.priceAdult","Adult")}</span><span>${priceAdult === null ? "—" : formatPrice(priceAdult, activity.currency || "USD")} × <span id="pkgAdultCount">2</span></span></div>
       ${priceChild !== null ? `<div class="tr-price-row pkg-perhead-row"><span>${t("form.priceChild","Child")}</span><span>${formatPrice(priceChild, activity.currency || "USD")} × <span id="pkgChildCount">0</span></span></div>` : ""}
       <div class="tr-price-row pkg-party-row" id="pkgPartyRow" style="display:none"><span id="pkgPartyLabel"></span><span id="pkgPartyCalc"></span></div>
+      <div class="tr-price-row" id="pkgTransferPriceRow" style="display:none"><span>${icon("car")}&nbsp;${t("activity.transferTitle","Transfer")}</span><span id="pkgTransferPriceValue"></span></div>
       <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="pkgTotalPreview">—</span></div>
     </div>`, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel","Cancel")}</button>
@@ -4197,6 +4198,7 @@ async function openPackageActivityForm(activityId) {
     currency: activity.currency || "USD",
     priceAdult,
     priceChild,
+    transferPrice: activity.transferPrice == null ? null : Number(activity.transferPrice),
     partyPrices: { SINGLE: activity.priceSingle, DOUBLE: activity.priceDouble, TRIPLE: activity.priceTriple },
     partyLabels: {
       SINGLE: t("hotel.single","Single"),
@@ -4228,6 +4230,11 @@ function pkgPriceResult(adults, children, basis, ctx) {
   const adjustmentValue = Number(selected?.dataset.adjustmentValue || 0);
   if (adjustmentType === "PERCENTAGE") total *= 1 + adjustmentValue / 100;
   if (adjustmentType === "FIXED") total += adjustmentValue;
+  const transferOn = document.getElementById("pkgTransferRequested")?.value === "1";
+  if (transferOn) {
+    if (ctx.transferPrice === null) return null;
+    total += ctx.transferPrice;
+  }
   return { total, lines };
 }
 
@@ -4245,6 +4252,13 @@ function pkgUpdateTotal() {
   const ctx = state.packageActivityContext;
   const basis = pkgBasis();
   const result = pkgPriceResult(adults, children, basis, ctx);
+  const transferOn = document.getElementById("pkgTransferRequested")?.value === "1";
+  const transferRow = document.getElementById("pkgTransferPriceRow");
+  const transferValue = document.getElementById("pkgTransferPriceValue");
+  if (transferRow) transferRow.style.display = transferOn ? "" : "none";
+  if (transferValue) transferValue.textContent = ctx?.transferPrice == null
+    ? t("hotel.priceOnRequest", "Price on request")
+    : formatPrice(ctx.transferPrice, ctx.currency || "USD");
   const el = document.getElementById("pkgTotalPreview");
   if (el) el.textContent = result
     ? formatPrice(result.total, ctx?.currency || "USD")
@@ -4558,7 +4572,7 @@ function actPartyPriceRows(a) {
  * answer, `returnTime` prefills the return leg, and `note` is the operator's
  * wording about what the price does and does not cover.
  */
-function transferPanel({ prefix, included, returnTime, note }) {
+function transferPanel({ prefix, included, returnTime, note, price, currency, fromName, toName }) {
   if (included) {
     return `<div class="act-transfer-state act-transfer-state--on">
       ${icon("check")}&nbsp;${t("activity.transferIncluded","Transfer included")}
@@ -4566,12 +4580,17 @@ function transferPanel({ prefix, included, returnTime, note }) {
     </div>`;
   }
   const back = t("activity.transferSameAsPickup", "Back to the pickup point");
+  const hasPrice = price !== null && price !== undefined && Number.isFinite(Number(price));
+  const priceText = hasPrice
+    ? formatPrice(Number(price), currency || "USD")
+    : t("hotel.priceOnRequest", "Price on request");
   return `
     <div class="act-transfer-block full">
       <div class="act-transfer-head">
         <div class="act-transfer-state act-transfer-state--off">
           ${icon("info")}&nbsp;${t("activity.transferNotIncluded","Transfer not included")}
           ${note ? `<span class="secondary-text" style="margin-inline-start:8px">${escapeHtml(note)}</span>` : ""}
+          <span class="act-transfer-price-pill">${t("activity.transferFixedPrice", "Fixed add-on")} · ${priceText}</span>
         </div>
         <button type="button" class="btn btn-outline btn-sm" id="${prefix}TransferToggle" onclick="actToggleTransfer('${prefix}')">
           ${icon("car")}&nbsp;${t("activity.addTransfer","Add transfer")}
@@ -4583,11 +4602,11 @@ function transferPanel({ prefix, included, returnTime, note }) {
         <div class="form-grid">
           <div class="form-field">
             <label>${t("activity.transferFrom","Pick them up from")} <span class="required">*</span></label>
-            <input id="${prefix}TransferFrom" placeholder="${escapeHtml(t("transport.orTypeHotel","…or type hotel / address"))}" oninput="actSyncTransferBack('${prefix}')">
+            <input id="${prefix}TransferFrom" value="${escapeHtml(fromName || "")}" placeholder="${escapeHtml(t("transport.orTypeHotel","…or type hotel / address"))}" oninput="actSyncTransferBack('${prefix}')">
           </div>
           <div class="form-field">
             <label>${t("activity.transferBack","Bring them back to")}</label>
-            <input id="${prefix}TransferTo" placeholder="${escapeHtml(back)}">
+            <input id="${prefix}TransferTo" value="${escapeHtml(toName || "")}" placeholder="${escapeHtml(back)}">
           </div>
           <div class="form-field">
             <label>${t("activity.transferPickupTime","Pickup time")}</label>
@@ -4613,6 +4632,11 @@ function activityTransferPanel(a, prefix) {
     prefix,
     included: actTransferIncluded(a),
     returnTime: a.returnTime,
+    note: state.lang === "ar" ? (a.transferNoteAr || a.transferNote) : a.transferNote,
+    price: a.transferPrice,
+    currency: a.currency || "USD",
+    fromName: a.transferFromName,
+    toName: a.transferToName,
   });
 }
 
@@ -4650,6 +4674,8 @@ function actToggleTransfer(prefix) {
   const hotelField = document.getElementById(prefix + "HotelField");
   if (hotelField) hotelField.style.display = on ? "none" : "";
   if (on) document.getElementById(prefix + "TransferFrom")?.focus();
+  if (prefix === "pkg") pkgUpdateTotal();
+  else actCalcTotalFromContext();
 }
 
 /** Most transfers bring people back where they were collected, so the return
@@ -4787,6 +4813,7 @@ async function openActivityDetails(id) {
         <div class="tr-price-row act-perhead-row"><span>${t("form.priceAdult","Adult")}</span><span>${formatPrice(priceAdult, currency)} × <span id="actAdultCount">2</span></span></div>
         ${hasChildPrice ? `<div class="tr-price-row act-perhead-row"><span>${t("form.priceChild","Child")}</span><span>${formatPrice(priceChild, currency)} × <span id="actChildCount">0</span></span></div>` : ""}
         <div class="tr-price-row act-party-row" id="actPartyRow" style="display:none"><span id="actPartyLabel"></span><span id="actPartyCalc"></span></div>
+        <div class="tr-price-row" id="actTransferPriceRow" style="display:none"><span>${icon("car")}&nbsp;${t("activity.transferTitle","Transfer")}</span><span id="actTransferPriceValue"></span></div>
         <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="actTotalPreview">${formatPrice(2*priceAdult, currency)}</span></div>
       </div>
       <p style="color:var(--text-muted);font-size:11px;margin-top:8px">${t("booking.pendingNote","Your request is pending admin confirmation. No payment is taken now.")}</p>
@@ -4812,6 +4839,7 @@ async function openActivityDetails(id) {
     hasChildPrice,
     currency,
     transferIncluded,
+    transferPrice: a.transferPrice == null ? null : Number(a.transferPrice),
     partyPrices: { SINGLE: a.priceSingle, DOUBLE: a.priceDouble, TRIPLE: a.priceTriple },
     partyLabels: {
       SINGLE: t("hotel.single","Single"),
@@ -4898,9 +4926,17 @@ function actCalcTotal(priceAdult, priceChild, currency) {
   const children = Math.max(0, parseInt(document.getElementById("actChildren")?.value || "0"));
   const basis = actBasis();
   const ctx = state.activityBookingContext || {};
+  const transferOn = document.getElementById("actTransferRequested")?.value === "1";
+  const transferRow = document.getElementById("actTransferPriceRow");
+  const transferValue = document.getElementById("actTransferPriceValue");
+  if (transferRow) transferRow.style.display = transferOn ? "" : "none";
+  if (transferValue) transferValue.textContent = ctx.transferPrice == null
+    ? t("hotel.priceOnRequest", "Price on request")
+    : formatPrice(ctx.transferPrice, currency);
   const priceUnavailable = basis === "PER_PERSON"
     && (ctx.hasAdultPrice === false || (children > 0 && ctx.hasChildPrice === false));
-  if (priceUnavailable) {
+  const transferUnavailable = transferOn && ctx.transferPrice === null;
+  if (priceUnavailable || transferUnavailable) {
     const el = document.getElementById("actTotalPreview");
     if (el) el.textContent = t("hotel.priceOnRequest","Price on request");
     const submit = document.getElementById("submitActivityBtn");
@@ -4948,6 +4984,7 @@ function actCalcTotal(priceAdult, priceChild, currency) {
   const adjustmentValue = Number(selected?.dataset.adjustmentValue || 0);
   if (adjustmentType === "PERCENTAGE") total *= 1 + adjustmentValue / 100;
   if (adjustmentType === "FIXED") total += adjustmentValue;
+  if (transferOn) total += ctx.transferPrice;
   const el = document.getElementById("actTotalPreview");
   if (el) el.textContent = formatPrice(total, currency);
   const ac = document.getElementById("actAdultCount");

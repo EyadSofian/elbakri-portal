@@ -87,6 +87,20 @@ test('portal: the transfer panel starts on the trip’s own return time', () => 
   assert.match(html, /value="17:00"/);
 });
 
+test('portal: a priced activity transfer shows its add-on and default route', () => {
+  const html = portal.activityTransferPanel({
+    transferIncluded: false,
+    transferPrice: 18,
+    currency: 'USD',
+    transferFromName: 'Cairo hotel',
+    transferToName: 'Activity point',
+  }, 'act');
+  assert.match(html, /Fixed add-on/);
+  assert.match(html, /18/);
+  assert.match(html, /value="Cairo hotel"/);
+  assert.match(html, /value="Activity point"/);
+});
+
 // ── Party pricing: the portal must agree with the server ────────────────────
 
 // A trip sold at every party size, matching the ALL fixture on the server side.

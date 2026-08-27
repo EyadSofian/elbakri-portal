@@ -45,6 +45,9 @@ const SAMPLE: Record<string, unknown> = {
   transferIncluded: true,
   transferNote: 'Pickup from your hotel lobby',
   transferNoteAr: 'الاستلام من لوبي الفندق',
+  transferPrice: 18,
+  transferFromName: 'Cairo hotel / address',
+  transferToName: 'Activity meeting point',
   returnTime: '17:00',
 };
 
@@ -109,7 +112,7 @@ test('a partial edit does not wipe the prices it never mentioned', () => {
   // the controller wrote every one of them. Changing one price wiped the rest.
   const parsed = updateActivitySchema.parse({ priceAdult: 55 }) as Record<string, unknown>;
   assert.equal(parsed.priceAdult, 55);
-  for (const untouched of ['priceChild', 'priceSingle', 'priceDouble', 'priceTriple']) {
+  for (const untouched of ['priceChild', 'priceSingle', 'priceDouble', 'priceTriple', 'transferPrice']) {
     assert.equal(untouched in parsed, false, `${untouched} was silently cleared`);
   }
 });

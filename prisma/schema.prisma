@@ -1393,6 +1393,12 @@ model Activity {
   transferIncluded   Boolean                 @default(false)
   transferNote       String?                 @db.Text
   transferNoteAr     String?                 @db.Text
+  // Optional fixed add-on charged once per activity booking when the transfer
+  // is not already included. It uses the activity currency, so the catalogue,
+  // preview and server total can never disagree about which money is charged.
+  transferPrice      Decimal?                @db.Decimal(10, 2)
+  transferFromName   String?
+  transferToName     String?
   // When the trip drops the guests back. Prefills the pickup time of a return
   // transfer so the driver is booked for when they are actually free.
   returnTime         String?
@@ -1506,6 +1512,7 @@ model ActivityPackageItem {
   transferPickupTime String?
   transferReturnTime String?
   transferNotes      String?         @db.Text
+  transferAmount     Decimal?        @db.Decimal(12, 2)
   notes              String?         @db.Text
   lineAmount         Decimal?        @db.Decimal(12, 2) // internal — never shown on voucher
   currency           String          @default("USD")
@@ -1564,6 +1571,9 @@ model ActivityBooking {
   transferPickupTime String? // "08:30" — when the driver collects them
   transferReturnTime String? // "17:00" — defaults to the activity's return time
   transferNotes      String?           @db.Text
+  // Price snapshot for the optional transfer. Keeping it separate makes an
+  // old invoice auditable even after the catalogue add-on price changes.
+  transferAmount     Decimal?          @db.Decimal(12, 2)
   totalAmount        Decimal           @db.Decimal(12, 2)
   currency           String            @default("USD")
   sourceAmount       Decimal?          @db.Decimal(12, 2)
