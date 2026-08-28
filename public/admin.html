@@ -4706,7 +4706,7 @@ function crProgrammeCardHtml(programme) {
     <div class="secondary-text" style="margin-top:8px">${t("cruise.programmeTransferIncluded","Transfer is included automatically when this programme is selected.")}</div>
     <div class="cr-programme-days">${itinerary.map(crProgrammeDayHtml).join("")}</div>
     <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px" onclick="crAddProgrammeDay(this)">${icon("plus")}${t("cruise.addDay","Add day")}</button>
-    <div class="cr-programme-pricing-head"><strong>${t("cruise.perPersonRates","Per-person price periods")}</strong><span>${t("cruise.programmeMarketsRequired","Egyptians in EGP · Foreigners in USD")}</span></div>
+    <div class="cr-programme-pricing-head"><strong>${t("cruise.perPersonRates","Per-person price periods")}</strong><span>${t("cruise.programmeMarkets","Egyptians in EGP · Foreigners in USD")}</span></div>
     <div class="cr-programme-rates">${periods.map(crProgrammePricePeriodHtml).join("")}</div>
     <button type="button" class="btn btn-outline btn-sm" onclick="crAddProgrammePricePeriod(this)">${icon("plus")}${t("cruise.addFarePeriod","Add price period")}</button>
   </div>`;
