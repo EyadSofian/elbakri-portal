@@ -146,6 +146,22 @@ export function createDemoRouter(): Router {
     res.json(ok(kind ? DEMO_OFFERS.filter((offer) => offer.kind === kind) : DEMO_OFFERS));
   });
   router.get('/offers/:id', (req, res) => res.json(ok(DEMO_OFFERS.find((o) => o.id === req.params.id) ?? DEMO_OFFERS[0])));
+  router.get('/cruise-shared-catalogue', (_req, res) => {
+    const programmes = DEMO_CRUISES.flatMap((cruise) => (cruise.programmes || []).map((programme) => ({
+      ...programme,
+      route: cruise.route,
+      nights: cruise.schedules.find((schedule) => schedule.id === programme.scheduleId)?.nights || cruise.schedules[0]?.nights || 4,
+      rates: (programme.rates || []).map((rate) => ({ ...rate, adultPrice: rate.singlePrice ?? rate.doublePrice ?? rate.triplePrice })),
+    })));
+    const transferRates = DEMO_CRUISES.flatMap((cruise) => (cruise.transferRates || []).map((rate) => ({
+      ...rate,
+      route: cruise.route,
+      nights: cruise.schedules.find((schedule) => schedule.id === rate.scheduleId)?.nights || cruise.schedules[0]?.nights || 4,
+      oneWayAmount: rate.amount,
+      roundTripAmount: rate.roundTripAmount ?? null,
+    })));
+    res.json(ok({ programmes, transferRates }));
+  });
   // The combined cruise editor loads these four child collections separately.
   // Model them explicitly in preview mode so opening an existing cruise never
   // replaces its real From / Back / nights values with an empty default row.
@@ -168,7 +184,20 @@ export function createDemoRouter(): Router {
   router.get('/cruises/:id', (req, res) => {
     res.json(ok(DEMO_CRUISES.find((row) => row.id === req.params.id) ?? DEMO_CRUISES[0]));
   });
-  router.get('/cruises', (_req, res) => res.json(ok(DEMO_CRUISES)));
+  router.get('/cruises', (req, res) => {
+    const user = currentUser(req);
+    const market = user.company?.market === 'EGYPTIAN' ? 'EGYPTIAN' : 'FOREIGN';
+    res.json(ok(DEMO_CRUISES.map((cruise) => ({
+      ...cruise,
+      pricingAudience: market,
+      cabinRates: (cruise.cabinRates || []).filter((rate) => rate.market === market),
+      programmes: (cruise.programmes || []).map((programme) => ({
+        ...programme,
+        rates: (programme.rates || []).filter((rate) => rate.market === market),
+      })),
+      transferRates: (cruise.transferRates || []).filter((rate) => rate.market === market),
+    }))));
+  });
   router.get('/activities', (req, res) => {
     // Preview mode must respect the same destination filter as production;
     // otherwise choosing Sharm in the destination-first flow misleadingly

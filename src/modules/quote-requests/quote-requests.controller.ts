@@ -111,6 +111,8 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     customerNotes?: string;
     contactPreference?: string;
     transferRequested?: boolean;
+    transferTripType?: string;
+    transferPaxCount?: number;
     transferFromType?: string;
     transferFromName?: string;
     transferToType?: string;
@@ -153,13 +155,11 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     });
     transferIncluded = activity?.transferIncluded ?? false;
     serviceReturnTime = activity?.returnTime ?? null;
-  } else if (body.transferRequested && body.cruiseId) {
-    const cruise = await prisma.nileCruise.findUnique({
-      where: { id: body.cruiseId },
-      select: { transferIncluded: true },
-    });
-    transferIncluded = cruise?.transferIncluded ?? false;
   }
+  // A Nile cruise transfer is programme-specific now: selecting a programme
+  // sends transferRequested=false because its transfer is already in the fare;
+  // cruise-only sends the separately priced transfer. The old boat-wide flag
+  // must not suppress that cruise-only choice.
   const transfer = readTransferAddOn(body as unknown as Record<string, unknown>, {
     transferIncluded,
     activityReturnTime: serviceReturnTime,
@@ -193,6 +193,12 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       customerNotes: body.customerNotes ?? null,
       contactPreference: body.contactPreference ?? null,
       ...transfer,
+      transferTripType: transfer.transferRequested
+        ? (String(body.transferTripType ?? 'ONE_WAY').toUpperCase() === 'ROUND_TRIP' ? 'ROUND_TRIP' : 'ONE_WAY')
+        : null,
+      transferPaxCount: transfer.transferRequested
+        ? Math.max(1, Math.floor(Number(body.transferPaxCount ?? body.adultsCount ?? 1)) || 1)
+        : null,
       customFields: sanitizeCustomFields(body.customFields) ?? undefined,
     },
     include: quoteInclude,

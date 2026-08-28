@@ -212,6 +212,44 @@ export function priceCruisePerPerson(input: {
   };
 }
 
+/** A programme is deliberately independent of cabin sharing. It has one adult
+ * price and one optional child price per traveller. */
+export function priceCruiseProgrammePerPerson(input: {
+  adultPrice: Decimal | null;
+  childPrice?: Decimal | null;
+  currency: string;
+  adults: number;
+  children?: number;
+}): { total: Decimal; adultUnitPrice: Decimal; childUnitPrice: Decimal | null; currency: string } | null {
+  if (input.adultPrice == null) return null;
+  const adults = Math.max(1, Math.floor(input.adults) || 1);
+  const children = Math.max(0, Math.floor(input.children ?? 0) || 0);
+  const childUnitPrice = input.childPrice ?? null;
+  if (children > 0 && childUnitPrice == null) return null;
+  return {
+    total: input.adultPrice.mul(adults).add((childUnitPrice ?? new Decimal(0)).mul(children)),
+    adultUnitPrice: input.adultPrice,
+    childUnitPrice,
+    currency: input.currency,
+  };
+}
+
+export type CruiseTransferTripType = 'ONE_WAY' | 'ROUND_TRIP';
+
+/** Transfer prices are explicit per person. Round-trip never falls back to
+ * twice the one-way amount because the operator must quote it deliberately. */
+export function priceCruiseTransfer(input: {
+  oneWayAmount: Decimal;
+  roundTripAmount?: Decimal | null;
+  tripType: CruiseTransferTripType;
+  pax: number;
+}): { total: Decimal; unitPrice: Decimal; pax: number } | null {
+  const unitPrice = input.tripType === 'ROUND_TRIP' ? input.roundTripAmount ?? null : input.oneWayAmount;
+  if (unitPrice == null) return null;
+  const pax = Math.max(1, Math.floor(input.pax) || 1);
+  return { total: unitPrice.mul(pax), unitPrice, pax };
+}
+
 export type CruiseSupplementType = 'FIXED_AMOUNT' | 'PERCENTAGE' | 'TOTAL_PRICE' | 'TEXT_ONLY';
 export interface CruiseSupplement {
   name: string;

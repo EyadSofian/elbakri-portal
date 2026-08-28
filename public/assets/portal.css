@@ -8295,7 +8295,7 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
   top: -18px;
   z-index: 4;
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
   gap: 6px;
   margin: -18px -18px 16px;
   padding: 12px 18px;
@@ -8447,6 +8447,15 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
 .cr-programme-market-rate { min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-raised); }
 .cr-programme-market-title { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
 .cr-programme-market-title > span { padding: 3px 7px; border-radius: 999px; background: var(--surface-muted); color: var(--text-muted); font-size: 10px; font-weight: 900; }
+.cr-shared-intro { display: grid; gap: 4px; margin-bottom: 16px; }
+.cr-shared-intro > span { color: var(--text-muted); font-size: 12px; }
+.cr-shared-list { display: grid; gap: 7px; }
+.cr-shared-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-raised); }
+.cr-shared-item > div { display: grid; gap: 2px; min-width: 0; }
+.cr-shared-item b { color: var(--text-primary); font-size: 12px; }
+.cr-shared-item small { color: var(--text-muted); font-size: 10px; }
+.cr-shared-item > span { flex: 0 0 auto; color: var(--brand-accent-text); font-size: 11px; font-weight: 800; }
+.cr-shared-programme-card { margin-bottom: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 13px; background: var(--surface-muted); }
 
 .itin-editor { display: grid; gap: 8px; }
 
@@ -8475,7 +8484,7 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
 @media (max-width: 640px) {
   .itin-row { grid-template-columns: 64px minmax(0, 1fr) auto; }
   .cr-programme-market-grid { grid-template-columns: 1fr; }
-  .cr-editor-tabs { top: -14px; margin: -14px -14px 14px; padding: 10px 14px; grid-template-columns: repeat(5, minmax(130px, 1fr)); }
+  .cr-editor-tabs { top: -14px; margin: -14px -14px 14px; padding: 10px 14px; grid-template-columns: repeat(3, minmax(130px, 1fr)); }
   .of-package-tabs { grid-template-columns: repeat(4, minmax(132px, 1fr)); }
   .of-package-editor__heading { display: grid; gap: 3px; }
 }
@@ -8535,7 +8544,7 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
 
 [dir="rtl"] .cr-sailing-card { padding: 12px 38px 11px 14px; }
 .cr-sailing-card:hover { border-color: var(--brand-accent); }
-.cr-sailing-card:has(input:checked) {
+.cr-sailing-card.is-selected {
   border-color: var(--brand-accent);
   background: var(--brand-accent-soft);
   box-shadow: 0 0 0 3px var(--accent-tint-strong);
@@ -8624,9 +8633,36 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
 }
 
 .cr-pick input { width: auto; margin: 0; }
-.cr-pick:has(input:checked) {
+.cr-pick.is-selected {
   border-color: var(--brand-gold, var(--info));
   background: var(--info-soft);
+}
+
+@supports selector(:has(*)) {
+  .cr-sailing-card:has(input:checked) {
+    border-color: var(--brand-accent);
+    background: var(--brand-accent-soft);
+    box-shadow: 0 0 0 3px var(--accent-tint-strong);
+  }
+  .cr-pick:has(input:checked) {
+    border-color: var(--brand-gold, var(--info));
+    background: var(--info-soft);
+  }
+}
+
+.cr-programme-fare-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-top: 8px; }
+.cr-programme-fare-card { min-height: 106px; }
+.cr-programme-fare-name { color: var(--text-primary); font-size: 13px; font-weight: 850; }
+.cr-programme-fare-prices { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cr-programme-fare-prices b { display: grid; gap: 1px; padding: 7px 9px; border-radius: 9px; background: var(--surface-muted); color: var(--text-primary); font-size: 13px; }
+.cr-programme-fare-prices small { color: var(--text-muted); font-size: 9px; font-weight: 700; }
+.cr-transfer-options { display: grid; grid-template-columns: minmax(150px,.45fr) minmax(0,1fr); gap: 10px; margin-top: 10px; align-items: start; }
+.cr-transfer-trip-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.cr-transfer-trip-grid .cr-sailing-card { min-height: 78px; }
+
+@media (max-width: 640px) {
+  .cr-transfer-options,
+  .cr-transfer-trip-grid { grid-template-columns: 1fr; }
 }
 
 .cr-quote-line {

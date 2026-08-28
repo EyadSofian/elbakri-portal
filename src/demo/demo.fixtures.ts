@@ -126,15 +126,25 @@ export const DEMO_OFFERS = [
 
 export const DEMO_CRUISES = [
   { id: 'cr1', name: 'MS Nile Dawn', nameAr: 'إم إس نايل داون', shipType: 'CRUISE', route: 'LUXOR_ASWAN', currency: 'USD', isActive: true, cabins: 62, description: 'Luxor to Aswan.', showPriceToAgents: true, priceVisible: true, hasRateMatrix: true, priceFrom: 510,
-    schedules: [{ id: 'sc1', departureDay: 'MONDAY', returnDay: 'FRIDAY', nights: 4, label: 'Four nights', isActive: true }],
-    cabinRates: [{ id: 'crr1', scheduleId: 'sc1', cabinName: 'Cruise only · Autumn', market: 'FOREIGN', currency: 'USD', singlePrice: 760, doublePrice: 590, triplePrice: 510, childPrice: 270, supplements: [{ name: 'Upper deck', type: 'FIXED_AMOUNT', amount: 35, currency: 'USD' }] }],
+    schedules: [{ id: 'sc1', departureDay: 'MONDAY', returnDay: 'FRIDAY', nights: 4, label: 'Four nights', isActive: true }, { id: 'sc1-short', departureDay: 'FRIDAY', returnDay: 'MONDAY', nights: 3, label: 'Three nights', isActive: true }],
+    cabinRates: [{ id: 'crr1', scheduleId: 'sc1', cabinName: 'Cruise only · Autumn', market: 'FOREIGN', currency: 'USD', singlePrice: 760, doublePrice: 590, triplePrice: 510, childPrice: 270, supplements: [{ name: 'Upper deck', type: 'FIXED_AMOUNT', amount: 35, currency: 'USD' }] }, { id: 'crr1-short', scheduleId: 'sc1-short', cabinName: 'Cruise only · Short sailing', market: 'FOREIGN', currency: 'USD', singlePrice: 660, doublePrice: 510, triplePrice: 445, childPrice: 225, supplements: [] }],
     programmes: [{ id: 'cp1', scheduleId: 'sc1', name: 'Classic 4-night programme', nameAr: 'برنامج كلاسيك ٤ ليالي', transferFromName: 'Luxor Airport', transferToName: 'Nile Cruise Pier', transferIncluded: true, hasRates: true,
       itinerary: [{ day: 1, title: 'Luxor embarkation' }, { day: 2, title: 'Edfu & Kom Ombo' }, { day: 4, title: 'Aswan' }],
       rates: [
         { id: 'cpr1-egp', market: 'EGYPTIAN', currency: 'EGP', singlePrice: 46000, doublePrice: 36000, triplePrice: 32000, childPrice: 16500, supplements: [] },
         { id: 'cpr1', market: 'FOREIGN', currency: 'USD', singlePrice: 920, doublePrice: 720, triplePrice: 640, childPrice: 330, supplements: [] },
+      ] }, { id: 'cp1-short', scheduleId: 'sc1-short', name: 'Classic 3-night programme', nameAr: 'برنامج كلاسيك ٣ ليالي', transferFromName: 'Luxor Airport', transferToName: 'Nile Cruise Pier', transferIncluded: true, hasRates: true,
+      itinerary: [{ day: 1, title: 'Luxor embarkation' }, { day: 2, title: 'Edfu' }, { day: 3, title: 'Aswan' }],
+      rates: [
+        { id: 'cpr1-short-egp', market: 'EGYPTIAN', currency: 'EGP', singlePrice: 39000, doublePrice: null, triplePrice: null, childPrice: 14000, supplements: [] },
+        { id: 'cpr1-short', market: 'FOREIGN', currency: 'USD', singlePrice: 790, doublePrice: null, triplePrice: null, childPrice: 285, supplements: [] },
       ] }],
-    transferRates: [{ id: 'ctr1', scheduleId: 'sc1', market: 'FOREIGN', fromLocation: 'Luxor Airport', toLocation: 'Nile Cruise Pier', amount: 45, currency: 'USD' }] },
+    transferRates: [
+      { id: 'ctr1', scheduleId: 'sc1', market: 'FOREIGN', fromLocation: 'Luxor Airport', toLocation: 'Nile Cruise Pier', amount: 45, roundTripAmount: 75, currency: 'USD' },
+      { id: 'ctr1-egp', scheduleId: 'sc1', market: 'EGYPTIAN', fromLocation: 'مطار الأقصر', toLocation: 'مرسى النايل كروز', amount: 900, roundTripAmount: 1500, currency: 'EGP' },
+      { id: 'ctr1-short', scheduleId: 'sc1-short', market: 'FOREIGN', fromLocation: 'Luxor Airport', toLocation: 'Nile Cruise Pier', amount: 40, roundTripAmount: 68, currency: 'USD' },
+      { id: 'ctr1-short-egp', scheduleId: 'sc1-short', market: 'EGYPTIAN', fromLocation: 'مطار الأقصر', toLocation: 'مرسى النايل كروز', amount: 800, roundTripAmount: 1350, currency: 'EGP' },
+    ] },
   { id: 'cr2', name: 'MS Royal Lotus', nameAr: 'إم إس رويال لوتس', shipType: 'CRUISE', route: 'ASWAN_LUXOR', currency: 'USD', isActive: true, cabins: 48, description: 'Aswan to Luxor.', showPriceToAgents: true, priceVisible: true, hasRateMatrix: true, priceFrom: 460,
     schedules: [{ id: 'sc2', departureDay: 'FRIDAY', returnDay: 'MONDAY', nights: 3, isActive: true }],
     cabinRates: [{ id: 'crr2', scheduleId: 'sc2', cabinName: 'Cruise only', market: 'FOREIGN', currency: 'USD', singlePrice: 680, doublePrice: 520, triplePrice: 460, childPrice: 240, supplements: [] }], programmes: [], transferRates: [] },

@@ -286,6 +286,44 @@ test('portal: the current cruise picker labels occupancy prices per person and s
   assert.doesNotMatch(html, /per cabin/);
 });
 
+test('portal: programme pricing is adult/child per person with no occupancy choice', () => {
+  assert.match(dashboardSource, /if \(isProgramme\)[\s\S]*?\|PROGRAMME/);
+  assert.match(dashboardSource, /rate\.singlePrice[\s\S]*?adultPerPerson/);
+  assert.match(adminSource, /class="cr-adult"/);
+  assert.doesNotMatch(adminSource, /cr-programme-market-rate[\s\S]{0,1200}class="cr-double"/);
+});
+
+test('portal: programmes are filtered by exact schedule so 3 and 4 nights cannot mix', () => {
+  assert.match(dashboardSource, /filter\(p => p\.scheduleId === scheduleId\)/);
+  assert.match(dashboardSource, /find\(p => p\.id === programmeId && p\.scheduleId === scheduleId\)/);
+});
+
+test('portal: cruise transfer exposes pax and explicit one-way/round-trip choices', () => {
+  assert.match(dashboardSource, /id="crTransferPax"/);
+  assert.match(dashboardSource, /name="crTransferTripType" value="ONE_WAY"/);
+  assert.match(dashboardSource, /name="crTransferTripType" value="ROUND_TRIP"/);
+  assert.match(dashboardSource, /transferUnitPrice \* transferPax/);
+});
+
+test('portal: a priced transfer remains available when the cruise fare is price-on-request', () => {
+  assert.match(dashboardSource, /const cruise = selected\?\.cruise \|\| \(state\.cache\.cruisesRows \|\| \[\]\)\.find/);
+  assert.match(dashboardSource, /if \(!host \|\| !cruise\)/);
+  assert.match(dashboardSource, /transferTotal/);
+  assert.match(dashboardSource, /sel\.adultUnitPrice == null[\s\S]*?sel\.transferRate/);
+});
+
+test('admin: programmes and transfers have one shared catalogue across cruises', () => {
+  assert.match(adminSource, /\/cruise-shared-catalogue/);
+  assert.match(adminSource, /renderCruiseSharedCatalogue/);
+  assert.match(adminSource, /class="cr-shared-route"/);
+  assert.match(adminSource, /class="cr-shared-nights"/);
+});
+
+test('portal: selected cruise cards have a WebKit-safe explicit class fallback', () => {
+  assert.match(dashboardSource, /function crSyncChoiceCards/);
+  assert.match(portalCss, /\.cr-sailing-card\.is-selected/);
+});
+
 test('portal: a programme fare with no child rate visibly stays unpriced', () => {
   const html = portal.crPerPersonFarePicker({}, [
     { id: 'r1', cabinName: 'Summer', currency: 'USD', doublePrice: 600, childPrice: null },
@@ -413,6 +451,15 @@ test('offers: the package editor exposes hotel, transfer, activity and price-per
   for (const tab of ['hotels', 'transfers', 'activities', 'pricing']) {
     assert.match(adminSource, new RegExp(`data-of-tab="${tab}"`));
   }
+});
+
+test('offers: images are uploaded and placement is not exposed as a redundant field', () => {
+  assert.match(adminSource, /type="file" id="ofImgFile"/);
+  assert.match(adminSource, /onchange="ofPickImage\(this\)"/);
+  assert.match(adminSource, /uploadImageToServer\(file\)/);
+  assert.match(adminSource, /class="of-image-preview"/);
+  assert.match(adminSource, /type="hidden" id="ofSvcType"/);
+  assert.doesNotMatch(adminSource, /<select id="ofSvcType"/);
 });
 
 test('admin: checkbox and radio controls cannot inherit a full-width text input', () => {

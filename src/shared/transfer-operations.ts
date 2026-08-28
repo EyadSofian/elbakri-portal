@@ -21,6 +21,7 @@ export interface TransferOperationRow {
   clientName: string | null;
   contactNumber: string | null;
   passengerCount: number;
+  tripType?: 'ONE_WAY' | 'ROUND_TRIP' | null;
   serviceDate: Date | string | null;
   requestedAt: Date | string | null;
   fromType: string | null;
@@ -36,6 +37,8 @@ export interface TransferOperationRow {
 interface TransferFields {
   id: string;
   transferRequested?: boolean | null;
+  transferTripType?: string | null;
+  transferPaxCount?: number | null;
   transferFromType?: string | null;
   transferFromName?: string | null;
   transferToType?: string | null;
@@ -68,6 +71,9 @@ function transferPart(source: TransferFields) {
     pickupTime: source.transferPickupTime ?? null,
     returnTime: source.transferReturnTime ?? null,
     notes: source.transferNotes ?? null,
+    tripType: source.transferTripType === 'ROUND_TRIP' ? 'ROUND_TRIP' as const
+      : source.transferTripType === 'ONE_WAY' ? 'ONE_WAY' as const
+      : null,
   };
 }
 
@@ -94,7 +100,7 @@ export function activityTransferOperation(source: TransferFields & {
     company: source.company ?? null,
     clientName: text(source.clientName) || null,
     contactNumber: text(source.clientPhone) || null,
-    passengerCount: count(source.adultsCount, source.childrenCount),
+    passengerCount: Math.max(1, Number(source.transferPaxCount) || count(source.adultsCount, source.childrenCount)),
     serviceDate: source.activityDate ?? null,
     requestedAt: source.requestedAt ?? source.createdAt ?? null,
     ...transferPart(source),
@@ -132,7 +138,7 @@ export function packageTransferOperation(source: TransferFields & {
     company: source.package.company ?? null,
     clientName: text(source.package.clientName) || null,
     contactNumber: text(source.clientPhone) || text(source.package.clientPhone) || null,
-    passengerCount: count(source.adultsCount, source.childrenCount),
+    passengerCount: Math.max(1, Number(source.transferPaxCount) || count(source.adultsCount, source.childrenCount)),
     serviceDate: source.activityDate ?? null,
     requestedAt: source.package.requestedAt ?? source.package.createdAt ?? source.createdAt ?? null,
     ...transferPart(source),
@@ -162,7 +168,7 @@ export function cruiseTransferOperation(source: TransferFields & {
     company: source.company ?? null,
     clientName: firstName(source.passengerNames),
     contactNumber: null,
-    passengerCount: count(source.adultsCount, source.childrenCount),
+    passengerCount: Math.max(1, Number(source.transferPaxCount) || count(source.adultsCount, source.childrenCount)),
     serviceDate: source.checkIn ?? null,
     requestedAt: source.requestedAt ?? source.createdAt ?? null,
     ...transferPart(source),
@@ -195,7 +201,7 @@ export function quoteTransferOperation(source: TransferFields & {
     company: source.company ?? null,
     clientName: text(custom.clientName) || null,
     contactNumber: text(custom.clientPhone) || null,
-    passengerCount: count(source.adultsCount, source.childrenCount),
+    passengerCount: Math.max(1, Number(source.transferPaxCount) || count(source.adultsCount, source.childrenCount)),
     serviceDate: source.checkIn ?? null,
     requestedAt: source.requestedAt ?? source.createdAt ?? null,
     ...transferPart(source),

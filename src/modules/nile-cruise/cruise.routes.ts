@@ -10,6 +10,7 @@ import {
   listCruiseRates, saveCruiseRates, listCruiseSchedules, saveCruiseSchedules,
   listCruiseProgrammes, saveCruiseProgrammes,
   listCruiseTransferRates, saveCruiseTransferRates,
+  getCruiseSharedCatalogue, saveCruiseSharedCatalogue,
 } from './cruise-catalogue.controller';
 
 const router = Router();
@@ -30,6 +31,8 @@ router.get('/cruises/:id/programmes', listCruiseProgrammes);
 router.put('/cruises/:id/programmes', requireRole('SUPERADMIN'), saveCruiseProgrammes);
 router.get('/cruises/:id/transfer-rates', listCruiseTransferRates);
 router.put('/cruises/:id/transfer-rates', requireRole('SUPERADMIN'), saveCruiseTransferRates);
+router.get('/cruise-shared-catalogue', requireRole('SUPERADMIN'), getCruiseSharedCatalogue);
+router.put('/cruise-shared-catalogue', requireRole('SUPERADMIN'), saveCruiseSharedCatalogue);
 
 router.get('/cruise-bookings', listCruiseBookings);
 router.post('/cruise-bookings', createCruiseBooking);

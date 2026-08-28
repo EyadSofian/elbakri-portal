@@ -15,7 +15,9 @@ import {
   nightsBetween,
   normalizeWeekday,
   priceCruiseBooking,
+  priceCruiseProgrammePerPerson,
   priceCruisePerPerson,
+  priceCruiseTransfer,
   programmePeriodsHaveBothAudiences,
   rateApplies,
   validateCruiseRateInput,
@@ -205,6 +207,30 @@ test('priceCruisePerPerson: children use their own explicit per-person price', (
 
 test('priceCruisePerPerson: a child without a child tariff is price-on-request, never free', () => {
   assert.equal(priceCruisePerPerson({ row: row(), occupancy: 'DOUBLE', adults: 2, children: 1 }), null);
+});
+
+test('programme pricing has no Single/Double/Triple multiplier', () => {
+  const priced = priceCruiseProgrammePerPerson({
+    adultPrice: D(300), childPrice: D(150), currency: 'USD', adults: 3, children: 1,
+  })!;
+  assert.equal(priced.total.toString(), '1050');
+  assert.equal(priced.adultUnitPrice.toString(), '300');
+});
+
+test('programme child price stays required when children are travelling', () => {
+  assert.equal(priceCruiseProgrammePerPerson({
+    adultPrice: D(300), childPrice: null, currency: 'USD', adults: 2, children: 1,
+  }), null);
+});
+
+test('cruise transfer multiplies the selected one-way tariff by its own pax', () => {
+  const priced = priceCruiseTransfer({ oneWayAmount: D(25), roundTripAmount: D(40), tripType: 'ONE_WAY', pax: 3 })!;
+  assert.equal(priced.total.toString(), '75');
+});
+
+test('round-trip must have its own explicit tariff', () => {
+  assert.equal(priceCruiseTransfer({ oneWayAmount: D(25), roundTripAmount: null, tripType: 'ROUND_TRIP', pax: 2 }), null);
+  assert.equal(priceCruiseTransfer({ oneWayAmount: D(25), roundTripAmount: D(40), tripType: 'ROUND_TRIP', pax: 2 })!.total.toString(), '80');
 });
 
 test('Nile cruises expose only Egyptian/EGP and Foreign/USD audiences', () => {

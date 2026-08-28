@@ -17,7 +17,9 @@ import {
   cruiseAudience,
   fromPrice,
   isOccupancy,
+  priceCruiseProgrammePerPerson,
   priceCruisePerPerson,
+  priceCruiseTransfer,
 } from '../../shared/cruise-rates';
 import { readItinerary } from '../../shared/itinerary';
 import { readTransferAddOn } from '../../shared/transfer-addon';
@@ -27,7 +29,7 @@ const cruiseInclude = {
   cabinRate: { select: { id: true, cabinName: true, cabinType: true, currency: true } },
   programme: { select: { id: true, name: true, nameAr: true, transferFromName: true, transferToName: true } },
   programmeRate: { select: { id: true, market: true, currency: true } },
-  transferRate: { select: { id: true, fromLocation: true, toLocation: true, amount: true, currency: true } },
+  transferRate: { select: { id: true, fromLocation: true, toLocation: true, amount: true, roundTripAmount: true, currency: true } },
   schedule: { select: { id: true, departureDay: true, returnDay: true, nights: true, label: true, labelAr: true } },
   addOns: { orderBy: { displayOrder: 'asc' as const } },
   company: { select: { id: true, name: true, email: true } },
@@ -100,7 +102,15 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
       const programmeRates = applicableRates(programme.rates.map((rate) => ({
         ...rate,
         cabinName: programme.name,
-      })), cruiseMarket, sailingDate);
+      })), cruiseMarket, sailingDate).map((rate) => ({
+        ...rate,
+        // Existing rows may have been entered through the old occupancy UI.
+        // Until the shared catalogue is saved, expose their first real adult
+        // amount as the programme's one per-person price.
+        singlePrice: rate.singlePrice ?? rate.doublePrice ?? rate.triplePrice,
+        doublePrice: null,
+        triplePrice: null,
+      }));
       return {
         ...programme,
         itinerary: readItinerary(programme.itinerary),
@@ -300,6 +310,8 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     transferToName?: string;
     transferPickupTime?: string;
     transferReturnTime?: string;
+    transferTripType?: string;
+    transferPaxCount?: number;
     transferNotes?: string;
   };
   const companyId = body.companyId ?? caller.companyId!;
@@ -381,11 +393,40 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     let childUnitPrice: Decimal | null = null;
     let selectedSupplements: Record<string, unknown>[] = [];
 
-    if (chosenRate) {
+    if (programmeRate) {
+      // A programme is one product per traveller. Its legacy `singlePrice`
+      // column now holds the adult per-person tariff; the client never chooses
+      // a Single/Double/Triple sharing basis for a programme.
+      const priced = priceCruiseProgrammePerPerson({
+        adultPrice: programmeRate.singlePrice,
+        childPrice: programmeRate.childPrice,
+        currency: programmeRate.currency,
+        adults: adultsCount,
+        children: childrenCount,
+      });
+      if (!priced) throw new Error(childrenCount > 0 ? 'CHILD_RATE_NOT_AVAILABLE' : 'PROGRAMME_RATE_NOT_AVAILABLE');
+      adultUnitPrice = priced.adultUnitPrice;
+      childUnitPrice = priced.childUnitPrice;
+      sourceAmount = priced.total;
+      sourceCurrency = priced.currency;
+
+      const availableSupplements = Array.isArray(programmeRate.supplements)
+        ? programmeRate.supplements as Record<string, unknown>[] : [];
+      const wanted = new Set((body.selectedSupplements || []).map(String));
+      selectedSupplements = availableSupplements.filter((supplement) => wanted.has(String(supplement.name ?? '')));
+      const supplemented = applyCruiseSupplements(sourceAmount, pax, sourceCurrency, selectedSupplements.map((supplement) => ({
+        name: String(supplement.name ?? ''),
+        type: String(supplement.type ?? 'TEXT_ONLY') as 'FIXED_AMOUNT' | 'PERCENTAGE' | 'TOTAL_PRICE' | 'TEXT_ONLY',
+        amount: supplement.amount as number | string | null | undefined,
+        currency: supplement.currency as string | null | undefined,
+      })));
+      if (!supplemented) throw new Error('INVALID_SUPPLEMENT');
+      sourceAmount = supplemented;
+    } else if (chosenRate) {
       const requested = String(body.occupancy ?? 'DOUBLE').toUpperCase();
       if (!isOccupancy(requested)) throw new Error('INVALID_OCCUPANCY');
       occupancy = requested as Occupancy;
-      const row = { ...chosenRate, cabinName: programmeRate?.programme.name ?? rate?.cabinName ?? 'Cruise fare' };
+      const row = { ...chosenRate, cabinName: rate?.cabinName ?? 'Cruise fare' };
       const priced = priceCruisePerPerson({ row, occupancy, adults: adultsCount, children: childrenCount });
       if (!priced) throw new Error('OCCUPANCY_NOT_SOLD');
       sourceAmount = priced.total;
@@ -426,6 +467,9 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     // one explicit, admin-priced From → To route; free-text transfer prices are
     // never trusted by the booking API.
     let transferRate = null;
+    const transferTripType = String(body.transferTripType ?? 'ONE_WAY').toUpperCase() === 'ROUND_TRIP'
+      ? 'ROUND_TRIP' : 'ONE_WAY';
+    const transferPaxCount = Math.max(1, Math.floor(Number(body.transferPaxCount ?? pax)) || pax);
     if (!programmeRate && body.transferRateId) {
       if (!body.scheduleId) throw new Error('SCHEDULE_NOT_AVAILABLE');
       transferRate = await prisma.cruiseTransferRate.findFirst({
@@ -441,7 +485,14 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
       if ((transferRate.validFrom && transferRate.validFrom > checkIn)
         || (transferRate.validTo && transferRate.validTo < checkIn)) throw new Error('TRANSFER_RATE_NOT_AVAILABLE');
       if (transferRate.currency !== sourceCurrency) throw new Error('MIXED_CURRENCY');
-      sourceAmount = sourceAmount.add(transferRate.amount);
+      const transferPrice = priceCruiseTransfer({
+        oneWayAmount: transferRate.amount,
+        roundTripAmount: transferRate.roundTripAmount,
+        tripType: transferTripType,
+        pax: transferPaxCount,
+      });
+      if (!transferPrice) throw new Error('TRANSFER_TRIP_TYPE_NOT_AVAILABLE');
+      sourceAmount = sourceAmount.add(transferPrice.total);
     }
     if (!programmeRate && body.transferRequested && !transferRate) throw new Error('TRANSFER_RATE_REQUIRED');
     const transfer = programmeRate
@@ -453,6 +504,8 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
           transferToType: 'ADDRESS', transferToName: transferRate.toLocation,
           transferPickupTime: body.transferPickupTime ?? null,
           transferReturnTime: body.transferReturnTime ?? null,
+          transferTripType,
+          transferPaxCount,
           transferNotes: body.transferNotes ?? transferRate.notes,
         }
         : readTransferAddOn(body as unknown as Record<string, unknown>, { transferIncluded: false });

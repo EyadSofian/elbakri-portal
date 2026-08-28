@@ -187,11 +187,14 @@ test('a quote request keeps its client fields and transfer leg for operations', 
     id: 'q1', refNumber: 'QR-2026-0001', transferRequested: true,
     transferFromName: 'Zamalek', transferToName: 'Zamalek',
     serviceName: 'Cairo food tour', adultsCount: 2, childrenCount: 0,
+    transferPaxCount: 5, transferTripType: 'ROUND_TRIP',
     customFields: { clientName: 'Layla', clientPhone: '+9613' },
   });
   assert.equal(row?.sourceType, 'QUOTE_REQUEST');
   assert.equal(row?.clientName, 'Layla');
   assert.equal(row?.contactNumber, '+9613');
+  assert.equal(row?.passengerCount, 5);
+  assert.equal(row?.tripType, 'ROUND_TRIP');
 });
 
 test('a cruise add-on carries its sailing date and lead passenger to transport', () => {
@@ -199,12 +202,14 @@ test('a cruise add-on carries its sailing date and lead passenger to transport',
     id: 'cb1', refNumber: 'CRU-2026-0001', transferRequested: true,
     transferFromName: 'Luxor Airport', transferPickupTime: '11:30',
     cruise: { name: 'Royal Nile' }, passengerNames: ['Nadine', 'Karim'],
-    adultsCount: 2, childrenCount: 0, checkIn: '2026-10-05', status: 'PENDING',
+    adultsCount: 2, childrenCount: 0, transferPaxCount: 3, transferTripType: 'ONE_WAY',
+    checkIn: '2026-10-05', status: 'PENDING',
   });
   assert.equal(row?.sourceType, 'CRUISE');
   assert.equal(row?.serviceDate, '2026-10-05');
   assert.equal(row?.clientName, 'Nadine');
-  assert.equal(row?.passengerCount, 2);
+  assert.equal(row?.passengerCount, 3);
+  assert.equal(row?.tripType, 'ONE_WAY');
 });
 
 test('services that did not request a transfer never enter the queue', () => {

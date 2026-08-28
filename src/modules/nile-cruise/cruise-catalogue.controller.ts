@@ -206,6 +206,10 @@ export async function saveCruiseSchedules(req: Request, res: Response): Promise<
     return;
   }
 
+  // Capture the reusable catalogue before replacing schedules (the replacement
+  // cascades old materialised programme/transfer rows).
+  const sharedCatalogue = await ensureSharedCatalogue();
+
   const schedules = await prisma.$transaction(async (tx) => {
     await tx.cruiseSchedule.deleteMany({ where: { cruiseId } });
     for (let i = 0; i < clean.length; i++) {
@@ -241,6 +245,7 @@ export async function saveCruiseSchedules(req: Request, res: Response): Promise<
         duration: saved[0]?.nights ?? 1,
       },
     });
+    await materialiseSharedCatalogue(tx, sharedCatalogue, cruiseId);
     return saved;
   });
   res.json({ success: true, data: schedules });
@@ -248,6 +253,7 @@ export async function saveCruiseSchedules(req: Request, res: Response): Promise<
 
 interface ProgrammeRateInput {
   market?: string;
+  adultPrice?: number | string | null;
   singlePrice?: number | string | null;
   doublePrice?: number | string | null;
   triplePrice?: number | string | null;
@@ -260,6 +266,8 @@ interface ProgrammeRateInput {
 }
 
 interface ProgrammeInput {
+  route?: string;
+  nights?: number | string | null;
   scheduleId?: string;
   name?: string;
   nameAr?: string | null;
@@ -273,15 +281,278 @@ interface ProgrammeInput {
 }
 
 interface TransferRateInput {
+  route?: string;
+  nights?: number | string | null;
   scheduleId?: string;
   market?: string;
   fromLocation?: string;
   toLocation?: string;
   amount?: number | string | null;
+  oneWayAmount?: number | string | null;
+  roundTripAmount?: number | string | null;
   validFrom?: string | null;
   validTo?: string | null;
   notes?: string | null;
   isActive?: boolean;
+}
+
+const CRUISE_ROUTES = ['LUXOR_ASWAN', 'ASWAN_LUXOR', 'LUXOR_ASWAN_LUXOR'] as const;
+type SharedProgramme = ProgrammeInput & { route: string; nights: number; rates: ProgrammeRateInput[] };
+type SharedTransfer = TransferRateInput & {
+  route: string;
+  nights: number;
+  market: string;
+  fromLocation: string;
+  toLocation: string;
+  oneWayAmount: number;
+  roundTripAmount: number | null;
+};
+
+function cleanSharedProgramme(raw: ProgrammeInput): SharedProgramme | null {
+  const route = String(raw.route ?? '').toUpperCase();
+  const nights = Math.floor(Number(raw.nights));
+  const name = String(raw.name ?? '').trim();
+  if (!(CRUISE_ROUTES as readonly string[]).includes(route) || !Number.isFinite(nights) || nights < 1 || !name) return null;
+  const rates = (Array.isArray(raw.rates) ? raw.rates : []).map((rate) => ({
+    ...rate,
+    market: asCruiseMarket(rate.market),
+    adultPrice: rate.adultPrice ?? rate.singlePrice ?? null,
+    singlePrice: rate.adultPrice ?? rate.singlePrice ?? null,
+    doublePrice: null,
+    triplePrice: null,
+  }));
+  return { ...raw, route, nights, name, rates };
+}
+
+function cleanSharedTransfer(raw: TransferRateInput): SharedTransfer | null {
+  const route = String(raw.route ?? '').toUpperCase();
+  const nights = Math.floor(Number(raw.nights));
+  const fromLocation = String(raw.fromLocation ?? '').trim();
+  const toLocation = String(raw.toLocation ?? '').trim();
+  const oneWayAmount = Number(raw.oneWayAmount ?? raw.amount);
+  const roundRaw = raw.roundTripAmount;
+  const roundTripAmount = roundRaw === null || roundRaw === undefined || roundRaw === '' ? null : Number(roundRaw);
+  if (!(CRUISE_ROUTES as readonly string[]).includes(route)
+    || !Number.isFinite(nights) || nights < 1 || !fromLocation || !toLocation
+    || !Number.isFinite(oneWayAmount) || oneWayAmount < 0
+    || (roundTripAmount !== null && (!Number.isFinite(roundTripAmount) || roundTripAmount < 0))) return null;
+  return {
+    ...raw,
+    route,
+    nights,
+    market: asCruiseMarket(raw.market),
+    fromLocation,
+    toLocation,
+    oneWayAmount,
+    roundTripAmount,
+  };
+}
+
+async function deriveSharedCatalogue(): Promise<{ programmes: SharedProgramme[]; transferRates: SharedTransfer[] }> {
+  const [programmes, transfers] = await Promise.all([
+    prisma.cruiseProgramme.findMany({
+      include: { cruise: { select: { route: true } }, schedule: { select: { nights: true } }, rates: true },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    }),
+    prisma.cruiseTransferRate.findMany({
+      include: { cruise: { select: { route: true } }, schedule: { select: { nights: true } } },
+      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    }),
+  ]);
+  const programmeMap = new Map<string, SharedProgramme>();
+  programmes.forEach((programme) => {
+    const key = `${programme.cruise.route}|${programme.schedule.nights}|${programme.name.trim().toLowerCase()}`;
+    if (programmeMap.has(key)) return;
+    programmeMap.set(key, {
+      route: programme.cruise.route,
+      nights: programme.schedule.nights,
+      name: programme.name,
+      nameAr: programme.nameAr,
+      description: programme.description,
+      descriptionAr: programme.descriptionAr,
+      itinerary: readItinerary(programme.itinerary),
+      transferFromName: programme.transferFromName,
+      transferToName: programme.transferToName,
+      isActive: programme.isActive,
+      rates: programme.rates.map((rate) => ({
+        market: rate.market,
+        adultPrice: rate.singlePrice?.toNumber() ?? rate.doublePrice?.toNumber() ?? rate.triplePrice?.toNumber() ?? null,
+        childPrice: rate.childPrice?.toNumber() ?? null,
+        supplements: rate.supplements,
+        validFrom: rate.validFrom?.toISOString() ?? null,
+        validTo: rate.validTo?.toISOString() ?? null,
+        notes: rate.notes,
+        isActive: rate.isActive,
+      })),
+    });
+  });
+  const transferMap = new Map<string, SharedTransfer>();
+  transfers.forEach((rate) => {
+    const key = `${rate.cruise.route}|${rate.schedule.nights}|${rate.market}|${rate.fromLocation.toLowerCase()}|${rate.toLocation.toLowerCase()}`;
+    if (transferMap.has(key)) return;
+    transferMap.set(key, {
+      route: rate.cruise.route,
+      nights: rate.schedule.nights,
+      market: rate.market,
+      fromLocation: rate.fromLocation,
+      toLocation: rate.toLocation,
+      oneWayAmount: rate.amount.toNumber(),
+      roundTripAmount: rate.roundTripAmount?.toNumber() ?? null,
+      validFrom: rate.validFrom?.toISOString() ?? null,
+      validTo: rate.validTo?.toISOString() ?? null,
+      notes: rate.notes,
+      isActive: rate.isActive,
+    });
+  });
+  return { programmes: [...programmeMap.values()], transferRates: [...transferMap.values()] };
+}
+
+async function ensureSharedCatalogue(): Promise<{ programmes: SharedProgramme[]; transferRates: SharedTransfer[] }> {
+  const stored = await prisma.cruiseSharedCatalogue.findUnique({ where: { id: 'default' } });
+  if (stored) return {
+    programmes: Array.isArray(stored.programmes) ? stored.programmes as unknown as SharedProgramme[] : [],
+    transferRates: Array.isArray(stored.transferRates) ? stored.transferRates as unknown as SharedTransfer[] : [],
+  };
+  const derived = await deriveSharedCatalogue();
+  await prisma.cruiseSharedCatalogue.upsert({
+    where: { id: 'default' },
+    create: {
+      id: 'default',
+      programmes: derived.programmes as unknown as Prisma.InputJsonValue,
+      transferRates: derived.transferRates as unknown as Prisma.InputJsonValue,
+    },
+    update: {},
+  });
+  return derived;
+}
+
+async function materialiseSharedCatalogue(
+  tx: Prisma.TransactionClient,
+  catalogue: { programmes: SharedProgramme[]; transferRates: SharedTransfer[] },
+  onlyCruiseId?: string,
+): Promise<void> {
+  const cruiseWhere = onlyCruiseId ? { id: onlyCruiseId } : {};
+  await tx.cruiseProgramme.deleteMany({ where: onlyCruiseId ? { cruiseId: onlyCruiseId } : {} });
+  await tx.cruiseTransferRate.deleteMany({ where: onlyCruiseId ? { cruiseId: onlyCruiseId } : {} });
+  const cruises = await tx.nileCruise.findMany({
+    where: cruiseWhere,
+    select: { id: true, route: true, schedules: { where: { isActive: true }, select: { id: true, nights: true } } },
+  });
+  for (const cruise of cruises) {
+    for (const schedule of cruise.schedules) {
+      const programmes = catalogue.programmes.filter((programme) => programme.route === cruise.route && Number(programme.nights) === schedule.nights);
+      for (let programmeIndex = 0; programmeIndex < programmes.length; programmeIndex++) {
+        const programme = programmes[programmeIndex];
+        const created = await tx.cruiseProgramme.create({
+          data: {
+            cruiseId: cruise.id,
+            scheduleId: schedule.id,
+            name: String(programme.name),
+            nameAr: textOrNull(programme.nameAr),
+            description: textOrNull(programme.description, 5000),
+            descriptionAr: textOrNull(programme.descriptionAr, 5000),
+            itinerary: readItinerary(programme.itinerary) as unknown as Prisma.InputJsonValue,
+            transferIncluded: true,
+            transferFromName: textOrNull(programme.transferFromName),
+            transferToName: textOrNull(programme.transferToName),
+            isActive: programme.isActive !== false,
+            displayOrder: programmeIndex,
+          },
+        });
+        for (let rateIndex = 0; rateIndex < programme.rates.length; rateIndex++) {
+          const rate = programme.rates[rateIndex];
+          const market = asCruiseMarket(rate.market);
+          const adultPrice = rate.adultPrice ?? rate.singlePrice;
+          await tx.cruiseProgrammeRate.create({
+            data: {
+              programmeId: created.id,
+              market,
+              currency: cruiseCurrency(market),
+              singlePrice: decOrNull(adultPrice),
+              doublePrice: null,
+              triplePrice: null,
+              childPrice: decOrNull(rate.childPrice),
+              supplements: cleanSupplements(rate.supplements, cruiseCurrency(market)),
+              validFrom: dateOrNull(rate.validFrom),
+              validTo: dateOrNull(rate.validTo),
+              notes: textOrNull(rate.notes, 1000),
+              isActive: rate.isActive !== false,
+              displayOrder: rateIndex,
+            },
+          });
+        }
+      }
+      const transfers = catalogue.transferRates.filter((rate) => rate.route === cruise.route && Number(rate.nights) === schedule.nights);
+      for (let rateIndex = 0; rateIndex < transfers.length; rateIndex++) {
+        const rate = transfers[rateIndex];
+        const market = asCruiseMarket(rate.market);
+        await tx.cruiseTransferRate.create({
+          data: {
+            cruiseId: cruise.id,
+            scheduleId: schedule.id,
+            market,
+            fromLocation: rate.fromLocation,
+            toLocation: rate.toLocation,
+            amount: new Decimal(rate.oneWayAmount),
+            roundTripAmount: decOrNull(rate.roundTripAmount),
+            currency: cruiseCurrency(market),
+            validFrom: dateOrNull(rate.validFrom),
+            validTo: dateOrNull(rate.validTo),
+            notes: textOrNull(rate.notes, 1000),
+            isActive: rate.isActive !== false,
+            displayOrder: rateIndex,
+          },
+        });
+      }
+    }
+  }
+}
+
+/** One reusable programme/transfer catalogue, materialised against matching 3/4-night schedules. */
+export async function getCruiseSharedCatalogue(_req: Request, res: Response): Promise<void> {
+  res.json({ success: true, data: await ensureSharedCatalogue() });
+}
+
+export async function saveCruiseSharedCatalogue(req: Request, res: Response): Promise<void> {
+  const postedProgrammes = Array.isArray(req.body?.programmes) ? req.body.programmes as ProgrammeInput[] : [];
+  const postedTransfers = Array.isArray(req.body?.transferRates) ? req.body.transferRates as TransferRateInput[] : [];
+  const programmes = postedProgrammes.map(cleanSharedProgramme);
+  const transferRates = postedTransfers.map(cleanSharedTransfer);
+  if (programmes.some((row) => !row) || transferRates.some((row) => !row)) {
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Check route, nights, names and transfer prices' });
+    return;
+  }
+  const cleanProgrammes = programmes as SharedProgramme[];
+  const cleanTransfers = transferRates as SharedTransfer[];
+  for (const programme of cleanProgrammes) {
+    if (!String(programme.transferFromName ?? '').trim() || !String(programme.transferToName ?? '').trim()) {
+      res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: `${programme.name}: included transfer route is required` });
+      return;
+    }
+    const markets = new Set(programme.rates.map((rate) => asCruiseMarket(rate.market)));
+    if (!markets.has('EGYPTIAN') || !markets.has('FOREIGN')
+      || programme.rates.some((rate) => decOrNull(rate.adultPrice ?? rate.singlePrice) === null)) {
+      res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: `${programme.name}: every period needs Egyptian/EGP and Foreign/USD adult prices` });
+      return;
+    }
+  }
+  const catalogue = { programmes: cleanProgrammes, transferRates: cleanTransfers };
+  await prisma.$transaction(async (tx) => {
+    await tx.cruiseSharedCatalogue.upsert({
+      where: { id: 'default' },
+      create: {
+        id: 'default',
+        programmes: cleanProgrammes as unknown as Prisma.InputJsonValue,
+        transferRates: cleanTransfers as unknown as Prisma.InputJsonValue,
+      },
+      update: {
+        programmes: cleanProgrammes as unknown as Prisma.InputJsonValue,
+        transferRates: cleanTransfers as unknown as Prisma.InputJsonValue,
+      },
+    });
+    await materialiseSharedCatalogue(tx, catalogue);
+  });
+  res.json({ success: true, data: catalogue });
 }
 
 /** GET /api/cruises/:id/programmes — schedule-bound programmes and their two tariffs. */
@@ -412,10 +683,14 @@ export async function saveCruiseTransferRates(req: Request, res: Response): Prom
   })).filter((rate) => rate.fromLocation && rate.toLocation);
   for (const rate of clean) {
     const amount = Number(rate.amount);
+    const roundTripAmount = rate.roundTripAmount === null || rate.roundTripAmount === undefined || rate.roundTripAmount === ''
+      ? null : Number(rate.roundTripAmount);
     const from = dateOrNull(rate.validFrom);
     const to = dateOrNull(rate.validTo);
     const invalidDate = (rate.validFrom && !from) || (rate.validTo && !to);
-    if (!Number.isFinite(amount) || amount < 0 || invalidDate || !rate.scheduleId || !scheduleIds.has(String(rate.scheduleId)) || (from && to && to < from)) {
+    if (!Number.isFinite(amount) || amount < 0
+      || (roundTripAmount !== null && (!Number.isFinite(roundTripAmount) || roundTripAmount < 0))
+      || invalidDate || !rate.scheduleId || !scheduleIds.has(String(rate.scheduleId)) || (from && to && to < from)) {
       res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Check transfer route, schedule, price and period' });
       return;
     }
@@ -433,6 +708,7 @@ export async function saveCruiseTransferRates(req: Request, res: Response): Prom
           fromLocation: rate.fromLocation,
           toLocation: rate.toLocation,
           amount: new Decimal(Number(rate.amount)),
+          roundTripAmount: decOrNull(rate.roundTripAmount),
           currency: cruiseCurrency(market),
           validFrom: dateOrNull(rate.validFrom),
           validTo: dateOrNull(rate.validTo),
