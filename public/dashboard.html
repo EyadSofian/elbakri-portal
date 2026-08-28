@@ -1573,7 +1573,7 @@ function cruiseScheduleSummary(c) {
 async function openCruiseDetails(id) {
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === id);
   if (!cruise) return toast(t("empty.failed","Failed to load"), "error");
-  state.cruiseSelection = { cruiseId: id };
+  state.cruiseSelection = { cruiseId: id, mode: "CRUISE_ONLY", programmeId: "" };
 
   const description = locName(cruise.description, cruise.descriptionAr) || "";
   const photos = [...new Set([cruise.imageUrl, ...(cruise.galleryUrls || [])].filter(Boolean))];
@@ -1601,41 +1601,32 @@ async function openCruiseDetails(id) {
         <label>${t("cruise.sailingDate","Sailing date")}</label>
         <input id="crSailingDate" type="date" value="${crDateInputValue(new Date())}" onchange="crSailingDateChanged()">
       </div>
-      ${schedules.length ? `<div class="cr-sailing-grid">
-        ${schedules.map((sc, i) => `<label class="cr-sailing-card">
+      ${schedules.length ? `<div class="cr-choice-grid">
+        ${schedules.map((sc, i) => `<label class="cr-choice cr-choice--leg ${i === 0 ? "is-selected" : ""}">
           <input type="radio" name="crSchedule" value="${escapeHtml(sc.id)}" ${i === 0 ? "checked" : ""} onchange="crScheduleChanged()">
-          <span class="cr-sailing-route">
-            <span class="cr-sailing-stop cr-sailing-stop--from">
-              <small>${t("cruise.from","From")}</small>
-              <b>${escapeHtml(weekdayLabel(sc.departureDay))}</b>
-            </span>
-            <span class="cr-sailing-arrow">${icon("arrow-right")}</span>
-            <span class="cr-sailing-stop cr-sailing-stop--back">
-              <small>${t("cruise.back","Back")}</small>
-              <b>${escapeHtml(weekdayLabel(sc.returnDay))}</b>
-            </span>
+          <span class="cr-choice-body">
+            <b>${escapeHtml(weekdayLabel(sc.departureDay))} <span class="cr-choice-arrow">${icon("arrow-right")}</span> ${escapeHtml(weekdayLabel(sc.returnDay))}</b>
+            <small>${formatNumber(sc.nights)} ${t("cruise.nights","Nights")}${sc.label ? " · " + escapeHtml(locName(sc.label, sc.labelAr)) : ""}</small>
           </span>
-          <span class="cr-sailing-meta">${formatNumber(sc.nights)} ${t("cruise.nights","Nights")}${sc.label ? " · " + escapeHtml(locName(sc.label, sc.labelAr)) : ""}</span>
         </label>`).join("")}
       </div>` : `<div class="secondary-text">${t("cruise.schedulesHelp","When the boat leaves and when it is back.")}</div>`}
     </section>
 
     <section class="cr-booking-step">
-      <div class="cr-booking-step__title"><span>2</span><div><strong>${t("cruise.programme","Cruise only or programme")}</strong><small>${t("cruise.cruiseOnlyHelp","A programme includes its transfer; cruise-only can add a separately priced transfer.")}</small></div></div>
-      <div id="crProgrammeHost"></div>
-      <div id="crProgrammeDetails"></div>
+      <div class="cr-booking-step__title"><span>2</span><div><strong>${t("cruise.whatTheyBuy","What are they buying?")}</strong><small>${t("cruise.whatTheyBuyHelp","A programme includes its transfer. Cruise only is the cabin, with an optional transfer priced separately.")}</small></div></div>
+      <div id="crModeHost"></div>
     </section>
 
     <section class="cr-booking-step">
-      <div class="cr-booking-step__title"><span>3</span><div><strong>${t("cruise.perPersonRates","Guests and per-person price")}</strong><small>${t("cruise.perPersonHelp","Single, Double and Triple are sharing bases; every amount shown is per person.")}</small></div></div>
+      <div class="cr-booking-step__title"><span>3</span><div><strong>${t("cruise.guestsAndPrice","Guests and price")}</strong><small>${t("cruise.guestsAndPriceHelp","Every amount shown is for one traveller.")}</small></div></div>
       <div class="form-grid">
         <div class="form-field">
           <label>${t("form.adults","Adults")} *</label>
-          <input id="crAdults" type="number" min="1" value="2" oninput="crUpdateQuote()">
+          <input id="crAdults" type="number" min="1" value="2" oninput="crPartyChanged()">
         </div>
         <div class="form-field">
           <label>${t("form.children","Children")}</label>
-          <input id="crChildren" type="number" min="0" value="0" oninput="crUpdateQuote()">
+          <input id="crChildren" type="number" min="0" value="0" oninput="crPartyChanged()">
         </div>
       </div>
       <div id="crFareHost"></div>
@@ -1666,7 +1657,13 @@ async function crSailingDateChanged() {
   const jsDay = new Date(date + "T12:00:00").getDay();
   const day = ["SUNDAY","MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"][jsDay];
   const updatedCruise = fresh || (state.cache.cruisesRows || []).find(cruise => cruise.id === cruiseId);
-  const matching = (updatedCruise?.schedules || []).find(schedule => schedule.departureDay === day);
+  const sameDay = (updatedCruise?.schedules || []).filter(schedule => schedule.departureDay === day);
+  // Two legs can leave on the same day and run different lengths. Moving the
+  // date used to jump to whichever was listed first, silently pulling the
+  // agent off the four-night sailing they had chosen and onto the three-night
+  // one beside it. A choice that still departs that day is kept.
+  const current = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
+  const matching = sameDay.some(schedule => schedule.id === current) ? null : sameDay[0];
   if (matching) {
     // Avoid relying on CSS.escape: compare values directly so this also works
     // in older WebKit builds used by some travel desks.
@@ -1690,16 +1687,11 @@ function crCabinPrice(rate, occupancy) {
   return raw === null || raw === undefined || raw === "" ? null : Number(raw);
 }
 
-/**
- * How many cabins it takes to sleep `pax` guests at this occupancy.
- *
- * Five guests in doubles need three cabins, not two and a half — a half-empty
- * cabin is still a whole cabin on the bill. Same rule as the server, so the
- * price the agent is shown is the price the desk quotes.
- */
-function crCabinsNeeded(pax, occupancy) {
-  const heads = Math.max(1, Math.floor(Number(pax)) || 1);
-  return Math.max(1, Math.ceil(heads / (CR_OCC_SIZE[occupancy] || 2)));
+/** The one per-person adult price of a programme. */
+function crProgrammeAdultPrice(rate) {
+  const raw = [rate?.adultPrice, rate?.doublePrice, rate?.singlePrice, rate?.triplePrice]
+    .find(value => value !== null && value !== undefined && value !== "");
+  return raw === undefined ? null : Number(raw);
 }
 
 /**
@@ -1735,42 +1727,129 @@ function itineraryHtml(rows, labelKey, labelFallback) {
   </div>`;
 }
 
-/** A sailing owns its programme and its fare table. Changing From / Back must
- * therefore change both together; a four-night programme can never leak into
- * the three-night sailing beside it. */
+/**
+ * Paint the chosen card and un-paint the rest.
+ *
+ * The cards used to be styled by `:has(input:checked)` alone. Where that
+ * selector is not supported the highlight never moves, so picking a second
+ * option leaves the first one still looking chosen and the agent has two
+ * selected cards in front of them. The class is set here instead, off the
+ * radio's own state, which every browser agrees on.
+ */
+function crPaintChoice(groupName) {
+  document.querySelectorAll(`input[name="${groupName}"]`).forEach(input => {
+    // Cruise-only prices live in table cells (.cr-pick); everything else is a
+    // card (.cr-choice). Both carry the same selected class.
+    const owner = input.closest(".cr-choice") || input.closest(".cr-pick");
+    owner?.classList.toggle("is-selected", input.checked);
+  });
+}
+
+/** The sailing leg the agent is on, or null while none is chosen. */
+function crSelectedSchedule() {
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
+  const id = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
+  return (cruise?.schedules || []).find(schedule => schedule.id === id) || null;
+}
+
+/** The programmes sold on the leg the agent is on. */
+function crProgrammesForLeg(cruise, scheduleId) {
+  // No leg chosen means no programme is offered. The old list fell through to
+  // "show them all", which is how a three-night programme came to sit under a
+  // four-night sailing looking bookable.
+  if (!scheduleId) return [];
+  return (cruise?.programmes || []).filter(p => p.scheduleId === scheduleId);
+}
+
+/**
+ * Cruise-only, or one of this leg's programmes.
+ *
+ * Two questions used to be asked at once — which of the two you wanted, and
+ * which programme — in one list of radio cards, and both answers stayed on
+ * screen whichever you picked. They are one segmented choice and one list now,
+ * and only the list belonging to the current mode is rendered at all.
+ */
 function crScheduleChanged() {
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
-  const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
+  const host = document.getElementById("crModeHost");
+  if (!cruise || !host) return;
+  crPaintChoice("crSchedule");
+  const schedule = crSelectedSchedule();
+  const programmes = crProgrammesForLeg(cruise, schedule?.id || "");
+  // Staying on "Programme" through a leg change is only honest when this leg
+  // has programmes; otherwise the mode falls back rather than showing an empty
+  // list under a heading that promises one.
+  const mode = state.cruiseSelection.mode === "PROGRAMME" && programmes.length ? "PROGRAMME" : "CRUISE_ONLY";
+  state.cruiseSelection.mode = mode;
+  const legLabel = schedule
+    ? `${formatNumber(schedule.nights)} ${t("cruise.nights","Nights")}`
+    : t("cruise.pickSailingFirst","Choose a sailing first");
+  host.innerHTML = `
+    <div class="cr-segmented" role="tablist">
+      <button type="button" class="cr-segment ${mode === "CRUISE_ONLY" ? "is-active" : ""}" onclick="crSetMode('CRUISE_ONLY')">
+        ${t("cruise.cruiseOnly","Cruise only")}
+      </button>
+      <button type="button" class="cr-segment ${mode === "PROGRAMME" ? "is-active" : ""}" ${programmes.length ? "" : "disabled"} onclick="crSetMode('PROGRAMME')">
+        ${t("cruise.programme","Programme")}${programmes.length ? ` <span class="cr-segment-count">${formatNumber(programmes.length)}</span>` : ""}
+      </button>
+    </div>
+    <div class="cr-mode-note secondary-text">${mode === "PROGRAMME"
+      ? `${t("cruise.programmeModeHelp","Every programme below is sold on this sailing and includes its transfer.")} · ${escapeHtml(legLabel)}`
+      : t("cruise.cruiseOnlyHelp","Accommodation only. A transfer can be added and is priced separately.")}</div>
+    <div id="crProgrammeHost"></div>`;
+  crRenderProgrammeList();
+  refreshIcons(host);
+}
+
+function crSetMode(mode) {
+  state.cruiseSelection.mode = mode;
+  crScheduleChanged();
+}
+
+/** The programme cards, rendered only while the agent is in programme mode. */
+function crRenderProgrammeList() {
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
   const host = document.getElementById("crProgrammeHost");
   if (!cruise || !host) return;
-  const programmes = (cruise.programmes || []).filter(p => !scheduleId || p.scheduleId === scheduleId);
-  const previous = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
-  const selected = programmes.some(p => p.id === previous) ? previous : "";
-  host.innerHTML = `<div class="cr-sailing-grid">
-    <label class="cr-sailing-card">
-      <input type="radio" name="crProgramme" value="" ${selected === "" ? "checked" : ""} onchange="crProgrammeChanged()">
-      <span class="cr-sailing-route"><span class="cr-sailing-stop"><small>${t("cruise.choice","Choice")}</small><b>${t("cruise.cruiseOnly","Cruise only")}</b></span></span>
-      <span class="cr-sailing-meta">${t("cruise.cruiseOnlyHelp","Accommodation only; transfer is optional and priced separately.")}</span>
-    </label>
-    ${programmes.map(p => `<label class="cr-sailing-card">
+  if (state.cruiseSelection.mode !== "PROGRAMME") {
+    host.innerHTML = "";
+    crProgrammeChanged();
+    return;
+  }
+  const schedule = crSelectedSchedule();
+  const programmes = crProgrammesForLeg(cruise, schedule?.id || "");
+  const previous = state.cruiseSelection.programmeId;
+  const selected = programmes.some(p => p.id === previous) ? previous : programmes[0]?.id || "";
+  state.cruiseSelection.programmeId = selected;
+  host.innerHTML = `<div class="cr-choice-grid">
+    ${programmes.map(p => `<label class="cr-choice ${selected === p.id ? "is-selected" : ""}">
       <input type="radio" name="crProgramme" value="${escapeHtml(p.id)}" ${selected === p.id ? "checked" : ""} onchange="crProgrammeChanged()">
-      <span class="cr-sailing-route"><span class="cr-sailing-stop cr-sailing-stop--from"><small>${t("cruise.programme","Programme")}</small><b>${escapeHtml(locName(p.name, p.nameAr))}</b></span></span>
-      <span class="cr-sailing-meta">${p.hasRates ? t("cruise.transferIncluded","Transfer included") : t("hotel.priceOnRequest","Price on request")}</span>
+      <span class="cr-choice-body">
+        <b>${escapeHtml(locName(p.name, p.nameAr))}</b>
+        <small>${schedule ? `${formatNumber(schedule.nights)} ${t("cruise.nights","Nights")} · ` : ""}${t("cruise.transferIncluded","Transfer included")}</small>
+      </span>
+      <span class="cr-choice-price">${crProgrammeHeadline(p)}</span>
     </label>`).join("")}
-  </div>`;
+  </div>
+  <div id="crProgrammeDetails"></div>`;
   crProgrammeChanged();
   refreshIcons(host);
+}
+
+/** The "from" figure on a programme card, or why there isn't one. */
+function crProgrammeHeadline(programme) {
+  const prices = (programme.rates || []).map(crProgrammeAdultPrice).filter(price => price != null);
+  if (!prices.length) return `<em>${t("hotel.priceOnRequest","Price on request")}</em>`;
+  const currency = (programme.rates || [])[0]?.currency;
+  return `${formatPrice(Math.min(...prices), currency)}<small>${t("cruise.perPerson","per person")}</small>`;
 }
 
 function crProgrammeChanged() {
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
   if (!cruise) return;
-  const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
-  const programmeId = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
-  const programme = (cruise.programmes || []).find(p => p.id === programmeId) || null;
-  const rates = programme
-    ? (programme.rates || [])
-    : (cruise.cabinRates || []).filter(r => !r.scheduleId || r.scheduleId === scheduleId);
+  crPaintChoice("crProgramme");
+  const programme = crSelectedProgramme();
+  state.cruiseSelection.programmeId = programme?.id || "";
 
   const details = document.getElementById("crProgrammeDetails");
   if (details) {
@@ -1781,12 +1860,68 @@ function crProgrammeChanged() {
       : "";
   }
   const host = document.getElementById("crFareHost");
-  if (host) host.innerHTML = crPerPersonFarePicker(cruise, rates);
+  if (host) {
+    host.innerHTML = programme
+      ? crProgrammePricePanel(cruise, programme)
+      : crPerPersonFarePicker(cruise, crCabinRatesForLeg(cruise));
+  }
   crRateChanged();
 }
 
-/** Single / Double / Triple are sharing bases. Every displayed amount is for
- * one traveller, never one cabin. */
+/** The programme the agent has selected, matched on its leg as well as its id
+ *  — a shared programme is offered against every leg of its length, so the two
+ *  together are what identify one. */
+function crSelectedProgramme() {
+  if (state.cruiseSelection?.mode !== "PROGRAMME") return null;
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
+  const id = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
+  const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
+  return crProgrammesForLeg(cruise, scheduleId).find(p => p.id === id) || null;
+}
+
+function crCabinRatesForLeg(cruise) {
+  const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
+  return (cruise?.cabinRates || []).filter(r => !r.scheduleId || r.scheduleId === scheduleId);
+}
+
+/**
+ * A programme costs one amount per adult.
+ *
+ * There is no Single / Double / Triple here on purpose: a programme buyer pays
+ * the same whichever cabin they end up sharing, so the three columns were three
+ * ways of entering the same number and one of them was always the wrong one to
+ * click. The period is the only choice left, and when there is only one it is
+ * simply stated.
+ */
+function crProgrammePricePanel(cruise, programme) {
+  const rates = (programme.rates || []).filter(rate => crProgrammeAdultPrice(rate) != null);
+  if (!rates.length) {
+    return `<div class="form-field full" style="margin-top:14px"><label>${t("cruise.perPersonRates","Per-person price")}</label>
+      <div class="secondary-text">${cruise.priceVisible === false || cruise.hasRateMatrix
+        ? t("cruise.ratesHidden","Prices are available from the operations team — send a request and they will price it.")
+        : t("cruise.noRates","No price period is configured for this sailing yet.")}</div></div>`;
+  }
+  const period = rate => (rate.validFrom || rate.validTo)
+    ? `${rate.validFrom ? formatDate(rate.validFrom) : "…"} – ${rate.validTo ? formatDate(rate.validTo) : "…"}`
+    : t("cruise.allYear","All year");
+  return `<div class="form-field full" style="margin-top:14px">
+    <label>${t("cruise.perPersonRates","Per-person price")}</label>
+    <div class="cr-choice-grid" style="margin-top:8px">
+      ${rates.map((rate, i) => `<label class="cr-choice ${i === 0 ? "is-selected" : ""}">
+        <input type="radio" name="crRate" value="${escapeHtml(rate.id)}" ${i === 0 ? "checked" : ""} onchange="crRateChanged()">
+        <span class="cr-choice-body">
+          <b>${escapeHtml(period(rate))}</b>
+          <small>${rate.childPrice == null
+            ? t("cruise.adultsOnly","Adult price")
+            : `${t("form.child","Child")} ${formatPrice(Number(rate.childPrice), rate.currency)}`}${rate.notes ? " · " + escapeHtml(rate.notes) : ""}</small>
+        </span>
+        <span class="cr-choice-price">${formatPrice(crProgrammeAdultPrice(rate), rate.currency)}<small>${t("cruise.perPerson","per person")}</small></span>
+      </label>`).join("")}
+    </div>
+  </div>`;
+}
+
+/** Cruise-only keeps its sharing basis: a cabin IS priced by how many share it. */
 function crPerPersonFarePicker(cruise, rates) {
   if (!rates.length) {
     return `<div class="form-field full" style="margin-top:14px"><label>${t("cruise.perPersonRates","Per-person prices")}</label>
@@ -1803,7 +1938,7 @@ function crPerPersonFarePicker(cruise, rates) {
     const price = crCabinPrice(rate, occupancy);
     if (price == null) return `<td class="cr-cell-empty">—</td>`;
     const checked = best && best.rateId === rate.id && best.occupancy === occupancy;
-    return `<td class="cr-cell"><label class="cr-pick">
+    return `<td class="cr-cell"><label class="cr-pick${checked ? " is-selected" : ""}">
       <input type="radio" name="crRate" value="${escapeHtml(rate.id)}|${occupancy}" ${checked ? "checked" : ""} onchange="crRateChanged()">
       <span>${formatPrice(price, rate.currency)}<small style="display:block">${t("cruise.perPerson","per person")}</small></span>
     </label></td>`;
@@ -1823,28 +1958,37 @@ function crPerPersonFarePicker(cruise, rates) {
   </div>`;
 }
 
+/**
+ * The priced row the agent has selected.
+ *
+ * A programme carries no occupancy — `occupancy` is null and the amount is per
+ * adult. Cruise-only carries one, and the radio value holds both halves.
+ */
 function crSelectedRate() {
   const raw = document.querySelector('input[name="crRate"]:checked')?.value;
   if (!raw) return null;
-  const [rateId, occupancy] = String(raw).split("|");
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
-  const programmeId = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
-  const programme = (cruise?.programmes || []).find(p => p.id === programmeId) || null;
-  const rates = programme ? (programme.rates || []) : (cruise?.cabinRates || []);
-  const rate = rates.find(r => r.id === rateId);
-  return rate && CR_OCC_SIZE[occupancy] ? { cruise, programme, rate, occupancy } : null;
+  const programme = crSelectedProgramme();
+  if (programme) {
+    const rate = (programme.rates || []).find(r => r.id === String(raw));
+    return rate ? { cruise, programme, rate, occupancy: null } : null;
+  }
+  const [rateId, occupancy] = String(raw).split("|");
+  const rate = crCabinRatesForLeg(cruise).find(r => r.id === rateId);
+  return rate && CR_OCC_SIZE[occupancy] ? { cruise, programme: null, rate, occupancy } : null;
 }
 
 function crRateChanged() {
+  crPaintChoice("crRate");
   const selected = crSelectedRate();
   const host = document.getElementById("crSupplementsHost");
   const supplements = Array.isArray(selected?.rate?.supplements) ? selected.rate.supplements : [];
   if (host) host.innerHTML = supplements.length ? `<div class="form-field full" style="margin-top:14px">
     <label>${t("hotel.supplements","Supplements")}</label>
-    <div class="cr-sailing-grid">${supplements.map((supplement, index) => `<label class="cr-sailing-card">
+    <div class="cr-choice-grid">${supplements.map((supplement, index) => `<label class="cr-choice">
       <input type="checkbox" class="cr-supplement" data-index="${index}" onchange="crUpdateQuote()">
-      <span class="cr-sailing-route"><span class="cr-sailing-stop"><b>${escapeHtml(supplement.name)}</b></span></span>
-      <span class="cr-sailing-meta">${supplement.type === "TEXT_ONLY" || supplement.amount == null ? escapeHtml(supplement.notes || "")
+      <span class="cr-choice-body"><b>${escapeHtml(supplement.name)}</b></span>
+      <span class="cr-choice-price">${supplement.type === "TEXT_ONLY" || supplement.amount == null ? escapeHtml(supplement.notes || "")
         : supplement.type === "PERCENTAGE" ? `${formatNumber(Number(supplement.amount))}%`
         : formatPrice(Number(supplement.amount), supplement.currency || selected.rate.currency)}</span>
     </label>`).join("")}</div></div>` : "";
@@ -1852,93 +1996,130 @@ function crRateChanged() {
   crUpdateQuote();
 }
 
+/**
+ * The optional transfer: which route, for how many, and whether it comes back.
+ *
+ * A programme already includes one, so the panel states that and asks nothing
+ * — the client can never be charged twice for the same car.
+ */
 function crRenderTransfer() {
   const selected = crSelectedRate();
   const host = document.getElementById("crTransferHost");
   if (!host || !selected) { if (host) host.innerHTML = ""; return; }
   const { cruise, programme } = selected;
-  const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
   if (programme) {
-    host.innerHTML = `<div class="act-transfer-block full" style="margin-top:14px"><div class="act-transfer-head"><strong>${t("cruise.transferIncluded","Transfer included with programme")}</strong></div>
+    host.innerHTML = `<div class="act-transfer-block full" style="margin-top:14px">
+      <div class="act-transfer-head"><strong>${t("cruise.transferIncluded","Transfer included with programme")}</strong></div>
       <div class="secondary-text" style="margin-top:6px">${escapeHtml(programme.transferFromName || t("cruise.pickup","Pickup"))} → ${escapeHtml(programme.transferToName || t("cruise.cruise","Nile cruise"))}</div></div>`;
     return;
   }
+  const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
   const transferRates = (cruise.transferRates || []).filter(rate => !rate.scheduleId || rate.scheduleId === scheduleId);
-  host.innerHTML = `<div class="act-transfer-block full" style="margin-top:14px"><div class="act-transfer-head"><strong>${t("cruise.optionalTransfer","Optional transfer")}</strong></div>
-    ${transferRates.length ? `<div class="form-field full" style="margin-top:10px"><label>${t("cruise.transferRoute","Transfer route")}</label><select id="crTransferRate" onchange="crUpdateQuote()">
-      <option value="">${t("cruise.noTransfer","No transfer")}</option>
-      ${transferRates.map(rate => `<option value="${escapeHtml(rate.id)}">${escapeHtml(rate.fromLocation)} → ${escapeHtml(rate.toLocation)} · ${formatPrice(Number(rate.amount), rate.currency)}</option>`).join("")}
-    </select></div>` : `<div class="secondary-text" style="margin-top:6px">${t("cruise.noTransferRate","No optional transfer price is configured for this sailing.")}</div>`}</div>`;
+  if (!transferRates.length) {
+    host.innerHTML = `<div class="act-transfer-block full" style="margin-top:14px">
+      <div class="act-transfer-head"><strong>${t("cruise.optionalTransfer","Optional transfer")}</strong></div>
+      <div class="secondary-text" style="margin-top:6px">${t("cruise.noTransferRate","No optional transfer price is configured for this sailing.")}</div></div>`;
+    return;
+  }
+  const chosen = document.getElementById("crTransferRate")?.value || "";
+  const party = crPartySize();
+  const typed = parseInt(document.getElementById("crTransferPax")?.value || "", 10);
+  const pax = Math.min(party, Math.max(1, Number.isFinite(typed) && typed > 0 ? typed : party));
+  const roundTrip = document.getElementById("crTransferRoundTrip")?.value === "ROUND_TRIP";
+  host.innerHTML = `<div class="act-transfer-block full" style="margin-top:14px">
+    <div class="act-transfer-head"><strong>${t("cruise.optionalTransfer","Optional transfer")}</strong></div>
+    <div class="form-field full" style="margin-top:10px"><label>${t("cruise.transferRoute","Transfer route")}</label>
+      <select id="crTransferRate" onchange="crTransferRouteChanged()">
+        <option value="">${t("cruise.noTransfer","No transfer")}</option>
+        ${transferRates.map(rate => `<option value="${escapeHtml(rate.id)}" ${chosen === rate.id ? "selected" : ""}>${escapeHtml(rate.fromLocation)} → ${escapeHtml(rate.toLocation)} · ${formatPrice(Number(rate.amount), rate.currency)} ${rate.perPerson === false ? t("cruise.transferPerVehicle","Per vehicle — whole party") : t("cruise.perPerson","per person")}</option>`).join("")}
+      </select></div>
+    ${chosen ? `<div class="form-grid" style="margin-top:10px">
+      <div class="form-field">
+        <label>${t("cruise.transferPax","People being collected")}</label>
+        <input id="crTransferPax" type="number" min="1" max="${party}" value="${pax}" oninput="crTransferPaxChanged()">
+        <small class="field-hint">${t("cruise.transferPaxHint","Defaults to the whole party — lower it when only some of them need the car.")}</small>
+      </div>
+      <div class="form-field">
+        <label>${t("cruise.transferDirection","Direction")}</label>
+        <select id="crTransferRoundTrip" onchange="crUpdateQuote()">
+          <option value="ONE_WAY" ${roundTrip ? "" : "selected"}>${t("cruise.oneWay","One way")}</option>
+          <option value="ROUND_TRIP" ${roundTrip ? "selected" : ""}>${t("cruise.roundTrip","Round trip")}</option>
+        </select>
+      </div>
+    </div>` : ""}
+  </div>`;
+  crUpdateQuote();
+}
+
+function crPartySize() {
+  const adults = Math.max(1, parseInt(document.getElementById("crAdults")?.value || "1", 10) || 1);
+  const children = Math.max(0, parseInt(document.getElementById("crChildren")?.value || "0", 10) || 0);
+  return adults + children;
 }
 
 /**
- * Pick a cabin AND how many share it, in one grid.
+ * The party changed.
  *
- * The old table showed Single / Double / Triple as three read-only columns and
- * asked the agent to choose a cabin — so there was no way to say which of the
- * three prices the quote was for, and the occupancy the booking API has always
- * accepted could never be filled in. Every priced cell is a choice now; a cell
- * with no price is not sold that way and stays blank rather than reading free.
+ * A transfer the agent has not touched carries the whole party, so growing the
+ * group has to grow the car with it — leaving the seat count behind would
+ * quietly under-charge and under-book. Then the quote is recomputed, which
+ * `crRenderTransfer` does not always reach on its own: a programme includes its
+ * transfer and returns early.
  */
-function cruiseCabinPicker(cruise, rates) {
-  if (!rates.length) {
-    // "No per-person fares set yet" was a lie whenever the boat WAS priced and the
-    // rates were simply not shown to this agent. Say which it is.
-    const hidden = cruise.hasRateMatrix || cruise.priceVisible === false;
-    return `<div class="form-field full" style="margin-top:14px">
-      <label>${t("cruise.cabinRates","Per-person fares")}</label>
-      <div class="secondary-text">${hidden
-        ? t("cruise.ratesHidden","Cabin rates for this boat are quoted by the operations team — send a request and they will price it.")
-        : t("cruise.noRates","No per-person fares set yet")}</div>
-    </div>`;
+function crPartyChanged() {
+  const paxInput = document.getElementById("crTransferPax");
+  if (paxInput && state.cruiseSelection?.transferPaxTouched !== true) {
+    paxInput.value = String(crPartySize());
   }
-  // Which of the nine cells to start on: the cheapest one actually sold, so the
-  // panel opens on a real price rather than on a blank cell.
-  let best = null;
-  for (const rate of rates) {
-    for (const occupancy of CR_OCCUPANCIES) {
-      const price = crCabinPrice(rate, occupancy);
-      if (price == null) continue;
-      if (!best || price < best.price) best = { rateId: rate.id, occupancy, price };
-    }
-  }
-  const cell = (rate, occupancy) => {
-    const price = crCabinPrice(rate, occupancy);
-    if (price == null) return `<td class="cr-cell-empty">—</td>`;
-    const checked = best && best.rateId === rate.id && best.occupancy === occupancy;
-    return `<td class="cr-cell">
-      <label class="cr-pick">
-        <input type="radio" name="crRate" value="${escapeHtml(rate.id)}|${occupancy}" ${checked ? "checked" : ""} onchange="crUpdateQuote()">
-        <span>${formatPrice(price, rate.currency)}</span>
-      </label>
-    </td>`;
-  };
-  return `<div class="form-field full" style="margin-top:14px">
-    <label>${t("cruise.cabinRates","Per-person fares")}</label>
-    <div class="secondary-text" style="margin-bottom:8px">${t("cruise.pickCabinHelp","Pick the fare plan and sharing basis — every displayed amount is per person, per sailing.")}</div>
-    <div class="table-scroll"><table class="data-table cr-rate-table">
-      <thead><tr>
-        <th>${t("cruise.cabinName","Cabin")}</th>
-        ${CR_OCCUPANCIES.map(o => `<th>${t(CR_OCC_KEY[o], o)}</th>`).join("")}
-      </tr></thead>
-      <tbody>${rates.map(r => `<tr>
-        <td><span class="primary-text">${escapeHtml(r.cabinName)}</span>${r.notes ? `<div class="secondary-text">${escapeHtml(r.notes)}</div>` : ""}</td>
-        ${CR_OCCUPANCIES.map(o => cell(r, o)).join("")}
-      </tr>`).join("")}</tbody>
-    </table></div>
-    <div class="form-grid" style="margin-top:12px">
-      <div class="form-field">
-        <label>${t("form.passengers","Passengers")}</label>
-        <input id="crPax" type="number" min="1" value="2" oninput="crUpdateQuote()">
-      </div>
-      <div class="form-field">
-        <label>${t("cruise.cabins","Cabins")}</label>
-        <input id="crCabins" type="number" min="1" value="1" oninput="crUpdateQuote()">
-        <small class="field-hint">${t("cruise.cabinsHint","Worked out from the passenger count — change it if they want the cabins split differently.")}</small>
-      </div>
-    </div>
-    <div id="crQuoteLine" class="cr-quote-line"></div>
-  </div>`;
+  if (paxInput) paxInput.max = String(crPartySize());
+  crRenderTransfer();
+  crUpdateQuote();
+}
+
+/** The agent typed a seat count, so stop following the party size. */
+function crTransferPaxChanged() {
+  state.cruiseSelection.transferPaxTouched = true;
+  crUpdateQuote();
+}
+
+/** A different route is a fresh answer: the seat count starts at the whole
+ *  party again, and the panel is rebuilt because "no transfer" has no fields. */
+function crTransferRouteChanged() {
+  state.cruiseSelection.transferPaxTouched = false;
+  crRenderTransfer();
+}
+
+/**
+ * One leg of a transfer, at this rate.
+ *
+ * A blank round-trip price is not "unavailable" — the return is the one-way
+ * price twice, which is what the desk has always quoted. Kept as its own pure
+ * function because the server applies the identical rule and the two are held
+ * against each other in tests/pricing-parity.test.ts.
+ */
+function crTransferUnitPrice(rate, roundTrip) {
+  if (!roundTrip) return Number(rate.amount);
+  return rate.roundTripAmount == null ? Number(rate.amount) * 2 : Number(rate.roundTripAmount);
+}
+
+/** How many seats this rate is multiplied by: a whole-car price is charged once. */
+function crTransferSeats(rate, party, requested) {
+  if (rate.perPerson === false) return 1;
+  const wanted = Number.isFinite(requested) && requested > 0 ? Math.floor(requested) : party;
+  return Math.min(party, Math.max(1, wanted));
+}
+
+/** What a chosen transfer costs, on the same rule the booking API applies. */
+function crTransferCharge() {
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
+  const id = document.getElementById("crTransferRate")?.value || "";
+  const rate = (cruise?.transferRates || []).find(r => r.id === id) || null;
+  if (!rate) return null;
+  const roundTrip = document.getElementById("crTransferRoundTrip")?.value === "ROUND_TRIP";
+  const party = crPartySize();
+  const pax = crTransferSeats(rate, party, parseInt(document.getElementById("crTransferPax")?.value || "", 10));
+  const unit = crTransferUnitPrice(rate, roundTrip);
+  return { rate, roundTrip, pax, unit, total: unit * pax, currency: rate.currency };
 }
 
 /** What the agent has picked, or null when nothing priced is selected. */
@@ -1946,7 +2127,7 @@ function crReadSelection() {
   const selected = crSelectedRate();
   if (!selected) return null;
   const { cruise, programme, rate, occupancy } = selected;
-  const adultUnitPrice = crCabinPrice(rate, occupancy);
+  const adultUnitPrice = programme ? crProgrammeAdultPrice(rate) : crCabinPrice(rate, occupancy);
   if (adultUnitPrice == null) return null;
   const adults = Math.max(1, parseInt(document.getElementById("crAdults")?.value || "1", 10) || 1);
   const children = Math.max(0, parseInt(document.getElementById("crChildren")?.value || "0", 10) || 0);
@@ -1967,24 +2148,17 @@ function crReadSelection() {
       else if (supplement.type === "TOTAL_PRICE") total = amount * pax;
     });
   }
-  const transferId = document.getElementById("crTransferRate")?.value || "";
-  const transferRate = !programme ? (cruise.transferRates || []).find(rate => rate.id === transferId) || null : null;
-  if (total != null && transferRate) total += Number(transferRate.amount || 0);
+  const transfer = programme ? null : crTransferCharge();
+  if (total != null && transfer) total += transfer.total;
   return {
     cruise, programme, rate, occupancy, adultUnitPrice, childUnitPrice,
-    adults, children, pax, supplements, transferRate, missingChildPrice,
+    adults, children, pax, supplements, transfer, missingChildPrice,
     total: total == null ? null : Math.round(total * 100) / 100,
     currency: rate.currency,
   };
 }
 
-/**
- * Recompute the line the agent is reading.
- *
- * Changing the passenger count re-derives the cabin count, because that is the
- * number they would otherwise have to work out themselves; typing in the cabin
- * box is an explicit answer and is left alone until the party size changes.
- */
+/** Recompute the line the agent is reading. */
 function crUpdateQuote() {
   const line = document.getElementById("crQuoteLine");
   if (!line) return;
@@ -1993,9 +2167,11 @@ function crUpdateQuote() {
     line.innerHTML = `<div class="secondary-text">${t("hotel.priceOnRequest","Select a priced fare or send a price request.")}</div>`;
     return;
   }
-  const occLabel = t(CR_OCC_KEY[sel.occupancy], sel.occupancy);
+  const what = sel.programme
+    ? locName(sel.programme.name, sel.programme.nameAr)
+    : `${t("cruise.cruiseOnly","Cruise only")} · ${t(CR_OCC_KEY[sel.occupancy], sel.occupancy)}`;
   if (sel.missingChildPrice) {
-    line.innerHTML = `<div class="cr-quote-what">${escapeHtml(occLabel)} · ${formatNumber(sel.adults)} ${t("form.adults","Adults")} · ${formatNumber(sel.children)} ${t("form.children","Children")}</div>
+    line.innerHTML = `<div class="cr-quote-what">${escapeHtml(what)} · ${formatNumber(sel.adults)} ${t("form.adults","Adults")} · ${formatNumber(sel.children)} ${t("form.children","Children")}</div>
       <div class="secondary-text">${t("cruise.childPriceMissing","No child price is configured for this period. Send a price request.")}</div>`;
     return;
   }
@@ -2003,10 +2179,10 @@ function crUpdateQuote() {
     `${formatNumber(sel.adults)} × ${formatPrice(sel.adultUnitPrice, sel.currency)}`,
     sel.children ? `${formatNumber(sel.children)} × ${formatPrice(sel.childUnitPrice, sel.currency)}` : "",
     sel.supplements.length ? `${t("hotel.supplements","Supplements")}: ${sel.supplements.map(s => s.name).join(", ")}` : "",
-    sel.transferRate ? `${t("cruise.transfer","Transfer")}: ${formatPrice(Number(sel.transferRate.amount), sel.transferRate.currency)}` : "",
+    sel.transfer ? `${t("cruise.transfer","Transfer")} ${sel.transfer.roundTrip ? t("cruise.roundTrip","Round trip") : t("cruise.oneWay","One way")}: ${formatNumber(sel.transfer.pax)} × ${formatPrice(sel.transfer.unit, sel.transfer.currency)}` : "",
   ].filter(Boolean);
   line.innerHTML = `
-    <div class="cr-quote-what">${escapeHtml(sel.programme ? locName(sel.programme.name, sel.programme.nameAr) : t("cruise.cruiseOnly","Cruise only"))} · ${escapeHtml(occLabel)} · ${parts.join(" · ")}</div>
+    <div class="cr-quote-what">${escapeHtml(what)} · ${parts.join(" · ")}</div>
     <div class="cr-quote-total">${formatPrice(sel.total, sel.currency)}</div>`;
 }
 
@@ -2018,41 +2194,44 @@ function crUpdateQuote() {
  */
 function crRequestQuote(cruiseId) {
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === cruiseId);
-  const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value;
-  const schedule = (cruise?.schedules || []).find(sc => sc.id === scheduleId);
+  const schedule = crSelectedSchedule();
   const selection = crReadSelection();
   const programme = selection?.programme || null;
-  const transferRate = selection?.transferRate || null;
+  const charge = selection?.transfer || null;
   const transfer = programme ? {
     transferRequested: false,
     transferIncluded: true,
     transferFromName: programme.transferFromName || undefined,
     transferToName: programme.transferToName || undefined,
-  } : transferRate ? {
+  } : charge ? {
     transferRequested: true,
     transferIncluded: false,
     transferFromType: "AREA",
-    transferFromName: transferRate.fromLocation,
+    transferFromName: charge.rate.fromLocation,
     transferToType: "AREA",
-    transferToName: transferRate.toLocation,
+    transferToName: charge.rate.toLocation,
+    transferPax: charge.pax,
+    transferRoundTrip: charge.roundTrip,
   } : { transferRequested: false, transferIncluded: false };
-  const occLabel = selection ? t(CR_OCC_KEY[selection.occupancy], selection.occupancy) : "";
   const lines = [
     schedule ? `${weekdayLabel(schedule.departureDay)} → ${weekdayLabel(schedule.returnDay)} (${schedule.nights} ${t("cruise.nights","Nights")})` : "",
     programme
       ? `${t("cruise.programme","Programme")}: ${locName(programme.name, programme.nameAr)}`
       : `${t("cruise.programme","Programme")}: ${t("cruise.cruiseOnly","Cruise only")}`,
     selection
-      ? `${t("cruise.perPersonRates","Per-person price")}: ${occLabel} · `
+      ? `${t("cruise.perPersonRates","Per-person price")}: `
+        + (selection.occupancy ? `${t(CR_OCC_KEY[selection.occupancy], selection.occupancy)} · ` : "")
         + `${selection.adults} ${t("form.adults","Adults")} × ${formatPrice(selection.adultUnitPrice, selection.currency)}`
         + (selection.children ? ` · ${selection.children} ${t("form.children","Children")} × ${selection.childUnitPrice == null ? t("hotel.priceOnRequest","Price on request") : formatPrice(selection.childUnitPrice, selection.currency)}` : "")
         + (selection.total == null ? "" : ` · ${t("th.total","Total")}: ${formatPrice(selection.total, selection.currency)}`)
       : "",
     programme
       ? `${t("cruise.transfer","Transfer")}: ${t("activity.transferIncluded","Transfer included")} · ${programme.transferFromName || ""} → ${programme.transferToName || ""}`
-      : transfer.transferRequested
-      ? `${t("cruise.transfer","Transfer")}: ${transfer.transferFromName} → ${transfer.transferToName}`
-        + (transferRate ? ` · ${formatPrice(Number(transferRate.amount), transferRate.currency)}` : "")
+      : charge
+      ? `${t("cruise.transfer","Transfer")}: ${charge.rate.fromLocation} → ${charge.rate.toLocation}`
+        + ` · ${charge.roundTrip ? t("cruise.roundTrip","Round trip") : t("cruise.oneWay","One way")}`
+        + ` · ${charge.pax} ${t("form.passengers","Passengers")}`
+        + ` · ${formatPrice(charge.total, charge.currency)}`
       : `${t("cruise.transfer","Transfer")}: ${t("cruise.noTransfer","No transfer")}`,
     selection?.supplements?.length ? `${t("hotel.supplements","Supplements")}: ${selection.supplements.map(x => x.name).join(", ")}` : "",
   ].filter(Boolean);
@@ -2069,7 +2248,6 @@ function crRequestQuote(cruiseId) {
   closeModal();
   openQuoteRequestModal("CRUISE", cruiseId, cruise?.name || "");
 }
-
 // ─── Nationality data ─────────────────────────────────────────────────────────
 const NATIONALITIES = [
   "Egyptian","Saudi","Emirati","Kuwaiti","Qatari","Bahraini","Omani","Jordanian","Lebanese","Syrian",

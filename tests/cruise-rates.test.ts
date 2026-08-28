@@ -16,9 +16,15 @@ import {
   normalizeWeekday,
   priceCruiseBooking,
   priceCruisePerPerson,
+  priceCruiseTransfer,
+  priceProgrammePerPerson,
+  programmeAdultPrice,
+  programmeFromPrice,
   programmePeriodsHaveBothAudiences,
   rateApplies,
+  sharedRowAppliesToLeg,
   validateCruiseRateInput,
+  validateProgrammeRateInput,
 } from '../src/shared/cruise-rates';
 
 // A Nile cruise is priced the way a hotel is: one row per cabin category, per
@@ -301,4 +307,165 @@ test('nightsBetween: a leg that wraps the weekend is not negative', () => {
 
 test('nightsBetween: same day out and back is a full week aboard', () => {
   assert.equal(nightsBetween('MONDAY', 'MONDAY'), 7);
+});
+
+// ── A programme: one price per adult, no sharing basis ──────────────────────
+
+function programmeRate(over: Record<string, unknown> = {}) {
+  return {
+    id: 'pr1',
+    market: null,
+    currency: 'USD',
+    adultPrice: D(500),
+    childPrice: D(250),
+    validFrom: null,
+    validTo: null,
+    ...over,
+  } as Parameters<typeof programmeAdultPrice>[0];
+}
+
+test('programmeAdultPrice: the adult amount is the price', () => {
+  assert.equal(programmeAdultPrice(programmeRate())!.toString(), '500');
+});
+
+test('programmeAdultPrice: a legacy row falls back to what the operator typed', () => {
+  // Rows written under the old three-column shape must keep quoting the same
+  // figure rather than dropping to "price on request" the day this shipped.
+  // Double first: in practice that is the column operators filled in.
+  const legacy = (over: Record<string, unknown>) =>
+    programmeAdultPrice(programmeRate({ adultPrice: null, ...over }))?.toString() ?? null;
+  assert.equal(legacy({ doublePrice: D(600), singlePrice: D(900), triplePrice: D(500) }), '600');
+  assert.equal(legacy({ singlePrice: D(900), triplePrice: D(500) }), '900');
+  assert.equal(legacy({ triplePrice: D(500) }), '500');
+  assert.equal(legacy({}), null);
+});
+
+test('priceProgrammePerPerson: one adult price per adult, one child price per child', () => {
+  const priced = priceProgrammePerPerson({ row: programmeRate(), adults: 3, children: 2 })!;
+  assert.equal(priced.total.toString(), '2000'); // 3×500 + 2×250
+  assert.equal(priced.adultUnitPrice.toString(), '500');
+  assert.equal(priced.currency, 'USD');
+});
+
+test('priceProgrammePerPerson: the same party costs the same whatever the cabin', () => {
+  // The whole point of dropping the sharing basis: there is only one answer,
+  // so there is no way for the agent to pick the wrong one.
+  const priced = priceProgrammePerPerson({ row: programmeRate(), adults: 2 })!;
+  assert.equal(priced.total.toString(), '1000');
+});
+
+test('priceProgrammePerPerson: no adult price is a request, never a free cruise', () => {
+  assert.equal(priceProgrammePerPerson({ row: programmeRate({ adultPrice: null }), adults: 2 }), null);
+});
+
+test('priceProgrammePerPerson: children with no child price go to request', () => {
+  // Blank is "not sold that way", never zero.
+  assert.equal(
+    priceProgrammePerPerson({ row: programmeRate({ childPrice: null }), adults: 2, children: 1 }),
+    null,
+  );
+  // ...but a party with no children is unaffected by the missing child price.
+  assert.equal(
+    priceProgrammePerPerson({ row: programmeRate({ childPrice: null }), adults: 2 })!.total.toString(),
+    '1000',
+  );
+});
+
+test('priceProgrammePerPerson: a nonsense party is one adult, not zero', () => {
+  assert.equal(priceProgrammePerPerson({ row: programmeRate(), adults: 0 })!.total.toString(), '500');
+});
+
+test('programmeFromPrice: the cheapest adult price that applies, in its own currency', () => {
+  const on = new Date('2026-07-01');
+  const best = programmeFromPrice([
+    programmeRate({ id: 'a', adultPrice: D(700) }),
+    programmeRate({ id: 'b', adultPrice: D(450) }),
+    // Out of season: cheaper, and deliberately not the headline.
+    programmeRate({ id: 'c', adultPrice: D(100), validTo: new Date('2026-01-31') }),
+  ], null, on)!;
+  assert.equal(best.amount.toString(), '450');
+  assert.equal(best.currency, 'USD');
+});
+
+test('programmeFromPrice: nothing priced is null, not zero', () => {
+  assert.equal(programmeFromPrice([], null, new Date()), null);
+});
+
+test('validateProgrammeRateInput: an adult price is required', () => {
+  assert.equal(validateProgrammeRateInput({ adultPrice: 500 }), null);
+  assert.equal(validateProgrammeRateInput({}), 'ADULT_PRICE_REQUIRED');
+  assert.equal(validateProgrammeRateInput({ adultPrice: '' }), 'ADULT_PRICE_REQUIRED');
+  assert.equal(validateProgrammeRateInput({ adultPrice: -1 }), 'INVALID_OCCUPANCY_PRICE');
+  assert.equal(validateProgrammeRateInput({ adultPrice: 'free' }), 'INVALID_OCCUPANCY_PRICE');
+});
+
+test('validateProgrammeRateInput: the period rules are the cabin period rules', () => {
+  assert.equal(
+    validateProgrammeRateInput({ adultPrice: 500, validFrom: '2026-06-01', validTo: '2026-05-01' }),
+    'INVALID_PERIOD_RANGE',
+  );
+  assert.equal(validateProgrammeRateInput({ adultPrice: 500, validFrom: 'soon' }), 'INVALID_PERIOD_DATE');
+  // One-sided and all-year periods are deliberately allowed.
+  assert.equal(validateProgrammeRateInput({ adultPrice: 500, validFrom: '2026-06-01' }), null);
+});
+
+test('validateProgrammeRateInput: a child price is optional but must be a number', () => {
+  assert.equal(validateProgrammeRateInput({ adultPrice: 500, childPrice: null }), null);
+  assert.equal(validateProgrammeRateInput({ adultPrice: 500, childPrice: -5 }), 'INVALID_OCCUPANCY_PRICE');
+});
+
+// ── A transfer: for how many, and does the car come back ────────────────────
+
+const transferRow = (over: Record<string, unknown> = {}) => ({
+  amount: D(40),
+  roundTripAmount: D(70),
+  perPerson: true,
+  currency: 'USD',
+  ...over,
+});
+
+test('priceCruiseTransfer: a per-person route is charged per seat', () => {
+  const priced = priceCruiseTransfer({ row: transferRow(), pax: 4 });
+  assert.equal(priced.total.toString(), '160');
+  assert.equal(priced.pax, 4);
+});
+
+test('priceCruiseTransfer: a round trip uses the pair price when there is one', () => {
+  assert.equal(priceCruiseTransfer({ row: transferRow(), pax: 2, roundTrip: true }).total.toString(), '140');
+});
+
+test('priceCruiseTransfer: no pair price means the one-way price twice', () => {
+  // Blank is not "unavailable" — it is what the desk has always quoted.
+  const priced = priceCruiseTransfer({ row: transferRow({ roundTripAmount: null }), pax: 2, roundTrip: true });
+  assert.equal(priced.total.toString(), '160');
+  assert.equal(priced.unitPrice.toString(), '80');
+});
+
+test('priceCruiseTransfer: a whole-car route is charged once, whoever is in it', () => {
+  const car = transferRow({ perPerson: false, amount: D(120), roundTripAmount: null });
+  assert.equal(priceCruiseTransfer({ row: car, pax: 1 }).total.toString(), '120');
+  assert.equal(priceCruiseTransfer({ row: car, pax: 7 }).total.toString(), '120');
+  assert.equal(priceCruiseTransfer({ row: car, pax: 7, roundTrip: true }).total.toString(), '240');
+});
+
+test('priceCruiseTransfer: a nonsense seat count carries one person, not none', () => {
+  for (const pax of [0, -3, NaN]) {
+    assert.equal(priceCruiseTransfer({ row: transferRow(), pax }).total.toString(), '40', String(pax));
+  }
+});
+
+// ── The fleet-wide library: a shared row belongs to a LENGTH ────────────────
+
+test('sharedRowAppliesToLeg: three nights belongs to a three-night leg and no other', () => {
+  // This is the rule that makes the reported mix-up impossible: a three-night
+  // programme can never be offered against a four-night sailing.
+  assert.equal(sharedRowAppliesToLeg(3, 3), true);
+  assert.equal(sharedRowAppliesToLeg(3, 4), false);
+  assert.equal(sharedRowAppliesToLeg(4, 3), false);
+});
+
+test('sharedRowAppliesToLeg: no length means every leg', () => {
+  // An airport transfer does not care how long the boat is out.
+  assert.equal(sharedRowAppliesToLeg(null, 3), true);
+  assert.equal(sharedRowAppliesToLeg(undefined, 7), true);
 });

@@ -739,6 +739,11 @@ model QuoteRequest {
   transferToName     String?
   transferPickupTime String?
   transferReturnTime String?
+  // How many of the party the car collects, and whether it brings them back.
+  // Transport dispatches on these two answers, so they travel as fields rather
+  // than as a sentence in the notes nobody can filter on.
+  transferPax        Int?
+  transferRoundTrip  Boolean            @default(false)
   transferNotes      String?            @db.Text
   customFields       Json? // dynamic fields captured by the Request Form Builder template
   assignedToId       String?
@@ -1029,12 +1034,22 @@ model CruiseCabinRate {
 // A programme belongs to one exact sailing leg. A Monday → Thursday three-
 // night itinerary must never appear against a four-night leg, and its prices
 // are therefore nested under the programme rather than the boat.
+//
+// Every Nile cruise on this portal sells the SAME programmes and the same
+// transfers, so a programme may also be written once for the whole fleet:
+// `cruiseId` and `scheduleId` are then null and `nights` says which sailing
+// legs it belongs to. A three-night programme carries nights = 3 and can only
+// ever appear against a three-night leg, whichever boat is sailing it — that
+// length match is what a per-cruise programme spells out with a scheduleId.
 model CruiseProgramme {
   id                String                 @id @default(cuid())
-  cruiseId          String
-  cruise            NileCruise             @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
-  scheduleId        String
-  schedule          CruiseSchedule         @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  cruiseId          String?
+  cruise            NileCruise?            @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
+  scheduleId        String?
+  schedule          CruiseSchedule?        @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  // Shared programmes only. The length of the legs this programme is sold on;
+  // null means every leg of every boat.
+  nights            Int?
   name              String
   nameAr            String?
   description       String?                @db.Text
@@ -1055,19 +1070,31 @@ model CruiseProgramme {
   @@index([cruiseId])
   @@index([scheduleId])
   @@index([cruiseId, isActive])
+  @@index([nights, isActive])
 }
 
 // Exactly two audiences are sold for a programme: Egyptian in EGP and everyone
-// else in USD. Single / Double / Triple describe the sharing arrangement but
-// remain per-person prices; children have their own per-person amount.
+// else in USD.
+//
+// A programme is one price per adult. It is NOT sold by sharing basis: a
+// programme buyer is quoted the same amount whether they end up in a single or
+// a triple, so asking the agent to pick between three identical columns only
+// ever produced a choice they could get wrong. `adultPrice` is that amount and
+// is what every reader uses; the three occupancy columns below are the old
+// shape, kept so rows written before this change can still be read and are
+// never written again. Children keep their own per-person amount.
 model CruiseProgrammeRate {
   id            String           @id @default(cuid())
   programmeId   String
   programme     CruiseProgramme  @relation(fields: [programmeId], references: [id], onDelete: Cascade)
   market        Market
   currency      String
+  adultPrice    Decimal?         @db.Decimal(10, 2)
+  /// @deprecated read-only history — see adultPrice
   singlePrice   Decimal?         @db.Decimal(10, 2)
+  /// @deprecated read-only history — see adultPrice
   doublePrice   Decimal?         @db.Decimal(10, 2)
+  /// @deprecated read-only history — see adultPrice
   triplePrice   Decimal?         @db.Decimal(10, 2)
   childPrice    Decimal?         @db.Decimal(10, 2)
   supplements   Json?
@@ -1086,16 +1113,31 @@ model CruiseProgrammeRate {
 
 // Optional transfer sold only with "Cruise only". A programme's transfer is
 // already included, so the client can never be charged for both.
+//
+// Like a programme, a transfer route may be written once for the whole fleet —
+// the pier at Luxor is the same pier whichever boat is tied to it — in which
+// case `cruiseId` and `scheduleId` are null and `nights` (also nullable) says
+// which sailing legs it is offered on.
 model CruiseTransferRate {
   id            String          @id @default(cuid())
-  cruiseId      String
-  cruise        NileCruise      @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
-  scheduleId    String
-  schedule      CruiseSchedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  cruiseId      String?
+  cruise        NileCruise?     @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
+  scheduleId    String?
+  schedule      CruiseSchedule? @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  // Shared rows only. Null means every leg of every boat.
+  nights        Int?
   market        Market
   fromLocation  String
   toLocation    String
+  // The one-way price. Whether it buys a seat or the whole car is `perPerson`
+  // — a shared coach is quoted a head, a private car is quoted once, and the
+  // old single amount could not tell the agent which they were reading.
   amount        Decimal         @db.Decimal(10, 2)
+  // Both legs, when the operator prices the pair. Blank is not free and not
+  // "unavailable": the return is then simply the one-way price twice, which is
+  // what the desk has always quoted for a route with no explicit pair price.
+  roundTripAmount Decimal?      @db.Decimal(10, 2)
+  perPerson     Boolean         @default(true)
   currency      String
   validFrom     DateTime?
   validTo       DateTime?
@@ -1109,6 +1151,7 @@ model CruiseTransferRate {
   @@index([cruiseId])
   @@index([scheduleId])
   @@index([cruiseId, market, isActive])
+  @@index([nights, market, isActive])
 }
 
 model CruiseBooking {
@@ -1155,6 +1198,11 @@ model CruiseBooking {
   transferToName     String?
   transferPickupTime String? // "08:30" — when the driver collects them
   transferReturnTime String?
+  // How many seats the transfer was priced for, and whether it brings them
+  // back. A per-person route multiplied by the cruise party was wrong whenever
+  // only half of it needed collecting, so the count is its own answer.
+  transferPax        Int?
+  transferRoundTrip  Boolean                 @default(false)
   transferNotes      String?                 @db.Text
   addOns             CruiseBookingActivity[]
   totalAmount        Decimal                 @db.Decimal(12, 2)

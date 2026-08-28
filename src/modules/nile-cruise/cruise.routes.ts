@@ -10,6 +10,8 @@ import {
   listCruiseRates, saveCruiseRates, listCruiseSchedules, saveCruiseSchedules,
   listCruiseProgrammes, saveCruiseProgrammes,
   listCruiseTransferRates, saveCruiseTransferRates,
+  listSharedProgrammes, saveSharedProgrammes,
+  listSharedTransferRates, saveSharedTransferRates,
 } from './cruise-catalogue.controller';
 
 const router = Router();
@@ -30,6 +32,15 @@ router.get('/cruises/:id/programmes', listCruiseProgrammes);
 router.put('/cruises/:id/programmes', requireRole('SUPERADMIN'), saveCruiseProgrammes);
 router.get('/cruises/:id/transfer-rates', listCruiseTransferRates);
 router.put('/cruises/:id/transfer-rates', requireRole('SUPERADMIN'), saveCruiseTransferRates);
+
+// The fleet-wide programme and transfer library: the programmes and routes
+// every boat sells, written once. Readable by agents for the same reason the
+// per-cruise rows are — it is what they are quoting from — and writable by
+// admins only.
+router.get('/cruise-library/programmes', listSharedProgrammes);
+router.put('/cruise-library/programmes', requireRole('SUPERADMIN'), saveSharedProgrammes);
+router.get('/cruise-library/transfer-rates', listSharedTransferRates);
+router.put('/cruise-library/transfer-rates', requireRole('SUPERADMIN'), saveSharedTransferRates);
 
 router.get('/cruise-bookings', listCruiseBookings);
 router.post('/cruise-bookings', createCruiseBooking);
