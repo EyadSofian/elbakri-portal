@@ -923,6 +923,7 @@
     activityName: "Activity name", activityId: "Activity ID (optional)", dayDate: "Day / date", dayDatePlaceholder: "Day 2 or 2026-10-01",
     image: "Offer / package image", uploadImage: "Upload image", imageHelp: "JPG, PNG or WebP. The image is uploaded and saved with this record.",
     noCtaAction: "Do not open another page",
+    ctaLabelEn: "Button label (English)", priorityHelp: "Priority · higher appears first",
   };
   ar.offers = {
     popup: "عرض خاص", dontShow: "لا تُظهر اليوم", viewOffer: "عرض العرض",
@@ -940,6 +941,7 @@
     activityName: "اسم النشاط", activityId: "معرّف النشاط (اختياري)", dayDate: "اليوم / التاريخ", dayDatePlaceholder: "اليوم 2 أو 2026-10-01",
     image: "صورة العرض / الباكدج", uploadImage: "رفع صورة", imageHelp: "JPG أو PNG أو WebP. تُرفع الصورة وتُحفظ مع هذا السجل.",
     noCtaAction: "لا تفتح صفحة أخرى",
+    ctaLabelEn: "نص الزر بالإنجليزية", priorityHelp: "الأولوية · الرقم الأعلى يظهر أولًا",
   };
 
   // ── Destination image upload (Phase 2) ─────────────────────────────────────

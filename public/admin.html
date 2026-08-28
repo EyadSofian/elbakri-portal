@@ -6782,7 +6782,7 @@ async function openOfferForm(id, forcedKind = offerAdminTab) {
       <div id="ofPanelActivities" class="of-package-panel" style="display:none"><div id="ofActivityRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddActivityRow()">${icon("plus")}&nbsp;${t("offers.addActivity","Add activity")}</button></div>
       <div id="ofPanelPricing" class="of-package-panel" style="display:none"><div id="ofPricingRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddPricingRow()">${icon("plus")}&nbsp;${t("offers.addPricePeriod","Add price period")}</button></div>
     </div>` : ""}
-    <div class="form-field"><label>${t("offers.ctaLabel","CTA Label")} (EN)</label><input id="ofCtaLabel" value="${escapeHtml(o?.ctaLabel||"")}"></div>
+    <div class="form-field"><label>${t("offers.ctaLabelEn","Button label (English)")}</label><input id="ofCtaLabel" value="${escapeHtml(o?.ctaLabel||"")}"></div>
     <div class="form-field"><label>${t("offers.ctaLabelAr","CTA Label (AR)")}</label><input id="ofCtaLabelAr" value="${escapeHtml(o?.ctaLabelAr||"")}"></div>
     <div class="form-field"><label>${t("offers.ctaAction","Open after clicking (optional)")}</label>
       <select id="ofCtaAction">
@@ -6792,7 +6792,7 @@ async function openOfferForm(id, forcedKind = offerAdminTab) {
     <input type="hidden" id="ofSvcType" value="${escapeHtml(o?.serviceType || "")}">
     <div class="form-field"><label>${t("form.validFrom","Valid From")}</label><input id="ofFrom" type="date" value="${o?.validFrom ? o.validFrom.slice(0,10) : ""}"></div>
     <div class="form-field"><label>${t("form.validTo","Valid To")}</label><input id="ofTo" type="date" value="${o?.validTo ? o.validTo.slice(0,10) : ""}"></div>
-    <div class="form-field"><label>${t("offers.priority","Priority")} (higher = shown first)</label><input id="ofPriority" type="number" value="${o?.priority??0}"></div>
+    <div class="form-field"><label>${t("offers.priorityHelp","Priority · higher appears first")}</label><input id="ofPriority" type="number" value="${o?.priority??0}"></div>
     <div class="form-field"><label class="check-row"><input type="checkbox" id="ofActive" ${!o||o.isActive?"checked":""}> ${t("form.active","Active")}</label></div>
   </div>`;
   openModal(id ? (isPackage ? t("offers.editPackage","Edit Package") : t("offers.editOffer","Edit Offer")) : (isPackage ? t("offers.newPackage","New Package") : t("offers.newOffer","New Offer")), body, `
@@ -6848,7 +6848,7 @@ function ofAddHotelRow(value = {}) {
   ofRowWrap("ofHotelRows", "of-hotel-row", `
     <div class="form-field"><label>${t("offers.hotelName","Hotel name")} *</label><input class="of-hotel-name" value="${escapeHtml(value.name || "")}"></div>
     <div class="form-field"><label>${t("offers.hotelId","Hotel ID (optional)")}</label><input class="of-hotel-id" value="${escapeHtml(value.hotelId || "")}"></div>
-    <div class="form-field"><label>${t("hotel.nights","Nights")}</label><input type="number" min="1" class="of-hotel-nights" value="${escapeHtml(value.nights || 1)}"></div>
+    <div class="form-field"><label>${t("cruise.nights","Nights")}</label><input type="number" min="1" class="of-hotel-nights" value="${escapeHtml(value.nights || 1)}"></div>
     <div class="form-field"><label>${t("hotel.mealPlan","Meal plan")}</label><input class="of-hotel-meal" value="${escapeHtml(value.mealPlan || "")}"></div>`);
 }
 
