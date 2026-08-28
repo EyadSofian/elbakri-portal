@@ -1,4 +1,4 @@
-import { BookingStatus, CruiseRoute, Prisma, ShipType } from '@prisma/client';
+import { BookingStatus, CruiseRoute, Market, Prisma, ShipType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { Request, Response } from 'express';
 import { prisma } from '../../config/db';
@@ -13,11 +13,16 @@ import { debitWallet, refundWallet } from '../../shared/wallet';
 import {
   Occupancy,
   applyCruiseSupplements,
+  applicableProgrammeRates,
   applicableRates,
   cruiseAudience,
   fromPrice,
   isOccupancy,
   priceCruisePerPerson,
+  priceCruiseTransfer,
+  priceProgrammePerPerson,
+  programmeFromPrice,
+  sharedRowAppliesToLeg,
 } from '../../shared/cruise-rates';
 import { readItinerary } from '../../shared/itinerary';
 import { readTransferAddOn } from '../../shared/transfer-addon';
@@ -27,7 +32,12 @@ const cruiseInclude = {
   cabinRate: { select: { id: true, cabinName: true, cabinType: true, currency: true } },
   programme: { select: { id: true, name: true, nameAr: true, transferFromName: true, transferToName: true } },
   programmeRate: { select: { id: true, market: true, currency: true } },
-  transferRate: { select: { id: true, fromLocation: true, toLocation: true, amount: true, currency: true } },
+  transferRate: {
+    select: {
+      id: true, fromLocation: true, toLocation: true,
+      amount: true, roundTripAmount: true, perPerson: true, currency: true,
+    },
+  },
   schedule: { select: { id: true, departureDay: true, returnDay: true, nights: true, label: true, labelAr: true } },
   addOns: { orderBy: { displayOrder: 'asc' as const } },
   company: { select: { id: true, name: true, email: true } },
@@ -53,20 +63,36 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
     ...(req.query.route && { route: req.query.route as CruiseRoute }),
     ...(req.query.shipType && { shipType: req.query.shipType as ShipType }),
   };
-  const cruises = await prisma.nileCruise.findMany({
-    where,
-    orderBy: { name: 'asc' },
-    include: {
-      cabinRates: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
-      schedules: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
-      programmes: {
-        where: { isActive: true },
-        include: { rates: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] } },
-        orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+  const catalogueOrder = [{ displayOrder: 'asc' as const }, { createdAt: 'asc' as const }];
+  // The boats, and the fleet-wide library every boat also sells. The library is
+  // a separate query because it hangs off no cruise: a shared programme names a
+  // sailing LENGTH, and is offered against every leg of that length on every
+  // boat.
+  const [cruises, sharedProgrammes, sharedTransferRates] = await Promise.all([
+    prisma.nileCruise.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      include: {
+        cabinRates: { where: { isActive: true }, orderBy: catalogueOrder },
+        schedules: { where: { isActive: true }, orderBy: catalogueOrder },
+        programmes: {
+          where: { isActive: true },
+          include: { rates: { where: { isActive: true }, orderBy: catalogueOrder } },
+          orderBy: catalogueOrder,
+        },
+        transferRates: { where: { isActive: true }, orderBy: catalogueOrder },
       },
-      transferRates: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
-    },
-  });
+    }),
+    prisma.cruiseProgramme.findMany({
+      where: { cruiseId: null, isActive: true },
+      include: { rates: { where: { isActive: true }, orderBy: catalogueOrder } },
+      orderBy: catalogueOrder,
+    }),
+    prisma.cruiseTransferRate.findMany({
+      where: { cruiseId: null, isActive: true },
+      orderBy: catalogueOrder,
+    }),
+  ]);
   // The programme is normalised on the way out as well as in: a boat whose rows
   // were written before this existed, or edited straight in the database, still
   // reaches every reader as one ordered, gap-free list.
@@ -81,6 +107,16 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
           itinerary: readItinerary(programme.itinerary),
         })),
       })),
+      // The library is not folded into the boats here: the admin edits it in
+      // one place, and seeing a shared programme repeated under twenty cruises
+      // is exactly the copy-per-boat picture it replaced.
+      meta: {
+        sharedProgrammes: sharedProgrammes.map((programme) => ({
+          ...programme,
+          itinerary: readItinerary(programme.itinerary),
+        })),
+        sharedTransferRates,
+      },
     });
     return;
   }
@@ -92,31 +128,65 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
 
   const { market } = await resolvePriceContext(req);
   const cruiseMarket = cruiseAudience(market) === 'EGYPTIAN' ? 'EGYPTIAN' : 'FOREIGN';
+  const transferApplies = (rate: { market: Market; validFrom: Date | null; validTo: Date | null }): boolean => {
+    if (rate.market !== cruiseMarket) return false;
+    if (rate.validFrom && rate.validFrom > sailingDate) return false;
+    if (rate.validTo && rate.validTo < sailingDate) return false;
+    return true;
+  };
+
   const data = cruises.map((cruise) => {
     // The period rows are the price. The retired headline amount and its old
     // generic market overrides never substitute for a missing cabin period.
     const rates = applicableRates(cruise.cabinRates, cruiseMarket, sailingDate);
-    const programmes = cruise.programmes.map((programme) => {
-      const programmeRates = applicableRates(programme.rates.map((rate) => ({
-        ...rate,
-        cabinName: programme.name,
-      })), cruiseMarket, sailingDate);
+
+    /** One programme, priced for this audience on this sailing date. */
+    const presentProgramme = (
+      programme: (typeof cruise.programmes)[number],
+      scheduleId: string | null,
+      shared: boolean,
+    ) => {
+      const programmeRates = applicableProgrammeRates(programme.rates, cruiseMarket, sailingDate);
       return {
         ...programme,
+        // A shared programme is written once and offered against every leg of
+        // its length, so the leg it is being shown for is filled in here. The
+        // agent's list is filtered by this, which is what keeps a three-night
+        // programme off a four-night sailing.
+        scheduleId,
+        shared,
         itinerary: readItinerary(programme.itinerary),
         rates: cruise.showPriceToAgents ? programmeRates : [],
         hasRates: programmeRates.length > 0,
       };
+    };
+
+    const ownProgrammes = cruise.programmes.map((programme) =>
+      presentProgramme(programme, programme.scheduleId, false));
+    // A boat that genuinely differs keeps its own programme: a shared one is
+    // skipped on any leg where the boat already sells a programme under the
+    // same name, so the library is a default and never an override.
+    const inherited = cruise.schedules.flatMap((schedule) => {
+      const ownNames = new Set(ownProgrammes
+        .filter((programme) => programme.scheduleId === schedule.id)
+        .map((programme) => programme.name.trim().toLowerCase()));
+      return sharedProgrammes
+        .filter((programme) => sharedRowAppliesToLeg(programme.nights, schedule.nights))
+        .filter((programme) => !ownNames.has(programme.name.trim().toLowerCase()))
+        .map((programme) => presentProgramme(programme, schedule.id, true));
     });
-    const transferRates = cruise.transferRates.filter((rate) => {
-      if (rate.market !== cruiseMarket) return false;
-      if (rate.validFrom && rate.validFrom > sailingDate) return false;
-      if (rate.validTo && rate.validTo < sailingDate) return false;
-      return true;
-    });
+    const programmes = [...ownProgrammes, ...inherited];
+
+    const ownTransferRates = cruise.transferRates.filter(transferApplies);
+    const inheritedTransferRates = cruise.schedules.flatMap((schedule) => sharedTransferRates
+      .filter((rate) => sharedRowAppliesToLeg(rate.nights, schedule.nights))
+      .filter(transferApplies)
+      .map((rate) => ({ ...rate, scheduleId: schedule.id, shared: true })));
+    const transferRates = [...ownTransferRates, ...inheritedTransferRates];
+
     const baseCheapest = fromPrice(cruise.cabinRates, cruiseMarket, sailingDate);
     const programmeCheapest = programmes.reduce<{ amount: Decimal; currency: string } | null>((best, programme) => {
-      const candidate = fromPrice((programme.rates || []).map((rate) => ({ ...rate, cabinName: programme.name })), cruiseMarket, sailingDate);
+      const candidate = programmeFromPrice(programme.rates || [], cruiseMarket, sailingDate);
       if (!candidate) return best;
       return !best || candidate.amount.lt(best.amount) ? candidate : best;
     }, null);
@@ -300,6 +370,9 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     transferToName?: string;
     transferPickupTime?: string;
     transferReturnTime?: string;
+    // How many of the party the car collects, and whether it brings them back.
+    transferPax?: number;
+    transferRoundTrip?: boolean;
     transferNotes?: string;
   };
   const companyId = body.companyId ?? caller.companyId!;
@@ -334,8 +407,9 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     const childrenCount = Math.max(0, body.childrenCount ?? 0);
     const pax = adultsCount + childrenCount;
 
-    // Cruise-only and programme fares share one rule: Single / Double / Triple
-    // are per-person amounts for the selected sharing arrangement.
+    // A cabin fare is per person for the sharing basis the agent picked. A
+    // programme is per person full stop — it is not sold by sharing basis, so
+    // no occupancy is asked for or accepted below.
     const rate = body.cabinRateId
       ? await prisma.cruiseCabinRate.findFirst({
         where: { id: body.cabinRateId, cruiseId: body.cruiseId, isActive: true },
@@ -346,6 +420,10 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     if (Boolean(body.programmeId) !== Boolean(body.programmeRateId) || (body.programmeId && !body.scheduleId)) {
       throw new Error('PROGRAMME_RATE_NOT_AVAILABLE');
     }
+    // Either the boat's own programme for this exact leg, or a fleet-wide one
+    // whose length matches the leg. A shared programme belongs to no boat, so
+    // it is the LENGTH that has to line up — the same match the agent's list
+    // was filtered by, re-checked here because a payload can say anything.
     const programmeRate = body.programmeRateId
       ? await prisma.cruiseProgrammeRate.findFirst({
         where: {
@@ -353,15 +431,25 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
           isActive: true,
           programme: {
             id: body.programmeId,
-            cruiseId: body.cruiseId,
             isActive: true,
-            ...(body.scheduleId ? { scheduleId: body.scheduleId } : {}),
+            OR: [
+              { cruiseId: body.cruiseId, ...(body.scheduleId ? { scheduleId: body.scheduleId } : {}) },
+              {
+                cruiseId: null,
+                ...(schedule ? { OR: [{ nights: null }, { nights: schedule.nights }] } : {}),
+              },
+            ],
           },
         },
         include: { programme: true },
       })
       : null;
     if (body.programmeRateId && !programmeRate) throw new Error('PROGRAMME_RATE_NOT_AVAILABLE');
+    // A shared programme is only bookable against a real leg — without one
+    // there is nothing to match its length to.
+    if (programmeRate && programmeRate.programme.cruiseId === null && !schedule) {
+      throw new Error('SCHEDULE_NOT_AVAILABLE');
+    }
     if (rate && programmeRate) throw new Error('PICK_ONE_FARE');
 
     const expectedMarket = cruiseAudience(company.market) === 'EGYPTIAN' ? 'EGYPTIAN' : 'FOREIGN';
@@ -382,11 +470,19 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     let selectedSupplements: Record<string, unknown>[] = [];
 
     if (chosenRate) {
-      const requested = String(body.occupancy ?? 'DOUBLE').toUpperCase();
-      if (!isOccupancy(requested)) throw new Error('INVALID_OCCUPANCY');
-      occupancy = requested as Occupancy;
-      const row = { ...chosenRate, cabinName: programmeRate?.programme.name ?? rate?.cabinName ?? 'Cruise fare' };
-      const priced = priceCruisePerPerson({ row, occupancy, adults: adultsCount, children: childrenCount });
+      // A programme carries no sharing basis: `occupancy` stays null so the
+      // booking never records a choice the client was not offered and the
+      // voucher never claims a cabin type the fare did not buy.
+      let priced;
+      if (programmeRate) {
+        priced = priceProgrammePerPerson({ row: programmeRate, adults: adultsCount, children: childrenCount });
+      } else {
+        const requested = String(body.occupancy ?? 'DOUBLE').toUpperCase();
+        if (!isOccupancy(requested)) throw new Error('INVALID_OCCUPANCY');
+        occupancy = requested as Occupancy;
+        const row = { ...rate!, cabinName: rate?.cabinName ?? 'Cruise fare' };
+        priced = priceCruisePerPerson({ row, occupancy, adults: adultsCount, children: childrenCount });
+      }
       if (!priced) throw new Error('OCCUPANCY_NOT_SOLD');
       sourceAmount = priced.total;
       sourceCurrency = priced.currency;
@@ -426,22 +522,38 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     // one explicit, admin-priced From → To route; free-text transfer prices are
     // never trusted by the booking API.
     let transferRate = null;
+    let transferPax: number | null = null;
+    const transferRoundTrip = Boolean(body.transferRoundTrip);
     if (!programmeRate && body.transferRateId) {
-      if (!body.scheduleId) throw new Error('SCHEDULE_NOT_AVAILABLE');
+      if (!schedule) throw new Error('SCHEDULE_NOT_AVAILABLE');
       transferRate = await prisma.cruiseTransferRate.findFirst({
         where: {
           id: body.transferRateId,
-          cruiseId: body.cruiseId,
           market: expectedMarket,
           isActive: true,
-          scheduleId: body.scheduleId,
+          OR: [
+            { cruiseId: body.cruiseId, scheduleId: body.scheduleId },
+            { cruiseId: null, OR: [{ nights: null }, { nights: schedule.nights }] },
+          ],
         },
       });
       if (!transferRate) throw new Error('TRANSFER_RATE_NOT_AVAILABLE');
       if ((transferRate.validFrom && transferRate.validFrom > checkIn)
         || (transferRate.validTo && transferRate.validTo < checkIn)) throw new Error('TRANSFER_RATE_NOT_AVAILABLE');
       if (transferRate.currency !== sourceCurrency) throw new Error('MIXED_CURRENCY');
-      sourceAmount = sourceAmount.add(transferRate.amount);
+      // How many seats, and whether the car comes back. The party size is only
+      // the default: half a group often makes its own way, and charging the
+      // whole cruise party for a car that collects three of them was wrong.
+      const requestedPax = Number(body.transferPax);
+      const seats = Number.isFinite(requestedPax) && requestedPax > 0 ? Math.floor(requestedPax) : pax;
+      if (seats > pax) throw new Error('TRANSFER_PAX_INVALID');
+      const pricedTransfer = priceCruiseTransfer({
+        row: transferRate,
+        pax: seats,
+        roundTrip: transferRoundTrip,
+      });
+      transferPax = seats;
+      sourceAmount = sourceAmount.add(pricedTransfer.total);
     }
     if (!programmeRate && body.transferRequested && !transferRate) throw new Error('TRANSFER_RATE_REQUIRED');
     const transfer = programmeRate
@@ -491,6 +603,8 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
           adultsCount,
           childrenCount,
           ...transfer,
+          transferPax,
+          transferRoundTrip: transferRate ? transferRoundTrip : false,
           addOns: {
             create: addOns.map((a, index) => ({
               activityId: a.activityId ?? null,
@@ -547,7 +661,8 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
       'INVALID_DATES', 'SCHEDULE_NOT_AVAILABLE',
       'RATE_NOT_AVAILABLE', 'PROGRAMME_RATE_NOT_AVAILABLE', 'PICK_ONE_FARE',
       'INVALID_OCCUPANCY', 'OCCUPANCY_NOT_SOLD', 'INVALID_SUPPLEMENT',
-      'TRANSFER_RATE_NOT_AVAILABLE', 'TRANSFER_RATE_REQUIRED', 'MIXED_CURRENCY',
+      'TRANSFER_RATE_NOT_AVAILABLE', 'TRANSFER_RATE_REQUIRED', 'TRANSFER_PAX_INVALID',
+      'MIXED_CURRENCY',
     ].includes(message)) {
       res.status(400).json({ success: false, error: message });
     } else {

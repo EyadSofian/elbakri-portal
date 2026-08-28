@@ -1927,12 +1927,14 @@ function cruiseCatalogueFormSection(row, basicSection = "") {
     <div class="form-section cruise-catalogue-section" data-cr-editor-panel="programmes" hidden>
       <div class="form-section-title">${t("cruise.programmes","Programmes")}</div>
       <div class="secondary-text" style="margin-bottom:10px">${t("cruise.programmesHelp","A programme is tied to one exact sailing leg and includes its transfer. Add both Egyptian/EGP and Foreign/USD per-person tariffs.")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("cruise.programmesInheritNote","This boat also sells every shared programme of the right length. Only add one here when this boat genuinely differs — a programme added here with the same name replaces the shared one.")}</div>
       <div id="crProgrammeRows">${programmes.map(crProgrammeCardHtml).join("")}</div>
       <button type="button" class="btn btn-primary btn-sm" onclick="crAddProgramme()">${icon("plus")}${t("cruise.addProgramme","Add programme")}</button>
     </div>
     <div class="form-section cruise-catalogue-section" data-cr-editor-panel="transfers" hidden>
       <div class="form-section-title">${t("cruise.transferOnly","Cruise-only transfer")}</div>
       <div class="secondary-text" style="margin-bottom:10px">${t("cruise.transferOnlyHelp","Optional, separately priced From → To transfer. It is offered only when the client does not choose a programme.")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("cruise.transfersInheritNote","Shared transfer routes are offered on this boat too. Only add one here when this boat is priced differently.")}</div>
       <div id="crTransferRateRows">${transferRates.map(crTransferRateRowHtml).join("")}</div>
       <button type="button" class="btn btn-outline btn-sm" onclick="crAddTransferRate()">${icon("plus")}${t("cruise.addTransferRate","Add transfer price")}</button>
     </div>`;
@@ -2140,10 +2142,18 @@ async function saveMasterRecord(entity, id = "") {
         return;
       }
       const savedSchedules = scheduleRes.data || [];
+      // Schedules are replaced on save and come back with new ids, in the
+      // order they were posted. Each posted leg carried the editor key its
+      // programmes and fares point at, so the two lists line up by position
+      // here — and a row whose key no longer names a leg resolves to null and
+      // is refused by the API rather than being filed under the wrong sailing.
+      const idByKey = new Map(cruiseCatalogue.schedules
+        .map((schedule, index) => [schedule.editorKey, savedSchedules[index]?.id])
+        .filter(([key, id]) => key && id));
       const withScheduleId = row => ({
         ...row,
-        scheduleId: savedSchedules[row.scheduleIndex]?.id || null,
-        scheduleIndex: undefined,
+        scheduleId: idByKey.get(row.scheduleKey) || null,
+        scheduleKey: undefined,
       });
       const rates = cruiseCatalogue.rates.map(withScheduleId);
       const programmes = cruiseCatalogue.programmes.map(programme => ({
@@ -4468,7 +4478,22 @@ async function renderReports() {
   renderDashboard();
 }
 
+/**
+ * The fleet list, and the library every boat in it inherits from.
+ *
+ * The programmes and the transfer routes are the same on every Nile cruise, so
+ * they are written once in the library tab and offered against every sailing
+ * leg of the matching length. A boat that genuinely differs still gets its own
+ * programme in its own editor, and that one wins.
+ */
 async function renderCruises() {
+  const libraryOpen = state.cruiseLibraryOpen === true;
+  const tabs = `
+    <div class="admin-tab-bar">
+      <button class="btn ${libraryOpen ? "btn-outline" : "btn-primary"}" onclick="crShowCruiseTab('fleet')">${icon("ship")}&nbsp;${t("cruise.fleet","Cruises")}</button>
+      <button class="btn ${libraryOpen ? "btn-primary" : "btn-outline"}" onclick="crShowCruiseTab('library')">${icon("library")}&nbsp;${t("cruise.library","Shared programmes and transfers")}</button>
+    </div>`;
+  if (libraryOpen) return renderCruiseLibrary(tabs);
   renderSimpleList("cruises", masterConfigs.cruises.listEndpoint, [
     ["th.name", c => `<span class="primary-text">${escapeHtml(c.name)}</span>${c.operator ? `<div class="secondary-text">${escapeHtml(c.operator)}</div>` : ""}`],
     ["th.type", c => escapeHtml(c.shipType)],
@@ -4492,7 +4517,95 @@ async function renderCruises() {
       : `<span class="badge badge-pending">${icon("eye-off")} ${t("hotel.hidden","Hidden")}</span>`],
     ["th.status", c => statusBadge(c.isActive ? "ACTIVE" : "INACTIVE")],
     ["th.actions", c => masterRowActions("cruises", c)],
-  ], masterActions("cruises"));
+  ], masterActions("cruises"), tabs);
+}
+
+function crShowCruiseTab(name) {
+  state.cruiseLibraryOpen = name === "library";
+  renderCruises();
+}
+
+/**
+ * The library page: the programmes and transfer routes every boat sells.
+ *
+ * Both lists are saved as a whole set, exactly as the per-cruise tables are —
+ * the page is a list the admin adds to and deletes from, and one Save writes
+ * the pair. Nothing here is bound to a boat: a programme names the sailing
+ * length it belongs to and reaches every leg of that length in the fleet.
+ */
+async function renderCruiseLibrary(tabs) {
+  state.page = "cruises";
+  const capturedToken = state.renderToken;
+  content(pageHeader("") + tabs + `
+    <section class="panel"><div class="panel-body" id="crLibraryHost">${skeletonRows(1, 4)}</div></section>`);
+  const [programmeRes, transferRes] = await Promise.all([
+    apiFetch("/cruise-library/programmes").catch(() => null),
+    apiFetch("/cruise-library/transfer-rates").catch(() => null),
+  ]);
+  if (state.renderToken !== capturedToken) return;
+  const host = document.getElementById("crLibraryHost");
+  if (!host) return;
+  const programmes = programmeRes?.data || [];
+  const transferRates = transferRes?.data || [];
+  host.innerHTML = `
+    <div class="form-section cruise-catalogue-section">
+      <div class="form-section-title">${t("cruise.sharedProgrammes","Shared programmes")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("cruise.sharedProgrammesHelp","Written once and offered on every boat whose sailing is the right length. A boat with its own programme of the same name keeps its own.")}</div>
+      <div id="crLibProgrammeRows">${programmes.map(programme => crProgrammeCardHtml(programme, true)).join("")}</div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="crAddProgramme('crLibProgrammeRows', true)">${icon("plus")}${t("cruise.addProgramme","Add programme")}</button>
+    </div>
+    <div class="form-section cruise-catalogue-section">
+      <div class="form-section-title">${t("cruise.sharedTransfers","Shared transfer prices")}</div>
+      <div class="secondary-text" style="margin-bottom:10px">${t("cruise.sharedTransfersHelp","Offered to cruise-only clients on every boat. A programme already includes its transfer, so the two are never charged together.")}</div>
+      <div id="crLibTransferRows">${transferRates.map(rate => crTransferRateRowHtml(rate, true)).join("")}</div>
+      <button type="button" class="btn btn-outline btn-sm" onclick="crAddTransferRate('crLibTransferRows', true)">${icon("plus")}${t("cruise.addTransferRate","Add transfer price")}</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-primary" id="crLibrarySaveBtn" onclick="crSaveLibrary()">${icon("save")}&nbsp;${t("btn.save","Save")}</button>
+    </div>`;
+  refreshIcons(host);
+}
+
+/** Validate then replace both shared sets. Same rules the per-cruise editor
+ *  applies, so the library can never hold a programme a boat would refuse. */
+async function crSaveLibrary() {
+  const programmes = crCollectProgrammes("crLibProgrammeRows");
+  const transferRates = crCollectTransferRates("crLibTransferRows");
+  for (const programme of programmes) {
+    if (!programme.name || !programme.transferFromName || !programme.transferToName) {
+      return toast(t("cruise.sharedProgrammeRequired","Every shared programme needs a name and an included transfer route."), "error");
+    }
+    const markets = new Set(programme.rates.map(rate => rate.market));
+    if (!markets.has("EGYPTIAN") || !markets.has("FOREIGN")) {
+      return toast(t("cruise.programmeMarketsRequired","Every programme needs Egyptian/EGP and Foreign/USD prices."), "error");
+    }
+    for (const rate of programme.rates) {
+      if (rate.validFrom && rate.validTo && new Date(rate.validTo) < new Date(rate.validFrom)) {
+        return toast(t("toast.invalidDateRange","Valid To must be after Valid From"), "error");
+      }
+      if (rate.adultPrice == null || !Number.isFinite(rate.adultPrice) || rate.adultPrice < 0) {
+        return toast(t("cruise.adultPriceRequired","Every programme price period needs an adult per-person price for both audiences."), "error");
+      }
+    }
+  }
+  for (const rate of transferRates) {
+    if (!rate.fromLocation || !rate.toLocation || !Number.isFinite(rate.amount) || rate.amount < 0
+      || (rate.roundTripAmount != null && (!Number.isFinite(rate.roundTripAmount) || rate.roundTripAmount < 0))) {
+      return toast(t("cruise.transferRateInvalid","Check transfer From, To, market, schedule and price."), "error");
+    }
+  }
+  const saveBtn = document.getElementById("crLibrarySaveBtn");
+  setBtnLoading(saveBtn, true, "btn.saving");
+  const [programmeRes, transferRes] = await Promise.all([
+    apiFetch("/cruise-library/programmes", { method: "PUT", body: JSON.stringify({ programmes }) }),
+    apiFetch("/cruise-library/transfer-rates", { method: "PUT", body: JSON.stringify({ rates: transferRates }) }),
+  ]);
+  setBtnLoading(saveBtn, false);
+  if (!programmeRes?.success || !transferRes?.success) {
+    return toast(t("cruise.catalogueSaveFailed","The cruise was saved, but its programmes or prices could not be saved. Please try again."), "error");
+  }
+  toast(t("toast.updated","Updated"), "success");
+  renderCruises();
 }
 
 function adminWeekdayLabel(day) {
@@ -4516,12 +4629,26 @@ const CRUISE_MARKETS = [["EGYPTIAN", "Egyptian · EGP"], ["FOREIGN", "Foreign ·
 const CRUISE_CABIN_TYPES = ["STANDARD", "DELUXE", "SUITE", "PRESIDENTIAL"];
 const CRUISE_WEEKDAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
 
+/**
+ * A stable handle for one sailing leg inside the open editor.
+ *
+ * Programmes, fares and transfers all point at a leg, and they used to do it
+ * by its position in the list. Deleting the first leg then moved every one of
+ * them onto a different sailing without saying so — a three-night programme
+ * would come back attached to the four-night leg, priced and bookable. A key
+ * is minted once per row and never reused, so a pointer at a deleted leg
+ * dangles visibly instead of landing on the wrong one.
+ */
+let crScheduleKeySeq = 0;
+function crNextScheduleKey() { return `leg${++crScheduleKeySeq}`; }
+
 function crScheduleRowHtml(sc) {
   sc = sc || {};
   const dayOpts = (selected) => CRUISE_WEEKDAYS
     .map(d => `<option value="${d}" ${String(selected || "").toUpperCase() === d ? "selected" : ""}>${escapeHtml(t("weekday." + d, d))}</option>`)
     .join("");
-  return `<div class="cr-row" data-schedule-id="${escapeHtml(sc.id || "")}">
+  const key = sc.editorKey || crNextScheduleKey();
+  return `<div class="cr-row" data-schedule-id="${escapeHtml(sc.id || "")}" data-schedule-key="${escapeHtml(key)}">
     <div class="form-grid cr-schedule-row-grid">
       <div class="form-field"><label>${t("cruise.from","From")} · ${t("cruise.departureDay","Departs")}</label><select class="cr-dep" onchange="crRefreshScheduleSelects()">${dayOpts(sc.departureDay || "MONDAY")}</select></div>
       <div class="form-field"><label>${t("cruise.back","Back")} · ${t("cruise.returnDay","Returns")}</label><select class="cr-ret" onchange="crRefreshScheduleSelects()">${dayOpts(sc.returnDay || "THURSDAY")}</select></div>
@@ -4535,22 +4662,38 @@ function crScheduleRowHtml(sc) {
   </div>`;
 }
 
-function crScheduleIndexForId(id) {
-  const list = window._crEditorSchedules || [];
-  const index = list.findIndex(schedule => schedule.id && schedule.id === id);
-  return index >= 0 ? index : 0;
+/** The editor key of the leg a saved row belongs to, or "" when it names none. */
+function crScheduleKeyForId(id) {
+  const match = (window._crEditorSchedules || []).find(schedule => schedule.id && schedule.id === id);
+  return match?.editorKey || "";
 }
 
-function crScheduleOptions(selectedIndex) {
+function crScheduleLegLabel(departureDay, returnDay, nights) {
+  const day = value => t("weekday." + String(value || "").toUpperCase(), String(value || "—"));
+  return `${day(departureDay)} → ${day(returnDay)} · ${nights || "?"} ${t("cruise.nights", "Nights")}`;
+}
+
+/**
+ * The sailing legs currently in the editor, as <option>s keyed by leg.
+ *
+ * A row whose leg has been deleted keeps a value nothing matches, so the
+ * select falls to the "choose a sailing" placeholder and validation stops the
+ * save — which is the whole point: the operator is told, rather than finding
+ * out from an agent who booked the wrong itinerary.
+ */
+function crScheduleOptions(selectedKey) {
   const rows = [...document.querySelectorAll("#crSchedRows .cr-row")];
-  const source = rows.length ? rows.map((row, index) => ({
-    index,
-    label: `${row.querySelector(".cr-dep")?.value || "From"} → ${row.querySelector(".cr-ret")?.value || "Back"} · ${row.querySelector(".cr-nights")?.value || "?"} nights`,
-  })) : (window._crEditorSchedules || []).map((schedule, index) => ({
-    index,
-    label: `${schedule.departureDay || "From"} → ${schedule.returnDay || "Back"} · ${schedule.nights || "?"} nights`,
+  const source = rows.length ? rows.map(row => ({
+    key: row.dataset.scheduleKey || "",
+    label: crScheduleLegLabel(row.querySelector(".cr-dep")?.value, row.querySelector(".cr-ret")?.value, row.querySelector(".cr-nights")?.value),
+  })) : (window._crEditorSchedules || []).map(schedule => ({
+    key: schedule.editorKey || "",
+    label: crScheduleLegLabel(schedule.departureDay, schedule.returnDay, schedule.nights),
   }));
-  return source.map(item => `<option value="${item.index}" ${Number(selectedIndex) === item.index ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("");
+  const placeholder = `<option value="">${escapeHtml(t("cruise.pickSailing", "Choose a sailing…"))}</option>`;
+  return placeholder + source.map(item =>
+    `<option value="${escapeHtml(item.key)}" ${String(selectedKey || "") === item.key ? "selected" : ""}>${escapeHtml(item.label)}</option>`
+  ).join("");
 }
 
 function crSupplementRowHtml(supp, currency) {
@@ -4579,7 +4722,7 @@ function crRateRowHtml(r) {
     .map(([v, l]) => `<option value="${v}" ${market === v ? "selected" : ""}>${escapeHtml(t("market." + v, l))}</option>`)
     .join("");
   const currency = market === "EGYPTIAN" ? "EGP" : "USD";
-  const scheduleIndex = r.scheduleIndex ?? crScheduleIndexForId(r.scheduleId);
+  const scheduleKey = r.scheduleKey ?? crScheduleKeyForId(r.scheduleId);
   const dateVal = (v) => (v ? String(v).slice(0, 10) : "");
   return `<div class="cr-row cr-period-row">
     <div class="cr-period-head">
@@ -4588,7 +4731,7 @@ function crRateRowHtml(r) {
     </div>
     <div class="form-grid cr-rate-row-grid">
       <div class="form-field"><label>${t("cruise.fareName","Fare plan")} <span class="required">*</span></label><input class="cr-cabin" value="${escapeHtml(r.cabinName || "Cruise only")}" placeholder="Cruise only" oninput="crSyncRateTitles()"></div>
-      <div class="form-field"><label>${t("cruise.sailing","From / Back")}</label><select class="cr-rate-schedule" onchange="crSyncRateTitles()">${crScheduleOptions(scheduleIndex)}</select></div>
+      <div class="form-field"><label>${t("cruise.sailing","From / Back")}</label><select class="cr-rate-schedule" onchange="crSyncRateTitles()">${crScheduleOptions(scheduleKey)}</select></div>
       <div class="form-field"><label>${t("market.label","Market")}</label><select class="cr-market" onchange="crRateMarketChanged(this);crSyncRateTitles()">${marketOpts}</select></div>
       <div class="form-field"><label>${t("form.currency","Currency")}</label><input class="cr-cur" value="${currency}" readonly></div>
       <div class="form-field"><label>${t("hotel.single","Single")} · ${t("cruise.perPerson","per person")}</label><input class="cr-single" type="number" step="0.01" min="0" value="${escapeHtml(r.singlePrice ?? "")}"></div>
@@ -4621,7 +4764,9 @@ function crRateMarketChanged(select) {
   const cur = owner?.querySelector(".cr-cur");
   if (cur) cur.value = currency;
   const transferLabel = owner?.querySelector(".cr-transfer-price-label");
-  if (transferLabel) transferLabel.textContent = `${t("form.amount","Price")} · ${currency}`;
+  if (transferLabel) transferLabel.textContent = `${t("cruise.oneWayPrice","One way")} · ${currency}`;
+  const roundTripLabel = owner?.querySelector(".cr-transfer-rt")?.closest(".form-field")?.querySelector("label");
+  if (roundTripLabel) roundTripLabel.textContent = `${t("cruise.roundTripPrice","Round trip")} · ${currency}`;
   const box = owner?.querySelector(".cr-supp-box");
   if (box) {
     box.dataset.currency = currency;
@@ -4650,13 +4795,25 @@ function crProgrammeRateHtml(rate, fixedMarket) {
     <input class="cr-market" type="hidden" value="${market}"><input class="cr-cur" type="hidden" value="${currency}">
     <div class="cr-programme-market-title"><strong>${market === "EGYPTIAN" ? t("market.EGYPTIAN", "Egyptians") : t("market.FOREIGN", "Foreigners")}</strong><span>${currency}</span></div>
     <div class="form-grid cr-rate-row-grid">
-      <div class="form-field"><label>${t("hotel.single","Single")} · ${t("cruise.perPerson","per person")}</label><input class="cr-single" type="number" min="0" step="0.01" value="${escapeHtml(rate.singlePrice ?? "")}"></div>
-      <div class="form-field"><label>${t("hotel.double","Double")} · ${t("cruise.perPerson","per person")}</label><input class="cr-double" type="number" min="0" step="0.01" value="${escapeHtml(rate.doublePrice ?? "")}"></div>
-      <div class="form-field"><label>${t("hotel.triple","Triple")} · ${t("cruise.perPerson","per person")}</label><input class="cr-triple" type="number" min="0" step="0.01" value="${escapeHtml(rate.triplePrice ?? "")}"></div>
+      <div class="form-field"><label>${t("cruise.adultPrice","Adult")} · ${t("cruise.perPerson","per person")} <span class="required">*</span></label><input class="cr-adult" type="number" min="0" step="0.01" value="${escapeHtml(crProgrammeAdultValue(rate))}"></div>
       <div class="form-field"><label>${t("form.child","Child")} · ${t("cruise.perPerson","per person")}</label><input class="cr-child" type="number" min="0" step="0.01" value="${escapeHtml(rate.childPrice ?? "")}"></div>
       ${crRateSupplementsHtml(rate, currency)}
     </div>
   </div>`;
+}
+
+/**
+ * What to show in a programme's adult box.
+ *
+ * A programme is sold at one price per adult. Rows written before that was
+ * true carry three occupancy amounts instead, so the one an operator actually
+ * filled in is what appears — double first, because in practice that is the
+ * column they used — and saving turns it into the single answer for good.
+ */
+function crProgrammeAdultValue(rate) {
+  const first = [rate?.adultPrice, rate?.doublePrice, rate?.singlePrice, rate?.triplePrice]
+    .find(value => value !== null && value !== undefined && value !== "");
+  return first ?? "";
 }
 
 function crProgrammePeriods(rates) {
@@ -4689,9 +4846,25 @@ function crProgrammePricePeriodHtml(period) {
   </div>`;
 }
 
-function crProgrammeCardHtml(programme) {
+/**
+ * "Which sailings is this sold on?"
+ *
+ * A boat's own programme answers with one of its legs. A shared one answers
+ * with a length — three nights belongs to every three-night leg in the fleet
+ * and to no four-night one — which is the same question asked once instead of
+ * twenty times, and the reason a shared programme cannot end up on the wrong
+ * sailing at all.
+ */
+function crNightsOptions(selected) {
+  const value = selected == null || selected === "" ? "" : String(Math.floor(Number(selected)) || "");
+  const lengths = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14];
+  return `<option value="" ${value === "" ? "selected" : ""}>${escapeHtml(t("cruise.anyLength", "Any length"))}</option>`
+    + lengths.map(n => `<option value="${n}" ${value === String(n) ? "selected" : ""}>${formatNumber(n)} ${escapeHtml(t("cruise.nights", "Nights"))}</option>`).join("");
+}
+
+function crProgrammeCardHtml(programme, shared = false) {
   programme = programme || {};
-  const scheduleIndex = programme.scheduleIndex ?? crScheduleIndexForId(programme.scheduleId);
+  const scheduleKey = programme.scheduleKey ?? crScheduleKeyForId(programme.scheduleId);
   const periods = crProgrammePeriods(programme.rates);
   const itinerary = Array.isArray(programme.itinerary) && programme.itinerary.length ? programme.itinerary : [{ day:1 }];
   return `<div class="cr-programme-card" style="border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;background:var(--surface-muted)">
@@ -4699,7 +4872,10 @@ function crProgrammeCardHtml(programme) {
     <div class="form-grid">
       <div class="form-field"><label>${t("form.name","Name")} *</label><input class="cr-prog-name" value="${escapeHtml(programme.name || "")}" placeholder="3 nights classic programme"></div>
       <div class="form-field"><label>${t("form.nameAr","Arabic name")}</label><input class="cr-prog-name-ar" value="${escapeHtml(programme.nameAr || "")}" dir="rtl"></div>
-      <div class="form-field"><label>${t("cruise.sailing","From / Back")}</label><select class="cr-prog-schedule">${crScheduleOptions(scheduleIndex)}</select></div>
+      ${shared
+        ? `<div class="form-field"><label>${t("cruise.soldOn","Sold on sailings of")}</label><select class="cr-prog-nights">${crNightsOptions(programme.nights)}</select>
+             <small class="field-hint">${t("cruise.soldOnHint","Offered on every leg of this length, on every boat.")}</small></div>`
+        : `<div class="form-field"><label>${t("cruise.sailing","From / Back")}</label><select class="cr-prog-schedule">${crScheduleOptions(scheduleKey)}</select></div>`}
       <div class="form-field"><label>${t("cruise.transferRoute","Included transfer")}</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><input class="cr-prog-transfer-from" value="${escapeHtml(programme.transferFromName || "")}" placeholder="From"><input class="cr-prog-transfer-to" value="${escapeHtml(programme.transferToName || "")}" placeholder="To"></div></div>
       <div class="form-field full"><label>${t("form.description","Description")}</label><textarea class="cr-prog-desc" rows="2">${escapeHtml(programme.description || "")}</textarea></div>
     </div>
@@ -4712,20 +4888,29 @@ function crProgrammeCardHtml(programme) {
   </div>`;
 }
 
-function crTransferRateRowHtml(rate) {
+function crTransferRateRowHtml(rate, shared = false) {
   rate = rate || {};
   const market = rate.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
   const currency = market === "EGYPTIAN" ? "EGP" : "USD";
-  const scheduleIndex = rate.scheduleIndex ?? crScheduleIndexForId(rate.scheduleId);
+  const scheduleKey = rate.scheduleKey ?? crScheduleKeyForId(rate.scheduleId);
   const dateVal = value => value ? String(value).slice(0,10) : "";
   return `<div class="cr-row cr-transfer-rate-row">
     <div class="form-grid">
-      <div class="form-field"><label>${t("cruise.sailing","From / Back")}</label><select class="cr-transfer-schedule">${crScheduleOptions(scheduleIndex)}</select></div>
+      ${shared
+        ? `<div class="form-field"><label>${t("cruise.soldOn","Sold on sailings of")}</label><select class="cr-transfer-nights">${crNightsOptions(rate.nights)}</select></div>`
+        : `<div class="form-field"><label>${t("cruise.sailing","From / Back")}</label><select class="cr-transfer-schedule">${crScheduleOptions(scheduleKey)}</select></div>`}
       <div class="form-field"><label>${t("market.label","Market")}</label><select class="cr-market" onchange="crRateMarketChanged(this)">${CRUISE_MARKETS.map(([value,label]) => `<option value="${value}" ${market === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></div>
       <div class="form-field"><label>${t("form.from","From")}</label><input class="cr-transfer-from" value="${escapeHtml(rate.fromLocation || "")}" placeholder="Cairo Airport"></div>
       <div class="form-field"><label>${t("form.to","To")}</label><input class="cr-transfer-to" value="${escapeHtml(rate.toLocation || "")}" placeholder="Luxor pier"></div>
-      <div class="form-field"><label class="cr-transfer-price-label">${t("form.amount","Price")} · ${currency}</label><input class="cr-transfer-amount" type="number" min="0" step="0.01" value="${escapeHtml(rate.amount ?? "")}"></div>
+      <div class="form-field"><label class="cr-transfer-price-label">${t("cruise.oneWayPrice","One way")} · ${currency}</label><input class="cr-transfer-amount" type="number" min="0" step="0.01" value="${escapeHtml(rate.amount ?? "")}"></div>
+      <div class="form-field"><label>${t("cruise.roundTripPrice","Round trip")} · ${currency}</label><input class="cr-transfer-rt" type="number" min="0" step="0.01" value="${escapeHtml(rate.roundTripAmount ?? "")}" placeholder="${escapeHtml(t("cruise.roundTripAuto","2 × one way"))}">
+        <small class="field-hint">${t("cruise.roundTripHint","Leave blank and the return is quoted at twice the one-way price.")}</small></div>
       <input class="cr-cur" type="hidden" value="${currency}">
+      <div class="form-field"><label>${t("cruise.transferBasis","Priced")}</label>
+        <select class="cr-transfer-basis">
+          <option value="PER_PERSON" ${rate.perPerson === false ? "" : "selected"}>${t("cruise.transferPerPerson","Per person")}</option>
+          <option value="PER_VEHICLE" ${rate.perPerson === false ? "selected" : ""}>${t("cruise.transferPerVehicle","Per vehicle — whole party")}</option>
+        </select></div>
       <div class="form-field"><label>${t("form.validFrom","Valid from")}</label><input class="cr-from" type="date" value="${dateVal(rate.validFrom)}"></div>
       <div class="form-field"><label>${t("form.validTo","Valid to")}</label><input class="cr-to" type="date" value="${dateVal(rate.validTo)}"></div>
     </div>
@@ -4733,11 +4918,12 @@ function crTransferRateRowHtml(rate) {
   </div>`;
 }
 
-function crAddProgramme() {
-  const host = document.getElementById("crProgrammeRows");
+function crAddProgramme(hostId = "crProgrammeRows", shared = false) {
+  const host = document.getElementById(hostId);
   if (!host) return;
-  host.insertAdjacentHTML("beforeend", crProgrammeCardHtml({}));
+  host.insertAdjacentHTML("beforeend", crProgrammeCardHtml({}, shared));
   refreshIcons(host.lastElementChild);
+  host.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function crAddProgrammeDay(btn) {
@@ -4755,11 +4941,12 @@ function crAddProgrammePricePeriod(btn) {
   host.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-function crAddTransferRate() {
-  const host = document.getElementById("crTransferRateRows");
+function crAddTransferRate(hostId = "crTransferRateRows", shared = false) {
+  const host = document.getElementById(hostId);
   if (!host) return;
-  host.insertAdjacentHTML("beforeend", crTransferRateRowHtml({ market:"FOREIGN" }));
+  host.insertAdjacentHTML("beforeend", crTransferRateRowHtml({ market: "FOREIGN" }, shared));
   refreshIcons(host.lastElementChild);
+  host.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function crAddScheduleRow() {
@@ -4774,8 +4961,13 @@ function crRefreshScheduleSelects() {
   document.querySelectorAll(".cr-rate-schedule,.cr-prog-schedule,.cr-transfer-schedule").forEach(select => {
     const current = select.value;
     select.innerHTML = crScheduleOptions(current);
-    select.value = current;
+    // A key whose leg was just deleted matches no option, so the select lands
+    // on the placeholder. That is deliberate — it is the visible half of the
+    // save-time refusal, not a value to quietly restore.
+    select.value = [...select.options].some(option => option.value === current) ? current : "";
+    select.closest(".form-field")?.classList.toggle("cr-leg-missing", select.value === "");
   });
+  crSyncRateTitles();
 }
 
 function crAddRateRow() {
@@ -4802,7 +4994,7 @@ function crDuplicateRate(btn) {
   const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
   const copy = {
     cabinName: g(".cr-cabin")?.value || "",
-    scheduleIndex: Number(g(".cr-rate-schedule")?.value || 0),
+    scheduleKey: g(".cr-rate-schedule")?.value || "",
     market: g(".cr-market")?.value || "FOREIGN",
     currency: g(".cr-cur")?.value || "USD",
     singlePrice: num(".cr-single"),
@@ -4851,6 +5043,7 @@ function crCollectSupplements(owner) {
 
 function crCollectScheduleRows() {
   return [...document.querySelectorAll("#crSchedRows .cr-row")].map(row => ({
+    editorKey: row.dataset.scheduleKey || "",
     departureDay: row.querySelector(".cr-dep")?.value,
     returnDay: row.querySelector(".cr-ret")?.value,
     nights: row.querySelector(".cr-nights")?.value === "" ? null : Number(row.querySelector(".cr-nights")?.value),
@@ -4865,7 +5058,7 @@ function crCollectRateRows() {
     const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
     return {
       cabinName: g(".cr-cabin")?.value.trim() || "",
-      scheduleIndex: Number(g(".cr-rate-schedule")?.value || 0),
+      scheduleKey: g(".cr-rate-schedule")?.value || "",
       market: g(".cr-market")?.value || "FOREIGN",
       currency: g(".cr-cur")?.value || "USD",
       singlePrice: num(".cr-single"),
@@ -4891,7 +5084,7 @@ function crCollectProgrammeRates(card) {
       return {
         market: g(".cr-market")?.value || "FOREIGN",
         currency: g(".cr-cur")?.value || "USD",
-        singlePrice: num(".cr-single"), doublePrice: num(".cr-double"), triplePrice: num(".cr-triple"),
+        adultPrice: num(".cr-adult"),
         childPrice: num(".cr-child"), supplements: crCollectSupplements(row),
         validFrom, validTo, isActive: true,
       };
@@ -4899,12 +5092,13 @@ function crCollectProgrammeRates(card) {
   });
 }
 
-function crCollectProgrammes() {
-  return [...document.querySelectorAll("#crProgrammeRows .cr-programme-card")].map(card => ({
+function crCollectProgrammes(hostId = "crProgrammeRows") {
+  return [...document.querySelectorAll(`#${hostId} .cr-programme-card`)].map(card => ({
     name: card.querySelector(".cr-prog-name")?.value.trim() || "",
     nameAr: card.querySelector(".cr-prog-name-ar")?.value.trim() || null,
     description: card.querySelector(".cr-prog-desc")?.value.trim() || null,
-    scheduleIndex: Number(card.querySelector(".cr-prog-schedule")?.value || 0),
+    scheduleKey: card.querySelector(".cr-prog-schedule")?.value || "",
+    nights: card.querySelector(".cr-prog-nights")?.value || null,
     transferFromName: card.querySelector(".cr-prog-transfer-from")?.value.trim() || null,
     transferToName: card.querySelector(".cr-prog-transfer-to")?.value.trim() || null,
     itinerary: [...card.querySelectorAll(".cr-programme-day")].map(day => ({
@@ -4917,13 +5111,16 @@ function crCollectProgrammes() {
   })).filter(programme => programme.name);
 }
 
-function crCollectTransferRates() {
-  return [...document.querySelectorAll("#crTransferRateRows .cr-transfer-rate-row")].map(row => ({
-    scheduleIndex: Number(row.querySelector(".cr-transfer-schedule")?.value || 0),
+function crCollectTransferRates(hostId = "crTransferRateRows") {
+  return [...document.querySelectorAll(`#${hostId} .cr-transfer-rate-row`)].map(row => ({
+    scheduleKey: row.querySelector(".cr-transfer-schedule")?.value || "",
+    nights: row.querySelector(".cr-transfer-nights")?.value || null,
     market: row.querySelector(".cr-market")?.value || "FOREIGN",
     fromLocation: row.querySelector(".cr-transfer-from")?.value.trim() || "",
     toLocation: row.querySelector(".cr-transfer-to")?.value.trim() || "",
     amount: row.querySelector(".cr-transfer-amount")?.value === "" ? null : Number(row.querySelector(".cr-transfer-amount")?.value),
+    roundTripAmount: row.querySelector(".cr-transfer-rt")?.value === "" ? null : Number(row.querySelector(".cr-transfer-rt")?.value),
+    perPerson: row.querySelector(".cr-transfer-basis")?.value !== "PER_VEHICLE",
     validFrom: row.querySelector(".cr-from")?.value || null,
     validTo: row.querySelector(".cr-to")?.value || null,
     isActive: true,
@@ -4931,6 +5128,8 @@ function crCollectTransferRates() {
 }
 
 function crValidateCatalogue({ schedules, rates, programmes, transferRates }) {
+  const legKeys = new Set(schedules.map(schedule => schedule.editorKey).filter(Boolean));
+  const boundToALeg = row => legKeys.has(row.scheduleKey);
   if (!schedules.length) {
     toast(t("cruise.scheduleRequired","Add at least one From / Back sailing schedule."), "error");
     return false;
@@ -4945,8 +5144,8 @@ function crValidateCatalogue({ schedules, rates, programmes, transferRates }) {
     return false;
   }
   for (const rate of rates) {
-    if (!schedules[rate.scheduleIndex]) {
-      toast(t("cruise.programmeScheduleRequired","Every fare needs a valid From / Back schedule."), "error");
+    if (!boundToALeg(rate)) {
+      toast(t("cruise.fareScheduleRequired","Every fare period needs a From / Back sailing. Check the fares whose sailing reads \u201cChoose a sailing\u201d."), "error");
       return false;
     }
     if (rate.validFrom && rate.validTo && new Date(rate.validTo) < new Date(rate.validFrom)) {
@@ -4964,7 +5163,7 @@ function crValidateCatalogue({ schedules, rates, programmes, transferRates }) {
     }
   }
   for (const programme of programmes) {
-    if (!schedules[programme.scheduleIndex] || !programme.name || !programme.transferFromName || !programme.transferToName) {
+    if (!boundToALeg(programme) || !programme.name || !programme.transferFromName || !programme.transferToName) {
       toast(t("cruise.programmeScheduleRequired","Every programme needs a name, From / Back schedule and included transfer route."), "error"); return false;
     }
     const markets = new Set(programme.rates.map(rate => rate.market));
@@ -4973,11 +5172,13 @@ function crValidateCatalogue({ schedules, rates, programmes, transferRates }) {
     }
     for (const rate of programme.rates) {
       if (rate.validFrom && rate.validTo && new Date(rate.validTo) < new Date(rate.validFrom)) return toast(t("toast.invalidDateRange","Valid To must be after Valid From"), "error"), false;
-      if ([rate.singlePrice,rate.doublePrice,rate.triplePrice].every(value => value == null)) return toast(t("cruise.occupancyPriceRequired","Enter at least one Single, Double or Triple per-person price."), "error"), false;
+      if (rate.adultPrice == null || !Number.isFinite(rate.adultPrice) || rate.adultPrice < 0) return toast(t("cruise.adultPriceRequired","Every programme price period needs an adult per-person price for both audiences."), "error"), false;
+      if (rate.childPrice != null && (!Number.isFinite(rate.childPrice) || rate.childPrice < 0)) return toast(t("toast.validationError","Check required fields"), "error"), false;
     }
   }
   for (const rate of transferRates) {
-    if (!schedules[rate.scheduleIndex] || !rate.fromLocation || !rate.toLocation || !Number.isFinite(rate.amount) || rate.amount < 0) {
+    if (!boundToALeg(rate) || !rate.fromLocation || !rate.toLocation || !Number.isFinite(rate.amount) || rate.amount < 0
+      || (rate.roundTripAmount != null && (!Number.isFinite(rate.roundTripAmount) || rate.roundTripAmount < 0))) {
       toast(t("cruise.transferRateInvalid","Check transfer From, To, market, schedule and price."), "error"); return false;
     }
   }
@@ -5871,7 +6072,7 @@ async function loadAdminTransportBookings() {
     return `<tr>
       <td><span class="primary-text">${escapeHtml(row.refNumber)}</span><div class="secondary-text">${escapeHtml(sourceLabel)}</div></td>
       <td><strong>${escapeHtml(row.serviceName || "—")}</strong><div class="secondary-text">${escapeHtml(row.company?.name || "—")}</div></td>
-      <td>${escapeHtml(row.fromName || "—")} → ${escapeHtml(row.toName || "—")}<div class="secondary-text">${escapeHtml(row.fromType || "")}${row.toType ? ` → ${escapeHtml(row.toType)}` : ""}</div></td>
+      <td>${escapeHtml(row.fromName || "—")} → ${escapeHtml(row.toName || "—")}<div class="secondary-text">${escapeHtml(row.fromType || "")}${row.toType ? ` → ${escapeHtml(row.toType)}` : ""}${row.roundTrip ? ` · ${escapeHtml(t("cruise.roundTrip", "Round trip"))}` : ""}</div></td>
       <td>${formatDate(row.serviceDate)}${row.pickupTime ? `<div class="secondary-text">${icon("clock")}&nbsp;${escapeHtml(row.pickupTime)}</div>` : ""}</td>
       <td>${row.returnTime ? `<strong>${escapeHtml(row.returnTime)}</strong>` : `<span class="secondary-text">—</span>`}</td>
       <td>${row.clientName ? `<strong>${escapeHtml(row.clientName)}</strong><br>` : ""}${escapeHtml(row.contactNumber || "—")}<div class="secondary-text">${formatNumber(row.passengerCount || 1)} pax</div></td>

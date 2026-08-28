@@ -41,11 +41,48 @@ export interface CruiseRateRow {
   isActive?: boolean;
 }
 
+/**
+ * A programme's price row.
+ *
+ * A programme is one amount per adult. The sharing basis is a cabin question
+ * and a programme buyer is quoted the same figure whichever cabin they end up
+ * in, so Single / Double / Triple never appear here — `adultPrice` is the
+ * price. The three legacy columns are still read for rows written before that
+ * was true, and are never written again.
+ */
+export interface CruiseProgrammeRateRow {
+  id: string;
+  market: Market | null;
+  currency: string;
+  adultPrice?: Decimal | null;
+  singlePrice?: Decimal | null;
+  doublePrice?: Decimal | null;
+  triplePrice?: Decimal | null;
+  childPrice?: Decimal | null;
+  validFrom: Date | null;
+  validTo: Date | null;
+  isActive?: boolean;
+}
+
+/**
+ * The one per-person adult price of a programme.
+ *
+ * `adultPrice` is the answer whenever it is set. A row written under the old
+ * three-column shape falls back to what an operator overwhelmingly filled in
+ * — the double amount — then to the other two, so an existing programme keeps
+ * quoting the same figure it quoted yesterday instead of dropping to
+ * "price on request" the day this shipped.
+ */
+export function programmeAdultPrice(row: CruiseProgrammeRateRow): Decimal | null {
+  return row.adultPrice ?? row.doublePrice ?? row.singlePrice ?? row.triplePrice ?? null;
+}
+
 export type CruiseRateInputError =
   | 'INVALID_PERIOD_DATE'
   | 'INVALID_PERIOD_RANGE'
   | 'INVALID_OCCUPANCY_PRICE'
-  | 'OCCUPANCY_PRICE_REQUIRED';
+  | 'OCCUPANCY_PRICE_REQUIRED'
+  | 'ADULT_PRICE_REQUIRED';
 
 /**
  * Validate one admin rate row before a replace-all save can delete the old
@@ -76,6 +113,33 @@ export function validateCruiseRateInput(row: {
   if (supplied.some((value) => !Number.isFinite(Number(value)) || Number(value) < 0)) {
     return 'INVALID_OCCUPANCY_PRICE';
   }
+  if (present(row.childPrice) && (!Number.isFinite(Number(row.childPrice)) || Number(row.childPrice) < 0)) {
+    return 'INVALID_OCCUPANCY_PRICE';
+  }
+  return null;
+}
+
+/**
+ * Validate one programme price row.
+ *
+ * The period rules are the cabin rules; the price rule is not. A programme is
+ * sold at one adult price, so an occupancy trio is neither asked for nor
+ * accepted here — a row with no adult amount prices nobody and must be
+ * rejected rather than saved as a programme an agent can select and not quote.
+ */
+export function validateProgrammeRateInput(row: {
+  validFrom?: unknown;
+  validTo?: unknown;
+  adultPrice?: unknown;
+  childPrice?: unknown;
+}): CruiseRateInputError | null {
+  const present = (value: unknown) => value !== null && value !== undefined && String(value).trim() !== '';
+  const from = present(row.validFrom) ? new Date(String(row.validFrom)) : null;
+  const to = present(row.validTo) ? new Date(String(row.validTo)) : null;
+  if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) return 'INVALID_PERIOD_DATE';
+  if (from && to && to < from) return 'INVALID_PERIOD_RANGE';
+  if (!present(row.adultPrice)) return 'ADULT_PRICE_REQUIRED';
+  if (!Number.isFinite(Number(row.adultPrice)) || Number(row.adultPrice) < 0) return 'INVALID_OCCUPANCY_PRICE';
   if (present(row.childPrice) && (!Number.isFinite(Number(row.childPrice)) || Number(row.childPrice) < 0)) {
     return 'INVALID_OCCUPANCY_PRICE';
   }
@@ -212,6 +276,86 @@ export function priceCruisePerPerson(input: {
   };
 }
 
+/** Does this programme price row apply, for this audience, on this sailing? */
+export function programmeRateApplies(
+  row: CruiseProgrammeRateRow,
+  market: Market | null,
+  date: Date,
+): boolean {
+  return rateApplies({ ...row, cabinName: '', singlePrice: null, doublePrice: null, triplePrice: null }, market, date);
+}
+
+/** The programme price rows a given audience may be quoted from. */
+export function applicableProgrammeRates(
+  rows: CruiseProgrammeRateRow[],
+  market: Market | null,
+  date: Date,
+): CruiseProgrammeRateRow[] {
+  return rows.filter((row) => programmeRateApplies(row, market, date));
+}
+
+/**
+ * The total for a programme: one adult price per adult, one child price per
+ * child. No sharing basis is involved — a programme costs what it costs.
+ *
+ * Returns null when the period has no adult price, or when children are
+ * travelling and no child price was set: blank is "not sold that way", never
+ * free, and the caller turns it into a price request rather than a zero.
+ */
+export function priceProgrammePerPerson(input: {
+  row: CruiseProgrammeRateRow;
+  adults: number;
+  children?: number;
+}): { total: Decimal; adultUnitPrice: Decimal; childUnitPrice: Decimal | null; currency: string } | null {
+  const adultUnitPrice = programmeAdultPrice(input.row);
+  if (adultUnitPrice == null) return null;
+  const adults = Math.max(1, Math.floor(input.adults) || 1);
+  const children = Math.max(0, Math.floor(input.children ?? 0) || 0);
+  const childUnitPrice = input.row.childPrice ?? null;
+  if (children > 0 && childUnitPrice == null) return null;
+  return {
+    total: adultUnitPrice.mul(adults).add((childUnitPrice ?? new Decimal(0)).mul(children)),
+    adultUnitPrice,
+    childUnitPrice,
+    currency: input.row.currency,
+  };
+}
+
+export interface CruiseTransferRateRow {
+  amount: Decimal;
+  roundTripAmount?: Decimal | null;
+  perPerson?: boolean;
+  currency: string;
+}
+
+/**
+ * What an optional transfer costs.
+ *
+ * Two questions the old single amount could not answer: how many people are
+ * being collected, and whether the car comes back. A per-person route is
+ * multiplied by the seats actually needed — which is not always the whole
+ * cruise party — and a whole-car route is not. A round trip uses the pair
+ * price when the operator set one; when they did not, it is the one-way price
+ * twice, which is what the desk has always quoted rather than refusing the
+ * booking. Same rule as Transport's `roundTripRate`.
+ */
+export function priceCruiseTransfer(input: {
+  row: CruiseTransferRateRow;
+  pax: number;
+  roundTrip?: boolean;
+}): { total: Decimal; unitPrice: Decimal; pax: number; currency: string } {
+  const pax = input.row.perPerson === false ? 1 : Math.max(1, Math.floor(input.pax) || 1);
+  const unitPrice = input.roundTrip
+    ? input.row.roundTripAmount ?? input.row.amount.mul(2)
+    : input.row.amount;
+  return {
+    total: unitPrice.mul(pax).toDecimalPlaces(2),
+    unitPrice,
+    pax,
+    currency: input.row.currency,
+  };
+}
+
 export type CruiseSupplementType = 'FIXED_AMOUNT' | 'PERCENTAGE' | 'TOTAL_PRICE' | 'TEXT_ONLY';
 export interface CruiseSupplement {
   name: string;
@@ -261,6 +405,44 @@ export function fromPrice(
     }
   }
   return best;
+}
+
+/**
+ * The cheapest adult price across every programme period that applies.
+ *
+ * Separate from `fromPrice` because a programme has one price rather than
+ * three: folding it through the occupancy version would have to invent a
+ * sharing basis for it, and then the headline would disagree with the amount
+ * the agent is actually shown.
+ */
+export function programmeFromPrice(
+  rows: CruiseProgrammeRateRow[],
+  market: Market | null,
+  date: Date,
+): { amount: Decimal; currency: string } | null {
+  let best: { amount: Decimal; currency: string } | null = null;
+  for (const row of applicableProgrammeRates(rows, market, date)) {
+    const price = programmeAdultPrice(row);
+    if (price == null) continue;
+    if (!best || price.lt(best.amount)) best = { amount: price, currency: row.currency };
+  }
+  return best;
+}
+
+/**
+ * Is this shared, fleet-wide row sold on this sailing leg?
+ *
+ * A shared programme names a length, not a boat: a three-night programme
+ * belongs to every three-night leg and to no four-night one. That length match
+ * is the whole reason the shared library cannot repeat the mistake a per-boat
+ * programme could make, where an itinerary was bound to a schedule by hand and
+ * a renumbered leg could quietly move it.
+ *
+ * A row with no length is deliberately sold on every leg — an airport transfer
+ * does not care how long the boat is out.
+ */
+export function sharedRowAppliesToLeg(rowNights: number | null | undefined, legNights: number): boolean {
+  return rowNights == null || Number(rowNights) === Number(legNights);
 }
 
 /** Days a schedule may name, in the order a week runs. */

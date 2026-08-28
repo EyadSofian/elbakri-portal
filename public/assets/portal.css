@@ -8629,6 +8629,124 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
   background: var(--info-soft);
 }
 
+/* One choice, in a list of choices — a sailing leg, a programme, a price
+   period, a supplement. The selected state is carried by `.is-selected`,
+   which the panel sets from the radio itself: `:has(input:checked)` alone
+   left the previous card highlighted on browsers that do not support it, so
+   picking a second option showed two chosen cards at once. Both are applied
+   here, so a supported browser is also correct before any script runs. */
+.cr-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.cr-choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-10);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.cr-choice:hover { border-color: var(--brand-accent); }
+.cr-choice > input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.cr-choice.is-selected,
+.cr-choice:has(input:checked) {
+  border-color: var(--brand-accent);
+  background: var(--brand-accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-tint-strong);
+}
+
+.cr-choice-body { display: grid; gap: 3px; min-width: 0; }
+.cr-choice-body b { color: var(--text-primary); font-size: 13px; font-weight: 750; }
+.cr-choice-body small { color: var(--text-muted); font-size: 11px; }
+.cr-choice-arrow { display: inline-grid; place-items: center; vertical-align: -2px; color: var(--brand-accent-text); }
+.cr-choice-arrow svg { width: 14px; height: 14px; }
+[dir="rtl"] .cr-choice-arrow { transform: scaleX(-1); }
+.cr-choice-price {
+  flex: 0 0 auto;
+  text-align: end;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.cr-choice-price small { display: block; font-size: 10px; font-weight: 600; color: var(--text-muted); }
+.cr-choice-price em { font-style: normal; font-size: 11px; font-weight: 650; color: var(--text-muted); }
+
+/* Cruise only or programme: one answer, so one control, and only the list
+   belonging to the current answer is rendered below it. */
+.cr-segmented {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  max-width: 100%;
+}
+
+.cr-segment {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 16px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.cr-segment:hover:not(:disabled) { color: var(--text-primary); }
+.cr-segment:disabled { opacity: .45; cursor: not-allowed; }
+.cr-segment.is-active {
+  background: var(--brand-accent);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+}
+
+.cr-segment-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  margin-inline-start: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .22);
+  font-size: 10px;
+  font-weight: 800;
+}
+.cr-segment:not(.is-active) .cr-segment-count { background: var(--border); color: var(--text-secondary); }
+
+.cr-mode-note { margin: 9px 0 11px; font-size: 11px; line-height: 1.5; }
+
+/* An admin field pointing at a sailing leg that no longer exists. */
+.cr-leg-missing select { border-color: var(--danger, #c0392b); }
+
+.cr-pick.is-selected {
+  border-color: var(--brand-gold, var(--info));
+  background: var(--info-soft);
+}
+
 .cr-quote-line {
   display: flex;
   align-items: center;

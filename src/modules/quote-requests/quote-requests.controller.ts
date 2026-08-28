@@ -4,7 +4,7 @@ import { QuoteRequestStatus, QuoteServiceType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
-import { readTransferAddOn } from '../../shared/transfer-addon';
+import { readTransferAddOn, readTransferPartySize } from '../../shared/transfer-addon';
 
 const quoteInclude = {
   company: { select: { id: true, name: true, email: true, tier: true } },
@@ -117,6 +117,8 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     transferToName?: string;
     transferPickupTime?: string;
     transferReturnTime?: string;
+    transferPax?: number;
+    transferRoundTrip?: boolean;
     transferNotes?: string;
     customFields?: unknown;
   };
@@ -164,6 +166,14 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     transferIncluded,
     activityReturnTime: serviceReturnTime,
   });
+  // Only meaningful once a transfer is actually being asked for, which is what
+  // the reader checks: a request with no car carries no seat count.
+  const transferParty = transfer.transferRequested
+    ? readTransferPartySize(
+      body as unknown as Record<string, unknown>,
+      (body.adultsCount ?? 1) + (body.childrenCount ?? 0),
+    )
+    : { transferPax: null, transferRoundTrip: false };
 
   const quote = await prisma.quoteRequest.create({
     data: {
@@ -193,6 +203,7 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       customerNotes: body.customerNotes ?? null,
       contactPreference: body.contactPreference ?? null,
       ...transfer,
+      ...transferParty,
       customFields: sanitizeCustomFields(body.customFields) ?? undefined,
     },
     include: quoteInclude,

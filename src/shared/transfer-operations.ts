@@ -29,6 +29,9 @@ export interface TransferOperationRow {
   toName: string;
   pickupTime: string | null;
   returnTime: string | null;
+  // Does the car wait and bring them back? Only a cruise transfer answers this
+  // today; every other source is a one-way leg and reports false.
+  roundTrip: boolean;
   notes: string | null;
   status: string;
 }
@@ -42,6 +45,8 @@ interface TransferFields {
   transferToName?: string | null;
   transferPickupTime?: string | null;
   transferReturnTime?: string | null;
+  transferPax?: number | null;
+  transferRoundTrip?: boolean | null;
   transferNotes?: string | null;
 }
 
@@ -51,6 +56,20 @@ function text(value: unknown): string {
 
 function count(adults: unknown, children: unknown): number {
   return Math.max(1, Number(adults ?? 0) + Number(children ?? 0));
+}
+
+/**
+ * How many seats the car actually needs.
+ *
+ * The party size is the default and, for most sources, the only answer there
+ * is. A cruise transfer can be booked for part of the group — half of them
+ * often make their own way — and dispatching a coach for the whole party
+ * because that is the number the queue happened to show is the mistake this
+ * avoids.
+ */
+function transferSeats(source: TransferFields, adults: unknown, children: unknown): number {
+  const booked = Number(source.transferPax ?? NaN);
+  return Number.isFinite(booked) && booked > 0 ? Math.floor(booked) : count(adults, children);
 }
 
 function firstName(value: unknown): string | null {
@@ -67,6 +86,7 @@ function transferPart(source: TransferFields) {
     toName: text(source.transferToName) || text(source.transferFromName) || '—',
     pickupTime: source.transferPickupTime ?? null,
     returnTime: source.transferReturnTime ?? null,
+    roundTrip: Boolean(source.transferRoundTrip),
     notes: source.transferNotes ?? null,
   };
 }
@@ -162,7 +182,7 @@ export function cruiseTransferOperation(source: TransferFields & {
     company: source.company ?? null,
     clientName: firstName(source.passengerNames),
     contactNumber: null,
-    passengerCount: count(source.adultsCount, source.childrenCount),
+    passengerCount: transferSeats(source, source.adultsCount, source.childrenCount),
     serviceDate: source.checkIn ?? null,
     requestedAt: source.requestedAt ?? source.createdAt ?? null,
     ...transferPart(source),
@@ -195,7 +215,7 @@ export function quoteTransferOperation(source: TransferFields & {
     company: source.company ?? null,
     clientName: text(custom.clientName) || null,
     contactNumber: text(custom.clientPhone) || null,
-    passengerCount: count(source.adultsCount, source.childrenCount),
+    passengerCount: transferSeats(source, source.adultsCount, source.childrenCount),
     serviceDate: source.checkIn ?? null,
     requestedAt: source.requestedAt ?? source.createdAt ?? null,
     ...transferPart(source),

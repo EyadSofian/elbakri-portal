@@ -217,39 +217,23 @@ test('portal: a blank cabin price is "not sold that way", never free', () => {
   }
 });
 
-test('portal: crCabinsNeeded never sells half a cabin', () => {
-  // Five guests in doubles need three cabins: a half-empty cabin is still a
-  // whole cabin on the bill.
-  assert.equal(portal.crCabinsNeeded(5, 'DOUBLE'), 3);
-  assert.equal(portal.crCabinsNeeded(4, 'DOUBLE'), 2);
-  assert.equal(portal.crCabinsNeeded(1, 'SINGLE'), 1);
-  assert.equal(portal.crCabinsNeeded(7, 'TRIPLE'), 3);
-});
-
-test('portal: crCabinsNeeded treats a nonsense party as one cabin, not zero', () => {
-  for (const pax of [0, -3, 'many', null, undefined]) {
-    assert.equal(portal.crCabinsNeeded(pax, 'DOUBLE'), 1, String(pax));
-  }
-});
-
 test('portal: an unpriced boat says the rates are hidden, not that none exist', () => {
-  // "No per-person fares set yet" is a lie whenever the boat IS priced and the
-  // rates were simply not shown to this agent.
-  const hidden = portal.cruiseCabinPicker({ hasRateMatrix: true, priceVisible: false }, []);
+  // "No price period is configured" is a lie whenever the boat IS priced and
+  // the rates were simply not shown to this agent.
+  const hidden = portal.crPerPersonFarePicker({ hasRateMatrix: true, priceVisible: false }, []);
   assert.match(hidden, /operations team/);
-  assert.doesNotMatch(hidden, /No per-person fares set yet/);
 
-  const unpriced = portal.cruiseCabinPicker({ hasRateMatrix: false, priceVisible: true }, []);
-  assert.match(unpriced, /No per-person fares set yet/);
+  const unpriced = portal.crPerPersonFarePicker({ hasRateMatrix: false, priceVisible: true }, []);
+  assert.doesNotMatch(unpriced, /operations team/);
 
   // Prices hidden from this agent: they cannot know whether the boat is priced,
   // so "nobody has priced it" is not ours to say either way.
-  const bothHidden = portal.cruiseCabinPicker({ hasRateMatrix: false, priceVisible: false }, []);
+  const bothHidden = portal.crPerPersonFarePicker({ hasRateMatrix: false, priceVisible: false }, []);
   assert.match(bothHidden, /operations team/);
 });
 
 test('portal: every priced cell is a choice, and every blank one is not', () => {
-  const html = portal.cruiseCabinPicker({}, [
+  const html = portal.crPerPersonFarePicker({}, [
     { id: 'r1', cabinName: 'Standard', currency: 'USD', singlePrice: 900, doublePrice: 600, triplePrice: null },
   ]);
   assert.match(html, /value="r1\|SINGLE"/);
@@ -260,7 +244,7 @@ test('portal: every priced cell is a choice, and every blank one is not', () => 
 });
 
 test('portal: the picker opens on the cheapest cell actually sold', () => {
-  const html = portal.cruiseCabinPicker({}, [
+  const html = portal.crPerPersonFarePicker({}, [
     { id: 'r1', cabinName: 'Suite', currency: 'USD', singlePrice: 1500, doublePrice: 1200 },
     { id: 'r2', cabinName: 'Standard', currency: 'USD', singlePrice: 900, doublePrice: 550 },
   ]);
@@ -269,14 +253,14 @@ test('portal: the picker opens on the cheapest cell actually sold', () => {
 });
 
 test('portal: a cabin name is escaped, never injected', () => {
-  const html = portal.cruiseCabinPicker({}, [
+  const html = portal.crPerPersonFarePicker({}, [
     { id: 'r1', cabinName: '<img onerror=alert(1)>', currency: 'USD', doublePrice: 600 },
   ]);
   assert.doesNotMatch(html, /<img onerror/);
   assert.match(html, /&lt;img/);
 });
 
-test('portal: the current cruise picker labels occupancy prices per person and shows child price', () => {
+test('portal: the cruise-only picker labels occupancy prices per person and shows child price', () => {
   const html = portal.crPerPersonFarePicker({}, [
     { id: 'r1', cabinName: 'Winter', currency: 'USD', singlePrice: 900, doublePrice: 600, triplePrice: 500, childPrice: 225 },
   ]);
@@ -286,7 +270,7 @@ test('portal: the current cruise picker labels occupancy prices per person and s
   assert.doesNotMatch(html, /per cabin/);
 });
 
-test('portal: a programme fare with no child rate visibly stays unpriced', () => {
+test('portal: a cruise-only fare with no child rate visibly stays unpriced', () => {
   const html = portal.crPerPersonFarePicker({}, [
     { id: 'r1', cabinName: 'Summer', currency: 'USD', doublePrice: 600, childPrice: null },
   ]);

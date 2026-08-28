@@ -11,8 +11,9 @@ import {
 import {
   OCCUPANCIES,
   Occupancy,
-  cabinsNeeded,
-  priceCruiseBooking,
+  priceCruisePerPerson,
+  priceCruiseTransfer,
+  programmeAdultPrice,
 } from '../src/shared/cruise-rates';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -152,25 +153,9 @@ test('package per-person pricing distinguishes blank child price from zero', () 
 
 // ── A cruise cabin: the portal previews it, the desk charges it ─────────────
 
-test('portal and server fill the same number of cabins, for every party', () => {
-  // The portal works out how many cabins a party needs so the agent does not
-  // have to; the server works it out again when the booking is priced. If they
-  // ever drift, the agent quotes for two cabins and the client is billed three.
-  let compared = 0;
-  for (const occupancy of OCCUPANCIES) {
-    for (let pax = 1; pax <= 12; pax += 1) {
-      assert.equal(
-        portal.crCabinsNeeded(pax, occupancy),
-        cabinsNeeded(pax, occupancy),
-        `cabins disagree for ${pax} guests at ${occupancy}`,
-      );
-      compared += 1;
-    }
-  }
-  assert.equal(compared, OCCUPANCIES.length * 12, 'the sweep did not cover every occupancy');
-});
-
-test('portal and server reach the same cabin total', () => {
+test('portal and server price a cruise-only cabin per person, identically', () => {
+  // The portal previews the figure the desk will charge. If they drift, the
+  // agent quotes one number and the client is billed another.
   const row = {
     id: 'r1',
     cabinName: 'Standard',
@@ -179,20 +164,92 @@ test('portal and server reach the same cabin total', () => {
     singlePrice: new Decimal(900),
     doublePrice: new Decimal(600),
     triplePrice: null,
+    childPrice: new Decimal(300),
     validFrom: null,
     validTo: null,
   };
-  const portalRow = { singlePrice: 900, doublePrice: 600, triplePrice: null };
+  const portalRow = { singlePrice: 900, doublePrice: 600, triplePrice: null, childPrice: 300 };
+  let compared = 0;
   for (const occupancy of ['SINGLE', 'DOUBLE'] as Occupancy[]) {
-    for (let pax = 1; pax <= 7; pax += 1) {
-      const server = priceCruiseBooking({ row, occupancy, pax })!;
-      const unit = portal.crCabinPrice(portalRow, occupancy) as number;
-      const cabins = portal.crCabinsNeeded(pax, occupancy) as number;
-      assert.equal(
-        String(unit * cabins),
-        server.total.toString(),
-        `total disagrees for ${pax} guests at ${occupancy}`,
-      );
+    for (let adults = 1; adults <= 6; adults += 1) {
+      for (const children of [0, 2]) {
+        const server = priceCruisePerPerson({ row, occupancy, adults, children })!;
+        const unit = portal.crCabinPrice(portalRow, occupancy) as number;
+        const client = unit * adults + 300 * children;
+        assert.equal(String(client), server.total.toString(), `${adults}+${children} at ${occupancy}`);
+        compared += 1;
+      }
+    }
+  }
+  assert.equal(compared, 24, 'the sweep did not cover every party');
+});
+
+test('portal and server read the same one adult price out of a programme', () => {
+  // A programme is one price per adult. Rows written under the old three-column
+  // shape must resolve to the SAME figure on both sides, or an agent quoting
+  // from a legacy season is quoting a price the desk will not charge.
+  const cases = [
+    { adultPrice: 400, doublePrice: 600, singlePrice: 900, triplePrice: 500 },
+    { adultPrice: null, doublePrice: 600, singlePrice: 900, triplePrice: 500 },
+    { adultPrice: null, doublePrice: null, singlePrice: 900, triplePrice: 500 },
+    { adultPrice: null, doublePrice: null, singlePrice: null, triplePrice: 500 },
+  ];
+  for (const shape of cases) {
+    const server = programmeAdultPrice({
+      id: 'p1',
+      market: null,
+      currency: 'USD',
+      adultPrice: shape.adultPrice == null ? null : new Decimal(shape.adultPrice),
+      singlePrice: shape.singlePrice == null ? null : new Decimal(shape.singlePrice),
+      doublePrice: shape.doublePrice == null ? null : new Decimal(shape.doublePrice),
+      triplePrice: shape.triplePrice == null ? null : new Decimal(shape.triplePrice),
+      validFrom: null,
+      validTo: null,
+    });
+    assert.equal(
+      String(portal.crProgrammeAdultPrice(shape)),
+      server!.toString(),
+      JSON.stringify(shape),
+    );
+  }
+
+  // Nothing priced at all is "price on request" on both sides, never zero.
+  assert.equal(portal.crProgrammeAdultPrice({}), null);
+  assert.equal(
+    programmeAdultPrice({ id: 'p1', market: null, currency: 'USD', validFrom: null, validTo: null }),
+    null,
+  );
+});
+
+test('portal and server charge the same transfer, one way and back', () => {
+  const rates = [
+    { amount: 40, roundTripAmount: 70, perPerson: true },
+    // No pair price: the return is the one-way price twice on both sides.
+    { amount: 40, roundTripAmount: null, perPerson: true },
+    // A whole-car price is charged once however many are collected.
+    { amount: 120, roundTripAmount: null, perPerson: false },
+  ];
+  for (const rate of rates) {
+    for (const roundTrip of [false, true]) {
+      for (const pax of [1, 3, 7]) {
+        const server = priceCruiseTransfer({
+          row: {
+            amount: new Decimal(rate.amount),
+            roundTripAmount: rate.roundTripAmount == null ? null : new Decimal(rate.roundTripAmount),
+            perPerson: rate.perPerson,
+            currency: 'USD',
+          },
+          pax,
+          roundTrip,
+        });
+        const seats = portal.crTransferSeats(rate, pax, NaN) as number;
+        const unit = portal.crTransferUnitPrice(rate, roundTrip) as number;
+        assert.equal(
+          String(unit * seats),
+          server.total.toString(),
+          `${JSON.stringify(rate)} · ${pax} pax · ${roundTrip ? 'round trip' : 'one way'}`,
+        );
+      }
     }
   }
 });
@@ -211,6 +268,10 @@ test('both sides refuse to sell a cabin at an occupancy it has no price for', ()
     validFrom: null,
     validTo: null,
   };
-  assert.equal(priceCruiseBooking({ row, occupancy: 'TRIPLE', pax: 3 }), null);
+  assert.equal(priceCruisePerPerson({ row, occupancy: 'TRIPLE', adults: 3 }), null);
   assert.equal(portal.crCabinPrice({ triplePrice: null }, 'TRIPLE'), null);
+
+  // And a party with children the period never priced goes to request too,
+  // rather than quietly travelling the children for nothing.
+  assert.equal(priceCruisePerPerson({ row, occupancy: 'DOUBLE', adults: 2, children: 1 }), null);
 });

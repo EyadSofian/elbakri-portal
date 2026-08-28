@@ -89,6 +89,30 @@ export function resolveReturnTime(
 }
 
 /**
+ * How many people the car collects, and whether it brings them back.
+ *
+ * Kept apart from `readTransferAddOn` because only the cruise paths carry the
+ * two columns: folding them into the shared reader would hand an activity
+ * booking fields its table has no room for.
+ *
+ * `partySize` is the default — most transfers take everyone — and it is also
+ * the ceiling, because a car cannot collect more people than are travelling.
+ */
+export function readTransferPartySize(
+  body: Record<string, unknown>,
+  partySize: number,
+): { transferPax: number | null; transferRoundTrip: boolean } {
+  if (!body.transferRequested) return { transferPax: null, transferRoundTrip: false };
+  const party = Math.max(1, Math.floor(partySize) || 1);
+  const requested = Math.floor(Number(body.transferPax));
+  const wanted = Number.isFinite(requested) && requested > 0 ? requested : party;
+  return {
+    transferPax: Math.min(party, wanted),
+    transferRoundTrip: Boolean(body.transferRoundTrip),
+  };
+}
+
+/**
  * Read the transfer half of a booking payload.
  *
  * `transferIncluded` is the trip's own answer: a trip that already collects its
