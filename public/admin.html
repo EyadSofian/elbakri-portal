@@ -6720,7 +6720,7 @@ async function renderOffers() {
     </div>
     <section class="table-card">
       <div class="table-scroll"><table class="data-table"><thead><tr>
-        <th>Title</th><th>${isPackage ? "Components" : "Service"}</th><th>Valid From</th><th>Valid To</th><th>Priority</th><th>Status</th><th>Actions</th>
+        <th>${t("offers.title","Title")}</th><th>${isPackage ? t("offers.components","Components") : t("offers.service","Service")}</th><th>${t("form.validFrom","Valid From")}</th><th>${t("form.validTo","Valid To")}</th><th>${t("offers.priority","Priority")}</th><th>${t("th.status","Status")}</th><th>${t("th.actions","Actions")}</th>
       </tr></thead><tbody>
         ${offers.map(o => `<tr>
           <td>
@@ -6756,9 +6756,9 @@ async function openOfferForm(id, forcedKind = offerAdminTab) {
   const serviceTypes = ["hotels","transport","activities","security-approval","airport-assist","sim-card","cruises",""];
   const body = `<div class="form-grid">
     <input type="hidden" id="ofKind" value="${kind}">
-    <div class="form-field"><label>Title (EN) *</label><input id="ofTitle" value="${escapeHtml(o?.title||"")}"></div>
+    <div class="form-field"><label>${t("offers.titleEn","Title (EN)")} *</label><input id="ofTitle" value="${escapeHtml(o?.title||"")}"></div>
     <div class="form-field"><label>${t("offers.titleAr","Arabic Title")}</label><input id="ofTitleAr" value="${escapeHtml(o?.titleAr||"")}"></div>
-    <div class="form-field full"><label>Description (EN)</label><textarea id="ofDesc" rows="2">${escapeHtml(o?.description||"")}</textarea></div>
+    <div class="form-field full"><label>${t("offers.descriptionEn","Description (EN)")}</label><textarea id="ofDesc" rows="2">${escapeHtml(o?.description||"")}</textarea></div>
     <div class="form-field full"><label>${t("offers.descAr","Arabic Description")}</label><textarea id="ofDescAr" rows="2">${escapeHtml(o?.descriptionAr||"")}</textarea></div>
     <div class="form-field full"><label>${t("offers.imageUrl","Image URL")}</label><input id="ofImg" value="${escapeHtml(o?.imageUrl||"")}" placeholder="https://..."></div>
     ${isPackage ? `<div class="form-field full of-package-editor">
@@ -6769,13 +6769,13 @@ async function openOfferForm(id, forcedKind = offerAdminTab) {
         <button type="button" class="of-package-tab" data-of-tab="activities" onclick="ofShowPackageTab('activities')"><span>3</span>${icon("ticket")}<b>${t("nav.activities", "Activities")}</b></button>
         <button type="button" class="of-package-tab" data-of-tab="pricing" onclick="ofShowPackageTab('pricing')"><span>4</span>${icon("badge-dollar-sign")}<b>${t("offers.pricePeriods", "Price periods")}</b></button>
       </div>
-      <div id="ofPanelHotels" class="of-package-panel"><div id="ofHotelRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddHotelRow()">${icon("plus")}&nbsp;Add hotel</button></div>
-      <div id="ofPanelTransfers" class="of-package-panel" style="display:none"><div id="ofTransferRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddTransferRow()">${icon("plus")}&nbsp;Add transfer</button></div>
-      <div id="ofPanelActivities" class="of-package-panel" style="display:none"><div id="ofActivityRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddActivityRow()">${icon("plus")}&nbsp;Add activity</button></div>
-      <div id="ofPanelPricing" class="of-package-panel" style="display:none"><div id="ofPricingRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddPricingRow()">${icon("plus")}&nbsp;Add price period</button></div>
+      <div id="ofPanelHotels" class="of-package-panel"><div id="ofHotelRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddHotelRow()">${icon("plus")}&nbsp;${t("offers.addHotel","Add hotel")}</button></div>
+      <div id="ofPanelTransfers" class="of-package-panel" style="display:none"><div id="ofTransferRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddTransferRow()">${icon("plus")}&nbsp;${t("offers.addTransfer","Add transfer")}</button></div>
+      <div id="ofPanelActivities" class="of-package-panel" style="display:none"><div id="ofActivityRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddActivityRow()">${icon("plus")}&nbsp;${t("offers.addActivity","Add activity")}</button></div>
+      <div id="ofPanelPricing" class="of-package-panel" style="display:none"><div id="ofPricingRows"></div><button type="button" class="btn btn-outline btn-sm" onclick="ofAddPricingRow()">${icon("plus")}&nbsp;${t("offers.addPricePeriod","Add price period")}</button></div>
     </div>` : ""}
     <div class="form-field"><label>${t("offers.ctaLabel","CTA Label")} (EN)</label><input id="ofCtaLabel" value="${escapeHtml(o?.ctaLabel||"")}"></div>
-    <div class="form-field"><label>CTA Label (AR)</label><input id="ofCtaLabelAr" value="${escapeHtml(o?.ctaLabelAr||"")}"></div>
+    <div class="form-field"><label>${t("offers.ctaLabelAr","CTA Label (AR)")}</label><input id="ofCtaLabelAr" value="${escapeHtml(o?.ctaLabelAr||"")}"></div>
     <div class="form-field"><label>${t("offers.ctaAction","CTA Page")}</label>
       <select id="ofCtaAction">
         <option value="">None</option>
@@ -6789,9 +6789,9 @@ async function openOfferForm(id, forcedKind = offerAdminTab) {
     <div class="form-field"><label>${t("form.validFrom","Valid From")}</label><input id="ofFrom" type="date" value="${o?.validFrom ? o.validFrom.slice(0,10) : ""}"></div>
     <div class="form-field"><label>${t("form.validTo","Valid To")}</label><input id="ofTo" type="date" value="${o?.validTo ? o.validTo.slice(0,10) : ""}"></div>
     <div class="form-field"><label>${t("offers.priority","Priority")} (higher = shown first)</label><input id="ofPriority" type="number" value="${o?.priority??0}"></div>
-    <div class="form-field"><label><input type="checkbox" id="ofActive" ${!o||o.isActive?"checked":""}> Active</label></div>
+    <div class="form-field"><label class="check-row"><input type="checkbox" id="ofActive" ${!o||o.isActive?"checked":""}> ${t("form.active","Active")}</label></div>
   </div>`;
-  openModal(id ? `Edit ${isPackage ? "Package" : "Offer"}` : `New ${isPackage ? "Package" : "Offer"}`, body, `
+  openModal(id ? (isPackage ? t("offers.editPackage","Edit Package") : t("offers.editOffer","Edit Offer")) : (isPackage ? t("offers.newPackage","New Package") : t("offers.newOffer","New Offer")), body, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
     <button class="btn btn-primary" onclick="saveOffer('${id||""}')">${t("btn.save")}</button>`, "modal-wide");
   if (isPackage) {
@@ -6821,7 +6821,7 @@ function ofRowWrap(hostId, className, fields) {
   const row = document.createElement("div");
   row.className = `${className} panel`;
   row.style.cssText = "padding:14px;margin:10px 0";
-  row.innerHTML = `<div class="form-grid">${fields}</div><button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.${className}').remove()">${icon("trash-2")}&nbsp;Remove</button>`;
+  row.innerHTML = `<div class="form-grid">${fields}</div><button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.${className}').remove()">${icon("trash-2")}&nbsp;${t("btn.remove","Remove")}</button>`;
   host.appendChild(row);
   refreshIcons(row);
   return row;
@@ -6829,37 +6829,37 @@ function ofRowWrap(hostId, className, fields) {
 
 function ofAddHotelRow(value = {}) {
   ofRowWrap("ofHotelRows", "of-hotel-row", `
-    <div class="form-field"><label>Hotel name *</label><input class="of-hotel-name" value="${escapeHtml(value.name || "")}"></div>
-    <div class="form-field"><label>Hotel ID (optional)</label><input class="of-hotel-id" value="${escapeHtml(value.hotelId || "")}"></div>
-    <div class="form-field"><label>Nights</label><input type="number" min="1" class="of-hotel-nights" value="${escapeHtml(value.nights || 1)}"></div>
-    <div class="form-field"><label>Meal plan</label><input class="of-hotel-meal" value="${escapeHtml(value.mealPlan || "")}"></div>`);
+    <div class="form-field"><label>${t("offers.hotelName","Hotel name")} *</label><input class="of-hotel-name" value="${escapeHtml(value.name || "")}"></div>
+    <div class="form-field"><label>${t("offers.hotelId","Hotel ID (optional)")}</label><input class="of-hotel-id" value="${escapeHtml(value.hotelId || "")}"></div>
+    <div class="form-field"><label>${t("hotel.nights","Nights")}</label><input type="number" min="1" class="of-hotel-nights" value="${escapeHtml(value.nights || 1)}"></div>
+    <div class="form-field"><label>${t("hotel.mealPlan","Meal plan")}</label><input class="of-hotel-meal" value="${escapeHtml(value.mealPlan || "")}"></div>`);
 }
 
 function ofAddTransferRow(value = {}) {
   ofRowWrap("ofTransferRows", "of-transfer-row", `
-    <div class="form-field"><label>From *</label><input class="of-transfer-from" value="${escapeHtml(value.from || "")}"></div>
-    <div class="form-field"><label>To *</label><input class="of-transfer-to" value="${escapeHtml(value.to || "")}"></div>
-    <div class="form-field"><label>Vehicle / notes</label><input class="of-transfer-vehicle" value="${escapeHtml(value.vehicleType || "")}"></div>`);
+    <div class="form-field"><label>${t("form.from","From")} *</label><input class="of-transfer-from" value="${escapeHtml(value.from || "")}"></div>
+    <div class="form-field"><label>${t("form.to","To")} *</label><input class="of-transfer-to" value="${escapeHtml(value.to || "")}"></div>
+    <div class="form-field"><label>${t("offers.vehicleNotes","Vehicle / notes")}</label><input class="of-transfer-vehicle" value="${escapeHtml(value.vehicleType || "")}"></div>`);
 }
 
 function ofAddActivityRow(value = {}) {
   ofRowWrap("ofActivityRows", "of-activity-row", `
-    <div class="form-field"><label>Activity name *</label><input class="of-activity-name" value="${escapeHtml(value.name || "")}"></div>
-    <div class="form-field"><label>Activity ID (optional)</label><input class="of-activity-id" value="${escapeHtml(value.activityId || "")}"></div>
-    <div class="form-field"><label>Day / date</label><input class="of-activity-date" value="${escapeHtml(value.date || "")}" placeholder="Day 2 or 2026-10-01"></div>`);
+    <div class="form-field"><label>${t("offers.activityName","Activity name")} *</label><input class="of-activity-name" value="${escapeHtml(value.name || "")}"></div>
+    <div class="form-field"><label>${t("offers.activityId","Activity ID (optional)")}</label><input class="of-activity-id" value="${escapeHtml(value.activityId || "")}"></div>
+    <div class="form-field"><label>${t("offers.dayDate","Day / date")}</label><input class="of-activity-date" value="${escapeHtml(value.date || "")}" placeholder="${escapeHtml(t("offers.dayDatePlaceholder","Day 2 or 2026-10-01"))}"></div>`);
 }
 
 function ofAddPricingRow(value = {}) {
   const market = value.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
   const row = ofRowWrap("ofPricingRows", "of-pricing-row", `
-    <div class="form-field"><label>From *</label><input type="date" class="of-price-from" value="${escapeHtml(value.validFrom ? String(value.validFrom).slice(0,10) : "")}"></div>
-    <div class="form-field"><label>To *</label><input type="date" class="of-price-to" value="${escapeHtml(value.validTo ? String(value.validTo).slice(0,10) : "")}"></div>
-    <div class="form-field"><label>Market *</label><select class="of-price-market" onchange="ofSyncPriceCurrency(this)"><option value="FOREIGN" ${market === "FOREIGN" ? "selected" : ""}>Foreign</option><option value="EGYPTIAN" ${market === "EGYPTIAN" ? "selected" : ""}>Egyptian</option></select></div>
-    <div class="form-field"><label>Currency</label><input class="of-price-currency" value="${market === "EGYPTIAN" ? "EGP" : "USD"}" readonly></div>
-    <div class="form-field"><label>Single *</label><input type="number" min="0" step="0.01" class="of-price-single" value="${escapeHtml(value.singlePrice ?? "")}"></div>
-    <div class="form-field"><label>Double *</label><input type="number" min="0" step="0.01" class="of-price-double" value="${escapeHtml(value.doublePrice ?? "")}"></div>
-    <div class="form-field"><label>Triple *</label><input type="number" min="0" step="0.01" class="of-price-triple" value="${escapeHtml(value.triplePrice ?? "")}"></div>
-    <div class="form-field"><label>Child *</label><input type="number" min="0" step="0.01" class="of-price-child" value="${escapeHtml(value.childPrice ?? "")}"></div>`);
+    <div class="form-field"><label>${t("form.validFrom","Valid from")} *</label><input type="date" class="of-price-from" value="${escapeHtml(value.validFrom ? String(value.validFrom).slice(0,10) : "")}"></div>
+    <div class="form-field"><label>${t("form.validTo","Valid to")} *</label><input type="date" class="of-price-to" value="${escapeHtml(value.validTo ? String(value.validTo).slice(0,10) : "")}"></div>
+    <div class="form-field"><label>${t("market.label","Market")} *</label><select class="of-price-market" onchange="ofSyncPriceCurrency(this)"><option value="FOREIGN" ${market === "FOREIGN" ? "selected" : ""}>${t("market.FOREIGN","Foreign")}</option><option value="EGYPTIAN" ${market === "EGYPTIAN" ? "selected" : ""}>${t("market.EGYPTIAN","Egyptian")}</option></select></div>
+    <div class="form-field"><label>${t("form.currency","Currency")}</label><input class="of-price-currency" value="${market === "EGYPTIAN" ? "EGP" : "USD"}" readonly></div>
+    <div class="form-field"><label>${t("hotel.single","Single")} *</label><input type="number" min="0" step="0.01" class="of-price-single" value="${escapeHtml(value.singlePrice ?? "")}"></div>
+    <div class="form-field"><label>${t("hotel.double","Double")} *</label><input type="number" min="0" step="0.01" class="of-price-double" value="${escapeHtml(value.doublePrice ?? "")}"></div>
+    <div class="form-field"><label>${t("hotel.triple","Triple")} *</label><input type="number" min="0" step="0.01" class="of-price-triple" value="${escapeHtml(value.triplePrice ?? "")}"></div>
+    <div class="form-field"><label>${t("form.child","Child")} *</label><input type="number" min="0" step="0.01" class="of-price-child" value="${escapeHtml(value.childPrice ?? "")}"></div>`);
   if (row) ofSyncPriceCurrency(row.querySelector(".of-price-market"));
 }
 

@@ -916,6 +916,11 @@
     offers: "Offers", packages: "Packages", noPackages: "No active packages at the moment",
     newOffer: "New Offer", newPackage: "New Package", packageComponents: "Package components",
     packageStepsHelp: "Build it in four clear steps", pricePeriods: "Price periods",
+    editOffer: "Edit Offer", editPackage: "Edit Package", title: "Title", components: "Components", service: "Service",
+    titleEn: "Title (English)", descriptionEn: "Description (English)", ctaLabelAr: "CTA label (Arabic)",
+    addHotel: "Add hotel", addTransfer: "Add transfer", addActivity: "Add activity", addPricePeriod: "Add price period",
+    hotelName: "Hotel name", hotelId: "Hotel ID (optional)", vehicleNotes: "Vehicle / notes",
+    activityName: "Activity name", activityId: "Activity ID (optional)", dayDate: "Day / date", dayDatePlaceholder: "Day 2 or 2026-10-01",
   };
   ar.offers = {
     popup: "عرض خاص", dontShow: "لا تُظهر اليوم", viewOffer: "عرض العرض",
@@ -926,6 +931,11 @@
     offers: "العروض", packages: "الباكدجات", noPackages: "لا توجد باكدجات متاحة حاليًا",
     newOffer: "إنشاء عرض", newPackage: "إنشاء باكدج", packageComponents: "مكونات الباكدج",
     packageStepsHelp: "كوّن الباكدج في أربع خطوات واضحة", pricePeriods: "فترات الأسعار",
+    editOffer: "تعديل العرض", editPackage: "تعديل الباكدج", title: "العنوان", components: "المكونات", service: "الخدمة",
+    titleEn: "العنوان بالإنجليزية", descriptionEn: "الوصف بالإنجليزية", ctaLabelAr: "نص زر الإجراء بالعربية",
+    addHotel: "أضف فندقًا", addTransfer: "أضف ترانسفير", addActivity: "أضف نشاطًا", addPricePeriod: "أضف فترة سعر",
+    hotelName: "اسم الفندق", hotelId: "معرّف الفندق (اختياري)", vehicleNotes: "السيارة / ملاحظات",
+    activityName: "اسم النشاط", activityId: "معرّف النشاط (اختياري)", dayDate: "اليوم / التاريخ", dayDatePlaceholder: "اليوم 2 أو 2026-10-01",
   };
 
   // ── Destination image upload (Phase 2) ─────────────────────────────────────
