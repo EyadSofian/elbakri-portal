@@ -1133,10 +1133,10 @@ html[lang="ar"] .stat-label {
 .input,
 .select,
 .textarea,
-.field input,
+.field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
 .field select,
 .field textarea,
-.form-field input,
+.form-field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
 .form-field select,
 .form-field textarea {
   width: 100%;
@@ -1159,10 +1159,10 @@ html[lang="ar"] .stat-label {
 .input:focus,
 .select:focus,
 .textarea:focus,
-.field input:focus,
+.field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
 .field select:focus,
 .field textarea:focus,
-.form-field input:focus,
+.form-field input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
 .form-field select:focus,
 .form-field textarea:focus {
   border-color: var(--brand-navy-3);
@@ -1974,6 +1974,62 @@ html[lang="ar"] .data-table thead th {
 .check-row input {
   accent-color: var(--brand-navy-2);
 }
+
+/* Native choice controls must never inherit the full-width text-input box.
+   Besides producing the giant ticks seen in the cruise editor, that old
+   cascade also left a 36px minimum height on radios inside pricing cards. */
+input[type="checkbox"],
+input[type="radio"],
+.field input[type="checkbox"],
+.field input[type="radio"],
+.form-field input[type="checkbox"],
+.form-field input[type="radio"] {
+  inline-size: 18px;
+  block-size: 18px;
+  min-inline-size: 18px;
+  min-block-size: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  accent-color: var(--brand-navy-2);
+  cursor: pointer;
+  flex: 0 0 18px;
+}
+
+/* A checkbox setting is one small, readable card: control, title and help.
+   This removes the repeated title/"Active" lines that collided in RTL. */
+.form-check-card { align-self: stretch; }
+
+.form-check-control {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  min-height: 66px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-10);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.form-check-control:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.form-check-control:has(input:checked) {
+  border-color: color-mix(in srgb, var(--brand-accent) 55%, var(--border));
+  background: var(--brand-accent-soft);
+}
+
+.form-check-control input { margin-top: 2px; }
+.form-check-control > span { display: grid; min-width: 0; gap: 3px; }
+.form-check-control b { color: var(--text-primary); font-size: 12px; line-height: 1.4; }
+.form-check-control small { color: var(--text-muted); font-size: 11px; line-height: 1.45; font-weight: 600; }
+.form-check-card > .secondary-text { margin: 6px 2px 0 !important; line-height: 1.45; }
 
 .link-btn {
   border: 0;
@@ -8633,4 +8689,64 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
   .cr-schedule-row-grid,
   .cr-rate-row-grid { grid-template-columns: minmax(0, 1fr); }
   .cr-period-head > .btn { width: 100%; justify-content: center; }
+}
+
+/* ═══ Compact control pass ═══════════════════════════════════════════════
+   Dense operational screens should not look like a wall of primary CTAs.
+   Toolbars, sync actions and selectors stay easy to hit, but no longer take
+   the visual weight of Save/Confirm. Phone targets retain their 38px floor. */
+@media (min-width: 641px) {
+  .table-toolbar .btn,
+  .toolbar-actions .btn,
+  .page-actions .btn,
+  .admin-tab-bar .btn,
+  button[onclick*="syncEntity("] {
+    min-height: 34px;
+    padding-inline: 11px;
+    gap: 6px;
+    font-size: 12px;
+    border-radius: 7px;
+  }
+
+  .table-toolbar .btn svg,
+  .toolbar-actions .btn svg,
+  .page-actions .btn svg,
+  .admin-tab-bar .btn svg,
+  button[onclick*="syncEntity("] svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .cr-editor-tab { min-height: 34px; padding: 5px 8px; }
+  .cr-editor-tab > span { width: 18px; height: 18px; }
+  .of-package-tab { min-height: 34px; padding: 5px 8px; }
+  .of-package-tab > span { width: 18px; height: 18px; }
+
+  .tr-toggle {
+    min-height: 34px;
+    padding: 6px 12px;
+    border-width: 1px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .act-basis { padding: 8px 10px; }
+  .act-basis b { font-size: 12px; }
+  .cr-pick { padding: 5px 8px; border-radius: 8px; font-size: 12px; }
+
+  .hms-nav { width: 34px; height: 34px; }
+  .lightbox-nav { width: 42px; height: 42px; }
+}
+
+.sort-btn {
+  min-height: 28px;
+  padding: 2px 4px;
+}
+
+.sort-btn svg { width: 13px; height: 13px; }
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
 }

@@ -1268,12 +1268,12 @@ const masterConfigs = {
 function masterActions(entity) {
   const cfg = masterConfigs[entity];
   const importBtn = entity === "hotels"
-    ? `<button class="btn btn-outline" id="hotelsImportBtn" onclick="document.getElementById('hotelsImportFile').click()">${icon("upload")}${t("btn.importExcel", "Import Excel")}</button>
+    ? `<button class="btn btn-outline btn-sm" id="hotelsImportBtn" onclick="document.getElementById('hotelsImportFile').click()">${icon("upload")}${t("btn.importExcel", "Import Excel")}</button>
        <input type="file" id="hotelsImportFile" accept=".xlsx,.xls" style="display:none" onchange="importHotelsExcel(this)">`
     : "";
-  return `<button class="btn btn-primary" onclick="showMasterModal('${entity}')">${icon("plus")}${t("btn.addNew")}</button>
+  return `<button class="btn btn-primary btn-sm" onclick="showMasterModal('${entity}')">${icon("plus")}${t("btn.addNew")}</button>
     ${importBtn}
-    <button class="btn btn-outline" onclick="syncEntity('${cfg.syncEntity}', event)">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`;
+    <button class="btn btn-outline btn-sm" onclick="syncEntity('${cfg.syncEntity}', event)">${icon("refresh-cw")}${t("btn.syncSheets")}</button>`;
 }
 
 async function importHotelsExcel(input) {
@@ -1468,7 +1468,7 @@ function masterField(entity, fieldDef, row) {
     // "Transfer included in the fare — [x] Active" reads as nonsense. A field
     // may name what ticking it actually means; the rest keep the old wording.
     const on = fieldDef.checkKey ? t(fieldDef.checkKey, fieldDef.checkLabel) : (fieldDef.checkLabel || t("status.ACTIVE"));
-    return `<div class="form-field ${fieldDef.cls || ""}"><label>${label}</label><label class="check-row"><input id="${id}" type="checkbox" ${value ? "checked" : ""}> ${escapeHtml(on)}</label>${help}</div>`;
+    return `<div class="form-field form-check-card ${fieldDef.cls || ""}"><label class="form-check-control"><input id="${id}" type="checkbox" ${value ? "checked" : ""}><span><b>${label}</b><small>${escapeHtml(on)}</small></span></label>${help}</div>`;
   }
   // The destination this record belongs to, drawn from the Destinations page —
   // one list, so a destination added there is instantly offered here. The ＋

@@ -7,6 +7,7 @@ const { loadPortal } = require('./helpers/load-portal');
 const portal = loadPortal('dashboard.html');
 const dashboardSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
 const adminSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'admin.html'), 'utf8');
+const portalCss = fs.readFileSync(path.join(__dirname, '..', 'public', 'assets', 'portal.css'), 'utf8');
 
 /**
  * Values built inside the sandbox carry that context's own Array/Object
@@ -412,6 +413,12 @@ test('offers: the package editor exposes hotel, transfer, activity and price-per
   for (const tab of ['hotels', 'transfers', 'activities', 'pricing']) {
     assert.match(adminSource, new RegExp(`data-of-tab="${tab}"`));
   }
+});
+
+test('admin: checkbox and radio controls cannot inherit a full-width text input', () => {
+  assert.match(portalCss, /\.form-field input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\)/);
+  assert.match(portalCss, /input\[type="checkbox"\][\s\S]*?inline-size:\s*18px/);
+  assert.match(adminSource, /class="form-check-control"/);
 });
 
 test('portal: package child pricing never falls back to the adult price', () => {
