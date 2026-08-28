@@ -8402,6 +8402,36 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
 .of-package-tab.is-active > span { background: var(--brand-accent); color: #fff; }
 .of-package-panel { min-height: 116px; padding: 4px 2px 2px; }
 
+.of-image-picker {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+
+.of-image-preview {
+  display: grid;
+  place-items: center;
+  width: 128px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.of-image-preview img { width: 100%; height: 100%; object-fit: cover; }
+.of-image-preview svg { width: 24px; height: 24px; }
+
+@media (max-width: 520px) {
+  .of-image-picker { grid-template-columns: 1fr; }
+  .of-image-preview { width: 100%; }
+}
+
 .cr-programme-pricing-head {
   display: flex;
   align-items: center;

@@ -910,7 +910,7 @@
   en.offers = {
     popup: "Special Offer", dontShow: "Don't show today", viewOffer: "View Offer",
     noOffer: "No active offers", active: "Active", inactive: "Inactive",
-    priority: "Priority", imageUrl: "Image URL", ctaAction: "CTA Page (service key)",
+    priority: "Priority", imageUrl: "Image URL", ctaAction: "Open after clicking (optional)",
     ctaLabel: "CTA Button Label", validDates: "Valid Dates",
     titleAr: "Arabic Title", descAr: "Arabic Description",
     offers: "Offers", packages: "Packages", noPackages: "No active packages at the moment",
@@ -921,11 +921,13 @@
     addHotel: "Add hotel", addTransfer: "Add transfer", addActivity: "Add activity", addPricePeriod: "Add price period",
     hotelName: "Hotel name", hotelId: "Hotel ID (optional)", vehicleNotes: "Vehicle / notes",
     activityName: "Activity name", activityId: "Activity ID (optional)", dayDate: "Day / date", dayDatePlaceholder: "Day 2 or 2026-10-01",
+    image: "Offer / package image", uploadImage: "Upload image", imageHelp: "JPG, PNG or WebP. The image is uploaded and saved with this record.",
+    noCtaAction: "Do not open another page",
   };
   ar.offers = {
     popup: "عرض خاص", dontShow: "لا تُظهر اليوم", viewOffer: "عرض العرض",
     noOffer: "لا توجد عروض نشطة", active: "نشط", inactive: "غير نشط",
-    priority: "الأولوية", imageUrl: "رابط الصورة", ctaAction: "صفحة CTA (مفتاح الخدمة)",
+    priority: "الأولوية", imageUrl: "رابط الصورة", ctaAction: "بعد الضغط يفتح (اختياري)",
     ctaLabel: "نص زر CTA", validDates: "تواريخ الصلاحية",
     titleAr: "العنوان بالعربية", descAr: "الوصف بالعربية",
     offers: "العروض", packages: "الباكدجات", noPackages: "لا توجد باكدجات متاحة حاليًا",
@@ -936,6 +938,8 @@
     addHotel: "أضف فندقًا", addTransfer: "أضف ترانسفير", addActivity: "أضف نشاطًا", addPricePeriod: "أضف فترة سعر",
     hotelName: "اسم الفندق", hotelId: "معرّف الفندق (اختياري)", vehicleNotes: "السيارة / ملاحظات",
     activityName: "اسم النشاط", activityId: "معرّف النشاط (اختياري)", dayDate: "اليوم / التاريخ", dayDatePlaceholder: "اليوم 2 أو 2026-10-01",
+    image: "صورة العرض / الباكدج", uploadImage: "رفع صورة", imageHelp: "JPG أو PNG أو WebP. تُرفع الصورة وتُحفظ مع هذا السجل.",
+    noCtaAction: "لا تفتح صفحة أخرى",
   };
 
   // ── Destination image upload (Phase 2) ─────────────────────────────────────

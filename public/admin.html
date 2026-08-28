@@ -6760,7 +6760,15 @@ async function openOfferForm(id, forcedKind = offerAdminTab) {
     <div class="form-field"><label>${t("offers.titleAr","Arabic Title")}</label><input id="ofTitleAr" value="${escapeHtml(o?.titleAr||"")}"></div>
     <div class="form-field full"><label>${t("offers.descriptionEn","Description (EN)")}</label><textarea id="ofDesc" rows="2">${escapeHtml(o?.description||"")}</textarea></div>
     <div class="form-field full"><label>${t("offers.descAr","Arabic Description")}</label><textarea id="ofDescAr" rows="2">${escapeHtml(o?.descriptionAr||"")}</textarea></div>
-    <div class="form-field full"><label>${t("offers.imageUrl","Image URL")}</label><input id="ofImg" value="${escapeHtml(o?.imageUrl||"")}" placeholder="https://..."></div>
+    <div class="form-field full"><label>${t("offers.image","Offer / package image")}</label>
+      <input type="hidden" id="ofImg" value="${escapeHtml(o?.imageUrl||"")}">
+      <input type="file" id="ofImgFile" accept="image/png,image/jpeg,image/webp" hidden onchange="ofPickImage(this)">
+      <div class="of-image-picker">
+        <div class="of-image-preview" id="ofImagePreview">${o?.imageUrl ? `<img src="${escapeHtml(o.imageUrl)}" alt="">` : icon("image")}</div>
+        <div><button type="button" class="btn btn-outline btn-sm" id="ofImgBtn" onclick="document.getElementById('ofImgFile').click()">${icon("upload")}${t("offers.uploadImage","Upload image")}</button>
+        <div class="secondary-text" style="margin-top:5px">${t("offers.imageHelp","JPG, PNG or WebP. The image is uploaded and saved automatically with this record.")}</div></div>
+      </div>
+    </div>
     ${isPackage ? `<div class="form-field full of-package-editor">
       <div class="of-package-editor__heading"><strong>${t("offers.packageComponents", "Package components")}</strong><span>${t("offers.packageStepsHelp", "Build it in four clear steps")}</span></div>
       <div class="of-package-tabs" id="ofPackageTabs" role="tablist">
@@ -6776,16 +6784,12 @@ async function openOfferForm(id, forcedKind = offerAdminTab) {
     </div>` : ""}
     <div class="form-field"><label>${t("offers.ctaLabel","CTA Label")} (EN)</label><input id="ofCtaLabel" value="${escapeHtml(o?.ctaLabel||"")}"></div>
     <div class="form-field"><label>${t("offers.ctaLabelAr","CTA Label (AR)")}</label><input id="ofCtaLabelAr" value="${escapeHtml(o?.ctaLabelAr||"")}"></div>
-    <div class="form-field"><label>${t("offers.ctaAction","CTA Page")}</label>
+    <div class="form-field"><label>${t("offers.ctaAction","Open after clicking (optional)")}</label>
       <select id="ofCtaAction">
-        <option value="">None</option>
-        ${serviceTypes.map(s => `<option value="${s}" ${o?.ctaAction===s?"selected":""}>${s||"—"}</option>`).join("")}
+        <option value="">${t("offers.noCtaAction","Do not open another page")}</option>
+        ${serviceTypes.filter(Boolean).map(s => `<option value="${s}" ${o?.ctaAction===s?"selected":""}>${s}</option>`).join("")}
       </select></div>
-    <div class="form-field"><label>Service Type</label>
-      <select id="ofSvcType">
-        <option value="">All</option>
-        ${serviceTypes.filter(Boolean).map(s => `<option value="${s}" ${o?.serviceType===s?"selected":""}>${s}</option>`).join("")}
-      </select></div>
+    <input type="hidden" id="ofSvcType" value="${escapeHtml(o?.serviceType || "")}">
     <div class="form-field"><label>${t("form.validFrom","Valid From")}</label><input id="ofFrom" type="date" value="${o?.validFrom ? o.validFrom.slice(0,10) : ""}"></div>
     <div class="form-field"><label>${t("form.validTo","Valid To")}</label><input id="ofTo" type="date" value="${o?.validTo ? o.validTo.slice(0,10) : ""}"></div>
     <div class="form-field"><label>${t("offers.priority","Priority")} (higher = shown first)</label><input id="ofPriority" type="number" value="${o?.priority??0}"></div>
@@ -6813,6 +6817,19 @@ function ofShowPackageTab(tab) {
   document.querySelectorAll("[data-of-tab]").forEach(btn => {
     btn.classList.toggle("is-active", btn.dataset.ofTab === tab);
   });
+}
+
+async function ofPickImage(input) {
+  const file = input?.files?.[0];
+  if (input) input.value = "";
+  if (!file) return;
+  const button = document.getElementById("ofImgBtn");
+  setBtnLoading(button, true, "btn.uploading");
+  const url = await uploadImageToServer(file);
+  setBtnLoading(button, false);
+  if (!url) return;
+  document.getElementById("ofImg").value = url;
+  document.getElementById("ofImagePreview").innerHTML = `<img src="${escapeHtml(url)}" alt="">`;
 }
 
 function ofRowWrap(hostId, className, fields) {
