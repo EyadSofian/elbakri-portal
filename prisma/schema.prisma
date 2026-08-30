@@ -735,6 +735,9 @@ model QuoteRequest {
   transferRequested  Boolean            @default(false)
   transferTripType   String? // ONE_WAY | ROUND_TRIP
   transferPaxCount   Int?
+  transferVehicleType String?
+  transferVehicleCapacity Int?
+  transferVehicleCount Int?
   transferFromType   String?
   transferFromName   String?
   transferToType     String?
@@ -1097,10 +1100,14 @@ model CruiseTransferRate {
   market          Market
   fromLocation    String
   toLocation      String
+  // Uses the same vehicle catalogue as TransportRate. Each row is one
+  // sellable journey shape and the amount is for the whole vehicle.
+  tripType        String          @default("ONE_WAY") // ONE_WAY | ROUND_TRIP
+  vehicleType     VehicleType     @default(VAN_6)
+  vehicleCapacity Int             @default(6)
   amount          Decimal         @db.Decimal(10, 2)
-  // `amount` is the one-way, per-person tariff. A separate round-trip amount
-  // keeps the return leg explicit instead of guessing that it is twice the
-  // one-way price.
+  // Legacy only. Old catalogue rows are split into independent ONE_WAY and
+  // ROUND_TRIP products when the shared catalogue is normalised.
   roundTripAmount Decimal?        @db.Decimal(10, 2)
   currency        String
   validFrom       DateTime?
@@ -1163,6 +1170,9 @@ model CruiseBooking {
   transferReturnTime  String?
   transferTripType    String? // ONE_WAY | ROUND_TRIP
   transferPaxCount    Int?
+  transferVehicleType String?
+  transferVehicleCapacity Int?
+  transferVehicleCount Int?
   transferNotes       String?                 @db.Text
   addOns              CruiseBookingActivity[]
   totalAmount         Decimal                 @db.Decimal(12, 2)

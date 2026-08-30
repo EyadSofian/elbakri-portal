@@ -236,18 +236,26 @@ export function priceCruiseProgrammePerPerson(input: {
 
 export type CruiseTransferTripType = 'ONE_WAY' | 'ROUND_TRIP';
 
-/** Transfer prices are explicit per person. Round-trip never falls back to
- * twice the one-way amount because the operator must quote it deliberately. */
+/** Each transfer row is one explicit ONE_WAY or ROUND_TRIP product. The price
+ * belongs to the whole vehicle; passenger count only decides how many vehicles
+ * are required for the selected capacity. */
 export function priceCruiseTransfer(input: {
-  oneWayAmount: Decimal;
-  roundTripAmount?: Decimal | null;
-  tripType: CruiseTransferTripType;
+  amount: Decimal;
+  capacity: number;
   pax: number;
-}): { total: Decimal; unitPrice: Decimal; pax: number } | null {
-  const unitPrice = input.tripType === 'ROUND_TRIP' ? input.roundTripAmount ?? null : input.oneWayAmount;
-  if (unitPrice == null) return null;
+}): { total: Decimal; unitPrice: Decimal; pax: number; vehicleCount: number; capacity: number } | null {
+  if (input.amount.isNegative()) return null;
   const pax = Math.max(1, Math.floor(input.pax) || 1);
-  return { total: unitPrice.mul(pax), unitPrice, pax };
+  const capacity = Math.floor(Number(input.capacity));
+  if (!Number.isFinite(capacity) || capacity < 1) return null;
+  const vehicleCount = Math.ceil(pax / capacity);
+  return {
+    total: input.amount.mul(vehicleCount),
+    unitPrice: input.amount,
+    pax,
+    vehicleCount,
+    capacity,
+  };
 }
 
 export type CruiseSupplementType = 'FIXED_AMOUNT' | 'PERCENTAGE' | 'TOTAL_PRICE' | 'TEXT_ONLY';

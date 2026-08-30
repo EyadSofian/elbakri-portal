@@ -223,14 +223,21 @@ test('programme child price stays required when children are travelling', () => 
   }), null);
 });
 
-test('cruise transfer multiplies the selected one-way tariff by its own pax', () => {
-  const priced = priceCruiseTransfer({ oneWayAmount: D(25), roundTripAmount: D(40), tripType: 'ONE_WAY', pax: 3 })!;
-  assert.equal(priced.total.toString(), '75');
+test('cruise transfer charges one whole vehicle when the party fits', () => {
+  const priced = priceCruiseTransfer({ amount: D(100), capacity: 6, pax: 3 })!;
+  assert.equal(priced.total.toString(), '100');
+  assert.equal(priced.vehicleCount, 1);
 });
 
-test('round-trip must have its own explicit tariff', () => {
-  assert.equal(priceCruiseTransfer({ oneWayAmount: D(25), roundTripAmount: null, tripType: 'ROUND_TRIP', pax: 2 }), null);
-  assert.equal(priceCruiseTransfer({ oneWayAmount: D(25), roundTripAmount: D(40), tripType: 'ROUND_TRIP', pax: 2 })!.total.toString(), '80');
+test('cruise transfer adds another vehicle only when capacity is exceeded', () => {
+  const priced = priceCruiseTransfer({ amount: D(100), capacity: 6, pax: 8 })!;
+  assert.equal(priced.total.toString(), '200');
+  assert.equal(priced.vehicleCount, 2);
+  assert.equal(priceCruiseTransfer({ amount: D(150), capacity: 12, pax: 8 })!.total.toString(), '150');
+});
+
+test('cruise transfer refuses an invalid vehicle capacity', () => {
+  assert.equal(priceCruiseTransfer({ amount: D(100), capacity: 0, pax: 2 }), null);
 });
 
 test('Nile cruises expose only Egyptian/EGP and Foreign/USD audiences', () => {

@@ -298,11 +298,15 @@ test('portal: programmes are filtered by exact schedule so 3 and 4 nights cannot
   assert.match(dashboardSource, /find\(p => p\.id === programmeId && p\.scheduleId === scheduleId\)/);
 });
 
-test('portal: cruise transfer exposes pax and explicit one-way/round-trip choices', () => {
+test('portal: cruise transfer prices explicit vehicle products by capacity', () => {
   assert.match(dashboardSource, /id="crTransferPax"/);
-  assert.match(dashboardSource, /name="crTransferTripType" value="ONE_WAY"/);
-  assert.match(dashboardSource, /name="crTransferTripType" value="ROUND_TRIP"/);
-  assert.match(dashboardSource, /transferUnitPrice \* transferPax/);
+  assert.match(dashboardSource, /transferRate\?\.tripType === "ROUND_TRIP"/);
+  assert.match(dashboardSource, /Math\.ceil\(transferPax \/ transferCapacity\)/);
+  assert.match(dashboardSource, /transferUnitPrice \* transferVehicleCount/);
+  assert.doesNotMatch(dashboardSource, /rate\.roundTripAmount/);
+  assert.match(adminSource, /class="cr-transfer-vehicle"/);
+  assert.match(adminSource, /class="cr-transfer-capacity"/);
+  assert.match(adminSource, /class="cr-active"/);
 });
 
 test('portal: a priced transfer remains available when the cruise fare is price-on-request', () => {

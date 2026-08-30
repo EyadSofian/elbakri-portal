@@ -203,6 +203,7 @@ test('a cruise add-on carries its sailing date and lead passenger to transport',
     transferFromName: 'Luxor Airport', transferPickupTime: '11:30',
     cruise: { name: 'Royal Nile' }, passengerNames: ['Nadine', 'Karim'],
     adultsCount: 2, childrenCount: 0, transferPaxCount: 3, transferTripType: 'ONE_WAY',
+    transferVehicleType: 'VAN_6', transferVehicleCapacity: 6, transferVehicleCount: 1,
     checkIn: '2026-10-05', status: 'PENDING',
   });
   assert.equal(row?.sourceType, 'CRUISE');
@@ -210,6 +211,9 @@ test('a cruise add-on carries its sailing date and lead passenger to transport',
   assert.equal(row?.clientName, 'Nadine');
   assert.equal(row?.passengerCount, 3);
   assert.equal(row?.tripType, 'ONE_WAY');
+  assert.equal(row?.vehicleType, 'VAN_6');
+  assert.equal(row?.vehicleCapacity, 6);
+  assert.equal(row?.vehicleCount, 1);
 });
 
 test('services that did not request a transfer never enter the queue', () => {

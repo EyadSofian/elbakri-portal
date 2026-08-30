@@ -157,8 +157,10 @@ export function createDemoRouter(): Router {
       ...rate,
       route: cruise.route,
       nights: cruise.schedules.find((schedule) => schedule.id === rate.scheduleId)?.nights || cruise.schedules[0]?.nights || 4,
-      oneWayAmount: rate.amount,
-      roundTripAmount: rate.roundTripAmount ?? null,
+      tripType: rate.tripType ?? 'ONE_WAY',
+      vehicleType: rate.vehicleType ?? 'VAN_6',
+      vehicleCapacity: rate.vehicleCapacity ?? 6,
+      amount: rate.amount,
     })));
     res.json(ok({ programmes, transferRates }));
   });

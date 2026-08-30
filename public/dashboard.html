@@ -1899,10 +1899,10 @@ function crRenderTransfer() {
     return;
   }
   const transferRates = (cruise.transferRates || []).filter(rate => !rate.scheduleId || rate.scheduleId === scheduleId);
-  host.innerHTML = `<div class="act-transfer-block full" style="margin-top:14px"><div class="act-transfer-head"><strong>${t("cruise.optionalTransfer","Optional transfer")}</strong></div>
-    ${transferRates.length ? `<div class="form-field full" style="margin-top:10px"><label>${t("cruise.transferRoute","Transfer route")}</label><select id="crTransferRate" onchange="crTransferChanged()">
+  host.innerHTML = `<div class="act-transfer-block cr-vehicle-transfer full" style="margin-top:14px"><div class="act-transfer-head"><div><strong>${t("cruise.optionalTransfer","Optional transfer")}</strong><small>${t("cruise.transferVehicleHelp","Choose one vehicle product. Its price covers the whole vehicle up to its stated capacity.")}</small></div></div>
+    ${transferRates.length ? `<div class="form-field full" style="margin-top:10px"><label>${t("cruise.transferVehicleChoice","Transfer vehicle")}</label><select id="crTransferRate" onchange="crTransferChanged()">
       <option value="">${t("cruise.noTransfer","No transfer")}</option>
-      ${transferRates.map(rate => `<option value="${escapeHtml(rate.id)}">${escapeHtml(rate.fromLocation)} → ${escapeHtml(rate.toLocation)}</option>`).join("")}
+      ${transferRates.map(rate => `<option value="${escapeHtml(rate.id)}">${escapeHtml(rate.fromLocation)} → ${escapeHtml(rate.toLocation)} · ${rate.tripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")} · ${escapeHtml(String(rate.vehicleType || "VAN_6").replace(/_/g," "))} (${formatNumber(rate.vehicleCapacity || 6)}) · ${formatPrice(Number(rate.amount), rate.currency)}</option>`).join("")}
     </select></div><div id="crTransferOptions"></div>` : `<div class="secondary-text" style="margin-top:6px">${t("cruise.noTransferRate","No optional transfer price is configured for this sailing.")}</div>`}</div>`;
 }
 
@@ -1921,14 +1921,17 @@ function crTransferChanged() {
   if (!rate) { host.innerHTML = ""; return crUpdateQuote(); }
   const currentPax = Math.max(1, Number(document.getElementById("crTransferPax")?.value)
     || (Number(document.getElementById("crAdults")?.value || 1) + Number(document.getElementById("crChildren")?.value || 0)));
+  const capacity = Math.max(1, Number(rate.vehicleCapacity || 1));
+  const vehicles = Math.ceil(currentPax / capacity);
   host.innerHTML = `<div class="cr-transfer-options">
     <div class="form-field"><label>${t("cruise.transferPassengers","Transfer passengers")}</label><input id="crTransferPax" type="number" min="1" value="${currentPax}" oninput="crUpdateQuote()"></div>
-    <div class="form-field"><label>${t("cruise.transferTripType","Transfer type")}</label><div class="cr-transfer-trip-grid">
-      <label class="cr-sailing-card"><input type="radio" name="crTransferTripType" value="ONE_WAY" checked onchange="crTransferTripChanged()"><span class="cr-sailing-stop"><b>${t("cruise.oneWay","One-way")}</b></span><span class="cr-sailing-meta">${formatPrice(Number(rate.amount), rate.currency)} · ${t("cruise.perPerson","per person")}</span></label>
-      ${rate.roundTripAmount == null ? "" : `<label class="cr-sailing-card"><input type="radio" name="crTransferTripType" value="ROUND_TRIP" onchange="crTransferTripChanged()"><span class="cr-sailing-stop"><b>${t("cruise.roundTrip","Round-trip")}</b></span><span class="cr-sailing-meta">${formatPrice(Number(rate.roundTripAmount), rate.currency)} · ${t("cruise.perPerson","per person")}</span></label>`}
-    </div></div>
+    <div class="cr-transfer-product-summary">
+      <span class="cr-transfer-product-icon">${icon("car")}</span>
+      <div><b>${escapeHtml(String(rate.vehicleType || "VAN_6").replace(/_/g," "))}</b><small>${rate.tripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")} · ${t("cruise.upToPassengers","up to {count} passengers").replace("{count}", formatNumber(capacity))}</small></div>
+      <strong>${formatPrice(Number(rate.amount), rate.currency)}<small>${t("transport.perVehicle","per vehicle")}</small></strong>
+    </div>
+    <div class="cr-transfer-vehicle-count" data-cr-transfer-count>${formatNumber(vehicles)} ${vehicles === 1 ? t("cruise.vehicle","vehicle") : t("cruise.vehicles","vehicles")}</div>
   </div>`;
-  crSyncChoiceCards("crTransferTripType");
   crUpdateQuote();
 }
 
@@ -2043,16 +2046,18 @@ function crReadSelection() {
   }
   const transferId = document.getElementById("crTransferRate")?.value || "";
   const transferRate = !programme ? (cruise.transferRates || []).find(rate => rate.id === transferId) || null : null;
-  const transferTripType = document.querySelector('input[name="crTransferTripType"]:checked')?.value === "ROUND_TRIP" ? "ROUND_TRIP" : "ONE_WAY";
+  const transferTripType = transferRate?.tripType === "ROUND_TRIP" ? "ROUND_TRIP" : "ONE_WAY";
   const transferPax = transferRate ? Math.max(1, parseInt(document.getElementById("crTransferPax")?.value || String(pax), 10) || pax) : 0;
-  const transferUnitPrice = !transferRate ? 0 : transferTripType === "ROUND_TRIP"
-    ? Number(transferRate.roundTripAmount ?? 0)
-    : Number(transferRate.amount ?? 0);
-  const transferTotal = transferRate ? transferUnitPrice * transferPax : 0;
-  if (total != null && transferRate) total += transferUnitPrice * transferPax;
+  const transferCapacity = transferRate ? Math.max(1, Number(transferRate.vehicleCapacity || 1)) : 0;
+  const transferVehicleCount = transferRate ? Math.ceil(transferPax / transferCapacity) : 0;
+  const transferUnitPrice = !transferRate ? 0 : Number(transferRate.amount ?? 0);
+  const transferTotal = transferRate ? transferUnitPrice * transferVehicleCount : 0;
+  if (total != null && transferRate) total += transferTotal;
+  const countHost = document.querySelector("[data-cr-transfer-count]");
+  if (countHost) countHost.textContent = `${formatNumber(transferVehicleCount)} ${transferVehicleCount === 1 ? t("cruise.vehicle","vehicle") : t("cruise.vehicles","vehicles")}`;
   return {
     cruise, programme, rate, occupancy, adultUnitPrice, childUnitPrice,
-    adults, children, pax, supplements, transferRate, transferTripType, transferPax, transferUnitPrice, transferTotal, missingChildPrice,
+    adults, children, pax, supplements, transferRate, transferTripType, transferPax, transferCapacity, transferVehicleCount, transferUnitPrice, transferTotal, missingChildPrice,
     total: total == null ? null : Math.round(total * 100) / 100,
     currency: rate?.currency || transferRate?.currency || cruise.currency,
   };
@@ -2076,7 +2081,7 @@ function crUpdateQuote() {
   const occLabel = sel.programme || !sel.occupancy ? "" : t(CR_OCC_KEY[sel.occupancy], sel.occupancy);
   if (sel.adultUnitPrice == null) {
     line.innerHTML = `<div class="cr-quote-what">${escapeHtml(sel.programme ? locName(sel.programme.name, sel.programme.nameAr) : t("cruise.cruiseOnly","Cruise only"))} · ${t("hotel.priceOnRequest","Price on request")}</div>
-      ${sel.transferRate ? `<div class="cr-quote-what">${t("cruise.transfer","Transfer")}: ${formatNumber(sel.transferPax)} × ${formatPrice(sel.transferUnitPrice, sel.transferRate.currency)} · ${sel.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")}</div><div class="cr-quote-total">${formatPrice(sel.transferTotal, sel.transferRate.currency)}</div>` : ""}`;
+      ${sel.transferRate ? `<div class="cr-quote-what">${t("cruise.transfer","Transfer")}: ${formatNumber(sel.transferVehicleCount)} × ${formatPrice(sel.transferUnitPrice, sel.transferRate.currency)} ${t("transport.perVehicle","per vehicle")} · ${sel.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")}</div><div class="cr-quote-total">${formatPrice(sel.transferTotal, sel.transferRate.currency)}</div>` : ""}`;
     return;
   }
   if (sel.missingChildPrice) {
@@ -2088,7 +2093,7 @@ function crUpdateQuote() {
     `${formatNumber(sel.adults)} × ${formatPrice(sel.adultUnitPrice, sel.currency)}`,
     sel.children ? `${formatNumber(sel.children)} × ${formatPrice(sel.childUnitPrice, sel.currency)}` : "",
     sel.supplements.length ? `${t("hotel.supplements","Supplements")}: ${sel.supplements.map(s => s.name).join(", ")}` : "",
-    sel.transferRate ? `${t("cruise.transfer","Transfer")}: ${formatNumber(sel.transferPax)} × ${formatPrice(sel.transferUnitPrice, sel.transferRate.currency)} · ${sel.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")}` : "",
+    sel.transferRate ? `${t("cruise.transfer","Transfer")}: ${formatNumber(sel.transferVehicleCount)} × ${formatPrice(sel.transferUnitPrice, sel.transferRate.currency)} ${t("transport.perVehicle","per vehicle")} · ${sel.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")}` : "",
   ].filter(Boolean);
   line.innerHTML = `
     <div class="cr-quote-what">${escapeHtml(sel.programme ? locName(sel.programme.name, sel.programme.nameAr) : t("cruise.cruiseOnly","Cruise only"))}${occLabel ? ` · ${escapeHtml(occLabel)}` : ""} · ${parts.join(" · ")}</div>
@@ -2122,7 +2127,10 @@ function crRequestQuote(cruiseId) {
     transferToName: transferRate.toLocation,
     transferTripType: selection.transferTripType,
     transferPaxCount: selection.transferPax,
-    transferNotes: `${selection.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")} · ${selection.transferPax} ${t("form.passengers","Passengers")}`,
+    transferVehicleType: transferRate.vehicleType,
+    transferVehicleCapacity: selection.transferCapacity,
+    transferVehicleCount: selection.transferVehicleCount,
+    transferNotes: `${selection.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")} · ${selection.transferPax} ${t("form.passengers","Passengers")} · ${selection.transferVehicleCount} × ${String(transferRate.vehicleType || "VAN_6").replace(/_/g," ")}`,
   } : { transferRequested: false, transferIncluded: false };
   const occLabel = selection?.occupancy && !programme ? t(CR_OCC_KEY[selection.occupancy], selection.occupancy) : "";
   const lines = [
@@ -2140,7 +2148,7 @@ function crRequestQuote(cruiseId) {
       ? `${t("cruise.transfer","Transfer")}: ${t("activity.transferIncluded","Transfer included")} · ${programme.transferFromName || ""} → ${programme.transferToName || ""}`
       : transfer.transferRequested
       ? `${t("cruise.transfer","Transfer")}: ${transfer.transferFromName} → ${transfer.transferToName}`
-        + (transferRate ? ` · ${selection.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")} · ${selection.transferPax} × ${formatPrice(selection.transferUnitPrice, transferRate.currency)}` : "")
+        + (transferRate ? ` · ${selection.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")} · ${selection.transferVehicleCount} × ${formatPrice(selection.transferUnitPrice, transferRate.currency)} ${t("transport.perVehicle","per vehicle")}` : "")
       : `${t("cruise.transfer","Transfer")}: ${t("cruise.noTransfer","No transfer")}`,
     selection?.supplements?.length ? `${t("hotel.supplements","Supplements")}: ${selection.supplements.map(x => x.name).join(", ")}` : "",
   ].filter(Boolean);

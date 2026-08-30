@@ -29,7 +29,7 @@ const cruiseInclude = {
   cabinRate: { select: { id: true, cabinName: true, cabinType: true, currency: true } },
   programme: { select: { id: true, name: true, nameAr: true, transferFromName: true, transferToName: true } },
   programmeRate: { select: { id: true, market: true, currency: true } },
-  transferRate: { select: { id: true, fromLocation: true, toLocation: true, amount: true, roundTripAmount: true, currency: true } },
+  transferRate: { select: { id: true, fromLocation: true, toLocation: true, tripType: true, vehicleType: true, vehicleCapacity: true, amount: true, currency: true } },
   schedule: { select: { id: true, departureDay: true, returnDay: true, nights: true, label: true, labelAr: true } },
   addOns: { orderBy: { displayOrder: 'asc' as const } },
   company: { select: { id: true, name: true, email: true } },
@@ -312,6 +312,9 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     transferReturnTime?: string;
     transferTripType?: string;
     transferPaxCount?: number;
+    transferVehicleType?: string;
+    transferVehicleCapacity?: number;
+    transferVehicleCount?: number;
     transferNotes?: string;
   };
   const companyId = body.companyId ?? caller.companyId!;
@@ -467,8 +470,6 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     // one explicit, admin-priced From → To route; free-text transfer prices are
     // never trusted by the booking API.
     let transferRate = null;
-    const transferTripType = String(body.transferTripType ?? 'ONE_WAY').toUpperCase() === 'ROUND_TRIP'
-      ? 'ROUND_TRIP' : 'ONE_WAY';
     const transferPaxCount = Math.max(1, Math.floor(Number(body.transferPaxCount ?? pax)) || pax);
     if (!programmeRate && body.transferRateId) {
       if (!body.scheduleId) throw new Error('SCHEDULE_NOT_AVAILABLE');
@@ -486,12 +487,11 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
         || (transferRate.validTo && transferRate.validTo < checkIn)) throw new Error('TRANSFER_RATE_NOT_AVAILABLE');
       if (transferRate.currency !== sourceCurrency) throw new Error('MIXED_CURRENCY');
       const transferPrice = priceCruiseTransfer({
-        oneWayAmount: transferRate.amount,
-        roundTripAmount: transferRate.roundTripAmount,
-        tripType: transferTripType,
+        amount: transferRate.amount,
+        capacity: transferRate.vehicleCapacity,
         pax: transferPaxCount,
       });
-      if (!transferPrice) throw new Error('TRANSFER_TRIP_TYPE_NOT_AVAILABLE');
+      if (!transferPrice) throw new Error('TRANSFER_RATE_NOT_AVAILABLE');
       sourceAmount = sourceAmount.add(transferPrice.total);
     }
     if (!programmeRate && body.transferRequested && !transferRate) throw new Error('TRANSFER_RATE_REQUIRED');
@@ -504,8 +504,11 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
           transferToType: 'ADDRESS', transferToName: transferRate.toLocation,
           transferPickupTime: body.transferPickupTime ?? null,
           transferReturnTime: body.transferReturnTime ?? null,
-          transferTripType,
+          transferTripType: transferRate.tripType,
           transferPaxCount,
+          transferVehicleType: transferRate.vehicleType,
+          transferVehicleCapacity: transferRate.vehicleCapacity,
+          transferVehicleCount: Math.ceil(transferPaxCount / transferRate.vehicleCapacity),
           transferNotes: body.transferNotes ?? transferRate.notes,
         }
         : readTransferAddOn(body as unknown as Record<string, unknown>, { transferIncluded: false });

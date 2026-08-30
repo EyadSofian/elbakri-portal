@@ -22,6 +22,9 @@ export interface TransferOperationRow {
   contactNumber: string | null;
   passengerCount: number;
   tripType?: 'ONE_WAY' | 'ROUND_TRIP' | null;
+  vehicleType?: string | null;
+  vehicleCapacity?: number | null;
+  vehicleCount?: number | null;
   serviceDate: Date | string | null;
   requestedAt: Date | string | null;
   fromType: string | null;
@@ -39,6 +42,9 @@ interface TransferFields {
   transferRequested?: boolean | null;
   transferTripType?: string | null;
   transferPaxCount?: number | null;
+  transferVehicleType?: string | null;
+  transferVehicleCapacity?: number | null;
+  transferVehicleCount?: number | null;
   transferFromType?: string | null;
   transferFromName?: string | null;
   transferToType?: string | null;
@@ -74,6 +80,9 @@ function transferPart(source: TransferFields) {
     tripType: source.transferTripType === 'ROUND_TRIP' ? 'ROUND_TRIP' as const
       : source.transferTripType === 'ONE_WAY' ? 'ONE_WAY' as const
       : null,
+    vehicleType: text(source.transferVehicleType) || null,
+    vehicleCapacity: Number(source.transferVehicleCapacity) > 0 ? Math.floor(Number(source.transferVehicleCapacity)) : null,
+    vehicleCount: Number(source.transferVehicleCount) > 0 ? Math.floor(Number(source.transferVehicleCount)) : null,
   };
 }
 

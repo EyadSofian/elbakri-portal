@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Decimal } from '@prisma/client/runtime/library';
-import { CabinType, HotelSupplementType, Market, Prisma } from '@prisma/client';
+import { CabinType, HotelSupplementType, Market, Prisma, VehicleType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import {
   normalizeWeekday,
@@ -21,6 +21,10 @@ import { readItinerary } from '../../shared/itinerary';
  */
 
 const CABIN_TYPES: CabinType[] = ['STANDARD', 'DELUXE', 'SUITE', 'PRESIDENTIAL'];
+const VEHICLE_TYPES: VehicleType[] = ['SEDAN', 'SUV', 'VAN_6', 'VAN_12', 'MINIBUS_20', 'BUS_45', 'LUXURY_LIMO'];
+const VEHICLE_DEFAULT_CAPACITY: Record<VehicleType, number> = {
+  SEDAN: 3, SUV: 5, VAN_6: 6, VAN_12: 12, MINIBUS_20: 20, BUS_45: 45, LUXURY_LIMO: 3,
+};
 
 /** Nile cruises intentionally have only two tariffs. Any non-Egyptian legacy
  * market is folded into the one FOREIGN/USD audience on the next save. */
@@ -288,6 +292,9 @@ interface TransferRateInput {
   fromLocation?: string;
   toLocation?: string;
   amount?: number | string | null;
+  tripType?: string;
+  vehicleType?: string;
+  vehicleCapacity?: number | string | null;
   oneWayAmount?: number | string | null;
   roundTripAmount?: number | string | null;
   validFrom?: string | null;
@@ -304,9 +311,20 @@ type SharedTransfer = TransferRateInput & {
   market: string;
   fromLocation: string;
   toLocation: string;
-  oneWayAmount: number;
-  roundTripAmount: number | null;
+  tripType: 'ONE_WAY' | 'ROUND_TRIP';
+  vehicleType: VehicleType;
+  vehicleCapacity: number;
+  amount: number;
 };
+
+function asVehicleType(value: unknown): VehicleType {
+  const candidate = String(value ?? '').trim().toUpperCase() as VehicleType;
+  return VEHICLE_TYPES.includes(candidate) ? candidate : 'VAN_6';
+}
+
+function asTransferTripType(value: unknown): 'ONE_WAY' | 'ROUND_TRIP' {
+  return String(value ?? '').trim().toUpperCase() === 'ROUND_TRIP' ? 'ROUND_TRIP' : 'ONE_WAY';
+}
 
 function cleanSharedProgramme(raw: ProgrammeInput): SharedProgramme | null {
   const route = String(raw.route ?? '').toUpperCase();
@@ -329,23 +347,50 @@ function cleanSharedTransfer(raw: TransferRateInput): SharedTransfer | null {
   const nights = Math.floor(Number(raw.nights));
   const fromLocation = String(raw.fromLocation ?? '').trim();
   const toLocation = String(raw.toLocation ?? '').trim();
-  const oneWayAmount = Number(raw.oneWayAmount ?? raw.amount);
-  const roundRaw = raw.roundTripAmount;
-  const roundTripAmount = roundRaw === null || roundRaw === undefined || roundRaw === '' ? null : Number(roundRaw);
+  const vehicleType = asVehicleType(raw.vehicleType);
+  const vehicleCapacity = Math.floor(Number(raw.vehicleCapacity ?? VEHICLE_DEFAULT_CAPACITY[vehicleType]));
+  const tripType = asTransferTripType(raw.tripType);
+  const amount = Number(raw.amount ?? (tripType === 'ROUND_TRIP' ? raw.roundTripAmount : raw.oneWayAmount));
   if (!(CRUISE_ROUTES as readonly string[]).includes(route)
     || !Number.isFinite(nights) || nights < 1 || !fromLocation || !toLocation
-    || !Number.isFinite(oneWayAmount) || oneWayAmount < 0
-    || (roundTripAmount !== null && (!Number.isFinite(roundTripAmount) || roundTripAmount < 0))) return null;
+    || !Number.isFinite(amount) || amount < 0
+    || !Number.isFinite(vehicleCapacity) || vehicleCapacity < 1 || vehicleCapacity > 99) return null;
   return {
-    ...raw,
     route,
     nights,
     market: asCruiseMarket(raw.market),
     fromLocation,
     toLocation,
-    oneWayAmount,
-    roundTripAmount,
+    tripType,
+    vehicleType,
+    vehicleCapacity,
+    amount,
+    validFrom: raw.validFrom ?? null,
+    validTo: raw.validTo ?? null,
+    notes: raw.notes ?? null,
+    isActive: raw.isActive !== false,
   };
+}
+
+/** Upgrade the catalogue written by the old per-person editor. A legacy row
+ * with two prices becomes two independent vehicle products, so no price is
+ * guessed and old production data remains visible after deployment. */
+function normalizeSharedTransfers(value: unknown): SharedTransfer[] {
+  if (!Array.isArray(value)) return [];
+  const result: SharedTransfer[] = [];
+  for (const rawValue of value) {
+    const raw = (rawValue ?? {}) as TransferRateInput;
+    if (!raw.tripType && raw.roundTripAmount !== null && raw.roundTripAmount !== undefined && raw.roundTripAmount !== '') {
+      const oneWay = cleanSharedTransfer({ ...raw, tripType: 'ONE_WAY', amount: raw.oneWayAmount ?? raw.amount });
+      const roundTrip = cleanSharedTransfer({ ...raw, tripType: 'ROUND_TRIP', amount: raw.roundTripAmount });
+      if (oneWay) result.push(oneWay);
+      if (roundTrip) result.push(roundTrip);
+      continue;
+    }
+    const clean = cleanSharedTransfer(raw);
+    if (clean) result.push(clean);
+  }
+  return result;
 }
 
 async function deriveSharedCatalogue(): Promise<{ programmes: SharedProgramme[]; transferRates: SharedTransfer[] }> {
@@ -388,21 +433,27 @@ async function deriveSharedCatalogue(): Promise<{ programmes: SharedProgramme[];
   });
   const transferMap = new Map<string, SharedTransfer>();
   transfers.forEach((rate) => {
-    const key = `${rate.cruise.route}|${rate.schedule.nights}|${rate.market}|${rate.fromLocation.toLowerCase()}|${rate.toLocation.toLowerCase()}`;
-    if (transferMap.has(key)) return;
-    transferMap.set(key, {
-      route: rate.cruise.route,
-      nights: rate.schedule.nights,
-      market: rate.market,
-      fromLocation: rate.fromLocation,
-      toLocation: rate.toLocation,
-      oneWayAmount: rate.amount.toNumber(),
-      roundTripAmount: rate.roundTripAmount?.toNumber() ?? null,
-      validFrom: rate.validFrom?.toISOString() ?? null,
-      validTo: rate.validTo?.toISOString() ?? null,
-      notes: rate.notes,
-      isActive: rate.isActive,
-    });
+    const add = (tripType: 'ONE_WAY' | 'ROUND_TRIP', amount: number) => {
+      const key = `${rate.cruise.route}|${rate.schedule.nights}|${rate.market}|${rate.fromLocation.toLowerCase()}|${rate.toLocation.toLowerCase()}|${tripType}|${rate.vehicleType}|${rate.vehicleCapacity}`;
+      if (transferMap.has(key)) return;
+      transferMap.set(key, {
+        route: rate.cruise.route,
+        nights: rate.schedule.nights,
+        market: rate.market,
+        fromLocation: rate.fromLocation,
+        toLocation: rate.toLocation,
+        tripType,
+        vehicleType: rate.vehicleType,
+        vehicleCapacity: rate.vehicleCapacity,
+        amount,
+        validFrom: rate.validFrom?.toISOString() ?? null,
+        validTo: rate.validTo?.toISOString() ?? null,
+        notes: rate.notes,
+        isActive: rate.isActive,
+      });
+    };
+    add(asTransferTripType(rate.tripType), rate.amount.toNumber());
+    if (rate.tripType === 'ONE_WAY' && rate.roundTripAmount != null) add('ROUND_TRIP', rate.roundTripAmount.toNumber());
   });
   return { programmes: [...programmeMap.values()], transferRates: [...transferMap.values()] };
 }
@@ -411,7 +462,7 @@ async function ensureSharedCatalogue(): Promise<{ programmes: SharedProgramme[];
   const stored = await prisma.cruiseSharedCatalogue.findUnique({ where: { id: 'default' } });
   if (stored) return {
     programmes: Array.isArray(stored.programmes) ? stored.programmes as unknown as SharedProgramme[] : [],
-    transferRates: Array.isArray(stored.transferRates) ? stored.transferRates as unknown as SharedTransfer[] : [],
+    transferRates: normalizeSharedTransfers(stored.transferRates),
   };
   const derived = await deriveSharedCatalogue();
   await prisma.cruiseSharedCatalogue.upsert({
@@ -493,8 +544,11 @@ async function materialiseSharedCatalogue(
             market,
             fromLocation: rate.fromLocation,
             toLocation: rate.toLocation,
-            amount: new Decimal(rate.oneWayAmount),
-            roundTripAmount: decOrNull(rate.roundTripAmount),
+            tripType: rate.tripType,
+            vehicleType: rate.vehicleType,
+            vehicleCapacity: rate.vehicleCapacity,
+            amount: new Decimal(rate.amount),
+            roundTripAmount: null,
             currency: cruiseCurrency(market),
             validFrom: dateOrNull(rate.validFrom),
             validTo: dateOrNull(rate.validTo),
@@ -519,7 +573,7 @@ export async function saveCruiseSharedCatalogue(req: Request, res: Response): Pr
   const programmes = postedProgrammes.map(cleanSharedProgramme);
   const transferRates = postedTransfers.map(cleanSharedTransfer);
   if (programmes.some((row) => !row) || transferRates.some((row) => !row)) {
-    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Check route, nights, names and transfer prices' });
+    res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Check route, nights, vehicle, capacity and transfer price' });
     return;
   }
   const cleanProgrammes = programmes as SharedProgramme[];
@@ -683,13 +737,12 @@ export async function saveCruiseTransferRates(req: Request, res: Response): Prom
   })).filter((rate) => rate.fromLocation && rate.toLocation);
   for (const rate of clean) {
     const amount = Number(rate.amount);
-    const roundTripAmount = rate.roundTripAmount === null || rate.roundTripAmount === undefined || rate.roundTripAmount === ''
-      ? null : Number(rate.roundTripAmount);
+    const vehicleType = asVehicleType(rate.vehicleType);
+    const vehicleCapacity = Math.floor(Number(rate.vehicleCapacity ?? VEHICLE_DEFAULT_CAPACITY[vehicleType]));
     const from = dateOrNull(rate.validFrom);
     const to = dateOrNull(rate.validTo);
     const invalidDate = (rate.validFrom && !from) || (rate.validTo && !to);
-    if (!Number.isFinite(amount) || amount < 0
-      || (roundTripAmount !== null && (!Number.isFinite(roundTripAmount) || roundTripAmount < 0))
+    if (!Number.isFinite(amount) || amount < 0 || vehicleCapacity < 1 || vehicleCapacity > 99
       || invalidDate || !rate.scheduleId || !scheduleIds.has(String(rate.scheduleId)) || (from && to && to < from)) {
       res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Check transfer route, schedule, price and period' });
       return;
@@ -707,8 +760,11 @@ export async function saveCruiseTransferRates(req: Request, res: Response): Prom
           market,
           fromLocation: rate.fromLocation,
           toLocation: rate.toLocation,
+          tripType: asTransferTripType(rate.tripType),
+          vehicleType: asVehicleType(rate.vehicleType),
+          vehicleCapacity: Math.floor(Number(rate.vehicleCapacity ?? VEHICLE_DEFAULT_CAPACITY[asVehicleType(rate.vehicleType)])),
           amount: new Decimal(Number(rate.amount)),
-          roundTripAmount: decOrNull(rate.roundTripAmount),
+          roundTripAmount: null,
           currency: cruiseCurrency(market),
           validFrom: dateOrNull(rate.validFrom),
           validTo: dateOrNull(rate.validTo),

@@ -113,6 +113,9 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     transferRequested?: boolean;
     transferTripType?: string;
     transferPaxCount?: number;
+    transferVehicleType?: string;
+    transferVehicleCapacity?: number;
+    transferVehicleCount?: number;
     transferFromType?: string;
     transferFromName?: string;
     transferToType?: string;
@@ -198,6 +201,15 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
         : null,
       transferPaxCount: transfer.transferRequested
         ? Math.max(1, Math.floor(Number(body.transferPaxCount ?? body.adultsCount ?? 1)) || 1)
+        : null,
+      transferVehicleType: transfer.transferRequested
+        ? String(body.transferVehicleType ?? '').trim().toUpperCase() || null
+        : null,
+      transferVehicleCapacity: transfer.transferRequested && Number(body.transferVehicleCapacity) > 0
+        ? Math.floor(Number(body.transferVehicleCapacity))
+        : null,
+      transferVehicleCount: transfer.transferRequested && Number(body.transferVehicleCount) > 0
+        ? Math.floor(Number(body.transferVehicleCount))
         : null,
       customFields: sanitizeCustomFields(body.customFields) ?? undefined,
     },
