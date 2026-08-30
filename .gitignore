@@ -11,6 +11,7 @@ uploads-private/
 outputs/
 
 # Local audit/QA artifacts (throwaway — Playwright screenshots & scratch scripts)
+artifacts/
 scripts/*.png
 scripts/audit.js
 scripts/datacheck.js

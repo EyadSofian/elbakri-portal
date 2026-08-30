@@ -1549,6 +1549,17 @@ function crReturnDate(departure, nights) {
   return crDateInputValue(date);
 }
 
+/** Return the first real departure on or after `from`. A selected sailing is
+ * not a free-text date: Monday → Friday cannot be requested for a Sunday. */
+function crNextDepartureDate(from, departureDay) {
+  const days = ["SUNDAY","MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"];
+  const target = days.indexOf(String(departureDay || "").toUpperCase());
+  const date = new Date(String(from || "") + "T12:00:00");
+  if (target < 0 || Number.isNaN(date.getTime())) return "";
+  date.setDate(date.getDate() + ((target - date.getDay() + 7) % 7));
+  return crDateInputValue(date);
+}
+
 /** "Mon → Thu · 3 nights", one line per leg. */
 function cruiseScheduleSummary(c) {
   const list = (c.schedules || []).filter(sc => sc.isActive !== false);
@@ -1573,7 +1584,7 @@ function cruiseScheduleSummary(c) {
 async function openCruiseDetails(id) {
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === id);
   if (!cruise) return toast(t("empty.failed","Failed to load"), "error");
-  state.cruiseSelection = { cruiseId: id };
+  state.cruiseSelection = { cruiseId: id, productMode: "CRUISE_ONLY", programmeId: null };
 
   const description = locName(cruise.description, cruise.descriptionAr) || "";
   const photos = [...new Set([cruise.imageUrl, ...(cruise.galleryUrls || [])].filter(Boolean))];
@@ -1599,10 +1610,12 @@ async function openCruiseDetails(id) {
       <div class="cr-booking-step__title"><span>1</span><div><strong>${t("cruise.schedules","Choose From / Back")}</strong><small>${t("cruise.sailingLegsHelp","The programme and prices change with the 3/4-night sailing.")}</small></div></div>
       <div class="form-field" style="margin-bottom:10px">
         <label>${t("cruise.sailingDate","Sailing date")}</label>
-        <input id="crSailingDate" type="date" value="${crDateInputValue(new Date())}" onchange="crSailingDateChanged()">
+        <input id="crSailingDate" type="date" min="${crDateInputValue(new Date())}" value="${crDateInputValue(new Date())}" onchange="crSailingDateChanged()">
       </div>
       ${schedules.length ? `<div class="cr-sailing-grid">
-        ${schedules.map((sc, i) => `<label class="cr-sailing-card">
+        ${schedules.map((sc, i) => {
+          const linkedProgrammes = (cruise.programmes || []).filter(programme => programme.scheduleId === sc.id);
+          return `<label class="cr-sailing-card">
           <input type="radio" name="crSchedule" value="${escapeHtml(sc.id)}" ${i === 0 ? "checked" : ""} onchange="crScheduleChanged()">
           <span class="cr-sailing-route">
             <span class="cr-sailing-stop cr-sailing-stop--from">
@@ -1616,12 +1629,31 @@ async function openCruiseDetails(id) {
             </span>
           </span>
           <span class="cr-sailing-meta">${formatNumber(sc.nights)} ${t("cruise.nights","Nights")}${sc.label ? " · " + escapeHtml(locName(sc.label, sc.labelAr)) : ""}</span>
-        </label>`).join("")}
+          ${linkedProgrammes.length ? `<span class="cr-sailing-programme-hint">${icon("map")}<span>${linkedProgrammes.map(programme => escapeHtml(locName(programme.name, programme.nameAr))).join(" · ")}</span></span>` : ""}
+        </label>`;
+        }).join("")}
       </div>` : `<div class="secondary-text">${t("cruise.schedulesHelp","When the boat leaves and when it is back.")}</div>`}
     </section>
 
     <section class="cr-booking-step">
-      <div class="cr-booking-step__title"><span>2</span><div><strong>${t("cruise.programme","Cruise only or programme")}</strong><small>${t("cruise.cruiseOnlyHelp","A programme includes its transfer; cruise-only can add a separately priced transfer.")}</small></div></div>
+      <div class="cr-booking-step__title"><span>2</span><div><strong>${t("cruise.bookingType","Choose what to book")}</strong><small>${t("cruise.bookingTypeHelp","Choose cruise only, cruise with a programme, or cruise with a separately priced transfer.")}</small></div></div>
+      <div class="cr-product-mode-grid">
+        <label class="cr-sailing-card cr-product-mode-card">
+          <input type="radio" name="crProductMode" value="CRUISE_ONLY" checked onchange="crProductModeChanged()">
+          <span class="cr-product-mode-icon">${icon("ship")}</span>
+          <span><b>${t("cruise.cruiseOnly","Cruise only")}</b><small>${t("cruise.cruiseOnlyProductHelp","Accommodation without a programme or transfer.")}</small></span>
+        </label>
+        <label class="cr-sailing-card cr-product-mode-card">
+          <input type="radio" name="crProductMode" value="PROGRAMME" onchange="crProductModeChanged()">
+          <span class="cr-product-mode-icon">${icon("map")}</span>
+          <span><b>${t("cruise.cruiseWithProgramme","Cruise + programme")}</b><small>${t("cruise.cruiseWithProgrammeHelp","Choose a 3- or 4-night programme; its transfer is included.")}</small></span>
+        </label>
+        <label class="cr-sailing-card cr-product-mode-card">
+          <input type="radio" name="crProductMode" value="TRANSFER" onchange="crProductModeChanged()">
+          <span class="cr-product-mode-icon">${icon("car")}</span>
+          <span><b>${t("cruise.cruiseWithTransfer","Cruise + transfer")}</b><small>${t("cruise.cruiseWithTransferHelp","Cruise fare plus a separately priced vehicle.")}</small></span>
+        </label>
+      </div>
       <div id="crProgrammeHost"></div>
       <div id="crProgrammeDetails"></div>
     </section>
@@ -1735,47 +1767,144 @@ function itineraryHtml(rows, labelKey, labelFallback) {
   </div>`;
 }
 
-/** A sailing owns its programme and its fare table. Changing From / Back must
- * therefore change both together; a four-night programme can never leak into
- * the three-night sailing beside it. */
+function crProductMode() {
+  return document.querySelector('input[name="crProductMode"]:checked')?.value
+    || state.cruiseSelection?.productMode
+    || "CRUISE_ONLY";
+}
+
+function crSelectScheduleRadio(scheduleId) {
+  const radio = [...document.querySelectorAll('input[name="crSchedule"]')]
+    .find(input => input.value === scheduleId);
+  if (radio) radio.checked = true;
+  return Boolean(radio);
+}
+
+/** Keep the date and From/Back card as one choice. Returns true when a reload
+ * has started, so the caller must wait for the fresh date-scoped prices. */
+function crEnsureSailingDateForSchedule(scheduleId) {
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
+  const schedule = (cruise?.schedules || []).find(row => row.id === scheduleId);
+  const input = document.getElementById("crSailingDate");
+  if (!schedule || !input?.value) return false;
+  const next = crNextDepartureDate(input.value, schedule.departureDay);
+  if (!next || next === input.value) return false;
+  input.value = next;
+  void crSailingDateChanged();
+  return true;
+}
+
+/** The API keeps every programme visible but exposes whether a price applies
+ * to the selected date and audience. Hidden valid prices remain requestable;
+ * an expired or missing period is unavailable and must never look bookable. */
+function crProgrammeBookability(cruise, programme) {
+  const hasApplicableRate = programme?.hasRates === true || (programme?.rates || []).length > 0;
+  if (!hasApplicableRate) return { selectable: false, status: "UNAVAILABLE" };
+  if (cruise?.priceVisible === false) return { selectable: true, status: "PRICE_ON_REQUEST" };
+  return { selectable: true, status: "PRICED" };
+}
+
+/** Every programme stays visible. Its card names the matching sailing, and
+ * selecting it moves the From / Back choice to that sailing automatically.
+ * This makes the 3-night programme discoverable even while 4 nights is active. */
+function crRenderProgrammeChoices() {
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
+  const host = document.getElementById("crProgrammeHost");
+  if (!cruise || !host) return;
+  const mode = crProductMode();
+  const programmes = cruise.programmes || [];
+  if (mode !== "PROGRAMME") {
+    host.innerHTML = mode === "TRANSFER"
+      ? `<div class="cr-product-mode-note">${icon("car")}<span>${t("cruise.transferModeNote","Choose the sailing above, then choose the vehicle below with its route and price.")}</span></div>`
+      : `<div class="cr-product-mode-note">${icon("ship")}<span>${t("cruise.cruiseOnlyProductHelp","Accommodation without a programme or transfer.")}</span></div>`;
+    refreshIcons(host);
+    return;
+  }
+  if (!programmes.length) {
+    host.innerHTML = `<div class="cr-product-mode-note is-warning">${icon("info")}<span>${t("cruise.noProgrammes","No programmes yet")}</span></div>`;
+    refreshIcons(host);
+    return;
+  }
+  const selectedProgramme = programmes.find(row => row.id === state.cruiseSelection?.programmeId);
+  const selectedId = selectedProgramme && crProgrammeBookability(cruise, selectedProgramme).selectable
+    ? selectedProgramme.id : "";
+  if (state.cruiseSelection && !selectedId) state.cruiseSelection.programmeId = null;
+  host.innerHTML = `<div class="cr-programme-choice-head"><strong>${t("cruise.programmeOptions","Available programmes")}</strong><small>${t("cruise.allProgrammeDurationsHelp","All 3- and 4-night programmes are shown. Choosing one selects its matching sailing automatically.")}</small></div>
+    <div class="cr-sailing-grid cr-programme-choice-grid">${programmes.map(programme => {
+      const schedule = (cruise.schedules || []).find(row => row.id === programme.scheduleId);
+      const bookability = crProgrammeBookability(cruise, programme);
+      const prices = (programme.rates || []).map(rate => Number(rate.singlePrice)).filter(Number.isFinite);
+      const from = prices.length ? Math.min(...prices) : null;
+      const currency = programme.rates?.[0]?.currency || cruise.currency;
+      const scheduleLine = schedule
+        ? `${weekdayLabel(schedule.departureDay)} → ${weekdayLabel(schedule.returnDay)} · ${formatNumber(schedule.nights)} ${t("cruise.nights","Nights")}`
+        : t("cruise.sailing","From / Back");
+      const status = bookability.status === "PRICED" && from != null
+        ? `${t("hotel.priceFrom","From")} ${formatPrice(from, currency)} · ${t("cruise.perPerson","per person")}`
+        : bookability.status === "PRICE_ON_REQUEST"
+          ? t("hotel.priceOnRequest","Price on request")
+          : t("cruise.programmeUnavailableOnDate","Not available for the selected sailing date");
+      return `<label class="cr-sailing-card cr-programme-choice-card${bookability.selectable ? "" : " is-unavailable"}">
+        <input type="radio" name="crProgramme" value="${escapeHtml(programme.id)}" ${selectedId === programme.id ? "checked" : ""} ${bookability.selectable ? "" : "disabled"} onchange="crProgrammeChanged()">
+        <span class="cr-programme-choice-duration">${icon("calendar-check")}<span>${escapeHtml(scheduleLine)}</span></span>
+        <span class="cr-programme-fare-name">${escapeHtml(locName(programme.name, programme.nameAr))}</span>
+        <span class="cr-sailing-meta">${status} · ${t("cruise.transferIncluded","Transfer included")}</span>
+      </label>`;
+    }).join("")}</div>`;
+  crSyncChoiceCards("crProgramme");
+  refreshIcons(host);
+}
+
+function crProductModeChanged() {
+  const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
+  if (!cruise || !state.cruiseSelection) return;
+  const mode = crProductMode();
+  const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
+  state.cruiseSelection.productMode = mode;
+  if (mode === "PROGRAMME") {
+    const selectable = (cruise.programmes || []).filter(row => crProgrammeBookability(cruise, row).selectable);
+    const selected = selectable.find(row => row.id === state.cruiseSelection.programmeId);
+    const programme = selected || selectable.find(row => row.scheduleId === scheduleId) || selectable[0] || null;
+    state.cruiseSelection.programmeId = programme?.id || null;
+    if (programme) crSelectScheduleRadio(programme.scheduleId);
+  } else {
+    state.cruiseSelection.programmeId = null;
+  }
+  crSyncChoiceCards("crProductMode");
+  crSyncChoiceCards("crSchedule");
+  crRenderProgrammeChoices();
+  crProgrammeChanged();
+}
+
+/** A sailing still owns its fare table. In programme mode, moving between the
+ * 3- and 4-night sailing picks the matching programme; all programme cards
+ * remain on screen so the alternative duration never disappears. */
 function crScheduleChanged() {
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
   const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
-  const host = document.getElementById("crProgrammeHost");
-  if (!cruise || !host) return;
-  // Exact schedule equality is deliberate: a 3-night programme never appears
-  // under the 4-night sailing beside it, even when both belong to the same boat.
-  const programmes = (cruise.programmes || []).filter(p => p.scheduleId === scheduleId);
-  const previous = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
-  const selected = programmes.some(p => p.id === previous) ? previous : "";
-  host.innerHTML = `<div class="cr-sailing-grid">
-    <label class="cr-sailing-card">
-      <input type="radio" name="crProgramme" value="" ${selected === "" ? "checked" : ""} onchange="crProgrammeChanged()">
-      <span class="cr-sailing-route"><span class="cr-sailing-stop"><small>${t("cruise.choice","Choice")}</small><b>${t("cruise.cruiseOnly","Cruise only")}</b></span></span>
-      <span class="cr-sailing-meta">${t("cruise.cruiseOnlyHelp","Accommodation only; transfer is optional and priced separately.")}</span>
-    </label>
-    ${programmes.map(p => {
-      const prices = (p.rates || []).map(rate => Number(rate.singlePrice)).filter(Number.isFinite);
-      const from = prices.length ? Math.min(...prices) : null;
-      const currency = p.rates?.[0]?.currency || cruise.currency;
-      return `<label class="cr-sailing-card">
-      <input type="radio" name="crProgramme" value="${escapeHtml(p.id)}" ${selected === p.id ? "checked" : ""} onchange="crProgrammeChanged()">
-      <span class="cr-sailing-route"><span class="cr-sailing-stop cr-sailing-stop--from"><small>${t("cruise.programme","Programme")}</small><b>${escapeHtml(locName(p.name, p.nameAr))}</b></span></span>
-      <span class="cr-sailing-meta">${from == null ? t("hotel.priceOnRequest","Price on request") : `${t("hotel.priceFrom","From")} ${formatPrice(from, currency)} · ${t("cruise.perPerson","per person")}`} · ${t("cruise.transferIncluded","Transfer included")}</span>
-    </label>`; }).join("")}
-  </div>`;
+  if (!cruise || !state.cruiseSelection) return;
+  if (scheduleId && crEnsureSailingDateForSchedule(scheduleId)) return;
+  if (crProductMode() === "PROGRAMME") {
+    const selectable = (cruise.programmes || []).filter(row => crProgrammeBookability(cruise, row).selectable);
+    const current = selectable.find(row => row.id === state.cruiseSelection.programmeId && row.scheduleId === scheduleId);
+    state.cruiseSelection.programmeId = (current || selectable.find(row => row.scheduleId === scheduleId))?.id || null;
+  }
   crSyncChoiceCards("crSchedule");
-  crSyncChoiceCards("crProgramme");
+  crRenderProgrammeChoices();
   crProgrammeChanged();
-  refreshIcons(host);
 }
 
 function crProgrammeChanged() {
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
   if (!cruise) return;
+  const mode = crProductMode();
+  const checkedProgrammeId = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
+  const programmeId = mode === "PROGRAMME" ? (checkedProgrammeId || state.cruiseSelection?.programmeId || "") : "";
+  const programme = mode === "PROGRAMME" ? (cruise.programmes || []).find(p => p.id === programmeId) || null : null;
+  if (state.cruiseSelection) state.cruiseSelection.programmeId = programme?.id || null;
+  if (programme) crSelectScheduleRadio(programme.scheduleId);
   const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
-  const programmeId = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
-  const programme = (cruise.programmes || []).find(p => p.id === programmeId && p.scheduleId === scheduleId) || null;
+  if (programme && crEnsureSailingDateForSchedule(scheduleId)) return;
   const rates = programme
     ? (programme.rates || [])
     : (cruise.cabinRates || []).filter(r => !r.scheduleId || r.scheduleId === scheduleId);
@@ -1794,6 +1923,7 @@ function crProgrammeChanged() {
   if (help) help.textContent = programme
     ? t("cruise.programmePerPersonHelp","The programme has one adult price and one child price per traveller — no Single, Double or Triple choice.")
     : t("cruise.perPersonHelp","Single, Double and Triple are sharing bases; every amount shown is per person.");
+  crSyncChoiceCards("crSchedule");
   crSyncChoiceCards("crProgramme");
   crRateChanged();
 }
@@ -1851,8 +1981,10 @@ function crSelectedRate() {
   if (!raw) return null;
   const [rateId, occupancy] = String(raw).split("|");
   const cruise = (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
-  const programmeId = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
-  const programme = (cruise?.programmes || []).find(p => p.id === programmeId) || null;
+  const programmeId = crProductMode() === "PROGRAMME"
+    ? (document.querySelector('input[name="crProgramme"]:checked')?.value || state.cruiseSelection?.programmeId || "")
+    : "";
+  const programme = programmeId ? (cruise?.programmes || []).find(p => p.id === programmeId) || null : null;
   const rates = programme ? (programme.rates || []) : (cruise?.cabinRates || []);
   const rate = rates.find(r => r.id === rateId);
   return rate && ((programme && occupancy === "PROGRAMME") || (!programme && CR_OCC_SIZE[occupancy]))
@@ -1888,32 +2020,38 @@ function crRenderTransfer() {
   const host = document.getElementById("crTransferHost");
   const cruise = selected?.cruise || (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
   const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
-  const programmeId = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
-  const programme = selected?.programme
+  const mode = crProductMode();
+  const programmeId = mode === "PROGRAMME" ? (document.querySelector('input[name="crProgramme"]:checked')?.value || state.cruiseSelection?.programmeId || "") : "";
+  const programme = mode === "PROGRAMME" ? (selected?.programme
     || (cruise?.programmes || []).find(row => row.id === programmeId && row.scheduleId === scheduleId)
-    || null;
+    || null) : null;
   if (!host || !cruise) { if (host) host.innerHTML = ""; return; }
   if (programme) {
     host.innerHTML = `<div class="act-transfer-block full" style="margin-top:14px"><div class="act-transfer-head"><strong>${t("cruise.transferIncluded","Transfer included with programme")}</strong></div>
       <div class="secondary-text" style="margin-top:6px">${escapeHtml(programme.transferFromName || t("cruise.pickup","Pickup"))} → ${escapeHtml(programme.transferToName || t("cruise.cruise","Nile cruise"))}</div></div>`;
     return;
   }
+  if (mode !== "TRANSFER") {
+    host.innerHTML = "";
+    return;
+  }
   const transferRates = (cruise.transferRates || []).filter(rate => !rate.scheduleId || rate.scheduleId === scheduleId);
   host.innerHTML = `<div class="act-transfer-block cr-vehicle-transfer full" style="margin-top:14px"><div class="act-transfer-head"><div><strong>${t("cruise.optionalTransfer","Optional transfer")}</strong><small>${t("cruise.transferVehicleHelp","Choose one vehicle product. Its price covers the whole vehicle up to its stated capacity.")}</small></div></div>
     ${transferRates.length ? `<div class="form-field full" style="margin-top:10px"><label>${t("cruise.transferVehicleChoice","Transfer vehicle")}</label><select id="crTransferRate" onchange="crTransferChanged()">
-      <option value="">${t("cruise.noTransfer","No transfer")}</option>
       ${transferRates.map(rate => `<option value="${escapeHtml(rate.id)}">${escapeHtml(rate.fromLocation)} → ${escapeHtml(rate.toLocation)} · ${rate.tripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")} · ${escapeHtml(String(rate.vehicleType || "VAN_6").replace(/_/g," "))} (${formatNumber(rate.vehicleCapacity || 6)}) · ${formatPrice(Number(rate.amount), rate.currency)}</option>`).join("")}
     </select></div><div id="crTransferOptions"></div>` : `<div class="secondary-text" style="margin-top:6px">${t("cruise.noTransferRate","No optional transfer price is configured for this sailing.")}</div>`}</div>`;
+  if (transferRates.length) crTransferChanged();
 }
 
 function crTransferChanged() {
   const selected = crSelectedRate();
   const cruise = selected?.cruise || (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
   const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
-  const programmeId = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
-  const programme = selected?.programme
+  const mode = crProductMode();
+  const programmeId = mode === "PROGRAMME" ? (document.querySelector('input[name="crProgramme"]:checked')?.value || state.cruiseSelection?.programmeId || "") : "";
+  const programme = mode === "PROGRAMME" ? (selected?.programme
     || (cruise?.programmes || []).find(row => row.id === programmeId && row.scheduleId === scheduleId)
-    || null;
+    || null) : null;
   const rateId = document.getElementById("crTransferRate")?.value || "";
   const rate = !programme ? (cruise?.transferRates || []).find(row => row.id === rateId) : null;
   const host = document.getElementById("crTransferOptions");
@@ -2010,16 +2148,35 @@ function cruiseCabinPicker(cruise, rates) {
   </div>`;
 }
 
+/** A cruise transfer is sold as one vehicle product. The stored amount already
+ * represents the selected one-way OR round-trip product; it must never be
+ * multiplied by passengers or doubled again for a return leg. */
+function crVehicleTransferPrice(rate, requestedPax) {
+  const pax = Math.max(1, parseInt(requestedPax || "1", 10) || 1);
+  const capacity = Math.max(1, Number(rate?.vehicleCapacity || 1));
+  const vehicleCount = Math.ceil(pax / capacity);
+  const unitPrice = Number(rate?.amount ?? 0);
+  return {
+    pax,
+    capacity,
+    vehicleCount,
+    unitPrice,
+    total: Math.round(unitPrice * vehicleCount * 100) / 100,
+    tripType: rate?.tripType === "ROUND_TRIP" ? "ROUND_TRIP" : "ONE_WAY",
+  };
+}
+
 /** What the agent has picked, or null when nothing priced is selected. */
 function crReadSelection() {
   const selected = crSelectedRate();
   const cruise = selected?.cruise || (state.cache.cruisesRows || []).find(c => c.id === state.cruiseSelection?.cruiseId);
   if (!cruise) return null;
   const scheduleId = document.querySelector('input[name="crSchedule"]:checked')?.value || "";
-  const programmeId = document.querySelector('input[name="crProgramme"]:checked')?.value || "";
-  const programme = selected?.programme
+  const mode = crProductMode();
+  const programmeId = mode === "PROGRAMME" ? (document.querySelector('input[name="crProgramme"]:checked')?.value || state.cruiseSelection?.programmeId || "") : "";
+  const programme = mode === "PROGRAMME" ? (selected?.programme
     || (cruise.programmes || []).find(row => row.id === programmeId && row.scheduleId === scheduleId)
-    || null;
+    || null) : null;
   const rate = selected?.rate || null;
   const occupancy = selected?.occupancy || null;
   const adultUnitPrice = !rate ? null
@@ -2045,13 +2202,16 @@ function crReadSelection() {
     });
   }
   const transferId = document.getElementById("crTransferRate")?.value || "";
-  const transferRate = !programme ? (cruise.transferRates || []).find(rate => rate.id === transferId) || null : null;
-  const transferTripType = transferRate?.tripType === "ROUND_TRIP" ? "ROUND_TRIP" : "ONE_WAY";
-  const transferPax = transferRate ? Math.max(1, parseInt(document.getElementById("crTransferPax")?.value || String(pax), 10) || pax) : 0;
-  const transferCapacity = transferRate ? Math.max(1, Number(transferRate.vehicleCapacity || 1)) : 0;
-  const transferVehicleCount = transferRate ? Math.ceil(transferPax / transferCapacity) : 0;
-  const transferUnitPrice = !transferRate ? 0 : Number(transferRate.amount ?? 0);
-  const transferTotal = transferRate ? transferUnitPrice * transferVehicleCount : 0;
+  const transferRate = mode === "TRANSFER" && !programme ? (cruise.transferRates || []).find(rate => rate.id === transferId) || null : null;
+  const transferPrice = transferRate
+    ? crVehicleTransferPrice(transferRate, document.getElementById("crTransferPax")?.value || String(pax))
+    : { pax: 0, capacity: 0, vehicleCount: 0, unitPrice: 0, total: 0, tripType: "ONE_WAY" };
+  const transferTripType = transferPrice.tripType;
+  const transferPax = transferPrice.pax;
+  const transferCapacity = transferPrice.capacity;
+  const transferVehicleCount = transferPrice.vehicleCount;
+  const transferUnitPrice = transferPrice.unitPrice;
+  const transferTotal = transferPrice.total;
   if (total != null && transferRate) total += transferTotal;
   const countHost = document.querySelector("[data-cr-transfer-count]");
   if (countHost) countHost.textContent = `${formatNumber(transferVehicleCount)} ${transferVehicleCount === 1 ? t("cruise.vehicle","vehicle") : t("cruise.vehicles","vehicles")}`;
@@ -2078,9 +2238,14 @@ function crUpdateQuote() {
     line.innerHTML = `<div class="secondary-text">${t("hotel.priceOnRequest","Select a priced fare or send a price request.")}</div>`;
     return;
   }
+  const productLabel = sel.programme
+    ? locName(sel.programme.name, sel.programme.nameAr)
+    : crProductMode() === "TRANSFER"
+      ? t("cruise.cruiseWithTransfer","Cruise + transfer")
+      : t("cruise.cruiseOnly","Cruise only");
   const occLabel = sel.programme || !sel.occupancy ? "" : t(CR_OCC_KEY[sel.occupancy], sel.occupancy);
   if (sel.adultUnitPrice == null) {
-    line.innerHTML = `<div class="cr-quote-what">${escapeHtml(sel.programme ? locName(sel.programme.name, sel.programme.nameAr) : t("cruise.cruiseOnly","Cruise only"))} · ${t("hotel.priceOnRequest","Price on request")}</div>
+    line.innerHTML = `<div class="cr-quote-what">${escapeHtml(productLabel)} · ${t("hotel.priceOnRequest","Price on request")}</div>
       ${sel.transferRate ? `<div class="cr-quote-what">${t("cruise.transfer","Transfer")}: ${formatNumber(sel.transferVehicleCount)} × ${formatPrice(sel.transferUnitPrice, sel.transferRate.currency)} ${t("transport.perVehicle","per vehicle")} · ${sel.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")}</div><div class="cr-quote-total">${formatPrice(sel.transferTotal, sel.transferRate.currency)}</div>` : ""}`;
     return;
   }
@@ -2096,8 +2261,59 @@ function crUpdateQuote() {
     sel.transferRate ? `${t("cruise.transfer","Transfer")}: ${formatNumber(sel.transferVehicleCount)} × ${formatPrice(sel.transferUnitPrice, sel.transferRate.currency)} ${t("transport.perVehicle","per vehicle")} · ${sel.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")}` : "",
   ].filter(Boolean);
   line.innerHTML = `
-    <div class="cr-quote-what">${escapeHtml(sel.programme ? locName(sel.programme.name, sel.programme.nameAr) : t("cruise.cruiseOnly","Cruise only"))}${occLabel ? ` · ${escapeHtml(occLabel)}` : ""} · ${parts.join(" · ")}</div>
+    <div class="cr-quote-what">${escapeHtml(productLabel)}${occLabel ? ` · ${escapeHtml(occLabel)}` : ""} · ${parts.join(" · ")}</div>
     <div class="cr-quote-total">${formatPrice(sel.total, sel.currency)}</div>`;
+}
+
+/** Product cards are a contract with the customer. Never turn a missing
+ * programme or transfer into cruise-only when the request is submitted. */
+function crProductSelectionError(mode, selection) {
+  if (!selection?.cruise) return "CRUISE_REQUIRED";
+  if (mode === "PROGRAMME") {
+    if (!selection.programme) return "PROGRAMME_REQUIRED";
+    if (selection.programme.hasRates !== true && !(selection.programme.rates || []).length) return "PROGRAMME_UNAVAILABLE";
+  }
+  if (mode === "TRANSFER" && !selection.transferRate) return "TRANSFER_REQUIRED";
+  return null;
+}
+
+/** Stable, flat snapshot of the commercial choice. QuoteRequest.customFields is
+ * intentionally flat, so operations can see exactly which 3/4-night programme,
+ * rate period and vehicle product the customer selected without parsing notes. */
+function crQuoteSelectionFields(mode, selection, schedule, sailingDate) {
+  const programme = selection?.programme || null;
+  const transferRate = selection?.transferRate || null;
+  const fields = {
+    cruiseProductMode: mode,
+    cruiseScheduleId: schedule?.id,
+    cruiseScheduleRoute: schedule ? `${schedule.departureDay}_TO_${schedule.returnDay}` : undefined,
+    cruiseNights: schedule?.nights == null ? undefined : Number(schedule.nights),
+    cruiseSailingDate: sailingDate || undefined,
+    cruiseProgrammeId: programme?.id,
+    cruiseProgrammeName: programme?.name || programme?.nameAr,
+    cruiseRateId: selection?.rate?.id,
+    cruiseOccupancy: selection?.occupancy || undefined,
+    cruiseAdultUnitPrice: selection?.adultUnitPrice == null ? undefined : Number(selection.adultUnitPrice),
+    cruiseChildUnitPrice: selection?.childUnitPrice == null ? undefined : Number(selection.childUnitPrice),
+    cruiseCurrency: selection?.currency || transferRate?.currency || undefined,
+    cruiseProductTotal: selection?.total == null ? undefined : Number(selection.total),
+    cruiseSupplements: (selection?.supplements || []).map(row => row?.name || row?.nameAr).filter(Boolean),
+    cruiseTransferRateId: transferRate?.id,
+    cruiseTransferTripType: transferRate ? selection?.transferTripType : undefined,
+    cruiseTransferVehicleType: transferRate?.vehicleType,
+    cruiseTransferVehicleCapacity: transferRate ? Number(selection?.transferCapacity || transferRate.vehicleCapacity || 0) : undefined,
+    cruiseTransferVehicleCount: transferRate ? Number(selection?.transferVehicleCount || 0) : undefined,
+    cruiseTransferPricePerVehicle: transferRate ? Number(selection?.transferUnitPrice || 0) : undefined,
+    cruiseTransferTotal: transferRate ? Number(selection?.transferTotal || 0) : undefined,
+  };
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined && value !== ""));
+}
+
+/** Form-builder fields may add extra answers, but cannot overwrite the cruise
+ * selection captured from the product picker. */
+function mergeQuoteCustomFields(custom, prefillCustomFields) {
+  const merged = { ...(custom || {}), ...(prefillCustomFields || {}) };
+  return Object.keys(merged).length ? merged : undefined;
 }
 
 /**
@@ -2113,6 +2329,17 @@ function crRequestQuote(cruiseId) {
   const selection = crReadSelection();
   const programme = selection?.programme || null;
   const transferRate = selection?.transferRate || null;
+  const productMode = crProductMode();
+  const selectionError = crProductSelectionError(productMode, selection);
+  if (selectionError) {
+    const message = selectionError === "TRANSFER_REQUIRED"
+      ? t("cruise.chooseTransferRequired","Choose an available transfer vehicle before requesting the quote.")
+      : selectionError === "CRUISE_REQUIRED"
+        ? t("empty.failed","Failed to load")
+        : t("cruise.chooseProgrammeRequired","Choose an available programme with a valid price period for this sailing date.");
+    toast(message, "error");
+    return;
+  }
   const transfer = programme ? {
     transferRequested: false,
     transferIncluded: true,
@@ -2136,8 +2363,8 @@ function crRequestQuote(cruiseId) {
   const lines = [
     schedule ? `${weekdayLabel(schedule.departureDay)} → ${weekdayLabel(schedule.returnDay)} (${schedule.nights} ${t("cruise.nights","Nights")})` : "",
     programme
-      ? `${t("cruise.programme","Programme")}: ${locName(programme.name, programme.nameAr)}`
-      : `${t("cruise.programme","Programme")}: ${t("cruise.cruiseOnly","Cruise only")}`,
+      ? `${t("cruise.bookingType","Booking type")}: ${t("cruise.cruiseWithProgramme","Cruise + programme")} · ${locName(programme.name, programme.nameAr)}`
+      : `${t("cruise.bookingType","Booking type")}: ${productMode === "TRANSFER" ? t("cruise.cruiseWithTransfer","Cruise + transfer") : t("cruise.cruiseOnly","Cruise only")}`,
     selection?.adultUnitPrice != null
       ? `${t("cruise.perPersonRates","Per-person price")}:${occLabel ? ` ${occLabel} ·` : ""} `
         + `${selection.adults} ${t("form.adults","Adults")} × ${formatPrice(selection.adultUnitPrice, selection.currency)}`
@@ -2153,6 +2380,12 @@ function crRequestQuote(cruiseId) {
     selection?.supplements?.length ? `${t("hotel.supplements","Supplements")}: ${selection.supplements.map(x => x.name).join(", ")}` : "",
   ].filter(Boolean);
   state.quotePrefillNotes = lines.join("\n");
+  state.quotePrefillCustomFields = crQuoteSelectionFields(
+    productMode,
+    selection,
+    schedule,
+    document.getElementById("crSailingDate")?.value || undefined,
+  );
   state.quotePrefillPax = selection?.pax;
   state.quotePrefillCheckIn = document.getElementById("crSailingDate")?.value || undefined;
   state.quotePrefillCheckOut = state.quotePrefillCheckIn && schedule
@@ -2266,9 +2499,19 @@ function rfNum(v, d)   { const n = parseInt(v); return isNaN(n) ? d : n; }
 
 const RF_MEAL_PLANS = ["ROOM_ONLY","BREAKFAST","HALF_BOARD","FULL_BOARD","ALL_INCLUSIVE","ULTRA_ALL_INCLUSIVE"];
 
+/** A successful API envelope is not automatically a usable form. Preview mode
+ * and old installations may return [] or an active template with no fields;
+ * treating either as a form produces the blank modal the customer was seeing. */
+function rfTemplateHasFields(tpl) {
+  return Boolean(tpl && !Array.isArray(tpl) && Array.isArray(tpl.config?.fields) && tpl.config.fields.some(field => field?.key));
+}
+
 /** Fetch the active template for a target; null → caller uses its hardcoded form. */
 async function rfLoadTemplate(target) {
-  try { const r = await apiFetch("/ui-templates/" + target); return (r && r.data) ? r.data : null; }
+  try {
+    const r = await apiFetch("/ui-templates/" + target);
+    return rfTemplateHasFields(r?.data) ? r.data : null;
+  }
   catch { return null; }
 }
 
@@ -2542,6 +2785,19 @@ function rfSimpleSuccess(rerenderFn) {
   };
 }
 
+function buildCruiseQuotePayload(v, ctx, custom) {
+  return {
+    serviceType: "CRUISE", cruiseId: ctx.serviceId, serviceName: ctx.serviceName,
+    nationality: v.nationality, checkIn: v.checkIn, checkOut: v.checkOut,
+    adultsCount: rfNum(v.adults, 2), childrenCount: rfNum(v.children, 0),
+    mealPlan: v.mealPlan || undefined,
+    childAges: Array.isArray(v.childAges) ? v.childAges.map(Number) : undefined,
+    customerNotes: v.notes, contactPreference: "whatsapp", currency: "USD",
+    customFields: mergeQuoteCustomFields(custom, ctx.prefillCustomFields),
+    ...(ctx.transfer || { transferRequested: false }),
+  };
+}
+
 // Per-target adapters: endpoint, known-column keys, payload builder, success.
 const REQUEST_FORM_TARGETS = {
   hotel_request: {
@@ -2560,15 +2816,7 @@ const REQUEST_FORM_TARGETS = {
   cruise_request: {
     endpoint: "/quote-requests", whatsapp: true,
     known: ["nationality", "checkIn", "checkOut", "adults", "children", "childAges", "rooms", "mealPlan", "notes"],
-    build: (v, ctx, custom) => ({
-      serviceType: "CRUISE", cruiseId: ctx.serviceId, serviceName: ctx.serviceName,
-      nationality: v.nationality, checkIn: v.checkIn, checkOut: v.checkOut,
-      adultsCount: rfNum(v.adults, 2), childrenCount: rfNum(v.children, 0),
-      mealPlan: v.mealPlan || undefined,
-      childAges: Array.isArray(v.childAges) ? v.childAges.map(Number) : undefined,
-      customerNotes: v.notes, contactPreference: "whatsapp", currency: "USD", customFields: custom,
-      ...(ctx.transfer || { transferRequested: false }),
-    }),
+    build: buildCruiseQuotePayload,
     success: rfQuoteSuccess,
   },
   activity_request: {
@@ -2686,15 +2934,18 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
   const prefillCheckIn = state.quotePrefillCheckIn || "";
   const prefillCheckOut = state.quotePrefillCheckOut || "";
   const prefillTransfer = state.quotePrefillTransfer || { transferRequested: false };
+  const prefillCustomFields = state.quotePrefillCustomFields;
   state.quotePrefillNotes = "";
   state.quotePrefillPax = undefined;
   state.quotePrefillCheckIn = undefined;
   state.quotePrefillCheckOut = undefined;
   state.quotePrefillTransfer = undefined;
+  state.quotePrefillCustomFields = undefined;
 
   const rfTpl = await rfLoadTemplate(rfTarget);
   if (rfTpl) return rfOpenModal(rfTarget, rfTpl, {
-    serviceType, serviceId, serviceName, prefillNotes, prefillPax, prefillCheckIn, prefillCheckOut, transfer: prefillTransfer,
+    serviceType, serviceId, serviceName, prefillNotes, prefillPax, prefillCheckIn, prefillCheckOut,
+    transfer: prefillTransfer, prefillCustomFields: prefillCustomFields,
   });
 
   // Fallback: original hardcoded quote form.
@@ -2775,6 +3026,7 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
       customerNotes: notes,
       contactPreference: "whatsapp",
       currency: "USD",
+      customFields: prefillCustomFields,
       ...prefillTransfer,
     };
 

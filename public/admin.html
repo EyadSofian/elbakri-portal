@@ -345,8 +345,12 @@ function inlineJsonArg(value) {
 
 /** Render a request's dynamic customFields (from a Request Form Builder template). */
 function customFieldsBlock(cf) {
-  if (!cf || typeof cf !== "object" || Array.isArray(cf) || !Object.keys(cf).length) return "";
-  const rows = Object.entries(cf).map(([k, v]) => {
+  if (!cf || typeof cf !== "object" || Array.isArray(cf)) return "";
+  // Cruise selections have a dedicated operations card below. Hiding their
+  // internal keys here also prevents the same information appearing twice.
+  const visibleFields = Object.entries(cf).filter(([key]) => !key.startsWith("cruise"));
+  if (!visibleFields.length) return "";
+  const rows = visibleFields.map(([k, v]) => {
     const val = Array.isArray(v) ? v.join(", ") : String(v);
     return `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed var(--border)">
       <span style="min-width:150px;color:var(--text-muted);font-weight:600">${escapeHtml(k)}</span>
@@ -356,6 +360,49 @@ function customFieldsBlock(cf) {
     <strong>${t("quoteDetail.customFields", "Additional Fields")}:</strong>
     <div style="margin-top:6px">${rows}</div>
   </div>`;
+}
+
+function cruiseQuoteDayLabel(day) {
+  const value = String(day || "").toLowerCase();
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : "—";
+}
+
+/** Turn the flat request snapshot into the information operations actually
+ * needs: the sailing/programme and the exact one-way or round-trip vehicle. */
+function cruiseSelectionBlock(q) {
+  const cf = q?.customFields;
+  if (!cf || typeof cf !== "object" || Array.isArray(cf) || !cf.cruiseProductMode) return "";
+  const mode = cf.cruiseProductMode;
+  const productLabel = mode === "PROGRAMME"
+    ? t("cruise.cruiseWithProgramme", "Cruise + programme")
+    : mode === "TRANSFER"
+      ? t("cruise.cruiseWithTransfer", "Cruise + transfer")
+      : t("cruise.cruiseOnly", "Cruise only");
+  const [departureDay, returnDay] = String(cf.cruiseScheduleRoute || "").split("_TO_");
+  const route = departureDay && returnDay
+    ? `${cruiseQuoteDayLabel(departureDay)} → ${cruiseQuoteDayLabel(returnDay)}`
+    : "—";
+  const currency = cf.cruiseCurrency || q.currency || "USD";
+  const rows = [
+    [t("cruise.bookingType", "Booking type"), productLabel],
+    [t("cruise.sailing", "Sailing"), `${route}${cf.cruiseNights ? ` · ${cf.cruiseNights} ${t("cruise.nights", "nights")}` : ""}`],
+    [t("th.date", "Date"), cf.cruiseSailingDate],
+    mode === "PROGRAMME" ? [t("cruise.programme", "Programme"), cf.cruiseProgrammeName || cf.cruiseProgrammeId] : null,
+    cf.cruiseOccupancy ? [t("cruise.sharingBasis", "Sharing basis"), String(cf.cruiseOccupancy).replace(/_/g, " ")] : null,
+    cf.cruiseAdultUnitPrice != null ? [t("cruise.adultPerPerson", "Adult · per person"), formatMoney(cf.cruiseAdultUnitPrice, currency)] : null,
+    cf.cruiseChildUnitPrice != null ? [t("cruise.childPerPerson", "Child · per person"), formatMoney(cf.cruiseChildUnitPrice, currency)] : null,
+    mode === "TRANSFER" ? [t("cruise.transferTripType", "Transfer type"), cf.cruiseTransferTripType === "ROUND_TRIP" ? t("cruise.roundTrip", "Round-trip") : t("cruise.oneWay", "One-way")] : null,
+    mode === "TRANSFER" ? [t("cruise.route", "Transfer route"), `${q.transferFromName || "—"} → ${q.transferToName || "—"}`] : null,
+    mode === "TRANSFER" ? [t("cruise.vehicle", "Vehicle"), `${String(cf.cruiseTransferVehicleType || q.transferVehicleType || "—").replace(/_/g, " ")} · ${cf.cruiseTransferVehicleCapacity || q.transferVehicleCapacity || "—"} ${t("form.passengers", "passengers")}`] : null,
+    mode === "TRANSFER" ? [t("cruise.vehiclesRequired", "Vehicles required"), `${cf.cruiseTransferVehicleCount || q.transferVehicleCount || 1} ${Number(cf.cruiseTransferVehicleCount || q.transferVehicleCount || 1) === 1 ? t("cruise.vehicle", "vehicle") : t("cruise.vehicles", "vehicles")}`] : null,
+    mode === "TRANSFER" && cf.cruiseTransferPricePerVehicle != null ? [t("transport.perVehicle", "Per vehicle"), formatMoney(cf.cruiseTransferPricePerVehicle, currency)] : null,
+    mode === "TRANSFER" && cf.cruiseTransferTotal != null ? [t("cruise.transferTotal", "Transfer total"), formatMoney(cf.cruiseTransferTotal, currency)] : null,
+    cf.cruiseProductTotal != null ? [t("th.total", "Total"), formatMoney(cf.cruiseProductTotal, currency)] : null,
+  ].filter(row => row && row[1] != null && row[1] !== "");
+  return `<section class="qr-cruise-selection full" style="grid-column:1/-1">
+    <div class="qr-cruise-selection__title">${icon(mode === "TRANSFER" ? "bus" : "ship")}${escapeHtml(productLabel)}</div>
+    <div class="qr-cruise-selection__grid">${rows.map(([label, value]) => `<div class="qr-cruise-selection__item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div>
+  </section>`;
 }
 
 // ─── WhatsApp helpers (admin uses fixed business number) ─────────────────────
@@ -3977,6 +4024,7 @@ async function openQuoteRequestModal(id) {
       <div><strong>${t("th.confirmed","Date Confirmed")}:</strong> ${confirmedDate(q)}</div>
       ${q.confirmedBy ? `<div><strong>${t("th.confirmedBy","Confirmed By")}:</strong> ${confirmedByName(q)}</div>` : ""}
       <div class="full" style="grid-column:1/-1"><strong>${t("form.customerNotes","Customer Notes")}:</strong><p style="margin:4px 0;white-space:pre-wrap">${escapeHtml(q.customerNotes||"—")}</p></div>
+      ${cruiseSelectionBlock(q)}
       ${customFieldsBlock(q.customFields)}
     </div>
     <hr style="margin:16px 0">

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { loadPortal } = require('./helpers/load-portal');
 
 const portal = loadPortal('dashboard.html');
+const adminPortal = loadPortal('admin.html');
 const dashboardSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
 const adminSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'admin.html'), 'utf8');
 const portalCss = fs.readFileSync(path.join(__dirname, '..', 'public', 'assets', 'portal.css'), 'utf8');
@@ -293,20 +294,170 @@ test('portal: programme pricing is adult/child per person with no occupancy choi
   assert.doesNotMatch(adminSource, /cr-programme-market-rate[\s\S]{0,1200}class="cr-double"/);
 });
 
-test('portal: programmes are filtered by exact schedule so 3 and 4 nights cannot mix', () => {
-  assert.match(dashboardSource, /filter\(p => p\.scheduleId === scheduleId\)/);
-  assert.match(dashboardSource, /find\(p => p\.id === programmeId && p\.scheduleId === scheduleId\)/);
+test('portal: all programme durations stay visible and selecting one moves to its sailing', () => {
+  assert.match(dashboardSource, /function crRenderProgrammeChoices/);
+  assert.match(dashboardSource, /const programmes = cruise\.programmes \|\| \[\]/);
+  assert.match(dashboardSource, /crSelectScheduleRadio\(programme\.scheduleId\)/);
+  assert.match(dashboardSource, /row\.id === state\.cruiseSelection\.programmeId && row\.scheduleId === scheduleId/);
+});
+
+test('portal: the sailing date moves to the next real departure day', () => {
+  assert.equal(portal.crNextDepartureDate('2026-08-30', 'MONDAY'), '2026-08-31');
+  assert.equal(portal.crNextDepartureDate('2026-08-30', 'FRIDAY'), '2026-09-04');
+  assert.equal(portal.crNextDepartureDate('2026-08-31', 'MONDAY'), '2026-08-31');
+});
+
+test('portal: a programme without an applicable rate is visible but cannot be selected', () => {
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(portal.crProgrammeBookability({ priceVisible: true }, { hasRates: false, rates: [] }))),
+    { selectable: false, status: 'UNAVAILABLE' },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(portal.crProgrammeBookability({ priceVisible: true }, { hasRates: true, rates: [{ singlePrice: 150 }] }))),
+    { selectable: true, status: 'PRICED' },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(portal.crProgrammeBookability({ priceVisible: false }, { hasRates: true, rates: [] }))),
+    { selectable: true, status: 'PRICE_ON_REQUEST' },
+  );
+});
+
+test('portal: a requested Nile cruise product can never silently downgrade', () => {
+  assert.equal(portal.crProductSelectionError('CRUISE_ONLY', { cruise: {} }), null);
+  assert.equal(portal.crProductSelectionError('PROGRAMME', { cruise: {}, programme: null }), 'PROGRAMME_REQUIRED');
+  assert.equal(portal.crProductSelectionError('PROGRAMME', { cruise: {}, programme: { hasRates: false } }), 'PROGRAMME_UNAVAILABLE');
+  assert.equal(portal.crProductSelectionError('PROGRAMME', { cruise: {}, programme: { hasRates: true } }), null);
+  assert.equal(portal.crProductSelectionError('TRANSFER', { cruise: {}, transferRate: null }), 'TRANSFER_REQUIRED');
+  assert.equal(portal.crProductSelectionError('TRANSFER', { cruise: {}, transferRate: { id: 'tr-1' } }), null);
+  assert.match(dashboardSource, /crProductSelectionError\(productMode, selection\)/);
+});
+
+test('portal: Nile cruise presents three explicit mutually-exclusive products', () => {
+  assert.match(dashboardSource, /name="crProductMode" value="CRUISE_ONLY"/);
+  assert.match(dashboardSource, /name="crProductMode" value="PROGRAMME"/);
+  assert.match(dashboardSource, /name="crProductMode" value="TRANSFER"/);
+  assert.match(dashboardSource, /mode !== "TRANSFER"/);
+  assert.match(dashboardSource, /mode === "TRANSFER" && !programme/);
 });
 
 test('portal: cruise transfer prices explicit vehicle products by capacity', () => {
   assert.match(dashboardSource, /id="crTransferPax"/);
-  assert.match(dashboardSource, /transferRate\?\.tripType === "ROUND_TRIP"/);
-  assert.match(dashboardSource, /Math\.ceil\(transferPax \/ transferCapacity\)/);
-  assert.match(dashboardSource, /transferUnitPrice \* transferVehicleCount/);
+  assert.match(dashboardSource, /rate\?\.tripType === "ROUND_TRIP"/);
+  assert.deepEqual(
+    plain(portal.crVehicleTransferPrice({ amount: 100, vehicleCapacity: 6, tripType: 'ONE_WAY' }, 6)),
+    { pax: 6, capacity: 6, vehicleCount: 1, unitPrice: 100, total: 100, tripType: 'ONE_WAY' },
+  );
+  assert.deepEqual(
+    plain(portal.crVehicleTransferPrice({ amount: 180, vehicleCapacity: 12, tripType: 'ROUND_TRIP' }, 13)),
+    { pax: 13, capacity: 12, vehicleCount: 2, unitPrice: 180, total: 360, tripType: 'ROUND_TRIP' },
+  );
   assert.doesNotMatch(dashboardSource, /rate\.roundTripAmount/);
   assert.match(adminSource, /class="cr-transfer-vehicle"/);
   assert.match(adminSource, /class="cr-transfer-capacity"/);
   assert.match(adminSource, /class="cr-active"/);
+});
+
+test('portal: Nile cruise programme reaches the quote as structured business data', () => {
+  const fields = portal.crQuoteSelectionFields('PROGRAMME', {
+    programme: { id: 'programme-3', name: 'Three nights programme' },
+    rate: { id: 'programme-rate-3' },
+    occupancy: null,
+    adultUnitPrice: 790,
+    childUnitPrice: 285,
+    total: 1865,
+    currency: 'USD',
+    supplements: [{ name: 'New Year' }],
+    transferRate: null,
+  }, {
+    id: 'schedule-3', departureDay: 'FRIDAY', returnDay: 'MONDAY', nights: 3,
+  }, '2026-09-04');
+
+  assert.deepEqual(plain(fields), {
+    cruiseProductMode: 'PROGRAMME',
+    cruiseScheduleId: 'schedule-3',
+    cruiseScheduleRoute: 'FRIDAY_TO_MONDAY',
+    cruiseNights: 3,
+    cruiseSailingDate: '2026-09-04',
+    cruiseProgrammeId: 'programme-3',
+    cruiseProgrammeName: 'Three nights programme',
+    cruiseRateId: 'programme-rate-3',
+    cruiseAdultUnitPrice: 790,
+    cruiseChildUnitPrice: 285,
+    cruiseCurrency: 'USD',
+    cruiseProductTotal: 1865,
+    cruiseSupplements: ['New Year'],
+  });
+});
+
+test('portal: Nile cruise transfer reaches the quote as one vehicle product, not a per-person guess', () => {
+  const fields = portal.crQuoteSelectionFields('TRANSFER', {
+    programme: null,
+    rate: { id: 'cabin-rate-4' },
+    occupancy: 'DOUBLE',
+    adultUnitPrice: 500,
+    childUnitPrice: 200,
+    total: 2360,
+    currency: 'USD',
+    supplements: [],
+    transferRate: { id: 'transfer-rt-12', vehicleType: 'VAN_12', currency: 'USD' },
+    transferTripType: 'ROUND_TRIP',
+    transferPax: 13,
+    transferCapacity: 12,
+    transferVehicleCount: 2,
+    transferUnitPrice: 180,
+    transferTotal: 360,
+  }, {
+    id: 'schedule-4', departureDay: 'MONDAY', returnDay: 'FRIDAY', nights: 4,
+  }, '2026-08-31');
+
+  assert.equal(fields.cruiseProductMode, 'TRANSFER');
+  assert.equal(fields.cruiseTransferRateId, 'transfer-rt-12');
+  assert.equal(fields.cruiseTransferTripType, 'ROUND_TRIP');
+  assert.equal(fields.cruiseTransferVehicleType, 'VAN_12');
+  assert.equal(fields.cruiseTransferVehicleCapacity, 12);
+  assert.equal(fields.cruiseTransferVehicleCount, 2);
+  assert.equal(fields.cruiseTransferPricePerVehicle, 180);
+  assert.equal(fields.cruiseTransferTotal, 360);
+});
+
+test('portal: cruise selection fields survive both template and fallback quote forms', () => {
+  assert.deepEqual(
+    plain(portal.mergeQuoteCustomFields({ agentReference: 'A-7' }, { cruiseProductMode: 'PROGRAMME', cruiseProgrammeId: 'p-3' })),
+    { agentReference: 'A-7', cruiseProductMode: 'PROGRAMME', cruiseProgrammeId: 'p-3' },
+  );
+  assert.match(dashboardSource, /state\.quotePrefillCustomFields = crQuoteSelectionFields/);
+  assert.match(dashboardSource, /prefillCustomFields: prefillCustomFields/);
+  assert.match(dashboardSource, /customFields: mergeQuoteCustomFields\(custom, ctx\.prefillCustomFields\)/);
+  assert.match(dashboardSource, /customFields: prefillCustomFields/);
+});
+
+test('portal: the cruise request payload keeps programme and transfer selections intact', () => {
+  const payload = portal.buildCruiseQuotePayload({
+    nationality: 'Lebanese', checkIn: '2026-09-04', checkOut: '2026-09-07',
+    adults: 2, children: 0, notes: 'Three nights',
+  }, {
+    serviceId: 'cruise-1', serviceName: 'MS Nile Dawn',
+    prefillCustomFields: {
+      cruiseProductMode: 'PROGRAMME', cruiseScheduleId: 'schedule-3',
+      cruiseProgrammeId: 'programme-3', cruiseRateId: 'rate-3',
+    },
+    transfer: { transferRequested: false, transferIncluded: true },
+  }, { agentReference: 'AG-9' });
+
+  assert.equal(payload.cruiseId, 'cruise-1');
+  assert.equal(payload.customFields.cruiseProductMode, 'PROGRAMME');
+  assert.equal(payload.customFields.cruiseProgrammeId, 'programme-3');
+  assert.equal(payload.customFields.cruiseRateId, 'rate-3');
+  assert.equal(payload.customFields.agentReference, 'AG-9');
+  assert.equal(payload.transferRequested, false);
+});
+
+test('portal: an empty or malformed request-form template falls back to the complete built-in form', () => {
+  assert.equal(portal.rfTemplateHasFields(null), false);
+  assert.equal(portal.rfTemplateHasFields([]), false);
+  assert.equal(portal.rfTemplateHasFields({ config: { fields: [] } }), false);
+  assert.equal(portal.rfTemplateHasFields({ config: { fields: [{ key: 'notes', type: 'textarea' }] } }), true);
+  assert.match(dashboardSource, /rfTemplateHasFields\(r\?\.data\) \? r\.data : null/);
 });
 
 test('portal: a priced transfer remains available when the cruise fare is price-on-request', () => {
@@ -321,6 +472,37 @@ test('admin: programmes and transfers have one shared catalogue across cruises',
   assert.match(adminSource, /renderCruiseSharedCatalogue/);
   assert.match(adminSource, /class="cr-shared-route"/);
   assert.match(adminSource, /class="cr-shared-nights"/);
+});
+
+test('admin: a Nile cruise request shows the chosen programme and vehicle product as operations data', () => {
+  const html = adminPortal.cruiseSelectionBlock({
+    customFields: {
+      cruiseProductMode: 'TRANSFER',
+      cruiseScheduleRoute: 'MONDAY_TO_FRIDAY',
+      cruiseNights: 4,
+      cruiseSailingDate: '2026-08-31',
+      cruiseOccupancy: 'DOUBLE',
+      cruiseTransferRateId: 'transfer-rt-12',
+      cruiseTransferTripType: 'ROUND_TRIP',
+      cruiseTransferVehicleType: 'VAN_12',
+      cruiseTransferVehicleCapacity: 12,
+      cruiseTransferVehicleCount: 2,
+      cruiseTransferPricePerVehicle: 180,
+      cruiseTransferTotal: 360,
+      cruiseCurrency: 'USD',
+    },
+    transferRequested: true,
+    transferFromName: 'Luxor Airport',
+    transferToName: 'Cruise dock',
+    transferPaxCount: 13,
+  });
+  assert.match(html, /Cruise \+ transfer/);
+  assert.match(html, /Monday → Friday/);
+  assert.match(html, /Round-trip/);
+  assert.match(html, /VAN 12/);
+  assert.match(html, /2 vehicles/);
+  assert.match(html, /360/);
+  assert.doesNotMatch(html, /cruiseTransferRateId/);
 });
 
 test('portal: selected cruise cards have a WebKit-safe explicit class fallback', () => {

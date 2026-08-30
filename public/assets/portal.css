@@ -8592,6 +8592,131 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
 .cr-sailing-arrow svg { width: 16px; height: 16px; }
 [dir="rtl"] .cr-sailing-arrow { transform: scaleX(-1); }
 .cr-sailing-meta { color: var(--text-muted); font-size: 11px; font-weight: 650; }
+.cr-sailing-programme-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--info-soft);
+  color: var(--brand-accent-text);
+  font-size: 10px;
+  font-weight: 800;
+}
+.cr-sailing-programme-hint svg { flex: 0 0 auto; width: 13px; height: 13px; }
+.cr-sailing-programme-hint span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The customer first chooses the product, then its details. Three compact
+   cards make "cruise only", "programme" and "transfer" mutually exclusive
+   instead of leaving an optional-transfer field that looks unrelated. */
+.cr-product-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.cr-product-mode-card {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-height: 92px;
+  padding-block: 13px;
+}
+.cr-product-mode-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--surface-muted);
+  color: var(--brand-accent-text);
+}
+.cr-product-mode-icon svg { width: 20px; height: 20px; }
+.cr-product-mode-card > span:last-child { display: grid; gap: 3px; min-width: 0; }
+.cr-product-mode-card b { color: var(--text-primary); font-size: 13px; }
+.cr-product-mode-card small { color: var(--text-muted); font-size: 10px; line-height: 1.45; }
+.cr-product-mode-card.is-selected .cr-product-mode-icon {
+  background: var(--brand-accent);
+  color: #fff;
+}
+.cr-product-mode-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.cr-product-mode-note svg { flex: 0 0 auto; width: 16px; height: 16px; color: var(--brand-accent-text); }
+.cr-product-mode-note.is-warning { background: var(--warning-soft); }
+.cr-programme-choice-head { display: grid; gap: 2px; margin: 14px 0 8px; }
+.cr-programme-choice-head strong { color: var(--text-primary); font-size: 12px; }
+.cr-programme-choice-head small { color: var(--text-muted); font-size: 10px; line-height: 1.45; }
+.cr-programme-choice-card { min-height: 116px; }
+.cr-programme-choice-card.is-unavailable {
+  cursor: not-allowed;
+  border-style: dashed;
+  background: var(--surface-muted);
+  opacity: .68;
+}
+.cr-programme-choice-card.is-unavailable:hover {
+  border-color: var(--border);
+  box-shadow: none;
+  transform: none;
+}
+.cr-programme-choice-card.is-unavailable .cr-sailing-meta { color: var(--danger); }
+
+/* Quote review: show a Nile-cruise selection as an operations summary rather
+   than exposing internal custom-field names to reservations staff. */
+.qr-cruise-selection {
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 28%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--brand-accent) 6%, var(--surface));
+}
+.qr-cruise-selection__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--brand-accent);
+  font-size: 15px;
+  font-weight: 800;
+}
+.qr-cruise-selection__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.qr-cruise-selection__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.qr-cruise-selection__item span { color: var(--text-muted); font-size: 12px; font-weight: 650; }
+.qr-cruise-selection__item strong { color: var(--text-primary); text-align: end; }
+@media (max-width: 680px) {
+  .qr-cruise-selection__grid { grid-template-columns: 1fr; }
+}
+.cr-programme-choice-duration {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brand-accent-text);
+  font-size: 10px;
+  font-weight: 850;
+}
+.cr-programme-choice-duration svg { width: 14px; height: 14px; }
 
 .cr-schedule-summary-row {
   display: grid;
@@ -8696,6 +8821,8 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
 .cr-transfer-trip-grid .cr-sailing-card { min-height: 78px; }
 
 @media (max-width: 640px) {
+  .cr-product-mode-grid { grid-template-columns: 1fr; }
+  .cr-product-mode-card { min-height: 78px; }
   .cr-transfer-options,
   .cr-transfer-trip-grid { grid-template-columns: 1fr; }
   .cr-transfer-product-summary { grid-template-columns: auto minmax(0,1fr); }

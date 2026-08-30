@@ -7,6 +7,7 @@ import { createHotelSchema, updateHotelSchema } from '../src/modules/hotels/hote
 import { transportRateSchema, visaFeeSchema, receptionRateSchema } from '../src/modules/master-data/master-data.schema';
 import { createCompanySchema, updateCompanySchema } from '../src/modules/companies/companies.schema';
 import { createCruiseSchema, updateCruiseSchema } from '../src/modules/nile-cruise/cruise.schema';
+import { sanitizeCustomFields } from '../src/shared/helpers';
 
 /**
  * Every field the admin forms send, against the schema guarding the route.
@@ -147,4 +148,31 @@ test('the cruise form uses structured schedules and pricing periods, not the ret
   assert.match(admin, /id="crSchedRows"/);
   assert.match(admin, /id="crRateRows"/);
   assert.match(admin, /payload\.priceFrom = null/);
+});
+
+test('a cruise quote keeps its structured programme and vehicle selection in storage', () => {
+  const stored = sanitizeCustomFields({
+    cruiseProductMode: 'TRANSFER',
+    cruiseScheduleId: 'schedule-4',
+    cruiseProgrammeId: 'programme-4',
+    cruiseTransferTripType: 'ROUND_TRIP',
+    cruiseTransferVehicleType: 'VAN_12',
+    cruiseTransferVehicleCapacity: 12,
+    cruiseTransferVehicleCount: 2,
+    cruiseTransferPricePerVehicle: 180,
+    cruiseTransferTotal: 360,
+    cruiseSupplements: ['New Year'],
+  });
+  assert.deepEqual(stored, {
+    cruiseProductMode: 'TRANSFER',
+    cruiseScheduleId: 'schedule-4',
+    cruiseProgrammeId: 'programme-4',
+    cruiseTransferTripType: 'ROUND_TRIP',
+    cruiseTransferVehicleType: 'VAN_12',
+    cruiseTransferVehicleCapacity: 12,
+    cruiseTransferVehicleCount: 2,
+    cruiseTransferPricePerVehicle: 180,
+    cruiseTransferTotal: 360,
+    cruiseSupplements: ['New Year'],
+  });
 });
