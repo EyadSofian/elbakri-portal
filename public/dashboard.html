@@ -2497,6 +2497,17 @@ function rfHelp(f)     { return (rfIsAr() && f.helpTextAr)    ? f.helpTextAr    
 function rfOptLabel(o) { return (rfIsAr() && o.labelAr)       ? o.labelAr       : (o.label || o.value); }
 function rfNum(v, d)   { const n = parseInt(v); return isNaN(n) ? d : n; }
 
+/** Some requirements belong to the service, not to an editable UI template.
+ * An old/custom Security Approval template must therefore never be able to
+ * make the two authority documents optional. The API enforces the same rule;
+ * this keeps the agent from discovering it only after pressing Submit. */
+function rfFieldRequired(target, f) {
+  return Boolean(f?.required || (
+    target === "security_approval"
+    && (f?.key === "passportUrl" || f?.key === "flightTicketUrl")
+  ));
+}
+
 const RF_MEAL_PLANS = ["ROOM_ONLY","BREAKFAST","HALF_BOARD","FULL_BOARD","ALL_INCLUSIVE","ULTRA_ALL_INCLUSIVE"];
 
 /** A successful API envelope is not automatically a usable form. Preview mode
@@ -2612,7 +2623,7 @@ function rfFieldCell(f, ctx) {
     return `<div class="form-field${full ? " full" : ""}">${rfControl(f, ctx)}${helpHtml}</div>`;
   }
   const ic = f.icon ? icon(f.icon) + " " : "";
-  const req = f.required ? ` <span class="required">*</span>` : "";
+  const req = rfFieldRequired(rfState.target, f) ? ` <span class="required">*</span>` : "";
   return `<div class="form-field${full ? " full" : ""}">
     <label>${ic}${escapeHtml(rfLabel(f))}${req}</label>
     ${rfControl(f, ctx)}${helpHtml}
@@ -2703,7 +2714,7 @@ function collectRequestFormValues(tpl) {
 /** Validate required + conditional fields; returns first failing label or null. */
 function validateRequestForm(tpl) {
   for (const f of rfFields(tpl)) {
-    if (!f.required || !rfShown(f)) continue;
+    if (!rfFieldRequired(rfState.target, f) || !rfShown(f)) continue;
     if (f.type === "child-age-repeater") {
       const cnt = rfChildCount();
       if (cnt > 0 && !childAgesValid(cnt, "rf")) return rfLabel(f);
@@ -4423,10 +4434,12 @@ async function renderActivityPackageByDest(destId, destName) {
                 <td><span class="primary-text">${escapeHtml(a.name)}</span><div class="secondary-text">${escapeHtml(a.category || "")}</div></td>
                 <td>${escapeHtml(a.city || "—")}</td>
                 <td>${escapeHtml(a.duration || "—")}</td>
-                <td><span class="numeric">${formatPrice(a.priceAdult, a.currency)}</span></td>
-                <td>${a.isConfirmableInApp !== false
+                <td>${actHasBookablePrice(a)
+                  ? `<span class="numeric">${actStartingPrice(a)}</span>`
+                  : `<span class="badge badge-info">${t("hotel.priceOnRequest","Price on request")}</span>`}</td>
+                <td>${a.isConfirmableInApp !== false && actHasBookablePrice(a)
                   ? `<button class="btn btn-primary btn-sm" onclick="openPackageActivityForm('${a.id}')">${icon("plus")}${t("activity.addToPackage","Add to Package")}</button>`
-                  : `<span class="badge badge-info">${t("hotel.priceOnRequest","Request only")}</span>`}</td>
+                  : `<button class="btn btn-outline btn-sm" onclick="openActivityDetails('${a.id}')">${icon("send")}${t("btn.requestQuote","Request Price")}</button>`}</td>
               </tr>`).join("") : `<tr><td colspan="5">${emptyBlock("empty.noData")}</td></tr>`}</tbody>
           </table>
         </div>
@@ -4913,6 +4926,25 @@ function actPartyPriceRows(a) {
   ].filter(([, , , v]) => v !== null && v !== undefined && v !== "");
 }
 
+/** A zero is a configured price; only null/undefined means the operator has
+ * not priced the activity. This decides whether the client gets a direct
+ * booking/package action or a quote-request action. */
+function actHasBookablePrice(a) {
+  return [a?.priceAdult, a?.priceSingle, a?.priceDouble, a?.priceTriple]
+    .some(value => value !== null && value !== undefined);
+}
+
+/** Small catalogue summary for mixed price models. It says "from" using the
+ * cheapest basis actually configured, never a made-up zero. */
+function actStartingPrice(a) {
+  const values = [a?.priceAdult, a?.priceSingle, a?.priceDouble, a?.priceTriple]
+    .filter(value => value !== null && value !== undefined)
+    .map(Number)
+    .filter(Number.isFinite);
+  if (!values.length) return t("hotel.priceOnRequest", "Price on request");
+  return `${t("hotel.from", "From")} ${formatPrice(Math.min(...values), a?.currency || "USD")}`;
+}
+
 /**
  * The transfer panel: where the driver collects the clients and where they go
  * back. Hidden until the agent asks for it, and never offered at all when the
@@ -5087,6 +5119,7 @@ async function openActivityDetails(id) {
   // Whichever ways this trip is actually sold — a blank price means "not sold
   // that way", so it is left out rather than shown as zero.
   const partyPrices = actPartyPriceRows(a);
+  const directBookable = a.isConfirmableInApp !== false && actHasBookablePrice(a);
 
   const slots = Array.isArray(a.timeSlots) ? a.timeSlots : [];
   const slotOptions = slots.map((s, i) =>
@@ -5161,18 +5194,18 @@ async function openActivityDetails(id) {
           <textarea id="actNotes" rows="2"></textarea></div>
       </div>
       <div class="tr-price-card" style="margin-top:12px">
-        <div class="tr-price-row act-perhead-row"><span>${t("form.priceAdult","Adult")}</span><span>${formatPrice(priceAdult, currency)} × <span id="actAdultCount">2</span></span></div>
+        ${hasAdultPrice ? `<div class="tr-price-row act-perhead-row"><span>${t("form.priceAdult","Adult")}</span><span>${formatPrice(priceAdult, currency)} × <span id="actAdultCount">2</span></span></div>` : ""}
         ${hasChildPrice ? `<div class="tr-price-row act-perhead-row"><span>${t("form.priceChild","Child")}</span><span>${formatPrice(priceChild, currency)} × <span id="actChildCount">0</span></span></div>` : ""}
         <div class="tr-price-row act-party-row" id="actPartyRow" style="display:none"><span id="actPartyLabel"></span><span id="actPartyCalc"></span></div>
         <div class="tr-price-row" id="actTransferPriceRow" style="display:none"><span>${icon("car")}&nbsp;${t("activity.transferTitle","Transfer")}</span><span id="actTransferPriceValue"></span></div>
-        <div class="tr-price-total"><span>${t("th.total","Estimated Total")}</span><span class="tr-price-amount" id="actTotalPreview">${formatPrice(2*priceAdult, currency)}</span></div>
+        <div class="tr-price-total"><span>${directBookable ? t("th.total","Estimated Total") : t("quote.pending","Pricing")}</span><span class="tr-price-amount" id="actTotalPreview">${directBookable ? formatPrice(2*priceAdult, currency) : t("hotel.priceOnRequest","Price on request")}</span></div>
       </div>
       <p style="color:var(--text-muted);font-size:11px;margin-top:8px">${t("booking.pendingNote","Your request is pending admin confirmation. No payment is taken now.")}</p>
     </div>`;
 
   openModal(escapeHtml(a.name), detailCard + requestForm, `
     <button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel")}</button>
-    ${a.isConfirmableInApp !== false
+    ${directBookable
       ? `<button class="btn btn-primary" id="submitActivityBtn">${icon("calendar-check")}&nbsp;${t("btn.submitRequest","Submit Request")}</button>`
       : `<button class="btn btn-primary" id="submitActivityQuoteBtn" onclick="_submitActivityQuoteRequest('${a.id}',${inlineJsonArg(a.name)})">${icon("send")}&nbsp;${t("btn.requestQuote","Quote Request")}</button>`}`);
 

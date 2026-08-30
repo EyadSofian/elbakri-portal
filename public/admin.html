@@ -7505,8 +7505,8 @@ const RF_DEFAULTS = {
     rfbField({ key:"nationality", type:"nationality-select", label:"Nationality", labelAr:"الجنسية", required:true, order:5 }),
     rfbField({ key:"hotelName", type:"text", label:"Hotel Name", labelAr:"اسم الفندق", order:6 }),
     rfbField({ key:"paxCount", type:"number", label:"Passengers", labelAr:"عدد الركاب", defaultValue:1, order:7 }),
-    rfbField({ key:"passportUrl", type:"file-upload", label:"Passport", labelAr:"جواز السفر", width:"full", order:8 }),
-    rfbField({ key:"flightTicketUrl", type:"file-upload", label:"Flight Ticket", labelAr:"تذكرة الطيران", width:"full", order:9 }),
+    rfbField({ key:"passportUrl", type:"file-upload", label:"Passport", labelAr:"جواز السفر", required:true, width:"full", order:8 }),
+    rfbField({ key:"flightTicketUrl", type:"file-upload", label:"Flight Ticket", labelAr:"تذكرة الطيران", required:true, width:"full", order:9 }),
     rfbField({ key:"notes", type:"textarea", label:"Notes", labelAr:"ملاحظات", width:"full", order:10 }),
   ]),
   airport_assist: () => ([

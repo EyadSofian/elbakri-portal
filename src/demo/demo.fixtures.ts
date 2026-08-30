@@ -152,9 +152,25 @@ export const DEMO_CRUISES = [
 ];
 
 export const DEMO_ACTIVITIES = [
-  { id: 'ac1', name: 'Hot Air Balloon — Luxor', nameAr: 'البالون الطائر — الأقصر', category: 'ADVENTURE', basePrice: 95, currency: 'USD', isActive: true, durationHours: 3, destinationId: 'd4', destination: DEMO_DESTINATIONS[3], transferIncluded: true },
-  { id: 'ac2', name: 'Pyramids & Sphinx half day', nameAr: 'الأهرامات وأبو الهول', category: 'CULTURAL', basePrice: 55, currency: 'USD', isActive: true, durationHours: 5, destinationId: 'd1', destination: DEMO_DESTINATIONS[0], transferIncluded: true },
-  { id: 'ac3', name: 'Red Sea snorkelling trip', nameAr: 'رحلة سنوركلينج', category: 'WATER_SPORTS', basePrice: 40, currency: 'USD', isActive: true, durationHours: 6, destinationId: 'd2', destination: DEMO_DESTINATIONS[1], transferIncluded: true },
+  { id: 'ac1', name: 'Hot Air Balloon — Luxor', nameAr: 'البالون الطائر — الأقصر', category: 'ADVENTURE', basePrice: 95, priceAdult: 95, priceChild: 55, currency: 'USD', isActive: true, isConfirmableInApp: true, duration: '3 hours', durationHours: 3, destinationId: 'd4', destination: DEMO_DESTINATIONS[3], transferIncluded: true },
+  // A priced Cairo activity whose transfer is NOT included: preview/browser QA
+  // can exercise the exact add-on the operator configures (price + both ends
+  // of the route + return time) instead of a fixture that accidentally hides it.
+  {
+    id: 'ac2', name: 'Pyramids & Sphinx half day', nameAr: 'الأهرامات وأبو الهول',
+    category: 'CULTURAL', basePrice: 55, priceAdult: 55, priceChild: 30,
+    currency: 'USD', isActive: true, isConfirmableInApp: true,
+    duration: '5 hours', durationHours: 5, returnTime: '17:00',
+    destinationId: 'd1', destination: DEMO_DESTINATIONS[0],
+    transferIncluded: false, transferPrice: 18,
+    transferFromName: 'Cairo hotel / address', transferToName: 'Pyramids meeting point',
+    inclusions: [
+      { label: 'Entrance ticket', labelAr: 'تذكرة الدخول', included: true },
+      { label: 'Transfer', labelAr: 'الانتقالات', included: false },
+    ],
+    includes: ['Entrance ticket'], excludes: ['Transfer'],
+  },
+  { id: 'ac3', name: 'Red Sea snorkelling trip', nameAr: 'رحلة سنوركلينج', category: 'WATER_SPORTS', basePrice: 40, priceAdult: 40, priceChild: 20, currency: 'USD', isActive: true, isConfirmableInApp: true, duration: '6 hours', durationHours: 6, destinationId: 'd2', destination: DEMO_DESTINATIONS[1], transferIncluded: true },
   // Mirrors the production SAFARI price shape so preview/browser QA exercises
   // the exact bug that was reported: every enabled basis is selectable, zero
   // child price stays free, and Double/Triple grow with the passenger count.

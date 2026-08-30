@@ -154,6 +154,15 @@ test('portal: only the priced bases are offered to the client', () => {
   assert.equal(portal.actPartyPriceRows({}).length, 0);
 });
 
+test('portal: an unpriced activity is routed to a quote instead of a dead booking flow', () => {
+  assert.equal(portal.actHasBookablePrice({}), false);
+  assert.equal(portal.actHasBookablePrice({ priceAdult: 0 }), true);
+  assert.equal(portal.actHasBookablePrice({ priceDouble: 85 }), true);
+  assert.match(dashboardSource, /const directBookable = a\.isConfirmableInApp !== false && actHasBookablePrice\(a\)/);
+  assert.match(dashboardSource, /directBookable[\s\S]{0,500}?submitActivityQuoteBtn/);
+  assert.match(dashboardSource, /actHasBookablePrice\(a\)[\s\S]{0,500}?openActivityDetails/);
+});
+
 test('portal: a zero party price is a real price, not a blank', () => {
   assert.deepEqual(plain(portal.actPartyPriceRows({ priceSingle: 0 }).map((r) => r[0])), ['SINGLE']);
 });
@@ -458,6 +467,15 @@ test('portal: an empty or malformed request-form template falls back to the comp
   assert.equal(portal.rfTemplateHasFields({ config: { fields: [] } }), false);
   assert.equal(portal.rfTemplateHasFields({ config: { fields: [{ key: 'notes', type: 'textarea' }] } }), true);
   assert.match(dashboardSource, /rfTemplateHasFields\(r\?\.data\) \? r\.data : null/);
+});
+
+test('portal: security templates cannot make the passport or flight ticket optional', () => {
+  assert.equal(portal.rfFieldRequired('security_approval', { key: 'passportUrl' }), true);
+  assert.equal(portal.rfFieldRequired('security_approval', { key: 'flightTicketUrl', required: false }), true);
+  assert.equal(portal.rfFieldRequired('security_approval', { key: 'notes' }), false);
+  assert.equal(portal.rfFieldRequired('hotel_request', { key: 'passportUrl' }), false);
+  assert.match(adminSource, /key:"passportUrl"[\s\S]{0,160}?required:true/);
+  assert.match(adminSource, /key:"flightTicketUrl"[\s\S]{0,160}?required:true/);
 });
 
 test('portal: a priced transfer remains available when the cruise fare is price-on-request', () => {
