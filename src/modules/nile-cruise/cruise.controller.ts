@@ -24,6 +24,7 @@ import {
 } from '../../shared/cruise-rates';
 import { readItinerary } from '../../shared/itinerary';
 import { readTransferAddOn } from '../../shared/transfer-addon';
+import { resolveCruiseCommercialSelection } from './cruise-commercial.service';
 
 const cruiseInclude = {
   cruise: { select: { id: true, name: true, route: true, shipType: true } },
@@ -60,14 +61,14 @@ export async function listCruises(req: Request, res: Response): Promise<void> {
     where,
     orderBy: { name: 'asc' },
     include: {
-      cabinRates: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
-      schedules: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
+      cabinRates: { where: { isActive: true, retiredAt: null }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
+      schedules: { where: { isActive: true, retiredAt: null }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
       programmes: {
-        where: { isActive: true },
-        include: { rates: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] } },
+        where: { isActive: true, retiredAt: null },
+        include: { rates: { where: { isActive: true, retiredAt: null }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] } },
         orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
       },
-      transferRates: { where: { isActive: true }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
+      transferRates: { where: { isActive: true, retiredAt: null }, orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }] },
     },
   });
   // The programme is normalised on the way out as well as in: a boat whose rows
@@ -332,7 +333,7 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     if (!company.isActive) throw new Error('COMPANY_INACTIVE');
     const cruise = await prisma.nileCruise.findFirst({
       where: { id: body.cruiseId, isActive: true },
-      select: { id: true, transferIncluded: true },
+      select: { id: true, name: true, transferIncluded: true },
     });
     if (!cruise) throw new Error('CRUISE_NOT_AVAILABLE');
 
@@ -342,7 +343,7 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
       throw new Error('INVALID_DATES');
     }
     const schedule = body.scheduleId
-      ? await prisma.cruiseSchedule.findFirst({ where: { id: body.scheduleId, cruiseId: body.cruiseId, isActive: true } })
+      ? await prisma.cruiseSchedule.findFirst({ where: { id: body.scheduleId, cruiseId: body.cruiseId, isActive: true, retiredAt: null } })
       : null;
     if (body.scheduleId && !schedule) throw new Error('SCHEDULE_NOT_AVAILABLE');
     if (schedule) {
@@ -353,12 +354,28 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     const adultsCount = Math.max(1, body.adultsCount ?? 1);
     const childrenCount = Math.max(0, body.childrenCount ?? 0);
     const pax = adultsCount + childrenCount;
+    const commercialResolution = body.scheduleId ? await resolveCruiseCommercialSelection({
+      companyId,
+      cruiseId: body.cruiseId,
+      scheduleId: body.scheduleId,
+      checkIn,
+      checkOut,
+      adultsCount,
+      childrenCount,
+      productMode: body.programmeRateId ? 'PROGRAMME' : body.transferRateId ? 'TRANSFER' : 'CRUISE_ONLY',
+      cabinRateId: body.cabinRateId,
+      programmeId: body.programmeId,
+      programmeRateId: body.programmeRateId,
+      occupancy: body.occupancy,
+      selectedSupplements: body.selectedSupplements,
+      transferRateId: body.transferRateId,
+    }) : null;
 
     // Cruise-only and programme fares share one rule: Single / Double / Triple
     // are per-person amounts for the selected sharing arrangement.
     const rate = body.cabinRateId
       ? await prisma.cruiseCabinRate.findFirst({
-        where: { id: body.cabinRateId, cruiseId: body.cruiseId, isActive: true },
+        where: { id: body.cabinRateId, cruiseId: body.cruiseId, isActive: true, retiredAt: null },
       })
       : null;
     if (body.cabinRateId && !rate) throw new Error('RATE_NOT_AVAILABLE');
@@ -371,10 +388,12 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
         where: {
           id: body.programmeRateId,
           isActive: true,
+          retiredAt: null,
           programme: {
             id: body.programmeId,
             cruiseId: body.cruiseId,
             isActive: true,
+            retiredAt: null,
             ...(body.scheduleId ? { scheduleId: body.scheduleId } : {}),
           },
         },
@@ -460,22 +479,16 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
       sourceCurrency = body.currency ?? 'USD';
     }
 
-    // Tours added on top. A line with no name says nothing on a voucher, so it
-    // is dropped; a line with a price adds to the bill in the SAME currency —
-    // mixing currencies inside one booking would produce a meaningless total.
     const addOns = (Array.isArray(body.addOns) ? body.addOns : [])
       .map((a) => ({ ...a, name: String(a.name ?? '').trim() }))
       .filter((a) => a.name.length > 0);
-    for (const addOn of addOns) {
-      const amount = Number(addOn.amount ?? 0);
-      if (Number.isFinite(amount) && amount > 0) sourceAmount = sourceAmount.add(new Decimal(amount));
-    }
+    if (addOns.length) throw new Error('CRUISE_TOURS_RETIRED');
 
     // A programme already includes its transfer. Cruise-only customers may add
     // one explicit, admin-priced From → To route; free-text transfer prices are
     // never trusted by the booking API.
     let transferRate = null;
-    const transferPaxCount = Math.max(1, Math.floor(Number(body.transferPaxCount ?? pax)) || pax);
+    const transferPaxCount = commercialResolution?.pax ?? pax;
     if (!programmeRate && body.transferRateId) {
       if (!body.scheduleId) throw new Error('SCHEDULE_NOT_AVAILABLE');
       transferRate = await prisma.cruiseTransferRate.findFirst({
@@ -484,6 +497,7 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
           cruiseId: body.cruiseId,
           market: expectedMarket,
           isActive: true,
+          retiredAt: null,
           scheduleId: body.scheduleId,
         },
       });
@@ -518,6 +532,17 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
         }
         : readTransferAddOn(body as unknown as Record<string, unknown>, { transferIncluded: false });
 
+    if (commercialResolution?.total) {
+      if (!sourceAmount.eq(commercialResolution.total) || sourceCurrency !== commercialResolution.currency) {
+        throw new Error('PRICING_RESOLUTION_MISMATCH');
+      }
+      sourceAmount = commercialResolution.total;
+      sourceCurrency = commercialResolution.currency;
+      adultUnitPrice = commercialResolution.adultUnitPrice;
+      childUnitPrice = commercialResolution.childUnitPrice;
+      selectedSupplements = commercialResolution.selectedSupplements;
+    }
+
     // Explicit price in an explicit currency — used verbatim, no FX.
     const charge = explicitMoney(sourceAmount, sourceCurrency);
     const [refNumber, invoiceNumber] = await Promise.all([
@@ -548,22 +573,18 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
           occupancy,
           cabinCount,
           scheduleId: body.scheduleId ?? null,
+          cruiseNameSnapshot: cruise.name,
+          fareNameSnapshot: rate?.cabinName ?? null,
+          programmeNameSnapshot: programmeRate?.programme.name ?? null,
+          programmeDescriptionSnapshot: programmeRate?.programme.description ?? null,
+          programmeNightsSnapshot: programmeRate && schedule ? schedule.nights : null,
+          scheduleDepartureDaySnapshot: schedule?.departureDay ?? null,
+          scheduleReturnDaySnapshot: schedule?.returnDay ?? null,
+          transferPricePerVehicleSnapshot: transferRate?.amount ?? null,
           passengerNames: setJsonStringArray(body.passengerNames),
           adultsCount,
           childrenCount,
           ...transfer,
-          addOns: {
-            create: addOns.map((a, index) => ({
-              activityId: a.activityId ?? null,
-              name: a.name,
-              description: a.description ? String(a.description).trim() : null,
-              activityDate: a.activityDate ? new Date(a.activityDate) : null,
-              paxCount: Math.max(1, Number(a.paxCount ?? pax) || 1),
-              amount: Number(a.amount) > 0 ? new Decimal(Number(a.amount)) : null,
-              currency: charge.currency,
-              displayOrder: index,
-            })),
-          },
           totalAmount: charge.totalAmount,
           currency: charge.currency,
           sourceAmount: charge.sourceAmount,
@@ -610,6 +631,9 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
       'RATE_NOT_AVAILABLE', 'PROGRAMME_RATE_NOT_AVAILABLE', 'PICK_ONE_FARE',
       'INVALID_OCCUPANCY', 'OCCUPANCY_NOT_SOLD', 'INVALID_SUPPLEMENT',
       'TRANSFER_RATE_NOT_AVAILABLE', 'TRANSFER_RATE_REQUIRED', 'MIXED_CURRENCY',
+      'TRANSFER_ALREADY_INCLUDED', 'INVALID_CRUISE_PRODUCT_MODE',
+      'SUPPLEMENT_DUPLICATE', 'INVALID_SUPPLEMENT_COMBINATION',
+      'CRUISE_TOURS_RETIRED', 'PRICING_RESOLUTION_MISMATCH',
     ].includes(message)) {
       res.status(400).json({ success: false, error: message });
     } else {

@@ -35,6 +35,7 @@ async function loadReportRecords(companyId?: string): Promise<ReportRecord[]> {
   const [
     bookings,
     activities,
+    activityPackages,
     transport,
     cruises,
     securityApprovals,
@@ -54,6 +55,17 @@ async function loadReportRecords(companyId?: string): Promise<ReportRecord[]> {
       },
     }),
     prisma.activityBooking.findMany({
+      where,
+      select: {
+        companyId: true,
+        status: true,
+        totalAmount: true,
+        currency: true,
+        requestedAt: true,
+        confirmedAt: true,
+      },
+    }),
+    prisma.activityPackage.findMany({
       where,
       select: {
         companyId: true,
@@ -140,6 +152,15 @@ async function loadReportRecords(companyId?: string): Promise<ReportRecord[]> {
       requestedAt: row.requestedAt,
       confirmedAt: row.confirmedAt,
     })),
+    ...activityPackages.map((row) => ({
+      companyId: row.companyId,
+      type: 'ACTIVITY_PACKAGE',
+      status: normalizeStatus(row.status),
+      amount: Number(row.totalAmount),
+      currency: row.currency,
+      requestedAt: row.requestedAt,
+      confirmedAt: row.confirmedAt,
+    })),
     ...transport.map((row) => ({
       companyId: row.companyId,
       type: 'TRANSPORT',
@@ -199,6 +220,7 @@ async function buildOverview(companyId?: string) {
     FLIGHT: 0,
     PACKAGE: 0,
     ACTIVITY: 0,
+    ACTIVITY_PACKAGE: 0,
     TRANSPORT: 0,
     CRUISE: 0,
     SECURITY_APPROVAL: 0,

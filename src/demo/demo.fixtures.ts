@@ -115,12 +115,13 @@ export const DEMO_OFFERS = [
   { id: 'o1', kind: 'OFFER', title: 'Red Sea — 20% off August', titleAr: 'البحر الأحمر — خصم ٢٠٪', description: 'Selected 5-star resorts in Hurghada and Marsa Alam.', descriptionAr: 'منتجعات ٥ نجوم مختارة في الغردقة ومرسى علم.', imageUrl: null, validFrom: '2026-08-01', validTo: '2026-08-31', priority: 0, isActive: true, ctaLabel: 'Browse hotels', ctaAction: 'hotels' },
   { id: 'o2', kind: 'OFFER', title: 'Nile cruise early booking', titleAr: 'حجز مبكر لرحلات النيل', description: 'Book 60 days ahead for an upgrade.', descriptionAr: 'احجز قبل ٦٠ يوم واحصل على ترقية.', imageUrl: null, validFrom: '2026-08-01', validTo: '2026-10-31', priority: 0, isActive: true, ctaLabel: 'See cruises', ctaAction: 'cruises' },
   { id: 'p1', kind: 'PACKAGE', title: 'Cairo & Nile Highlights', titleAr: 'باقة القاهرة والنيل', description: 'Hotel, transfers and activities in one ready package.', descriptionAr: 'فندق وانتقالات وأنشطة في باقة واحدة.', imageUrl: null, validFrom: '2026-08-01', validTo: '2026-12-31', priority: 0, isActive: true,
-    hotelItems: [{ name: 'Cairo Downtown Hotel', nights: 3, mealPlan: 'BB' }],
-    transferItems: [{ from: 'Cairo Airport', to: 'Hotel', vehicleType: 'Sedan' }],
-    activityItems: [{ name: 'Pyramids & Sphinx', date: 'Day 2' }],
+    packageNeedsConfiguration: false, packageConfigured: true,
+    hotelItems: [{ id: 'ph1', hotelId: 'h2', hotelRateId: 'hr-demo-cairo', name: 'Four Seasons Nile Plaza', nameAr: 'فورسيزونز نايل بلازا', roomName: 'Nile View Room', nights: 3, mealPlan: 'BB' }],
+    transferItems: [{ id: 'pt1', transportRateId: 'tr-demo-cairo', included: true, from: 'Cairo International Airport', to: 'Garden City hotel', vehicleType: 'SEDAN' }],
+    activityItems: [{ id: 'pa1', activityId: 'ac2', name: 'Pyramids & Sphinx half day', nameAr: 'الأهرامات وأبو الهول', dayNumber: 2 }],
     pricingPeriods: [
-      { validFrom: '2026-08-01', validTo: '2026-12-31', market: 'FOREIGN', currency: 'USD', singlePrice: 820, doublePrice: 610, triplePrice: 540, childPrice: 280 },
-      { validFrom: '2026-08-01', validTo: '2026-12-31', market: 'EGYPTIAN', currency: 'EGP', singlePrice: 26500, doublePrice: 19800, triplePrice: 17400, childPrice: 8900 },
+      { id: 'pp1-usd', validFrom: '2026-08-01', validTo: '2026-12-31', market: 'FOREIGN', currency: 'USD', singlePrice: 820, doublePrice: 610, triplePrice: 540, childPrice: 280 },
+      { id: 'pp1-egp', validFrom: '2026-08-01', validTo: '2026-12-31', market: 'EGYPTIAN', currency: 'EGP', singlePrice: 26500, doublePrice: 19800, triplePrice: 17400, childPrice: 8900 },
     ] },
 ];
 

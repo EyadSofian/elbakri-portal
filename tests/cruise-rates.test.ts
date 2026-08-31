@@ -311,6 +311,28 @@ test('a cruise supplement in another explicit currency is refused', () => {
   ]), null);
 });
 
+test('supplement order cannot change a supported commercial total', () => {
+  const a = { name: 'Ten percent', type: 'PERCENTAGE' as const, amount: 10 };
+  const b = { name: 'Dinner', type: 'FIXED_AMOUNT' as const, amount: 25, currency: 'USD' };
+  assert.equal(applyCruiseSupplements(D(1000), 2, 'USD', [a, b])!.toString(), '1150');
+  assert.equal(applyCruiseSupplements(D(1000), 2, 'USD', [b, a])!.toString(), '1150');
+});
+
+test('TOTAL_PRICE cannot be mixed with additive supplements', () => {
+  const replacement = { name: 'New Year total', type: 'TOTAL_PRICE' as const, amount: 900, currency: 'USD' };
+  const dinner = { name: 'Dinner', type: 'FIXED_AMOUNT' as const, amount: 25, currency: 'USD' };
+  assert.equal(applyCruiseSupplements(D(1000), 2, 'USD', [replacement, dinner]), null);
+  assert.equal(applyCruiseSupplements(D(1000), 2, 'USD', [dinner, replacement]), null);
+});
+
+test('duplicate supplements and contradictory percentage currencies are refused', () => {
+  const dinner = { name: 'Dinner', type: 'FIXED_AMOUNT' as const, amount: 25, currency: 'USD' };
+  assert.equal(applyCruiseSupplements(D(1000), 2, 'USD', [dinner, dinner]), null);
+  assert.equal(applyCruiseSupplements(D(1000), 2, 'USD', [
+    { name: 'Ten percent', type: 'PERCENTAGE', amount: 10, currency: 'EGP' },
+  ]), null);
+});
+
 // ── fromPrice ───────────────────────────────────────────────────────────────
 
 test('fromPrice: the cheapest price any applicable row offers', () => {

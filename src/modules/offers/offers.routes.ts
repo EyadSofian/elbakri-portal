@@ -7,7 +7,8 @@ import {
   updateOffer,
   deleteOffer,
   getActiveOffer,
-} from './offers.controller';
+  resolveOfferPackage,
+} from './offers-v2.controller';
 
 const router = Router();
 
@@ -15,6 +16,7 @@ const router = Router();
 router.get('/active', getActiveOffer);
 router.get('/', listOffers);
 router.get('/:id', getOffer);
+router.post('/:id/resolve', resolveOfferPackage);
 
 // Admin only
 router.post('/', requireRole('SUPERADMIN'), createOffer);

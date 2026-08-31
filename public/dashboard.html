@@ -9,7 +9,7 @@
   <script src="/assets/theme.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <link rel="stylesheet" href="/assets/portal.css">
   <style>
     /* Hotel detail — rates, price preview, policies */
@@ -39,7 +39,7 @@
   <link rel="stylesheet" href="/assets/vendor/phosphor/style.css"
         onerror="document.documentElement.classList.add('icons-unavailable')" />
   <script src="/assets/icons.js"></script>
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script async src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="/assets/i18n.js"></script>
   <script src="/assets/responsive-tables.js" defer></script>
   <script src="/assets/global-search.js" defer></script>
@@ -6141,23 +6141,20 @@ async function renderOffers() {
   const offers = res?.data || [];
   const lang = localStorage.getItem("lang") || "en";
   const isAr = lang === "ar";
-  const companyMarket = state.user?.company?.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
-
   const cards = offers.map(o => {
     const title = (isAr && o.titleAr) ? o.titleAr : o.title;
     const desc = (isAr && o.descriptionAr) ? o.descriptionAr : (o.description || "");
     const cta = (isAr && o.ctaLabelAr) ? o.ctaLabelAr : (o.ctaLabel || t("offers.viewOffer","View Offer"));
-    const periods = (o.pricingPeriods || []).filter(period => (period.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN") === companyMarket);
+    const periods = o.pricingPeriods || [];
     const components = kind === "PACKAGE" ? `<div class="info-grid" style="margin:12px 0">
       <div class="info-item"><div class="info-label">${t("nav.hotels","Hotels")}</div><div class="info-value">${formatNumber((o.hotelItems || []).length)}</div></div>
       <div class="info-item"><div class="info-label">${t("nav.transport","Transfers")}</div><div class="info-value">${formatNumber((o.transferItems || []).length)}</div></div>
       <div class="info-item"><div class="info-label">${t("nav.activities","Activities")}</div><div class="info-value">${formatNumber((o.activityItems || []).length)}</div></div>
     </div>
-    ${(o.hotelItems || []).length ? `<div class="secondary-text" style="margin-bottom:8px">${(o.hotelItems || []).map(item => escapeHtml(item.name)).join(" · ")}</div>` : ""}
-    ${periods.length ? `<div class="table-scroll"><table class="data-table"><thead><tr><th>${t("form.validFrom","Period")}</th><th>${t("hotel.single","Single")}</th><th>${t("hotel.double","Double")}</th><th>${t("hotel.triple","Triple")}</th><th>${t("form.children","Child")}</th></tr></thead><tbody>${periods.slice(0,3).map(period => `<tr>
-      <td>${formatDate(period.validFrom)} – ${formatDate(period.validTo)}</td>
-      <td>${formatPrice(period.singlePrice, period.currency)}</td><td>${formatPrice(period.doublePrice, period.currency)}</td><td>${formatPrice(period.triplePrice, period.currency)}</td><td>${formatPrice(period.childPrice, period.currency)}</td>
-    </tr>`).join("")}</tbody></table></div>` : `<div class="badge badge-info">${t("hotel.priceOnRequest","Price on request")}</div>`}` : "";
+    ${(o.hotelItems || []).length ? `<div class="package-summary-line"><strong>${t("nav.hotels","Hotels")}:</strong> ${(o.hotelItems || []).map(item => escapeHtml(item.name)).join(" · ")}</div>` : ""}
+    ${(o.activityItems || []).length ? `<div class="package-summary-line"><strong>${t("nav.activities","Activities")}:</strong> ${(o.activityItems || []).map(item => escapeHtml((isAr&&item.nameAr)||item.name)).join(" · ")}</div>` : ""}
+    ${(o.transferItems || []).length ? `<div class="package-summary-line"><strong>${t("nav.transport","Transfers")}:</strong> ${(o.transferItems || []).map(item => `${escapeHtml(item.from)} → ${escapeHtml(item.to)}`).join(" · ")}</div>` : ""}
+    ${periods.length ? `<div class="badge badge-info" style="margin-top:10px">${formatNumber(periods.length)} ${t("offers.availablePricePeriods","available price periods")}</div>` : `<div class="badge badge-info">${t("hotel.priceOnRequest","Price on request")}</div>`}` : "";
     return `<div class="panel" style="overflow:hidden">
       ${o.imageUrl ? `<img src="${escapeHtml(o.imageUrl)}" alt="" style="width:100%;height:180px;object-fit:cover">` : `<div style="height:100px;background:linear-gradient(135deg,var(--brand-navy-2),var(--brand-navy-3));display:flex;align-items:center;justify-content:center">${icon("tag")}</div>`}
       <div class="panel-body">
@@ -6165,7 +6162,7 @@ async function renderOffers() {
         ${desc ? `<p style="color:var(--text-secondary);margin:0 0 12px;line-height:1.5">${escapeHtml(desc)}</p>` : ""}
         ${components}
         ${o.validFrom || o.validTo ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">${o.validFrom ? formatDate(o.validFrom) : ""}${o.validTo ? " – " + formatDate(o.validTo) : ""}</div>` : ""}
-        ${o.ctaAction ? `<button class="btn btn-primary btn-sm" onclick="setPage('${escapeHtml(o.ctaAction)}')">${icon("arrow-right")}&nbsp;${escapeHtml(cta)}</button>` : ""}
+        ${kind === "PACKAGE" ? `<button class="btn btn-primary" onclick="openCommercialPackage('${escapeHtml(o.id)}')">${icon("calendar-check")}&nbsp;${t("offers.choosePackage","Choose date & price")}</button>` : (o.ctaAction ? `<button class="btn btn-primary btn-sm" onclick="setPage('${escapeHtml(o.ctaAction)}')">${icon("arrow-right")}&nbsp;${escapeHtml(cta)}</button>` : "")}
       </div>
     </div>`;
   }).join("");
@@ -6177,6 +6174,82 @@ async function renderOffers() {
     ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,${kind === "PACKAGE" ? "520px" : "300px"}),1fr));gap:20px">${cards}</div>`
     : `<div class="empty-state">${kind === "PACKAGE" ? t("offers.noPackages","No active packages at the moment") : t("offers.noOffer","No active offers at the moment")}</div>`));
   refreshIcons(document.getElementById("content"));
+}
+
+let activeCommercialPackage = null;
+let resolvedCommercialPackage = null;
+
+async function openCommercialPackage(id) {
+  const res = await apiFetch(`/offers/${id}`);
+  const o = res?.data;
+  if (!o) return;
+  activeCommercialPackage = o;
+  resolvedCommercialPackage = null;
+  const isAr = (localStorage.getItem("lang") || "en") === "ar";
+  const title = isAr && o.titleAr ? o.titleAr : o.title;
+  const minDate = new Date().toISOString().slice(0, 10);
+  const body = `<div class="package-booking-shell">
+    <div class="package-booking-intro">
+      <div><span class="badge badge-info">${t("offers.package","Package")}</span><h3>${escapeHtml(title)}</h3></div>
+      <p>${escapeHtml((isAr&&o.descriptionAr)||o.description||"")}</p>
+    </div>
+    <div class="package-component-grid">
+      <section><b>${icon("hotel")}${t("nav.hotels","Hotels")}</b>${(o.hotelItems||[]).map(x=>`<div>${escapeHtml(x.name)} · ${formatNumber(x.nights)} ${t("cruise.nights","nights")}${x.roomName?` · ${escapeHtml(x.roomName)}`:""}</div>`).join("")}</section>
+      <section><b>${icon("car")}${t("nav.transport","Transfers")}</b>${(o.transferItems||[]).map(x=>`<div>${escapeHtml(x.from)} → ${escapeHtml(x.to)} · ${escapeHtml(x.vehicleType||"")}</div>`).join("")||`<div>—</div>`}</section>
+      <section><b>${icon("ticket")}${t("nav.activities","Activities")}</b>${(o.activityItems||[]).map(x=>`<div>${x.dayNumber?`${t("offers.day","Day")} ${formatNumber(x.dayNumber)} · `:""}${escapeHtml((isAr&&x.nameAr)||x.name)}</div>`).join("")||`<div>—</div>`}</section>
+    </div>
+    <div class="panel" style="padding:18px;margin-top:16px"><div class="form-grid">
+      <div class="form-field"><label>${t("form.travelDate","Travel date")} *</label><input id="cpTravelDate" type="date" min="${minDate}" onchange="resetCommercialPackageResolution()"></div>
+      <div class="form-field"><label>${t("hotel.occupancy","Occupancy")} *</label><select id="cpOccupancy" onchange="resetCommercialPackageResolution()"><option value="SINGLE">${t("hotel.single","Single")}</option><option value="DOUBLE" selected>${t("hotel.double","Double")}</option><option value="TRIPLE">${t("hotel.triple","Triple")}</option></select></div>
+      <div class="form-field"><label>${t("form.adults","Adults")}</label><input id="cpAdults" type="number" min="1" value="2" onchange="resetCommercialPackageResolution()"></div>
+      <div class="form-field"><label>${t("form.children","Children")}</label><input id="cpChildren" type="number" min="0" value="0" onchange="resetCommercialPackageResolution()"></div>
+    </div>
+    <button class="btn btn-outline" id="cpResolveBtn" onclick="resolveCommercialPackage()">${icon("calculator")}&nbsp;${t("offers.calculatePrice","Calculate price")}</button>
+    <div id="cpResolvedPrice" class="package-resolved-price" style="display:none"></div></div>
+  </div>`;
+  openModal(title, body, `<button class="btn btn-outline" onclick="closeModal()">${t("btn.cancel","Cancel")}</button><button class="btn btn-primary" id="cpRequestBtn" disabled onclick="submitCommercialPackageRequest()">${icon("send")}&nbsp;${t("btn.sendRequest","Send request")}</button>`);
+  refreshIcons();
+}
+
+function resetCommercialPackageResolution() {
+  resolvedCommercialPackage = null;
+  const target = document.getElementById("cpResolvedPrice");
+  if (target) target.style.display = "none";
+  const request = document.getElementById("cpRequestBtn");
+  if (request) request.disabled = true;
+}
+
+async function resolveCommercialPackage() {
+  const travelDate = document.getElementById("cpTravelDate")?.value;
+  if (!travelDate) { toast(t("toast.validationError","Choose a travel date"), "error"); return; }
+  const button = document.getElementById("cpResolveBtn");
+  setBtnLoading(button, true, "common.loading");
+  const res = await apiFetch(`/offers/${activeCommercialPackage.id}/resolve`, { method:"POST", body:JSON.stringify({
+    travelDate, occupancy:document.getElementById("cpOccupancy").value,
+    adultsCount:Number(document.getElementById("cpAdults").value||1), childrenCount:Number(document.getElementById("cpChildren").value||0),
+  })});
+  setBtnLoading(button, false);
+  if (!res?.success) return;
+  resolvedCommercialPackage = res.data;
+  const target = document.getElementById("cpResolvedPrice");
+  target.style.display = "flex";
+  target.innerHTML = `<span>${t("offers.resolvedPackagePrice","Package price")}</span><strong>${formatPrice(res.data.total,res.data.currency)}</strong><small>${escapeHtml(res.data.occupancy)} · ${formatDate(res.data.travelDate)}</small>`;
+  document.getElementById("cpRequestBtn").disabled = false;
+}
+
+async function submitCommercialPackageRequest() {
+  if (!resolvedCommercialPackage) return;
+  const button = document.getElementById("cpRequestBtn");
+  setBtnLoading(button, true, "common.saving");
+  const res = await apiFetch("/quote-requests", { method:"POST", body:JSON.stringify({
+    serviceType:"PACKAGE", packageId:activeCommercialPackage.id, serviceId:activeCommercialPackage.id,
+    serviceName:activeCommercialPackage.title, checkIn:resolvedCommercialPackage.travelDate,
+    packageOccupancy:resolvedCommercialPackage.occupancy, adultsCount:resolvedCommercialPackage.adultsCount,
+    childrenCount:resolvedCommercialPackage.childrenCount,
+    customFields:{ packageId:activeCommercialPackage.id, packageTravelDate:resolvedCommercialPackage.travelDate, packageOccupancy:resolvedCommercialPackage.occupancy },
+  })});
+  setBtnLoading(button, false);
+  if (res?.success) { closeModal(); serviceSuccessModal(res.data.refNumber); }
 }
 
 // ─── Offer popup on dashboard load ───────────────────────────────────────────

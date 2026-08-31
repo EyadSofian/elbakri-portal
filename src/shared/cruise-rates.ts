@@ -274,19 +274,38 @@ export function applyCruiseSupplements(
   currency: string,
   supplements: CruiseSupplement[],
 ): Decimal | null {
-  let total = base;
   const heads = Math.max(1, Math.floor(pax) || 1);
+  const names = new Set<string>();
+  let fixedTotal = new Decimal(0);
+  let percentageTotal = new Decimal(0);
+  let replacement: Decimal | null = null;
   for (const supplement of supplements) {
+    const key = String(supplement.name ?? '').trim().toLowerCase();
+    if (!key || names.has(key)) return null;
+    names.add(key);
     if (supplement.type === 'TEXT_ONLY') continue;
     const amount = supplement.amount === null || supplement.amount === undefined || supplement.amount === ''
       ? null : new Decimal(supplement.amount);
     if (amount == null || amount.isNegative()) return null;
-    if (supplement.currency && supplement.currency !== currency && supplement.type !== 'PERCENTAGE') return null;
-    if (supplement.type === 'PERCENTAGE') total = total.add(base.mul(amount).div(100));
-    else if (supplement.type === 'FIXED_AMOUNT') total = total.add(amount.mul(heads));
-    else if (supplement.type === 'TOTAL_PRICE') total = amount.mul(heads);
+    if (supplement.type === 'PERCENTAGE') {
+      // Percentage supplements are intentionally currencyless. A legacy row
+      // carrying a currency is contradictory and must be corrected by admin.
+      if (supplement.currency) return null;
+      percentageTotal = percentageTotal.add(base.mul(amount).div(100));
+    } else {
+      if (supplement.currency && supplement.currency !== currency) return null;
+      if (supplement.type === 'FIXED_AMOUNT') fixedTotal = fixedTotal.add(amount.mul(heads));
+      else if (supplement.type === 'TOTAL_PRICE') {
+        if (replacement !== null) return null;
+        replacement = amount.mul(heads);
+      }
+    }
   }
-  return total.toDecimalPlaces(2);
+  // TOTAL_PRICE is a fare replacement. Mixing it with additive commercial
+  // supplements is ambiguous, so reject the combination instead of allowing
+  // request array order to decide money.
+  if (replacement !== null && (!fixedTotal.isZero() || !percentageTotal.isZero())) return null;
+  return (replacement ?? base.add(fixedTotal).add(percentageTotal)).toDecimalPlaces(2);
 }
 
 /**

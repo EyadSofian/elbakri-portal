@@ -10,7 +10,7 @@ import { buildInvoiceTotals } from '../../shared/invoicing';
 import { generateInvoicePdf } from '../invoices/pdf.generator';
 import { createVoucherForService } from '../vouchers/vouchers.controller';
 import { debitWallet, refundWallet } from '../../shared/wallet';
-import { TransferAddOn, readTransferAddOn } from '../../shared/transfer-addon';
+import { TransferAddOn, readTransferAddOn, transferRouteError } from '../../shared/transfer-addon';
 import {
   PricingBasis,
   availableBases,
@@ -293,11 +293,11 @@ export async function createActivityPackage(req: Request, res: Response): Promis
       transferIncluded: activity.transferIncluded,
       activityReturnTime: activity.returnTime,
     });
-    if (transfer.transferRequested && !transfer.transferFromName) {
+    if (transferRouteError(transfer)) {
       res.status(400).json({
         success: false,
-        error: 'VALIDATION_ERROR',
-        message: `The transfer for "${activity.name}" needs a pickup point.`,
+        error: 'TRANSFER_ROUTE_REQUIRED',
+        message: `The transfer for "${activity.name}" needs both pickup and drop-off points.`,
       });
       return;
     }

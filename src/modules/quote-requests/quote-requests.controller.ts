@@ -4,8 +4,18 @@ import { QuoteRequestStatus, QuoteServiceType } from '@prisma/client';
 import { prisma } from '../../config/db';
 import { paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
-import { readTransferAddOn } from '../../shared/transfer-addon';
-import { validateCruiseStayDates } from '../../shared/cruise-rates';
+import { readTransferAddOn, transferRouteError } from '../../shared/transfer-addon';
+import {
+  CruiseCommercialResolution,
+  cruiseIntentFromCustomFields,
+  cruiseResolutionFields,
+  resolveCruiseCommercialSelection,
+} from '../nile-cruise/cruise-commercial.service';
+import {
+  PackageCommercialResolution,
+  packageResolutionFields,
+  resolvePackagePrice,
+} from '../offers/package-commercial.service';
 
 const quoteInclude = {
   company: { select: { id: true, name: true, email: true, tier: true } },
@@ -14,6 +24,8 @@ const quoteInclude = {
   hotel: { select: { id: true, name: true, city: true, stars: true } },
   assignedTo: { select: { id: true, name: true, email: true } },
   confirmedBy: { select: { id: true, name: true } },
+  commercialPackage: { select: { id: true, title: true, titleAr: true } },
+  commercialPackagePricePeriod: { select: { id: true, market: true, currency: true, validFrom: true, validTo: true } },
 };
 
 /** Generate a unique QR-YYYY-NNNN reference */
@@ -97,6 +109,8 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     serviceName?: string;
     cruiseId?: string;
     activityId?: string;
+    packageId?: string;
+    packageOccupancy?: string;
     checkIn?: string;
     checkOut?: string;
     adultsCount?: number;
@@ -145,27 +159,55 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     return;
   }
 
-  const customFields = sanitizeCustomFields(body.customFields);
-  const cruiseScheduleId = body.serviceType === 'CRUISE'
-    ? String(customFields?.cruiseScheduleId ?? '').trim()
-    : '';
-  if (cruiseScheduleId) {
+  let customFields = sanitizeCustomFields(body.customFields);
+  let cruiseResolution: CruiseCommercialResolution | null = null;
+  let packageResolution: PackageCommercialResolution | null = null;
+  if (body.serviceType === 'CRUISE') {
     if (!body.cruiseId || !body.checkIn || !body.checkOut) {
-      res.status(400).json({ success: false, error: 'CRUISE_DATES_REQUIRED', message: 'Cruise departure and return dates are required' });
+      res.status(400).json({ success: false, error: 'CRUISE_DATES_REQUIRED', message: 'Cruise, departure and return dates are required' });
       return;
     }
-    const schedule = await prisma.cruiseSchedule.findFirst({
-      where: { id: cruiseScheduleId, cruiseId: body.cruiseId, isActive: true },
-    });
-    const stayError = schedule
-      ? validateCruiseStayDates(body.checkIn, body.checkOut, schedule)
-      : 'INVALID_SCHEDULE';
-    if (stayError) {
-      res.status(400).json({
-        success: false,
-        error: 'CRUISE_DATES_MISMATCH',
-        message: 'Cruise dates must match the selected From / Back sailing',
+    try {
+      const selection = cruiseIntentFromCustomFields(customFields);
+      cruiseResolution = await resolveCruiseCommercialSelection({
+        ...selection,
+        companyId,
+        cruiseId: body.cruiseId,
+        checkIn: body.checkIn,
+        checkOut: body.checkOut,
+        adultsCount: body.adultsCount,
+        childrenCount: body.childrenCount,
       });
+      const unrelated = Object.fromEntries(Object.entries(customFields ?? {}).filter(([key]) => !key.startsWith('cruise')));
+      customFields = { ...unrelated, ...cruiseResolutionFields(cruiseResolution) };
+    } catch (error) {
+      const code = String((error as Error).message || 'CRUISE_SELECTION_INVALID');
+      res.status(400).json({ success: false, error: code });
+      return;
+    }
+  }
+  if (body.serviceType === 'PACKAGE') {
+    const packageId = body.packageId ?? body.serviceId ?? String(customFields?.packageId ?? '');
+    const travelDate = body.checkIn ?? String(customFields?.packageTravelDate ?? '');
+    const occupancy = body.packageOccupancy ?? String(customFields?.packageOccupancy ?? '');
+    if (!packageId || !travelDate || !occupancy) {
+      res.status(400).json({ success: false, error: 'PACKAGE_SELECTION_REQUIRED', message: 'Package, travel date and occupancy are required' });
+      return;
+    }
+    try {
+      packageResolution = await resolvePackagePrice({
+        packageId,
+        companyId,
+        travelDate,
+        occupancy,
+        adultsCount: body.adultsCount,
+        childrenCount: body.childrenCount,
+      });
+      const unrelated = Object.fromEntries(Object.entries(customFields ?? {}).filter(([key]) => !key.startsWith('package')));
+      customFields = sanitizeCustomFields({ ...unrelated, ...packageResolutionFields(packageResolution) });
+    } catch (error) {
+      const code = String((error as Error).message || 'PACKAGE_SELECTION_INVALID');
+      res.status(400).json({ success: false, error: code });
       return;
     }
   }
@@ -175,7 +217,7 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
   // A price-on-request activity uses the same add-transfer panel as an
   // in-app booking. Resolve the catalogue flag before storing it so a service
   // that already includes a car can never reach Transport as a duplicate.
-  let transferIncluded = false;
+  let transferIncluded = cruiseResolution?.mode === 'PROGRAMME';
   let serviceReturnTime: string | null = null;
   if (body.transferRequested && body.activityId) {
     const activity = await prisma.activity.findUnique({
@@ -189,10 +231,27 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
   // sends transferRequested=false because its transfer is already in the fare;
   // cruise-only sends the separately priced transfer. The old boat-wide flag
   // must not suppress that cruise-only choice.
-  const transfer = readTransferAddOn(body as unknown as Record<string, unknown>, {
-    transferIncluded,
-    activityReturnTime: serviceReturnTime,
-  });
+  const transfer = cruiseResolution
+    ? cruiseResolution.transferRate
+      ? {
+        transferRequested: true,
+        transferFromType: 'ADDRESS' as const,
+        transferFromName: cruiseResolution.transferRate.fromLocation,
+        transferToType: 'ADDRESS' as const,
+        transferToName: cruiseResolution.transferRate.toLocation,
+        transferPickupTime: body.transferPickupTime ?? null,
+        transferReturnTime: body.transferReturnTime ?? null,
+        transferNotes: body.transferNotes ?? cruiseResolution.transferRate.notes ?? null,
+      }
+      : readTransferAddOn({}, { transferIncluded })
+    : readTransferAddOn(body as unknown as Record<string, unknown>, {
+      transferIncluded,
+      activityReturnTime: serviceReturnTime,
+    });
+  if (transferRouteError(transfer)) {
+    res.status(400).json({ success: false, error: 'TRANSFER_ROUTE_REQUIRED' });
+    return;
+  }
 
   const quote = await prisma.quoteRequest.create({
     data: {
@@ -203,14 +262,16 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       destinationId: body.destinationId ?? null,
       destinationName: body.destinationName ?? null,
       hotelId: body.hotelId ?? null,
-      serviceId: body.serviceId ?? body.cruiseId ?? body.activityId ?? null,
-      serviceName: body.serviceName ?? null,
+      serviceId: packageResolution?.packageId ?? body.serviceId ?? body.cruiseId ?? body.activityId ?? null,
+      serviceName: packageResolution?.packageTitle ?? body.serviceName ?? null,
       cruiseId: body.cruiseId ?? null,
       activityId: body.activityId ?? null,
+      commercialPackageId: packageResolution?.packageId ?? null,
+      commercialPackagePricePeriodId: packageResolution?.pricePeriodId ?? null,
       checkIn: body.checkIn ? new Date(body.checkIn) : null,
       checkOut: body.checkOut ? new Date(body.checkOut) : null,
-      adultsCount: body.adultsCount ?? 1,
-      childrenCount: body.childrenCount ?? 0,
+      adultsCount: cruiseResolution?.adultsCount ?? packageResolution?.adultsCount ?? body.adultsCount ?? 1,
+      childrenCount: cruiseResolution?.childrenCount ?? packageResolution?.childrenCount ?? body.childrenCount ?? 0,
       infantsCount: body.infantsCount ?? 0,
       roomsCount: body.roomsCount ?? null,
       nationality: body.nationality ?? null,
@@ -218,24 +279,29 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       mealPlan: (body.mealPlan as any) ?? null,
       childAges: body.childAges ? body.childAges : undefined,
       budget: body.budget ? new Decimal(body.budget) : null,
-      currency: body.currency ?? 'USD',
+      currency: cruiseResolution?.currency ?? packageResolution?.currency ?? body.currency ?? 'USD',
+      resolvedAmount: cruiseResolution?.total ?? packageResolution?.total ?? null,
+      resolvedCurrency: cruiseResolution?.currency ?? packageResolution?.currency ?? null,
+      pricingValidatedAt: cruiseResolution || packageResolution ? new Date() : null,
       customerNotes: body.customerNotes ?? null,
       contactPreference: body.contactPreference ?? null,
       ...transfer,
       transferTripType: transfer.transferRequested
-        ? (String(body.transferTripType ?? 'ONE_WAY').toUpperCase() === 'ROUND_TRIP' ? 'ROUND_TRIP' : 'ONE_WAY')
+        ? cruiseResolution?.transferRate?.tripType
+          ?? (String(body.transferTripType ?? 'ONE_WAY').toUpperCase() === 'ROUND_TRIP' ? 'ROUND_TRIP' : 'ONE_WAY')
         : null,
       transferPaxCount: transfer.transferRequested
-        ? Math.max(1, Math.floor(Number(body.transferPaxCount ?? body.adultsCount ?? 1)) || 1)
+        ? cruiseResolution?.pax ?? Math.max(1, Math.floor(Number(body.transferPaxCount ?? body.adultsCount ?? 1)) || 1)
         : null,
       transferVehicleType: transfer.transferRequested
-        ? String(body.transferVehicleType ?? '').trim().toUpperCase() || null
+        ? (cruiseResolution?.transferRate?.vehicleType ?? String(body.transferVehicleType ?? '').trim().toUpperCase()) || null
         : null,
       transferVehicleCapacity: transfer.transferRequested && Number(body.transferVehicleCapacity) > 0
-        ? Math.floor(Number(body.transferVehicleCapacity))
-        : null,
-      transferVehicleCount: transfer.transferRequested && Number(body.transferVehicleCount) > 0
-        ? Math.floor(Number(body.transferVehicleCount))
+        ? cruiseResolution?.transferRate?.vehicleCapacity ?? Math.floor(Number(body.transferVehicleCapacity))
+        : cruiseResolution?.transferRate?.vehicleCapacity ?? null,
+      transferVehicleCount: transfer.transferRequested
+        ? cruiseResolution?.transferVehicleCount
+          ?? (Number(body.transferVehicleCount) > 0 ? Math.floor(Number(body.transferVehicleCount)) : null)
         : null,
       customFields: customFields ?? undefined,
     },

@@ -26,7 +26,7 @@ import {
   includedLabels,
   setInclusions,
 } from '../../shared/inclusions';
-import { readTransferAddOn } from '../../shared/transfer-addon';
+import { readTransferAddOn, transferRouteError } from '../../shared/transfer-addon';
 import { readItinerary } from '../../shared/itinerary';
 
 const activityInclude = {
@@ -508,8 +508,8 @@ export async function createActivityBooking(req: Request, res: Response): Promis
   let transferAmount: Decimal | null = null;
   let chargedAmount = applyGroupAdjustment(sourceAmountRaw, groupType);
   if (transfer.transferRequested) {
-    if (!transfer.transferFromName) {
-      res.status(400).json({ success: false, error: 'VALIDATION_ERROR', message: 'Transfer pickup point is required.' });
+    if (transferRouteError(transfer)) {
+      res.status(400).json({ success: false, error: 'TRANSFER_ROUTE_REQUIRED', message: 'Transfer pickup and drop-off points are required.' });
       return;
     }
     if (activity.transferPrice == null) {

@@ -5,6 +5,7 @@ import {
   normalizeClockTime,
   readTransferAddOn,
   resolveReturnTime,
+  transferRouteError,
 } from '../src/shared/transfer-addon';
 import {
   activityTransferOperation,
@@ -96,15 +97,15 @@ test('readTransferAddOn: reads a full request', () => {
   });
 });
 
-test('readTransferAddOn: the return leg defaults to the pickup point', () => {
-  // Most transfers bring people back where they were collected.
+test('readTransferAddOn: a missing drop-off is never fabricated from the pickup', () => {
   const result = readTransferAddOn({
     transferRequested: true,
     transferFromType: 'HOTEL',
     transferFromName: 'Hilton Sharm',
   });
-  assert.equal(result.transferToName, 'Hilton Sharm');
-  assert.equal(result.transferToType, 'HOTEL');
+  assert.equal(result.transferToName, null);
+  assert.equal(result.transferToType, null);
+  assert.equal(transferRouteError(result), 'TRANSFER_ROUTE_REQUIRED');
 });
 
 test('readTransferAddOn: a typed place with no kind is an address', () => {

@@ -107,13 +107,16 @@ export function readTransferAddOn(
     transferRequested: true,
     transferFromType: endpointType(body.transferFromType) ?? (fromName ? 'ADDRESS' : null),
     transferFromName: fromName,
-    // Most transfers bring the guests back where they were collected, so the
-    // return leg falls back to the pickup point rather than being left blank.
-    transferToType: endpointType(body.transferToType)
-      ?? (toName ? 'ADDRESS' : endpointType(body.transferFromType) ?? (fromName ? 'ADDRESS' : null)),
-    transferToName: toName ?? fromName,
+    transferToType: endpointType(body.transferToType) ?? (toName ? 'ADDRESS' : null),
+    transferToName: toName,
     transferPickupTime: normalizeClockTime(body.transferPickupTime),
     transferReturnTime: resolveReturnTime(body.transferReturnTime, options.activityReturnTime),
     transferNotes: text(body.transferNotes),
   };
+}
+
+export function transferRouteError(transfer: TransferAddOn): 'TRANSFER_ROUTE_REQUIRED' | null {
+  return transfer.transferRequested && (!transfer.transferFromName || !transfer.transferToName)
+    ? 'TRANSFER_ROUTE_REQUIRED'
+    : null;
 }

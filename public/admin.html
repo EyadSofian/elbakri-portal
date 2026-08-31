@@ -9,7 +9,7 @@
   <script src="/assets/theme.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <link rel="stylesheet" href="/assets/portal.css">
   <style>
     /* Dedicated hotel + transport tabbed editors */
@@ -51,7 +51,7 @@
   <link rel="stylesheet" href="/assets/vendor/phosphor/style.css"
         onerror="document.documentElement.classList.add('icons-unavailable')" />
   <script src="/assets/icons.js"></script>
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script async src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="/assets/i18n.js"></script>
   <script src="/assets/responsive-tables.js" defer></script>
   <script src="/assets/global-search.js" defer></script>
@@ -4558,7 +4558,7 @@ function crSharedProgrammeHtml(programme) {
   programme = programme || {};
   const periods = crProgrammePeriods(programme.rates);
   const itinerary = Array.isArray(programme.itinerary) && programme.itinerary.length ? programme.itinerary : [{ day:1 }];
-  return `<div class="cr-programme-card cr-shared-programme-card">
+  return `<div class="cr-programme-card cr-shared-programme-card" data-catalogue-key="${escapeHtml(programme.catalogueKey || "")}">
     <div class="cr-period-head"><strong>${t("cruise.programme","Programme")}</strong><button type="button" class="btn btn-outline btn-sm" onclick="this.closest('.cr-shared-programme-card').remove()">${icon("trash-2")}${t("btn.remove","Remove")}</button></div>
     <div class="form-grid">
       <div class="form-field"><label>${t("th.route","Route")} *</label><select class="cr-shared-route">${crSharedRouteOptions(programme.route || "LUXOR_ASWAN")}</select></div>
@@ -4585,7 +4585,7 @@ function crSharedTransferHtml(rate) {
   const vehicleType = CRUISE_TRANSFER_VEHICLES.some(([value]) => value === rate.vehicleType) ? rate.vehicleType : "VAN_6";
   const defaultCapacity = CRUISE_TRANSFER_VEHICLES.find(([value]) => value === vehicleType)?.[1] || 6;
   const dateVal = value => value ? String(value).slice(0,10) : "";
-  return `<div class="cr-row cr-transfer-rate-row cr-shared-transfer-row">
+  return `<div class="cr-row cr-transfer-rate-row cr-shared-transfer-row" data-catalogue-key="${escapeHtml(rate.catalogueKey || "")}">
     <div class="cr-transfer-product-head">
       <div><strong>${t("cruise.transferProduct","Transfer vehicle")}</strong><span>${t("cruise.transferProductHelp","One row is one vehicle price for one-way or round-trip.")}</span></div>
       <label class="compact-check"><input class="cr-active" type="checkbox" ${rate.isActive === false ? "" : "checked"}><span>${t("cruise.available","Available to book")}</span></label>
@@ -4634,6 +4634,7 @@ function crSharedVehicleChanged(select) {
 
 function crCollectSharedProgrammes() {
   return [...document.querySelectorAll("#crSharedProgrammeRows .cr-shared-programme-card")].map(card => ({
+    catalogueKey: card.dataset.catalogueKey || null,
     route: card.querySelector(".cr-shared-route")?.value,
     nights: Number(card.querySelector(".cr-shared-nights")?.value || 0),
     name: card.querySelector(".cr-prog-name")?.value.trim() || "",
@@ -4649,6 +4650,7 @@ function crCollectSharedProgrammes() {
 
 function crCollectSharedTransfers() {
   return [...document.querySelectorAll("#crSharedTransferRows .cr-shared-transfer-row")].map(row => ({
+    catalogueKey: row.dataset.catalogueKey || null,
     route: row.querySelector(".cr-shared-route")?.value,
     nights: Number(row.querySelector(".cr-shared-nights")?.value || 0),
     market: row.querySelector(".cr-market")?.value || "FOREIGN",
@@ -4775,7 +4777,7 @@ function crRateRowHtml(r) {
   const currency = market === "EGYPTIAN" ? "EGP" : "USD";
   const scheduleIndex = r.scheduleIndex ?? crScheduleIndexForId(r.scheduleId);
   const dateVal = (v) => (v ? String(v).slice(0, 10) : "");
-  return `<div class="cr-row cr-period-row">
+  return `<div class="cr-row cr-period-row" data-rate-id="${escapeHtml(r.id || "")}">
     <div class="cr-period-head">
       <strong class="cr-rate-title"></strong>
       <button type="button" class="btn btn-outline btn-sm" onclick="crDuplicateRate(this)">${icon("copy")}${t("hotel.duplicateRate","Duplicate")}</button>
@@ -4841,7 +4843,7 @@ function crProgrammeRateHtml(rate, fixedMarket) {
   const market = fixedMarket === "EGYPTIAN" || rate.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
   const currency = market === "EGYPTIAN" ? "EGP" : "USD";
   return `<div class="cr-programme-rate cr-programme-market-rate" data-market="${market}">
-    <input class="cr-market" type="hidden" value="${market}"><input class="cr-cur" type="hidden" value="${currency}">
+    <input class="cr-catalogue-key" type="hidden" value="${escapeHtml(rate.catalogueKey || "")}"><input class="cr-market" type="hidden" value="${market}"><input class="cr-cur" type="hidden" value="${currency}">
     <div class="cr-programme-market-title"><strong>${market === "EGYPTIAN" ? t("market.EGYPTIAN", "Egyptians") : t("market.FOREIGN", "Foreigners")}</strong><span>${currency}</span></div>
     <div class="form-grid cr-rate-row-grid">
       <div class="form-field"><label>${t("cruise.adultPerPerson","Adult · per person")}</label><input class="cr-adult" type="number" min="0" step="0.01" value="${escapeHtml(rate.adultPrice ?? rate.singlePrice ?? "")}"></div>
@@ -5058,6 +5060,7 @@ function crCollectSupplements(owner) {
 
 function crCollectScheduleRows() {
   return [...document.querySelectorAll("#crSchedRows .cr-row")].map(row => ({
+    id: row.dataset.scheduleId || null,
     departureDay: row.querySelector(".cr-dep")?.value,
     returnDay: row.querySelector(".cr-ret")?.value,
     nights: row.querySelector(".cr-nights")?.value === "" ? null : Number(row.querySelector(".cr-nights")?.value),
@@ -5071,6 +5074,7 @@ function crCollectRateRows() {
     const g = sel => row.querySelector(sel);
     const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
     return {
+      id: row.dataset.rateId || null,
       cabinName: g(".cr-cabin")?.value.trim() || "",
       scheduleIndex: Number(g(".cr-rate-schedule")?.value || 0),
       market: g(".cr-market")?.value || "FOREIGN",
@@ -5096,6 +5100,7 @@ function crCollectProgrammeRates(card) {
       const g = sel => row.querySelector(sel);
       const num = sel => g(sel)?.value === "" ? null : Number(g(sel)?.value);
       return {
+        catalogueKey: g(".cr-catalogue-key")?.value || null,
         market: g(".cr-market")?.value || "FOREIGN",
         currency: g(".cr-cur")?.value || "USD",
         adultPrice: num(".cr-adult"), singlePrice: num(".cr-adult"), doublePrice: null, triplePrice: null,
@@ -6963,8 +6968,18 @@ async function openOfferForm(id, forcedKind = offerAdminTab) {
     const res = await apiFetch(`/offers/${id}`);
     o = res?.data;
   }
-  const kind = o?.kind === "PACKAGE" || forcedKind === "PACKAGE" ? "PACKAGE" : "OFFER";
+  const kind = o ? (o.kind === "PACKAGE" ? "PACKAGE" : "OFFER") : (forcedKind === "PACKAGE" ? "PACKAGE" : "OFFER");
   const isPackage = kind === "PACKAGE";
+  if (isPackage) {
+    const [hotelsRes, activitiesRes, transfersRes, plansRes] = await Promise.all([
+      apiFetch("/hotels?limit=100"), apiFetch("/activities?limit=200&includeInactive=true"),
+      apiFetch("/transport-rates"), apiFetch("/meal-plans"),
+    ]);
+    window._ofPackageCatalog = {
+      hotels: hotelsRes?.data || [], activities: activitiesRes?.data || [],
+      transfers: transfersRes?.data || [], mealPlans: plansRes?.data || [],
+    };
+  }
   const serviceTypes = ["hotels","transport","activities","security-approval","airport-assist","sim-card","cruises",""];
   const body = `<div class="form-grid">
     <input type="hidden" id="ofKind" value="${kind}">
@@ -6982,6 +6997,7 @@ async function openOfferForm(id, forcedKind = offerAdminTab) {
       </div>
     </div>
     ${isPackage ? `<div class="form-field full of-package-editor">
+      ${o?.packageNeedsConfiguration ? `<div class="alert alert-warning" style="margin-bottom:14px"><strong>${t("offers.reconfigurePackage","Reconfigure this legacy package")}</strong><div>${t("offers.reconfigurePackageHelp","Its old text data is preserved, but it will remain hidden from clients until real hotels, transfers, activities and price periods are selected and saved.")}</div></div>` : ""}
       <div class="of-package-editor__heading"><strong>${t("offers.packageComponents", "Package components")}</strong><span>${t("offers.packageStepsHelp", "Build it in four clear steps")}</span></div>
       <div class="of-package-tabs" id="ofPackageTabs" role="tablist">
         <button type="button" class="of-package-tab is-active" data-of-tab="hotels" onclick="ofShowPackageTab('hotels')"><span>1</span>${icon("hotel")}<b>${t("nav.hotels", "Hotels")}</b></button>
@@ -7057,30 +7073,37 @@ function ofRowWrap(hostId, className, fields) {
 }
 
 function ofAddHotelRow(value = {}) {
-  ofRowWrap("ofHotelRows", "of-hotel-row", `
-    <div class="form-field"><label>${t("offers.hotelName","Hotel name")} *</label><input class="of-hotel-name" value="${escapeHtml(value.name || "")}"></div>
-    <div class="form-field"><label>${t("offers.hotelId","Hotel ID (optional)")}</label><input class="of-hotel-id" value="${escapeHtml(value.hotelId || "")}"></div>
+  const hotels = window._ofPackageCatalog?.hotels || [];
+  const plans = window._ofPackageCatalog?.mealPlans || [];
+  const row = ofRowWrap("ofHotelRows", "of-hotel-row", `
+    <input type="hidden" class="of-component-id" value="${escapeHtml(value.id || "")}">
+    <div class="form-field"><label>${t("offers.hotelName","Hotel")} *</label><select class="of-hotel-id" onchange="ofPackageLoadHotelRates(this)"><option value="">${t("form.select","Select")}</option>${hotels.map(h => `<option value="${escapeHtml(h.id)}" ${h.id===value.hotelId?"selected":""}>${escapeHtml(h.name)} · ${escapeHtml(h.city||"")}</option>`).join("")}</select></div>
+    <div class="form-field"><label>${t("offers.hotelRate","Room / rate")}</label><select class="of-hotel-rate"><option value="${escapeHtml(value.hotelRateId || "")}">${escapeHtml(value.roomName || t("offers.selectHotelFirst","Select a hotel first"))}</option></select></div>
     <div class="form-field"><label>${t("cruise.nights","Nights")}</label><input type="number" min="1" class="of-hotel-nights" value="${escapeHtml(value.nights || 1)}"></div>
-    <div class="form-field"><label>${t("hotel.mealPlan","Meal plan")}</label><input class="of-hotel-meal" value="${escapeHtml(value.mealPlan || "")}"></div>`);
+    <div class="form-field"><label>${t("hotel.mealPlan","Meal plan")}</label><select class="of-hotel-meal"><option value="">${t("form.none","None")}</option>${plans.map(p => `<option value="${escapeHtml(p.code)}" ${p.code===value.mealPlan?"selected":""}>${escapeHtml(p.labelEn)}</option>`).join("")}</select></div>`);
+  if (row && value.hotelId) ofPackageLoadHotelRates(row.querySelector(".of-hotel-id"), value.hotelRateId);
 }
 
 function ofAddTransferRow(value = {}) {
+  const transfers = window._ofPackageCatalog?.transfers || [];
   ofRowWrap("ofTransferRows", "of-transfer-row", `
-    <div class="form-field"><label>${t("form.from","From")} *</label><input class="of-transfer-from" value="${escapeHtml(value.from || "")}"></div>
-    <div class="form-field"><label>${t("form.to","To")} *</label><input class="of-transfer-to" value="${escapeHtml(value.to || "")}"></div>
-    <div class="form-field"><label>${t("offers.vehicleNotes","Vehicle / notes")}</label><input class="of-transfer-vehicle" value="${escapeHtml(value.vehicleType || "")}"></div>`);
+    <input type="hidden" class="of-component-id" value="${escapeHtml(value.id || "")}">
+    <div class="form-field full"><label>${t("offers.transferRate","Transfer route / vehicle")} *</label><select class="of-transfer-rate"><option value="">${t("form.select","Select")}</option>${transfers.map(r => { const from=r.fromName||r.fromLocation||"?", to=r.toName||r.toLocation||"?"; return `<option value="${escapeHtml(r.id)}" ${r.id===value.transportRateId?"selected":""}>${escapeHtml(from)} → ${escapeHtml(to)} · ${escapeHtml(r.vehicleType||"")}</option>`; }).join("")}</select></div>
+    <div class="form-field"><label class="check-row"><input type="checkbox" class="of-transfer-included" ${value.included!==false?"checked":""}> ${t("offers.includedInPackage","Included in package")}</label></div>`);
 }
 
 function ofAddActivityRow(value = {}) {
+  const activities = window._ofPackageCatalog?.activities || [];
   ofRowWrap("ofActivityRows", "of-activity-row", `
-    <div class="form-field"><label>${t("offers.activityName","Activity name")} *</label><input class="of-activity-name" value="${escapeHtml(value.name || "")}"></div>
-    <div class="form-field"><label>${t("offers.activityId","Activity ID (optional)")}</label><input class="of-activity-id" value="${escapeHtml(value.activityId || "")}"></div>
-    <div class="form-field"><label>${t("offers.dayDate","Day / date")}</label><input class="of-activity-date" value="${escapeHtml(value.date || "")}" placeholder="${escapeHtml(t("offers.dayDatePlaceholder","Day 2 or 2026-10-01"))}"></div>`);
+    <input type="hidden" class="of-component-id" value="${escapeHtml(value.id || "")}">
+    <div class="form-field"><label>${t("offers.activityName","Activity")} *</label><select class="of-activity-id"><option value="">${t("form.select","Select")}</option>${activities.map(a => `<option value="${escapeHtml(a.id)}" ${a.id===value.activityId?"selected":""}>${escapeHtml(a.name)} · ${escapeHtml(a.city||"")}</option>`).join("")}</select></div>
+    <div class="form-field"><label>${t("offers.packageDay","Package day")}</label><input type="number" min="1" class="of-activity-day" value="${escapeHtml(value.dayNumber || "")}" placeholder="2"></div>`);
 }
 
 function ofAddPricingRow(value = {}) {
   const market = value.market === "EGYPTIAN" ? "EGYPTIAN" : "FOREIGN";
   const row = ofRowWrap("ofPricingRows", "of-pricing-row", `
+    <input type="hidden" class="of-component-id" value="${escapeHtml(value.id || "")}">
     <div class="form-field"><label>${t("form.validFrom","Valid from")} *</label><input type="date" class="of-price-from" value="${escapeHtml(value.validFrom ? String(value.validFrom).slice(0,10) : "")}"></div>
     <div class="form-field"><label>${t("form.validTo","Valid to")} *</label><input type="date" class="of-price-to" value="${escapeHtml(value.validTo ? String(value.validTo).slice(0,10) : "")}"></div>
     <div class="form-field"><label>${t("market.label","Market")} *</label><select class="of-price-market" onchange="ofSyncPriceCurrency(this)"><option value="FOREIGN" ${market === "FOREIGN" ? "selected" : ""}>${t("market.FOREIGN","Foreign")}</option><option value="EGYPTIAN" ${market === "EGYPTIAN" ? "selected" : ""}>${t("market.EGYPTIAN","Egyptian")}</option></select></div>
@@ -7092,6 +7115,17 @@ function ofAddPricingRow(value = {}) {
   if (row) ofSyncPriceCurrency(row.querySelector(".of-price-market"));
 }
 
+async function ofPackageLoadHotelRates(select, selectedId = "") {
+  const row = select?.closest(".of-hotel-row");
+  const target = row?.querySelector(".of-hotel-rate");
+  if (!target) return;
+  target.innerHTML = `<option value="">${t("common.loading","Loading…")}</option>`;
+  if (!select.value) { target.innerHTML = `<option value="">${t("offers.selectHotelFirst","Select a hotel first")}</option>`; return; }
+  const res = await apiFetch(`/hotels/${select.value}/rates`);
+  const rates = res?.data || [];
+  target.innerHTML = `<option value="">${t("offers.noSpecificRate","No specific room/rate")}</option>${rates.filter(r=>r.isActive!==false).map(r => `<option value="${escapeHtml(r.id)}" ${r.id===selectedId?"selected":""}>${escapeHtml(r.roomName)} · ${escapeHtml(r.mealPlan||"")}</option>`).join("")}`;
+}
+
 function ofSyncPriceCurrency(select) {
   const currency = select?.closest(".of-pricing-row")?.querySelector(".of-price-currency");
   if (currency) currency.value = select.value === "EGYPTIAN" ? "EGP" : "USD";
@@ -7101,16 +7135,20 @@ function ofCollectPackageRows() {
   const numberOrNull = value => value === "" ? null : Number(value);
   return {
     hotelItems: [...document.querySelectorAll(".of-hotel-row")].map(row => ({
-      name: row.querySelector(".of-hotel-name").value.trim(), hotelId: row.querySelector(".of-hotel-id").value.trim() || undefined,
+      id: row.querySelector(".of-component-id").value || undefined, hotelId: row.querySelector(".of-hotel-id").value || undefined,
+      hotelRateId: row.querySelector(".of-hotel-rate").value || undefined,
       nights: Math.max(1, parseInt(row.querySelector(".of-hotel-nights").value || "1")), mealPlan: row.querySelector(".of-hotel-meal").value.trim() || undefined,
-    })).filter(row => row.name),
+    })),
     transferItems: [...document.querySelectorAll(".of-transfer-row")].map(row => ({
-      from: row.querySelector(".of-transfer-from").value.trim(), to: row.querySelector(".of-transfer-to").value.trim(), vehicleType: row.querySelector(".of-transfer-vehicle").value.trim() || undefined,
-    })).filter(row => row.from && row.to),
+      id: row.querySelector(".of-component-id").value || undefined, transportRateId: row.querySelector(".of-transfer-rate").value || undefined,
+      included: row.querySelector(".of-transfer-included").checked,
+    })),
     activityItems: [...document.querySelectorAll(".of-activity-row")].map(row => ({
-      name: row.querySelector(".of-activity-name").value.trim(), activityId: row.querySelector(".of-activity-id").value.trim() || undefined, date: row.querySelector(".of-activity-date").value.trim() || undefined,
-    })).filter(row => row.name),
+      id: row.querySelector(".of-component-id").value || undefined, activityId: row.querySelector(".of-activity-id").value || undefined,
+      dayNumber: row.querySelector(".of-activity-day").value ? Number(row.querySelector(".of-activity-day").value) : undefined,
+    })),
     pricingPeriods: [...document.querySelectorAll(".of-pricing-row")].map(row => ({
+      id: row.querySelector(".of-component-id").value || undefined,
       validFrom: row.querySelector(".of-price-from").value, validTo: row.querySelector(".of-price-to").value,
       market: row.querySelector(".of-price-market").value, currency: row.querySelector(".of-price-currency").value,
       singlePrice: numberOrNull(row.querySelector(".of-price-single").value), doublePrice: numberOrNull(row.querySelector(".of-price-double").value),
@@ -7140,7 +7178,9 @@ async function saveOffer(id) {
   if (kind === "PACKAGE") Object.assign(payload, ofCollectPackageRows());
   if (!payload.title) { toast(t("toast.validationError"), "error"); return; }
   if (kind === "PACKAGE") {
-    if (!payload.hotelItems.length) { toast("Add at least one hotel to the package", "error"); ofShowPackageTab("hotels"); return; }
+    if (!payload.hotelItems.length || payload.hotelItems.some(item => !item.hotelId)) { toast("Select at least one real hotel", "error"); ofShowPackageTab("hotels"); return; }
+    if (payload.transferItems.some(item => !item.transportRateId)) { toast("Select a valid transfer route or remove the empty row", "error"); ofShowPackageTab("transfers"); return; }
+    if (payload.activityItems.some(item => !item.activityId)) { toast("Select a valid activity or remove the empty row", "error"); ofShowPackageTab("activities"); return; }
     if (!payload.pricingPeriods.length || payload.pricingPeriods.some(period => !period.validFrom || !period.validTo || period.validTo < period.validFrom || [period.singlePrice, period.doublePrice, period.triplePrice, period.childPrice].some(price => price == null || price < 0))) {
       toast("Complete every package price period and its Single / Double / Triple / Child prices", "error"); ofShowPackageTab("pricing"); return;
     }

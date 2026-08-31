@@ -44,6 +44,13 @@ export const DEMO_MODE = process.env.DEMO_MODE === '1' || process.env.DEMO_MODE 
 const ok = (data: unknown, meta?: unknown) => ({ success: true, data, ...(meta ? { meta } : {}) });
 const page = (rows: unknown[]) => ok(rows, { page: 1, limit: 20, total: rows.length, pages: 1 });
 
+const DEMO_HOTEL_RATES = [
+  { id: 'hr-demo-cairo', hotelId: 'h2', roomName: 'Nile View Room', roomType: 'DOUBLE', mealPlan: 'BB', isActive: true, currency: 'USD' },
+];
+const DEMO_TRANSPORT_RATES = [
+  { id: 'tr-demo-cairo', serviceNameEn: 'Cairo airport arrival', serviceNameAr: 'استقبال مطار القاهرة', fromName: 'Cairo International Airport', toName: 'Garden City hotel', vehicleType: 'SEDAN', maxPassengers: 3, isActive: true },
+];
+
 /** Preview tokens are signed with whatever secret is configured, or a fixed
  *  development-only fallback so the mode works with no env at all. */
 const SECRET = process.env.JWT_SECRET || 'demo-mode-preview-secret-not-for-production';
@@ -121,7 +128,7 @@ export function createDemoRouter(): Router {
   router.get('/hotels/areas', (_req, res) => res.json(ok([...new Set(DEMO_HOTELS.map((h) => h.area))])));
   router.get('/hotels/pricing/all', (_req, res) => res.json(ok([])));
   router.get('/hotels', (_req, res) => res.json(page(DEMO_HOTELS)));
-  router.get('/hotels/:id/rates', (_req, res) => res.json(ok([])));
+  router.get('/hotels/:id/rates', (req, res) => res.json(ok(DEMO_HOTEL_RATES.filter((rate) => rate.hotelId === req.params.id))));
   router.get('/hotels/:id/pricing', (_req, res) => res.json(ok([])));
   router.get('/hotels/:id/company-visibility', (_req, res) => res.json(ok([])));
   router.get('/hotels/:id', (req, res) => res.json(ok(DEMO_HOTELS.find((h) => h.id === req.params.id) ?? DEMO_HOTELS[0])));
@@ -143,7 +150,34 @@ export function createDemoRouter(): Router {
   router.get('/offers/active', (_req, res) => res.json(ok(DEMO_OFFERS.find((offer) => offer.kind === 'OFFER') ?? null)));
   router.get('/offers', (req, res) => {
     const kind = req.query.kind ? String(req.query.kind).toUpperCase() : null;
-    res.json(ok(kind ? DEMO_OFFERS.filter((offer) => offer.kind === kind) : DEMO_OFFERS));
+    const activeOnly = String(req.query.activeOnly ?? '') === 'true';
+    const rows = DEMO_OFFERS.filter((offer) => (!kind || offer.kind === kind)
+      && (!activeOnly || (offer.isActive && (offer.kind !== 'PACKAGE' || offer.packageNeedsConfiguration === false))));
+    res.json(ok(rows));
+  });
+  router.post('/offers/:id/resolve', (req, res) => {
+    const product = DEMO_OFFERS.find((offer) => offer.id === req.params.id && offer.kind === 'PACKAGE');
+    const travelDate = String(req.body?.travelDate ?? '').slice(0, 10);
+    const occupancy = String(req.body?.occupancy ?? '').toUpperCase();
+    const user = currentUser(req);
+    const market = user.company?.market === 'EGYPTIAN' ? 'EGYPTIAN' : 'FOREIGN';
+    if (!product || !/^\d{4}-\d{2}-\d{2}$/.test(travelDate) || !['SINGLE', 'DOUBLE', 'TRIPLE'].includes(occupancy)) {
+      res.status(400).json({ success: false, error: 'PACKAGE_PRICE_NOT_AVAILABLE' });
+      return;
+    }
+    const period = (product.pricingPeriods ?? []).find((row) => row.market === market && row.validFrom <= travelDate && row.validTo >= travelDate);
+    if (!period) {
+      res.status(400).json({ success: false, error: 'PACKAGE_PRICE_NOT_AVAILABLE' });
+      return;
+    }
+    const childrenCount = Math.max(0, Math.floor(Number(req.body?.childrenCount ?? 0)) || 0);
+    const adultsCount = Math.max(1, Math.floor(Number(req.body?.adultsCount ?? 1)) || 1);
+    const baseAmount = occupancy === 'SINGLE' ? period.singlePrice : occupancy === 'DOUBLE' ? period.doublePrice : period.triplePrice;
+    res.json(ok({
+      packageId: product.id, packageTitle: product.title, pricePeriodId: period.id,
+      market, occupancy, travelDate, adultsCount, childrenCount, baseAmount,
+      childUnitPrice: period.childPrice, total: baseAmount + (period.childPrice * childrenCount), currency: period.currency,
+    }));
   });
   router.get('/offers/:id', (req, res) => res.json(ok(DEMO_OFFERS.find((o) => o.id === req.params.id) ?? DEMO_OFFERS[0])));
   router.get('/cruise-shared-catalogue', (_req, res) => {
@@ -211,6 +245,11 @@ export function createDemoRouter(): Router {
       && (!city || String(activity.city ?? '').trim().toLowerCase() === city));
     res.json(ok(rows));
   });
+  router.get('/meal-plans', (_req, res) => res.json(ok([
+    { id: 'mp-bb', code: 'BB', name: 'Bed & Breakfast', nameAr: 'إقامة وإفطار', isActive: true },
+    { id: 'mp-hb', code: 'HB', name: 'Half Board', nameAr: 'نصف إقامة', isActive: true },
+  ])));
+  router.get('/transport-rates', (_req, res) => res.json(page(DEMO_TRANSPORT_RATES)));
   router.get('/airports', (_req, res) => res.json(ok(DEMO_AIRPORTS)));
   router.get('/sim-card/packages', (_req, res) => res.json(ok(DEMO_SIM_PACKAGES)));
   router.get('/reports/overview', (_req, res) => res.json(ok(DEMO_REPORT_OVERVIEW)));
@@ -220,7 +259,7 @@ export function createDemoRouter(): Router {
   // Collections the UI asks for that have no interesting preview content.
   for (const path of [
     '/activity-packages', '/activity-bookings', '/cruise-bookings', '/transport-bookings',
-    '/transport-rates', '/visa-applications', '/airport-receptions', '/sim-card/requests',
+    '/visa-applications', '/airport-receptions', '/sim-card/requests',
     '/vouchers', '/group-types', '/visa-fees', '/reception-services', '/market-prices',
     '/ui-templates', '/sheets-config', '/admin/market-prices', '/admin/price-rows',
   ]) {

@@ -477,6 +477,7 @@ model Hotel {
   rates                  HotelRate[]
   quoteRequests          QuoteRequest[]
   companyVisibility      HotelCompanyVisibility[]
+  commercialPackageItems CommercialPackageHotel[]
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @updatedAt
 
@@ -550,24 +551,25 @@ model HotelPricing {
 // occupancy prices in an explicit currency (NO FX conversion). `market = null`
 // means the row applies to ALL markets (fallback). Supplements hang off a row.
 model HotelRate {
-  id           String                @id @default(cuid())
-  hotelId      String
-  hotel        Hotel                 @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  roomName     String // free text — e.g. "Standard Room", "Deluxe Sea View"
-  market       Market? // null = applies to ALL markets
-  currency     String                @default("USD")
-  singlePrice  Decimal?              @db.Decimal(10, 2)
-  doublePrice  Decimal?              @db.Decimal(10, 2)
-  triplePrice  Decimal?              @db.Decimal(10, 2)
-  mealPlan     String? // MealPlanOption.code — admin-managed, not a fixed enum
-  validFrom    DateTime?
-  validTo      DateTime?
-  isActive     Boolean               @default(true)
-  notes        String?               @db.Text
-  displayOrder Int                   @default(0)
-  supplements  HotelRateSupplement[]
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
+  id                     String                   @id @default(cuid())
+  hotelId                String
+  hotel                  Hotel                    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  roomName               String // free text — e.g. "Standard Room", "Deluxe Sea View"
+  market                 Market? // null = applies to ALL markets
+  currency               String                   @default("USD")
+  singlePrice            Decimal?                 @db.Decimal(10, 2)
+  doublePrice            Decimal?                 @db.Decimal(10, 2)
+  triplePrice            Decimal?                 @db.Decimal(10, 2)
+  mealPlan               String? // MealPlanOption.code — admin-managed, not a fixed enum
+  validFrom              DateTime?
+  validTo                DateTime?
+  isActive               Boolean                  @default(true)
+  notes                  String?                  @db.Text
+  displayOrder           Int                      @default(0)
+  supplements            HotelRateSupplement[]
+  commercialPackageItems CommercialPackageHotel[]
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
   @@index([hotelId])
   @@index([hotelId, isActive])
@@ -694,68 +696,75 @@ model BookingCounter {
 // ─────────────────────────────────────────────
 
 model QuoteRequest {
-  id                 String             @id @default(cuid())
-  refNumber          String             @unique
-  serviceType        QuoteServiceType
-  status             QuoteRequestStatus @default(NEW)
-  companyId          String
-  company            Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  createdById        String
-  createdBy          User               @relation("QuoteRequestCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  destinationId      String?
-  destination        Destination?       @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  destinationName    String?
-  hotelId            String?
-  hotel              Hotel?             @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  id                             String                        @id @default(cuid())
+  refNumber                      String                        @unique
+  serviceType                    QuoteServiceType
+  status                         QuoteRequestStatus            @default(NEW)
+  companyId                      String
+  company                        Company                       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdById                    String
+  createdBy                      User                          @relation("QuoteRequestCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  destinationId                  String?
+  destination                    Destination?                  @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  destinationName                String?
+  hotelId                        String?
+  hotel                          Hotel?                        @relation(fields: [hotelId], references: [id], onDelete: SetNull)
   // Service identity for non-hotel services (soft refs — no FK constraint for flexibility)
-  serviceId          String? // cruiseId, activityId, or transportRateId as plain text
-  serviceName        String? // Human-readable display name of the quoted service
-  cruiseId           String? // NileCruise.id — soft reference
-  activityId         String? // Activity.id — soft reference
-  checkIn            DateTime?
-  checkOut           DateTime?
-  adultsCount        Int                @default(1)
-  childrenCount      Int                @default(0)
-  infantsCount       Int                @default(0)
-  roomsCount         Int?
-  nationality        String?
-  travelFrom         String?
-  mealPlan           MealPlan?
-  childAges          Json?
-  budget             Decimal?           @db.Decimal(12, 2)
-  quotedAmount       Decimal?           @db.Decimal(12, 2)
-  currency           String             @default("USD")
-  customerNotes      String?            @db.Text
-  internalNotes      String?            @db.Text
-  contactPreference  String?
+  serviceId                      String? // cruiseId, activityId, or transportRateId as plain text
+  serviceName                    String? // Human-readable display name of the quoted service
+  cruiseId                       String? // NileCruise.id — soft reference
+  activityId                     String? // Activity.id — soft reference
+  commercialPackageId            String?
+  commercialPackage              Offer?                        @relation("CommercialPackageQuotes", fields: [commercialPackageId], references: [id], onDelete: SetNull)
+  commercialPackagePricePeriodId String?
+  commercialPackagePricePeriod   CommercialPackagePricePeriod? @relation(fields: [commercialPackagePricePeriodId], references: [id], onDelete: SetNull)
+  checkIn                        DateTime?
+  checkOut                       DateTime?
+  adultsCount                    Int                           @default(1)
+  childrenCount                  Int                           @default(0)
+  infantsCount                   Int                           @default(0)
+  roomsCount                     Int?
+  nationality                    String?
+  travelFrom                     String?
+  mealPlan                       MealPlan?
+  childAges                      Json?
+  budget                         Decimal?                      @db.Decimal(12, 2)
+  quotedAmount                   Decimal?                      @db.Decimal(12, 2)
+  resolvedAmount                 Decimal?                      @db.Decimal(12, 2)
+  resolvedCurrency               String?
+  pricingValidatedAt             DateTime?
+  currency                       String                        @default("USD")
+  customerNotes                  String?                       @db.Text
+  internalNotes                  String?                       @db.Text
+  contactPreference              String?
   // Optional transfer leg requested alongside a quote. Keeping it on the
   // quote means an unpriced activity still reaches the Transport operations
   // queue instead of losing the pickup answers when it leaves the activity
   // form.
-  transferRequested  Boolean            @default(false)
-  transferTripType   String? // ONE_WAY | ROUND_TRIP
-  transferPaxCount   Int?
-  transferVehicleType String?
-  transferVehicleCapacity Int?
-  transferVehicleCount Int?
-  transferFromType   String?
-  transferFromName   String?
-  transferToType     String?
-  transferToName     String?
-  transferPickupTime String?
-  transferReturnTime String?
-  transferNotes      String?            @db.Text
-  customFields       Json? // dynamic fields captured by the Request Form Builder template
-  assignedToId       String?
-  assignedTo         User?              @relation("QuoteRequestAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
-  respondedAt        DateTime?
-  closedAt           DateTime?
-  requestedAt        DateTime           @default(now())
-  confirmedAt        DateTime?
-  confirmedById      String?
-  confirmedBy        User?              @relation("QuoteConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  transferRequested              Boolean                       @default(false)
+  transferTripType               String? // ONE_WAY | ROUND_TRIP
+  transferPaxCount               Int?
+  transferVehicleType            String?
+  transferVehicleCapacity        Int?
+  transferVehicleCount           Int?
+  transferFromType               String?
+  transferFromName               String?
+  transferToType                 String?
+  transferToName                 String?
+  transferPickupTime             String?
+  transferReturnTime             String?
+  transferNotes                  String?                       @db.Text
+  customFields                   Json? // dynamic fields captured by the Request Form Builder template
+  assignedToId                   String?
+  assignedTo                     User?                         @relation("QuoteRequestAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+  respondedAt                    DateTime?
+  closedAt                       DateTime?
+  requestedAt                    DateTime                      @default(now())
+  confirmedAt                    DateTime?
+  confirmedById                  String?
+  confirmedBy                    User?                         @relation("QuoteConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt                      DateTime                      @default(now())
+  updatedAt                      DateTime                      @updatedAt
 
   @@index([companyId])
   @@index([status])
@@ -765,6 +774,8 @@ model QuoteRequest {
   @@index([assignedToId])
   @@index([confirmedById])
   @@index([transferRequested])
+  @@index([commercialPackageId])
+  @@index([commercialPackagePricePeriodId])
 }
 
 model QuoteRequestCounter {
@@ -979,6 +990,7 @@ model CruiseSchedule {
   label         String? // optional operator label, e.g. "Short cruise"
   labelAr       String?
   isActive      Boolean              @default(true)
+  retiredAt     DateTime?
   displayOrder  Int                  @default(0)
   bookings      CruiseBooking[]
   rates         CruiseCabinRate[]
@@ -989,6 +1001,7 @@ model CruiseSchedule {
 
   @@index([cruiseId])
   @@index([cruiseId, isActive])
+  @@index([cruiseId, retiredAt])
 }
 
 // One cabin category, for one market, over one validity period, priced by how
@@ -1020,6 +1033,7 @@ model CruiseCabinRate {
   validFrom     DateTime?
   validTo       DateTime?
   isActive      Boolean         @default(true)
+  retiredAt     DateTime?
   notes         String?         @db.Text
   displayOrder  Int             @default(0)
   createdAt     DateTime        @default(now())
@@ -1028,6 +1042,7 @@ model CruiseCabinRate {
 
   @@index([cruiseId])
   @@index([cruiseId, isActive])
+  @@index([cruiseId, retiredAt])
   @@index([scheduleId])
 }
 
@@ -1040,6 +1055,7 @@ model CruiseProgramme {
   cruise           NileCruise            @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
   scheduleId       String
   schedule         CruiseSchedule        @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  catalogueKey     String?
   name             String
   nameAr           String?
   description      String?               @db.Text
@@ -1051,6 +1067,7 @@ model CruiseProgramme {
   transferFromName String?
   transferToName   String?
   isActive         Boolean               @default(true)
+  retiredAt        DateTime?
   displayOrder     Int                   @default(0)
   rates            CruiseProgrammeRate[]
   bookings         CruiseBooking[]
@@ -1060,6 +1077,8 @@ model CruiseProgramme {
   @@index([cruiseId])
   @@index([scheduleId])
   @@index([cruiseId, isActive])
+  @@index([cruiseId, catalogueKey])
+  @@index([cruiseId, retiredAt])
 }
 
 // Exactly two audiences are sold for a programme: Egyptian in EGP and everyone
@@ -1069,6 +1088,7 @@ model CruiseProgrammeRate {
   id           String          @id @default(cuid())
   programmeId  String
   programme    CruiseProgramme @relation(fields: [programmeId], references: [id], onDelete: Cascade)
+  catalogueKey String?
   market       Market
   currency     String
   singlePrice  Decimal?        @db.Decimal(10, 2)
@@ -1080,6 +1100,7 @@ model CruiseProgrammeRate {
   validTo      DateTime?
   notes        String?         @db.Text
   isActive     Boolean         @default(true)
+  retiredAt    DateTime?
   displayOrder Int             @default(0)
   bookings     CruiseBooking[]
   createdAt    DateTime        @default(now())
@@ -1087,6 +1108,8 @@ model CruiseProgrammeRate {
 
   @@index([programmeId])
   @@index([programmeId, market, isActive])
+  @@index([programmeId, catalogueKey])
+  @@index([programmeId, retiredAt])
 }
 
 // Optional transfer sold only with "Cruise only". A programme's transfer is
@@ -1097,6 +1120,7 @@ model CruiseTransferRate {
   cruise          NileCruise      @relation(fields: [cruiseId], references: [id], onDelete: Cascade)
   scheduleId      String
   schedule        CruiseSchedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  catalogueKey    String?
   market          Market
   fromLocation    String
   toLocation      String
@@ -1114,6 +1138,7 @@ model CruiseTransferRate {
   validTo         DateTime?
   notes           String?         @db.Text
   isActive        Boolean         @default(true)
+  retiredAt       DateTime?
   displayOrder    Int             @default(0)
   bookings        CruiseBooking[]
   createdAt       DateTime        @default(now())
@@ -1122,74 +1147,86 @@ model CruiseTransferRate {
   @@index([cruiseId])
   @@index([scheduleId])
   @@index([cruiseId, market, isActive])
+  @@index([cruiseId, catalogueKey])
+  @@index([cruiseId, retiredAt])
 }
 
 model CruiseBooking {
-  id                  String                  @id @default(cuid())
-  refNumber           String                  @unique
-  cruiseId            String
-  cruise              NileCruise              @relation(fields: [cruiseId], references: [id])
-  companyId           String
-  company             Company                 @relation(fields: [companyId], references: [id])
-  createdById         String
-  createdBy           User                    @relation("CruiseBookingCreatedBy", fields: [createdById], references: [id])
-  checkIn             DateTime
-  checkOut            DateTime
-  cabinType           CabinType               @default(STANDARD)
+  id                              String                  @id @default(cuid())
+  refNumber                       String                  @unique
+  cruiseId                        String
+  cruise                          NileCruise              @relation(fields: [cruiseId], references: [id])
+  companyId                       String
+  company                         Company                 @relation(fields: [companyId], references: [id])
+  createdById                     String
+  createdBy                       User                    @relation("CruiseBookingCreatedBy", fields: [createdById], references: [id])
+  checkIn                         DateTime
+  checkOut                        DateTime
+  cabinType                       CabinType               @default(STANDARD)
   // The priced row this booking was quoted from, and which of its three
   // occupancy prices was used. Matching a booking to a price by cabin *text*
   // was the old way and it silently repriced whenever a rate was renamed.
-  cabinRateId         String?
-  cabinRate           CruiseCabinRate?        @relation(fields: [cabinRateId], references: [id], onDelete: SetNull)
-  programmeId         String?
-  programme           CruiseProgramme?        @relation(fields: [programmeId], references: [id], onDelete: SetNull)
-  programmeRateId     String?
-  programmeRate       CruiseProgrammeRate?    @relation(fields: [programmeRateId], references: [id], onDelete: SetNull)
-  transferRateId      String?
-  transferRate        CruiseTransferRate?     @relation(fields: [transferRateId], references: [id], onDelete: SetNull)
-  selectedSupplements Json?
-  adultUnitPrice      Decimal?                @db.Decimal(10, 2)
-  childUnitPrice      Decimal?                @db.Decimal(10, 2)
-  occupancy           String? // SINGLE | DOUBLE | TRIPLE
-  cabinCount          Int                     @default(1)
-  scheduleId          String?
-  schedule            CruiseSchedule?         @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
-  passengerNames      Json?
-  adultsCount         Int                     @default(1)
-  childrenCount       Int                     @default(0)
+  cabinRateId                     String?
+  cabinRate                       CruiseCabinRate?        @relation(fields: [cabinRateId], references: [id], onDelete: SetNull)
+  programmeId                     String?
+  programme                       CruiseProgramme?        @relation(fields: [programmeId], references: [id], onDelete: SetNull)
+  programmeRateId                 String?
+  programmeRate                   CruiseProgrammeRate?    @relation(fields: [programmeRateId], references: [id], onDelete: SetNull)
+  transferRateId                  String?
+  transferRate                    CruiseTransferRate?     @relation(fields: [transferRateId], references: [id], onDelete: SetNull)
+  selectedSupplements             Json?
+  adultUnitPrice                  Decimal?                @db.Decimal(10, 2)
+  childUnitPrice                  Decimal?                @db.Decimal(10, 2)
+  occupancy                       String? // SINGLE | DOUBLE | TRIPLE
+  cabinCount                      Int                     @default(1)
+  scheduleId                      String?
+  schedule                        CruiseSchedule?         @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  // Immutable commercial descriptions. Foreign keys keep catalogue lineage;
+  // these fields keep exactly what the customer bought if labels later change.
+  cruiseNameSnapshot              String?
+  fareNameSnapshot                String?
+  programmeNameSnapshot           String?
+  programmeDescriptionSnapshot    String?                 @db.Text
+  programmeNightsSnapshot         Int?
+  scheduleDepartureDaySnapshot    String?
+  scheduleReturnDaySnapshot       String?
+  transferPricePerVehicleSnapshot Decimal?                @db.Decimal(12, 2)
+  passengerNames                  Json?
+  adultsCount                     Int                     @default(1)
+  childrenCount                   Int                     @default(0)
   // Transfer add-on — filled only when the fare does not already collect the
   // guests and the agent asked for one. The route is captured as its own leg,
   // exactly as an activity booking captures it, so a boat and an excursion
   // booked on the same day read the same way on the voucher.
-  transferRequested   Boolean                 @default(false)
-  transferFromType    String? // HOTEL | AIRPORT | DESTINATION | ADDRESS
-  transferFromName    String?
-  transferToType      String?
-  transferToName      String?
-  transferPickupTime  String? // "08:30" — when the driver collects them
-  transferReturnTime  String?
-  transferTripType    String? // ONE_WAY | ROUND_TRIP
-  transferPaxCount    Int?
-  transferVehicleType String?
-  transferVehicleCapacity Int?
-  transferVehicleCount Int?
-  transferNotes       String?                 @db.Text
-  addOns              CruiseBookingActivity[]
-  totalAmount         Decimal                 @db.Decimal(12, 2)
-  currency            String                  @default("USD")
-  sourceAmount        Decimal?                @db.Decimal(12, 2)
-  sourceCurrency      String?
-  exchangeRate        Decimal?                @db.Decimal(18, 8)
-  exchangeRateAt      DateTime?
-  status              BookingStatus           @default(PENDING)
-  notes               String?                 @db.Text
-  invoice             Invoice?
-  requestedAt         DateTime                @default(now())
-  confirmedAt         DateTime?
-  confirmedById       String?
-  confirmedBy         User?                   @relation("CruiseConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  createdAt           DateTime                @default(now())
-  updatedAt           DateTime                @updatedAt
+  transferRequested               Boolean                 @default(false)
+  transferFromType                String? // HOTEL | AIRPORT | DESTINATION | ADDRESS
+  transferFromName                String?
+  transferToType                  String?
+  transferToName                  String?
+  transferPickupTime              String? // "08:30" — when the driver collects them
+  transferReturnTime              String?
+  transferTripType                String? // ONE_WAY | ROUND_TRIP
+  transferPaxCount                Int?
+  transferVehicleType             String?
+  transferVehicleCapacity         Int?
+  transferVehicleCount            Int?
+  transferNotes                   String?                 @db.Text
+  addOns                          CruiseBookingActivity[]
+  totalAmount                     Decimal                 @db.Decimal(12, 2)
+  currency                        String                  @default("USD")
+  sourceAmount                    Decimal?                @db.Decimal(12, 2)
+  sourceCurrency                  String?
+  exchangeRate                    Decimal?                @db.Decimal(18, 8)
+  exchangeRateAt                  DateTime?
+  status                          BookingStatus           @default(PENDING)
+  notes                           String?                 @db.Text
+  invoice                         Invoice?
+  requestedAt                     DateTime                @default(now())
+  confirmedAt                     DateTime?
+  confirmedById                   String?
+  confirmedBy                     User?                   @relation("CruiseConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  createdAt                       DateTime                @default(now())
+  updatedAt                       DateTime                @updatedAt
 
   @@index([companyId])
   @@index([status])
@@ -1322,49 +1359,50 @@ model TransportBooking {
 }
 
 model TransportRate {
-  id                String                 @id @default(cuid())
-  sheetsRowId       String?
-  type              TransportType          @default(PRIVATE_TRANSFER)
+  id                     String                      @id @default(cuid())
+  sheetsRowId            String?
+  type                   TransportType               @default(PRIVATE_TRANSFER)
   // Priced-product descriptor — drives the service-aware UI + backend validation.
-  serviceMode       TransportServiceMode   @default(POINT_TO_POINT)
-  serviceNameEn     String?
-  serviceNameAr     String?
-  serviceArea       String? // e.g. "Cairo", "Sharm El Sheikh"
-  durationHours     Int? // hours the car is at disposal (HOURLY_CHARTER / DAY_USE)
-  vehicleType       VehicleType            @default(SEDAN)
-  city              String?
+  serviceMode            TransportServiceMode        @default(POINT_TO_POINT)
+  serviceNameEn          String?
+  serviceNameAr          String?
+  serviceArea            String? // e.g. "Cairo", "Sharm El Sheikh"
+  durationHours          Int? // hours the car is at disposal (HOURLY_CHARTER / DAY_USE)
+  vehicleType            VehicleType                 @default(SEDAN)
+  city                   String?
   // Legacy free-text endpoints (kept for back-compat reads).
-  fromLocation      String?
-  toLocation        String?
+  fromLocation           String?
+  toLocation             String?
   // Typed endpoints — authoritative. fromId/toId are soft refs (airportId,
   // hotelId or destinationId depending on the type); from/toName denormalize
   // the display label so a route resolves without extra joins.
-  fromType          TransportEndpointType?
-  fromId            String?
-  fromName          String?
-  toType            TransportEndpointType?
-  toId              String?
-  toName            String?
+  fromType               TransportEndpointType?
+  fromId                 String?
+  fromName               String?
+  toType                 TransportEndpointType?
+  toId                   String?
+  toName                 String?
   // If true, this rate also prices the reverse direction (B → A) at the same price.
-  isBidirectional   Boolean                @default(false)
-  rate              Decimal                @db.Decimal(10, 2) // legacy one-way rate (back-compat)
-  roundTripRate     Decimal?               @db.Decimal(10, 2) // legacy round-trip rate
+  isBidirectional        Boolean                     @default(false)
+  rate                   Decimal                     @db.Decimal(10, 2) // legacy one-way rate (back-compat)
+  roundTripRate          Decimal?                    @db.Decimal(10, 2) // legacy round-trip rate
   // Explicit dual-currency sale prices (NO FX). Egyptian market → EGP, others → USD.
-  priceEgp          Decimal?               @db.Decimal(10, 2)
-  priceUsd          Decimal?               @db.Decimal(10, 2)
-  roundTripPriceEgp Decimal?               @db.Decimal(10, 2)
-  roundTripPriceUsd Decimal?               @db.Decimal(10, 2)
-  currency          String                 @default("USD")
-  minCapacity       Int                    @default(1)
-  maxCapacity       Int?
-  notes             String?                @db.Text
-  isActive          Boolean                @default(true)
-  destinationId     String?
-  destination       Destination?           @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  serviceGroupTypes ServiceGroupType[]
-  bookings          TransportBooking[]
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
+  priceEgp               Decimal?                    @db.Decimal(10, 2)
+  priceUsd               Decimal?                    @db.Decimal(10, 2)
+  roundTripPriceEgp      Decimal?                    @db.Decimal(10, 2)
+  roundTripPriceUsd      Decimal?                    @db.Decimal(10, 2)
+  currency               String                      @default("USD")
+  minCapacity            Int                         @default(1)
+  maxCapacity            Int?
+  notes                  String?                     @db.Text
+  isActive               Boolean                     @default(true)
+  destinationId          String?
+  destination            Destination?                @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  serviceGroupTypes      ServiceGroupType[]
+  bookings               TransportBooking[]
+  commercialPackageItems CommercialPackageTransfer[]
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
 
   @@index([sheetsRowId])
   @@index([type])
@@ -1397,70 +1435,71 @@ model Airport {
 // ─────────────────────────────────────────────
 
 model Activity {
-  id                 String                  @id @default(cuid())
-  name               String
-  nameAr             String?
+  id                     String                      @id @default(cuid())
+  name                   String
+  nameAr                 String?
   // city is now free-text (replaces ActivityCity enum) — dynamic destinations
-  city               String
-  category           ActivityCategory        @default(SIGHTSEEING)
-  duration           String?
-  timeSlots          Json? // e.g. ["09:00 AM","02:00 PM"]
-  description        String?                 @db.Text
-  descriptionAr      String?                 @db.Text
-  includes           Json?
-  excludes           Json?
+  city                   String
+  category               ActivityCategory            @default(SIGHTSEEING)
+  duration               String?
+  timeSlots              Json? // e.g. ["09:00 AM","02:00 PM"]
+  description            String?                     @db.Text
+  descriptionAr          String?                     @db.Text
+  includes               Json?
+  excludes               Json?
   // The programme, as an ordered list:
   //   [{ day, title, titleAr, description, descriptionAr }]
   // The same shape a cruise carries. A day trip's rows all sit on day one and
   // read as stops; a multi-day package reads as days.
-  itinerary          Json?
+  itinerary              Json?
   // The same two lists as one ordered, marked set:
   //   [{ label, labelAr, included: true|false }]
   // `includes` / `excludes` above stay in step with it so vouchers, the older
   // sheet importer and anything else reading the flat lists keep working.
-  inclusions         Json?
+  inclusions             Json?
   // Is a transfer part of the price? When it is not, the portal offers the
   // client an "Add transfer" panel instead of leaving them to guess.
-  transferIncluded   Boolean                 @default(false)
-  transferNote       String?                 @db.Text
-  transferNoteAr     String?                 @db.Text
+  transferIncluded       Boolean                     @default(false)
+  transferNote           String?                     @db.Text
+  transferNoteAr         String?                     @db.Text
   // Optional fixed add-on charged once per activity booking when the transfer
   // is not already included. It uses the activity currency, so the catalogue,
   // preview and server total can never disagree about which money is charged.
-  transferPrice      Decimal?                @db.Decimal(10, 2)
-  transferFromName   String?
-  transferToName     String?
+  transferPrice          Decimal?                    @db.Decimal(10, 2)
+  transferFromName       String?
+  transferToName         String?
   // When the trip drops the guests back. Prefills the pickup time of a return
   // transfer so the driver is booked for when they are actually free.
-  returnTime         String?
-  imageUrl           String?                 @db.Text
+  returnTime             String?
+  imageUrl               String?                     @db.Text
   // Extra photos for the activity gallery, in display order.
-  galleryUrls        Json?
+  galleryUrls            Json?
   // An excursion is quoted either per person (adult / child) or per party
   // (single / double / triple — a private tour for one, two or three people).
   // Which of these carry a price is up to the operator: an activity sold only
   // as a private tour leaves the per-person fields empty, and vice versa. All
   // are nullable so a blank field means "not sold this way", not "free".
-  priceAdult         Decimal?                @db.Decimal(10, 2)
-  priceChild         Decimal?                @db.Decimal(10, 2)
-  priceSingle        Decimal?                @db.Decimal(10, 2)
-  priceDouble        Decimal?                @db.Decimal(10, 2)
-  priceTriple        Decimal?                @db.Decimal(10, 2)
-  currency           String                  @default("USD")
-  sheetsRowId        String?
-  minPax             Int                     @default(1)
-  maxPax             Int                     @default(20)
-  isActive           Boolean                 @default(true)
+  priceAdult             Decimal?                    @db.Decimal(10, 2)
+  priceChild             Decimal?                    @db.Decimal(10, 2)
+  priceSingle            Decimal?                    @db.Decimal(10, 2)
+  priceDouble            Decimal?                    @db.Decimal(10, 2)
+  priceTriple            Decimal?                    @db.Decimal(10, 2)
+  currency               String                      @default("USD")
+  sheetsRowId            String?
+  minPax                 Int                         @default(1)
+  maxPax                 Int                         @default(20)
+  isActive               Boolean                     @default(true)
   // If false, creates a quote request instead of a confirmed booking
-  isConfirmableInApp Boolean                 @default(true)
-  destinationId      String?
-  destination        Destination?            @relation(fields: [destinationId], references: [id], onDelete: SetNull)
-  bookings           ActivityBooking[]
-  packageItems       ActivityPackageItem[]
-  cruiseAddOns       CruiseBookingActivity[]
-  serviceGroupTypes  ServiceGroupType[]
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
+  isConfirmableInApp     Boolean                     @default(true)
+  destinationId          String?
+  destination            Destination?                @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+  bookings               ActivityBooking[]
+  packageItems           ActivityPackageItem[]
+  commercialPackageItems CommercialPackageActivity[]
+  cruiseAddOns           CruiseBookingActivity[]
+  serviceGroupTypes      ServiceGroupType[]
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
 
   @@index([city])
   @@index([sheetsRowId])
@@ -1819,32 +1858,114 @@ model ReceptionServiceRate {
 // ─────────────────────────────────────────────
 
 model Offer {
-  id             String    @id @default(cuid())
-  title          String
-  titleAr        String?
-  description    String?   @db.Text
-  descriptionAr  String?   @db.Text
-  imageUrl       String?   @db.Text
+  id                        String                         @id @default(cuid())
+  title                     String
+  titleAr                   String?
+  description               String?                        @db.Text
+  descriptionAr             String?                        @db.Text
+  imageUrl                  String?                        @db.Text
   // OFFER and PACKAGE share the catalogue surface but are intentionally shown
   // in separate tabs to admins and clients.
-  kind           String    @default("OFFER")
-  hotelItems     Json?
-  transferItems  Json?
-  activityItems  Json?
-  pricingPeriods Json?
-  serviceType    String?
-  ctaLabel       String?
-  ctaLabelAr     String?
-  ctaAction      String?
-  validFrom      DateTime?
-  validTo        DateTime?
-  priority       Int       @default(0)
-  isActive       Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  kind                      String                         @default("OFFER")
+  hotelItems                Json?
+  transferItems             Json?
+  activityItems             Json?
+  pricingPeriods            Json?
+  // Legacy JSON above remains readable. New packages use the validated
+  // relational catalogue below; legacy rows are explicitly flagged instead
+  // of guessing foreign-key matches from operator-entered text.
+  packageNeedsConfiguration Boolean                        @default(false)
+  packageHotels             CommercialPackageHotel[]
+  packageTransfers          CommercialPackageTransfer[]
+  packageActivities         CommercialPackageActivity[]
+  packagePricePeriods       CommercialPackagePricePeriod[]
+  packageQuoteRequests      QuoteRequest[]                 @relation("CommercialPackageQuotes")
+  serviceType               String?
+  ctaLabel                  String?
+  ctaLabelAr                String?
+  ctaAction                 String?
+  validFrom                 DateTime?
+  validTo                   DateTime?
+  priority                  Int                            @default(0)
+  isActive                  Boolean                        @default(true)
+  createdAt                 DateTime                       @default(now())
+  updatedAt                 DateTime                       @updatedAt
 
   @@index([isActive])
   @@index([priority])
+}
+
+model CommercialPackageHotel {
+  id           String     @id @default(cuid())
+  offerId      String
+  offer        Offer      @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  hotelId      String
+  hotel        Hotel      @relation(fields: [hotelId], references: [id], onDelete: Restrict)
+  hotelRateId  String?
+  hotelRate    HotelRate? @relation(fields: [hotelRateId], references: [id], onDelete: Restrict)
+  nights       Int        @default(1)
+  mealPlan     String?
+  displayOrder Int        @default(0)
+  retiredAt    DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([offerId, retiredAt])
+  @@index([hotelId])
+  @@index([hotelRateId])
+}
+
+model CommercialPackageTransfer {
+  id              String        @id @default(cuid())
+  offerId         String
+  offer           Offer         @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  transportRateId String
+  transportRate   TransportRate @relation(fields: [transportRateId], references: [id], onDelete: Restrict)
+  included        Boolean       @default(true)
+  displayOrder    Int           @default(0)
+  retiredAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([offerId, retiredAt])
+  @@index([transportRateId])
+}
+
+model CommercialPackageActivity {
+  id           String    @id @default(cuid())
+  offerId      String
+  offer        Offer     @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  activityId   String
+  activity     Activity  @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  dayNumber    Int?
+  displayOrder Int       @default(0)
+  retiredAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([offerId, retiredAt])
+  @@index([activityId])
+}
+
+model CommercialPackagePricePeriod {
+  id            String         @id @default(cuid())
+  offerId       String
+  offer         Offer          @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  market        Market
+  currency      String
+  validFrom     DateTime
+  validTo       DateTime
+  singlePrice   Decimal        @db.Decimal(12, 2)
+  doublePrice   Decimal        @db.Decimal(12, 2)
+  triplePrice   Decimal        @db.Decimal(12, 2)
+  childPrice    Decimal        @db.Decimal(12, 2)
+  retiredAt     DateTime?
+  quoteRequests QuoteRequest[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([offerId, market, validFrom, validTo])
+  @@index([offerId, retiredAt])
 }
 
 // ─────────────────────────────────────────────

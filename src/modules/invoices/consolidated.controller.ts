@@ -21,6 +21,13 @@ const sourceInclude = {
       activity: { select: { name: true } },
     },
   },
+  activityPackage: {
+    select: {
+      refNumber: true,
+      clientName: true,
+      _count: { select: { items: true } },
+    },
+  },
   transportBooking: {
     select: {
       refNumber: true,
@@ -59,9 +66,10 @@ const sourceInclude = {
 
 type InvoiceWithSources = Prisma.InvoiceGetPayload<{ include: typeof sourceInclude }>;
 
-function invoiceLine(inv: InvoiceWithSources): ConsolidatedLine {
+export function invoiceLine(inv: InvoiceWithSources): ConsolidatedLine {
   const refNumber = inv.booking?.refNumber
     ?? inv.activityBooking?.refNumber
+    ?? inv.activityPackage?.refNumber
     ?? inv.transportBooking?.refNumber
     ?? inv.airportReception?.refNumber
     ?? inv.cruiseBooking?.refNumber
@@ -71,6 +79,10 @@ function invoiceLine(inv: InvoiceWithSources): ConsolidatedLine {
   let service = 'Service';
   if (inv.booking) service = inv.booking.hotel?.name ?? inv.booking.type ?? 'Hotel';
   else if (inv.activityBooking) service = `Activity: ${inv.activityBooking.activity?.name ?? ''}`.trim();
+  else if (inv.activityPackage) {
+    const guest = inv.activityPackage.clientName?.trim();
+    service = `Activity Package: ${inv.activityPackage._count.items} item${inv.activityPackage._count.items === 1 ? '' : 's'}${guest ? ` · ${guest}` : ''}`;
+  }
   else if (inv.transportBooking) service = `Transport: ${inv.transportBooking.fromLocation} -> ${inv.transportBooking.toLocation}`;
   else if (inv.airportReception) {
     service = `Airport Assist: ${inv.airportReception.serviceType.replace(/_/g, ' ')} (${inv.airportReception.airport})`;
