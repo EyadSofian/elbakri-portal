@@ -23,6 +23,7 @@ import {
   validateCruiseRateInput,
   validateCruiseStayDates,
 } from '../src/shared/cruise-rates';
+import { cruiseRoutesShareCorridor } from '../src/shared/cruise-route';
 
 // A Nile cruise is priced the way a hotel is: one row per cabin category, per
 // market, per period, with a price for each occupancy. `priceFrom` was one
@@ -274,6 +275,13 @@ test('Nile cruises expose only Egyptian/EGP and Foreign/USD audiences', () => {
     assert.equal(cruiseAudience(market), 'FOREIGN');
     assert.equal(cruiseAudienceCurrency(cruiseAudience(market)), 'USD');
   }
+});
+
+test('three- and four-night Nile sailings share the reverse Luxor/Aswan corridor', () => {
+  assert.equal(cruiseRoutesShareCorridor('LUXOR_ASWAN', 'ASWAN_LUXOR'), true);
+  assert.equal(cruiseRoutesShareCorridor('ASWAN_LUXOR', 'LUXOR_ASWAN'), true);
+  assert.equal(cruiseRoutesShareCorridor('LUXOR_ASWAN', 'LUXOR_ASWAN'), true);
+  assert.equal(cruiseRoutesShareCorridor('LUXOR_ASWAN_LUXOR', 'LUXOR_ASWAN'), false);
 });
 
 test('each programme price period has both Egyptian and foreign tariffs', () => {

@@ -149,10 +149,9 @@ test('availableBases: a private-tour-only trip offers no per-person basis', () =
   );
 });
 
-test('availableBases: a zero price is a real price, not a blank', () => {
-  // A free-with-the-package trip is priced at zero deliberately; treating that
-  // as "not sold" would hide a basis the operator meant to offer.
-  assert.deepEqual(availableBases({ priceSingle: D(0) }), ['SINGLE']);
+test('availableBases: legacy zero party prices do not create fake booking modes', () => {
+  assert.deepEqual(availableBases({ priceAdult: D(60), priceSingle: D(0), priceDouble: D(0) }), ['PER_PERSON']);
+  assert.deepEqual(availableBases({ priceAdult: D(0) }), ['PER_PERSON'], 'a deliberate free per-person price stays valid');
 });
 
 test('availableBases: an unpriced trip offers nothing at all', () => {
@@ -176,6 +175,7 @@ test('partyPriceFor: reads the price for the basis asked for', () => {
 
 test('partyPriceFor: an unpriced basis is null, never zero', () => {
   assert.equal(partyPriceFor({ priceDouble: D(120) }, 'TRIPLE'), null);
+  assert.equal(partyPriceFor({ priceTriple: D(0) }, 'TRIPLE'), null);
 });
 
 test('partyPriceFor: a plain number is accepted as well as a Decimal', () => {

@@ -9,6 +9,7 @@ import {
   validateCruiseRateInput,
 } from '../../shared/cruise-rates';
 import { readItinerary } from '../../shared/itinerary';
+import { cruiseRoutesShareCorridor } from '../../shared/cruise-route';
 
 /**
  * The catalogue half of a Nile cruise: the cabin rate rows that price it, and
@@ -488,7 +489,10 @@ async function materialiseSharedCatalogue(
   });
   for (const cruise of cruises) {
     for (const schedule of cruise.schedules) {
-      const programmes = catalogue.programmes.filter((programme) => programme.route === cruise.route && Number(programme.nights) === schedule.nights);
+      const programmes = catalogue.programmes.filter((programme) =>
+        cruiseRoutesShareCorridor(cruise.route, programme.route)
+        && Number(programme.nights) === schedule.nights,
+      );
       for (let programmeIndex = 0; programmeIndex < programmes.length; programmeIndex++) {
         const programme = programmes[programmeIndex];
         const created = await tx.cruiseProgramme.create({
@@ -530,7 +534,10 @@ async function materialiseSharedCatalogue(
           });
         }
       }
-      const transfers = catalogue.transferRates.filter((rate) => rate.route === cruise.route && Number(rate.nights) === schedule.nights);
+      const transfers = catalogue.transferRates.filter((rate) =>
+        cruiseRoutesShareCorridor(cruise.route, rate.route)
+        && Number(rate.nights) === schedule.nights,
+      );
       for (let rateIndex = 0; rateIndex < transfers.length; rateIndex++) {
         const rate = transfers[rateIndex];
         const market = asCruiseMarket(rate.market);

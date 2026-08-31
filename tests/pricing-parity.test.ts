@@ -60,7 +60,7 @@ const TABLES: PriceTable[] = [
   { SINGLE: 60 },                           // only as a single
   { SINGLE: 60, DOUBLE: 100 },              // no triple
   { DOUBLE: 100, TRIPLE: 120 },             // no single — the fallback case
-  { SINGLE: 0, DOUBLE: 0, TRIPLE: 0 },      // free with a package: zero is a price
+  { SINGLE: 0, DOUBLE: 0, TRIPLE: 0 },      // legacy Sheets blanks: no party product
   { SINGLE: 33.33, DOUBLE: 99.99 },         // awkward decimals
 ];
 
@@ -105,7 +105,7 @@ test('portal and server compose every party the same way', () => {
   // The expectation is derived from the data rather than hard-coded, so adding
   // a price table cannot quietly shrink the coverage this test claims.
   const sellablePairs = TABLES
-    .flatMap((table) => (PARTY_BASES as PartyBasis[]).map((basis) => table[basis] !== undefined))
+    .flatMap((table) => (PARTY_BASES as PartyBasis[]).map((basis) => Number(table[basis]) > 0))
     .filter(Boolean).length;
   assert.equal(compared, sellablePairs * 12, 'the sweep did not cover every sellable rate');
 });

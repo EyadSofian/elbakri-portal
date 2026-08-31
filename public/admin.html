@@ -5324,10 +5324,12 @@ function actRenderCatalogRows(activities) {
   const priceBits = a => [
     [t("form.priceAdult", "Adult"), a.priceAdult],
     [t("form.priceChild", "Child"), a.priceChild],
-    [t("hotel.single", "Single"), a.priceSingle],
-    [t("hotel.double", "Double"), a.priceDouble],
-    [t("hotel.triple", "Triple"), a.priceTriple],
-  ].filter(([, v]) => v !== null && v !== undefined && v !== "");
+  ].filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .concat([
+      [t("hotel.single", "Single"), a.priceSingle],
+      [t("hotel.double", "Double"), a.priceDouble],
+      [t("hotel.triple", "Triple"), a.priceTriple],
+    ].filter(([, v]) => Number(v) > 0));
   tbody.innerHTML = rows.length ? rows.map(a => {
     const photos = (a.galleryUrls || []).length;
     const bits = priceBits(a);

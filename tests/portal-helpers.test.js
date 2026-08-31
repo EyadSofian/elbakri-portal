@@ -163,8 +163,10 @@ test('portal: an unpriced activity is routed to a quote instead of a dead bookin
   assert.match(dashboardSource, /actHasBookablePrice\(a\)[\s\S]{0,500}?openActivityDetails/);
 });
 
-test('portal: a zero party price is a real price, not a blank', () => {
-  assert.deepEqual(plain(portal.actPartyPriceRows({ priceSingle: 0 }).map((r) => r[0])), ['SINGLE']);
+test('portal: legacy zero party prices do not create fake booking modes', () => {
+  assert.deepEqual(plain(portal.actPartyPriceRows({ priceSingle: 0, priceDouble: 0 }).map((r) => r[0])), []);
+  assert.equal(portal.actHasBookablePrice({ priceAdult: 60, priceSingle: 0 }), true);
+  assert.equal(portal.actPartyPrice({ SINGLE: 0 }, 'SINGLE'), null);
 });
 
 test('portal: an activity with no configured service types does not show a fake no-data choice', () => {

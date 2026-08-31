@@ -40,6 +40,18 @@ function has(value: Decimal | number | null | undefined): boolean {
 }
 
 /**
+ * Legacy Sheets rows used zero as the empty value for Single / Double / Triple.
+ * Those zeroes are not free private tours: they mean the operator never enabled
+ * that party size. Per-person adult/child zero remains valid (for example a
+ * free child), but a party product must have a positive price to exist.
+ */
+function hasPartyPrice(value: Decimal | number | null | undefined): boolean {
+  if (!has(value)) return false;
+  const amount = value instanceof Decimal ? value : new Decimal(value as number);
+  return amount.gt(0);
+}
+
+/**
  * The ways this particular trip is actually sold — nothing else may be offered.
  * An operator who priced a safari only as a private jeep for two never wants
  * "per person" on the form, and one who priced it per head never wants
@@ -49,9 +61,9 @@ function has(value: Decimal | number | null | undefined): boolean {
 export function availableBases(activity: ActivityPriceSet): PricingBasis[] {
   const bases: PricingBasis[] = [];
   if (has(activity.priceAdult)) bases.push('PER_PERSON');
-  if (has(activity.priceSingle)) bases.push('SINGLE');
-  if (has(activity.priceDouble)) bases.push('DOUBLE');
-  if (has(activity.priceTriple)) bases.push('TRIPLE');
+  if (hasPartyPrice(activity.priceSingle)) bases.push('SINGLE');
+  if (hasPartyPrice(activity.priceDouble)) bases.push('DOUBLE');
+  if (hasPartyPrice(activity.priceTriple)) bases.push('TRIPLE');
   return bases;
 }
 
@@ -60,7 +72,7 @@ export function partyPriceFor(activity: ActivityPriceSet, basis: PartyBasis): De
   const raw = basis === 'SINGLE' ? activity.priceSingle
     : basis === 'DOUBLE' ? activity.priceDouble
       : activity.priceTriple;
-  if (!has(raw)) return null;
+  if (!hasPartyPrice(raw)) return null;
   return raw instanceof Decimal ? raw : new Decimal(raw as number);
 }
 
