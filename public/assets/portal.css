@@ -1117,6 +1117,26 @@ html[lang="ar"] .stat-label {
   line-height: 1.4;
 }
 
+/* Cruise dates are itinerary facts, not editable hotel dates. The muted,
+   dashed treatment makes the lock clear without making the values look
+   disabled or hard to read. */
+.form-field input.cr-locked-date,
+.form-field input.cr-nights[readonly] {
+  background: var(--surface-muted);
+  background: color-mix(in srgb, var(--surface-muted) 84%, var(--brand-accent-soft));
+  border-color: var(--brand-accent);
+  border-style: dashed;
+  color: var(--text-primary);
+  cursor: default;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.form-field input.cr-locked-date:focus,
+.form-field input.cr-nights[readonly]:focus {
+  box-shadow: none;
+}
+
 .rf-price {
   font-size: 20px;
   font-weight: 800;
@@ -6268,6 +6288,22 @@ html[lang="ar"] .hero-metric__label { text-transform: none; letter-spacing: 0; }
   .filter-apply { display: inline-flex; }
   .filter-head { justify-content: space-between; }
   .hotel-active-chips:not(:empty) { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 2px; }
+
+  /* The activity package rail is a live cart, not a filter drawer. Keeping the
+     generic mobile drawer rules here made a successful add look as though it
+     had disappeared, with no button capable of reopening it. */
+  .activity-package-cart-rail {
+    position: static;
+    inset: auto;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    margin-bottom: 12px;
+    overflow: visible;
+    transform: none !important;
+    border-radius: var(--r-8);
+    box-shadow: var(--shadow-subtle);
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════════════════

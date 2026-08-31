@@ -341,3 +341,45 @@ export function nightsBetween(departureDay: Weekday, returnDay: Weekday): number
   // day trip — a same-day cruise is not a thing these boats sell.
   return diff === 0 ? 7 : diff;
 }
+
+export type CruiseStayDateError =
+  | 'INVALID_DATES'
+  | 'INVALID_SCHEDULE'
+  | 'DEPARTURE_DAY_MISMATCH'
+  | 'STAY_LENGTH_MISMATCH'
+  | 'RETURN_DAY_MISMATCH';
+
+/**
+ * Check that the two calendar dates are the real From / Back dates of a
+ * selected sailing. Quote forms carry both dates because operations and hotel
+ * exports expect them, but they are not free-form hotel dates: the schedule is
+ * the source of truth.
+ */
+export function validateCruiseStayDates(
+  checkInValue: unknown,
+  checkOutValue: unknown,
+  schedule: { departureDay?: unknown; returnDay?: unknown; nights?: unknown },
+): CruiseStayDateError | null {
+  const dateOnly = (value: unknown): Date | null => {
+    if (value instanceof Date && Number.isNaN(value.getTime())) return null;
+    const raw = value instanceof Date ? value.toISOString().slice(0, 10) : String(value ?? '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+    const date = new Date(`${raw}T00:00:00.000Z`);
+    return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== raw ? null : date;
+  };
+
+  const checkIn = dateOnly(checkInValue);
+  const checkOut = dateOnly(checkOutValue);
+  if (!checkIn || !checkOut || checkOut <= checkIn) return 'INVALID_DATES';
+
+  const departureDay = normalizeWeekday(schedule.departureDay);
+  const returnDay = normalizeWeekday(schedule.returnDay);
+  const nights = Math.floor(Number(schedule.nights));
+  if (!departureDay || !returnDay || !Number.isFinite(nights) || nights < 1) return 'INVALID_SCHEDULE';
+
+  if (WEEKDAYS[checkIn.getUTCDay()] !== departureDay) return 'DEPARTURE_DAY_MISMATCH';
+  const actualNights = Math.round((checkOut.getTime() - checkIn.getTime()) / 86_400_000);
+  if (actualNights !== nights) return 'STAY_LENGTH_MISMATCH';
+  if (WEEKDAYS[checkOut.getUTCDay()] !== returnDay) return 'RETURN_DAY_MISMATCH';
+  return null;
+}

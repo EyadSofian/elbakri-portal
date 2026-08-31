@@ -167,6 +167,12 @@ test('portal: a zero party price is a real price, not a blank', () => {
   assert.deepEqual(plain(portal.actPartyPriceRows({ priceSingle: 0 }).map((r) => r[0])), ['SINGLE']);
 });
 
+test('portal: an activity with no configured service types does not show a fake no-data choice', () => {
+  assert.equal(portal.activityGroupTypeOptions([]), '');
+  assert.match(dashboardSource, /id="actGroupTypeField"[^>]*groupTypes\.length/);
+  assert.match(dashboardSource, /field\.style\.display = state\.activityGroupTypes\.length \? "" : "none"/);
+});
+
 // ── Small helpers the forms depend on ───────────────────────────────────────
 
 test('portal: actTimeValue produces what <input type="time"> accepts', () => {
@@ -192,6 +198,21 @@ test('portal: weekdayLabel spells a stored day out', () => {
 test('portal: the cruise return date follows the selected 3/4-night schedule', () => {
   assert.equal(portal.crReturnDate('2026-08-31', 4), '2026-09-04');
   assert.equal(portal.crReturnDate('2026-09-04', 3), '2026-09-07');
+});
+
+test('admin: cruise nights are derived from From / Back and cannot drift', () => {
+  assert.equal(adminPortal.crScheduleNightsForDays('MONDAY', 'FRIDAY'), 4);
+  assert.equal(adminPortal.crScheduleNightsForDays('FRIDAY', 'MONDAY'), 3);
+  assert.equal(adminPortal.crScheduleNightsForDays('MONDAY', 'MONDAY'), 7);
+  assert.match(adminSource, /class="cr-nights"[^>]*readonly/);
+  assert.match(adminSource, /const nights = crScheduleNightsForDays/);
+});
+
+test('portal: selected cruise departure and return dates are locked in the request', () => {
+  assert.match(dashboardSource, /lockCruiseDates: serviceType === "CRUISE"/);
+  assert.match(dashboardSource, /class="cr-locked-date"/);
+  assert.match(dashboardSource, /readonly aria-readonly="true"/);
+  assert.match(dashboardSource, /const isCruise = serviceType === "CRUISE";[\s\S]{0,600}const body =/);
 });
 
 test('portal: a cruise with no schedule says so rather than rendering blank', () => {
@@ -637,6 +658,11 @@ test('portal: adding or removing a package item keeps the current destination an
   assert.match(dashboardSource, /function renderCurrentActivityPackageDestination/);
   assert.match(dashboardSource, /closeModal\(\);\s*renderCurrentActivityPackageDestination\(\);/);
   assert.match(dashboardSource, /filter\(item => item\.localId !== localId\);\s*renderCurrentActivityPackageDestination\(\);/);
+});
+
+test('portal: the activity package cart stays visible on mobile instead of becoming a hidden filter drawer', () => {
+  assert.match(dashboardSource, /class="filter-rail activity-package-cart-rail"/);
+  assert.match(portalCss, /\.activity-package-cart-rail\s*\{[\s\S]*?position:\s*static[\s\S]*?transform:\s*none\s*!important/);
 });
 
 test('portal: the activity package choice and destination-first flow are permanently rendered', () => {

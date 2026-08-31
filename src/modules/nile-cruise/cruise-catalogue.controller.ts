@@ -218,17 +218,14 @@ export async function saveCruiseSchedules(req: Request, res: Response): Promise<
     await tx.cruiseSchedule.deleteMany({ where: { cruiseId } });
     for (let i = 0; i < clean.length; i++) {
       const s = clean[i];
-      const posted = Number(s.raw.nights);
       await tx.cruiseSchedule.create({
         data: {
           cruiseId,
           departureDay: s.departureDay,
           returnDay: s.returnDay,
-          // The two days already say how long the leg is, so the night count is
-          // derived unless the operator overrode it with something sensible.
-          nights: Number.isFinite(posted) && posted > 0
-            ? Math.floor(posted)
-            : nightsBetween(s.departureDay, s.returnDay),
+          // From / Back are the source of truth. Letting a typed night count
+          // disagree with them produces an impossible check-in/check-out pair.
+          nights: nightsBetween(s.departureDay, s.returnDay),
           label: textOrNull(s.raw.label),
           labelAr: textOrNull(s.raw.labelAr),
           isActive: s.raw.isActive !== false,

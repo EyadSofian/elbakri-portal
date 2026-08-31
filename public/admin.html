@@ -4699,16 +4699,27 @@ const CRUISE_MARKETS = [["EGYPTIAN", "Egyptian · EGP"], ["FOREIGN", "Foreign ·
 const CRUISE_CABIN_TYPES = ["STANDARD", "DELUXE", "SUITE", "PRESIDENTIAL"];
 const CRUISE_WEEKDAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
 
+function crScheduleNightsForDays(departureDay, returnDay) {
+  const from = CRUISE_WEEKDAYS.indexOf(String(departureDay || "").toUpperCase());
+  const to = CRUISE_WEEKDAYS.indexOf(String(returnDay || "").toUpperCase());
+  if (from < 0 || to < 0) return 1;
+  const diff = (to - from + 7) % 7;
+  return diff === 0 ? 7 : diff;
+}
+
 function crScheduleRowHtml(sc) {
   sc = sc || {};
+  const departureDay = String(sc.departureDay || "MONDAY").toUpperCase();
+  const returnDay = String(sc.returnDay || "THURSDAY").toUpperCase();
+  const derivedNights = crScheduleNightsForDays(departureDay, returnDay);
   const dayOpts = (selected) => CRUISE_WEEKDAYS
     .map(d => `<option value="${d}" ${String(selected || "").toUpperCase() === d ? "selected" : ""}>${escapeHtml(t("weekday." + d, d))}</option>`)
     .join("");
   return `<div class="cr-row" data-schedule-id="${escapeHtml(sc.id || "")}">
     <div class="form-grid cr-schedule-row-grid">
-      <div class="form-field"><label>${t("cruise.from","From")} · ${t("cruise.departureDay","Departs")}</label><select class="cr-dep" onchange="crRefreshScheduleSelects()">${dayOpts(sc.departureDay || "MONDAY")}</select></div>
-      <div class="form-field"><label>${t("cruise.back","Back")} · ${t("cruise.returnDay","Returns")}</label><select class="cr-ret" onchange="crRefreshScheduleSelects()">${dayOpts(sc.returnDay || "THURSDAY")}</select></div>
-      <div class="form-field"><label>${t("cruise.nights","Nights")}</label><input class="cr-nights" type="number" min="1" value="${escapeHtml(sc.nights ?? "")}" placeholder="auto" oninput="crRefreshScheduleSelects()"></div>
+      <div class="form-field"><label>${t("cruise.from","From")} · ${t("cruise.departureDay","Departs")}</label><select class="cr-dep" onchange="crRefreshScheduleSelects()">${dayOpts(departureDay)}</select></div>
+      <div class="form-field"><label>${t("cruise.back","Back")} · ${t("cruise.returnDay","Returns")}</label><select class="cr-ret" onchange="crRefreshScheduleSelects()">${dayOpts(returnDay)}</select></div>
+      <div class="form-field"><label>${t("cruise.nights","Nights")}</label><input class="cr-nights" type="number" min="1" value="${derivedNights}" readonly aria-readonly="true"><small class="field-hint">${t("cruise.nightsDerivedHelp","Calculated automatically from From / Back days.")}</small></div>
       <div class="form-field"><label>${t("form.name","Label")}</label><input class="cr-sched-label" value="${escapeHtml(sc.label || "")}" placeholder="${escapeHtml(t("form.optional","optional"))}"></div>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
@@ -4959,6 +4970,14 @@ function crAddScheduleRow() {
 }
 
 function crRefreshScheduleSelects() {
+  document.querySelectorAll("#crSchedRows .cr-row").forEach(row => {
+    const nights = crScheduleNightsForDays(
+      row.querySelector(".cr-dep")?.value,
+      row.querySelector(".cr-ret")?.value,
+    );
+    const input = row.querySelector(".cr-nights");
+    if (input) input.value = nights;
+  });
   document.querySelectorAll(".cr-rate-schedule,.cr-prog-schedule,.cr-transfer-schedule").forEach(select => {
     const current = select.value;
     select.innerHTML = crScheduleOptions(current);

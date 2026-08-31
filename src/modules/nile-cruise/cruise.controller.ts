@@ -20,6 +20,7 @@ import {
   priceCruiseProgrammePerPerson,
   priceCruisePerPerson,
   priceCruiseTransfer,
+  validateCruiseStayDates,
 } from '../../shared/cruise-rates';
 import { readItinerary } from '../../shared/itinerary';
 import { readTransferAddOn } from '../../shared/transfer-addon';
@@ -344,6 +345,10 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
       ? await prisma.cruiseSchedule.findFirst({ where: { id: body.scheduleId, cruiseId: body.cruiseId, isActive: true } })
       : null;
     if (body.scheduleId && !schedule) throw new Error('SCHEDULE_NOT_AVAILABLE');
+    if (schedule) {
+      const stayError = validateCruiseStayDates(checkIn, checkOut, schedule);
+      if (stayError) throw new Error(stayError);
+    }
 
     const adultsCount = Math.max(1, body.adultsCount ?? 1);
     const childrenCount = Math.max(0, body.childrenCount ?? 0);
@@ -600,7 +605,8 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     const message = String((error as Error).message);
     if ([
       'COMPANY_INACTIVE', 'INVALID_TOTAL', 'CRUISE_NOT_AVAILABLE',
-      'INVALID_DATES', 'SCHEDULE_NOT_AVAILABLE',
+      'INVALID_DATES', 'INVALID_SCHEDULE', 'DEPARTURE_DAY_MISMATCH',
+      'STAY_LENGTH_MISMATCH', 'RETURN_DAY_MISMATCH', 'SCHEDULE_NOT_AVAILABLE',
       'RATE_NOT_AVAILABLE', 'PROGRAMME_RATE_NOT_AVAILABLE', 'PICK_ONE_FARE',
       'INVALID_OCCUPANCY', 'OCCUPANCY_NOT_SOLD', 'INVALID_SUPPLEMENT',
       'TRANSFER_RATE_NOT_AVAILABLE', 'TRANSFER_RATE_REQUIRED', 'MIXED_CURRENCY',

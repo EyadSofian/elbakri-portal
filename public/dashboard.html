@@ -2604,7 +2604,8 @@ function rfControl(f, ctx) {
       const seeded = f.key === "checkIn" ? ctx.prefillCheckIn
         : f.key === "checkOut" ? ctx.prefillCheckOut
         : null;
-      return `<input id="${id}" type="date" value="${escapeHtml(seeded || dv || "")}">`;
+      const lockedCruiseDate = ctx.lockCruiseDates && (f.key === "checkIn" || f.key === "checkOut") && seeded;
+      return `<input id="${id}" type="date" value="${escapeHtml(seeded || dv || "")}"${lockedCruiseDate ? ` readonly aria-readonly="true" class="cr-locked-date"` : ""}>`;
     }
     case "time":     return `<input id="${id}" type="time" value="${escapeHtml(dv || "")}">`;
     case "datetime": return `<input id="${id}" type="datetime-local" value="${escapeHtml(dv || "")}">`;
@@ -2618,7 +2619,10 @@ function rfFieldCell(f, ctx) {
   const fullTypes = ["textarea", "child-age-repeater", "readonly-service", "readonly-price", "file-upload", "image-upload"];
   const full = f.width === "full" || (!f.width && fullTypes.includes(f.type));
   const help = rfHelp(f);
-  const helpHtml = help ? `<div class="rf-help">${escapeHtml(help)}</div>` : "";
+  const lockedDateHelp = ctx.lockCruiseDates && (f.key === "checkIn" || f.key === "checkOut")
+    ? t("cruise.lockedSailingDateHelp","Fixed by the selected From / Back sailing.")
+    : "";
+  const helpHtml = (lockedDateHelp || help) ? `<div class="rf-help">${escapeHtml(lockedDateHelp || help)}</div>` : "";
   if (f.type === "checkbox" || f.type === "toggle") {
     return `<div class="form-field${full ? " full" : ""}">${rfControl(f, ctx)}${helpHtml}</div>`;
   }
@@ -2957,10 +2961,12 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
   if (rfTpl) return rfOpenModal(rfTarget, rfTpl, {
     serviceType, serviceId, serviceName, prefillNotes, prefillPax, prefillCheckIn, prefillCheckOut,
     transfer: prefillTransfer, prefillCustomFields: prefillCustomFields,
+    lockCruiseDates: serviceType === "CRUISE" && Boolean(prefillCheckIn && prefillCheckOut),
   });
 
   // Fallback: original hardcoded quote form.
   const isHotel = serviceType === "HOTEL";
+  const isCruise = serviceType === "CRUISE";
   const mealPlanOptions = ["ROOM_ONLY","BREAKFAST","HALF_BOARD","FULL_BOARD","ALL_INCLUSIVE","ULTRA_ALL_INCLUSIVE"];
 
   const body = `
@@ -2971,10 +2977,10 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
         <input value="${escapeHtml(serviceName)} (${serviceType})" disabled style="opacity:0.7"></div>
       <div class="form-field"><label>${t("form.nationality","Nationality")} *</label>
         <input id="qrNationality" list="nationalityList" placeholder="${t("form.nationalityPlaceholder","e.g. Egyptian")}"></div>
-      <div class="form-field"><label>${t("form.checkIn","Check-in Date")} *</label>
-        <input id="qrCheckIn" type="date" value="${escapeHtml(prefillCheckIn)}"></div>
-      <div class="form-field"><label>${t("form.checkOut","Check-out Date")} *</label>
-        <input id="qrCheckOut" type="date" value="${escapeHtml(prefillCheckOut)}"></div>
+      <div class="form-field"><label>${isCruise ? t("cruise.departureDate","Departure date") : t("form.checkIn","Check-in Date")} *</label>
+        <input id="qrCheckIn" type="date" value="${escapeHtml(prefillCheckIn)}"${isCruise && prefillCheckIn ? ` readonly aria-readonly="true" class="cr-locked-date"` : ""}>${isCruise ? `<div class="rf-help">${t("cruise.lockedDepartureHelp","Matches the selected From day.")}</div>` : ""}</div>
+      <div class="form-field"><label>${isCruise ? t("cruise.returnDate","Return date") : t("form.checkOut","Check-out Date")} *</label>
+        <input id="qrCheckOut" type="date" value="${escapeHtml(prefillCheckOut)}"${isCruise && prefillCheckOut ? ` readonly aria-readonly="true" class="cr-locked-date"` : ""}>${isCruise ? `<div class="rf-help">${t("cruise.lockedReturnHelp","Calculated from the selected Back day and number of nights.")}</div>` : ""}</div>
       <div class="form-field"><label>${t("form.adults","Adults / Pax")} *</label>
         <input id="qrAdults" type="number" min="1" value="${escapeHtml(prefillPax || 2)}"></div>
       <div class="form-field"><label>${t("form.children","Children")}</label>
@@ -3019,7 +3025,6 @@ async function openQuoteRequestModal(serviceType, serviceId, serviceName) {
       return;
     }
 
-    const isCruise = serviceType === "CRUISE";
     const payload = {
       serviceType,
       hotelId:    isHotel  ? serviceId : undefined,
@@ -4411,7 +4416,7 @@ async function renderActivityPackageByDest(destId, destName) {
     <button class="btn btn-primary" onclick="submitActivityPackage()" ${state.activityPackageCart.length ? "" : "disabled"}>${icon("send")}${t("activity.submitPackage","Submit Package")}</button>
   `) + `
     <div class="workbench">
-      <aside class="filter-rail">
+      <aside class="filter-rail activity-package-cart-rail">
         <div class="filter-head"><span>${t("activity.packageCart","Package Cart")}</span>${icon("shopping-cart")}</div>
         <div class="filter-body" id="activityPackageCart">${activityPackageCartHtml()}</div>
       </aside>
@@ -5185,7 +5190,7 @@ async function openActivityDetails(id) {
           <small class="field-hint" id="actBasisHint">${t("activity.pricingBasisHint","A party price covers one party — a bigger group is charged for as many parties as it takes to seat everybody.")}</small>
         </div>` : ""}
         ${activityTransferPanel(a, "act")}
-        <div class="form-field full"><label>${t("activity.actType","Service Type")}</label>
+        <div class="form-field full" id="actGroupTypeField" ${groupTypes.length ? "" : 'style="display:none"'}><label>${t("activity.actType","Service Type")}</label>
           <div id="actGroupTypes" class="service-type-grid">
             ${activityGroupTypeOptions(groupTypes)}
           </div></div>
@@ -5255,7 +5260,7 @@ function activityGroupTypeOptions(options, onChange = "actCalcTotalFromContext()
       </span>
       ${suffix ? `<span class="service-type-option__price">${suffix}</span>` : ""}
     </label>`;
-  }).join("") || `<div class="secondary-text">${t("empty.noData","No service types available")}</div>`;
+  }).join("");
 }
 
 function actCalcTotalFromContext() {
@@ -5279,6 +5284,8 @@ function actRefreshGroupTypes() {
     const res = await apiFetch(`/group-types?${params}`);
     state.activityGroupTypes = res?.data || [];
     box.innerHTML = activityGroupTypeOptions(state.activityGroupTypes);
+    const field = document.getElementById("actGroupTypeField");
+    if (field) field.style.display = state.activityGroupTypes.length ? "" : "none";
     actCalcTotalFromContext();
   }, 220);
 }

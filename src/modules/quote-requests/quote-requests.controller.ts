@@ -5,6 +5,7 @@ import { prisma } from '../../config/db';
 import { paginate, paginateMeta, sanitizeCustomFields } from '../../shared/helpers';
 import { sendEmail } from '../../shared/email.templates';
 import { readTransferAddOn } from '../../shared/transfer-addon';
+import { validateCruiseStayDates } from '../../shared/cruise-rates';
 
 const quoteInclude = {
   company: { select: { id: true, name: true, email: true, tier: true } },
@@ -144,6 +145,31 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
     return;
   }
 
+  const customFields = sanitizeCustomFields(body.customFields);
+  const cruiseScheduleId = body.serviceType === 'CRUISE'
+    ? String(customFields?.cruiseScheduleId ?? '').trim()
+    : '';
+  if (cruiseScheduleId) {
+    if (!body.cruiseId || !body.checkIn || !body.checkOut) {
+      res.status(400).json({ success: false, error: 'CRUISE_DATES_REQUIRED', message: 'Cruise departure and return dates are required' });
+      return;
+    }
+    const schedule = await prisma.cruiseSchedule.findFirst({
+      where: { id: cruiseScheduleId, cruiseId: body.cruiseId, isActive: true },
+    });
+    const stayError = schedule
+      ? validateCruiseStayDates(body.checkIn, body.checkOut, schedule)
+      : 'INVALID_SCHEDULE';
+    if (stayError) {
+      res.status(400).json({
+        success: false,
+        error: 'CRUISE_DATES_MISMATCH',
+        message: 'Cruise dates must match the selected From / Back sailing',
+      });
+      return;
+    }
+  }
+
   const refNumber = await generateQuoteRef();
 
   // A price-on-request activity uses the same add-transfer panel as an
@@ -211,7 +237,7 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
       transferVehicleCount: transfer.transferRequested && Number(body.transferVehicleCount) > 0
         ? Math.floor(Number(body.transferVehicleCount))
         : null,
-      customFields: sanitizeCustomFields(body.customFields) ?? undefined,
+      customFields: customFields ?? undefined,
     },
     include: quoteInclude,
   });

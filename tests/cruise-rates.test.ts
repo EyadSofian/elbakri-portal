@@ -21,6 +21,7 @@ import {
   programmePeriodsHaveBothAudiences,
   rateApplies,
   validateCruiseRateInput,
+  validateCruiseStayDates,
 } from '../src/shared/cruise-rates';
 
 // A Nile cruise is priced the way a hotel is: one row per cabin category, per
@@ -76,6 +77,32 @@ test('a cruise rate row needs one valid Single, Double or Triple amount', () => 
   assert.equal(validateCruiseRateInput({ doublePrice: -1 }), 'INVALID_OCCUPANCY_PRICE');
   assert.equal(validateCruiseRateInput({ triplePrice: 'abc' }), 'INVALID_OCCUPANCY_PRICE');
   assert.equal(validateCruiseRateInput({ doublePrice: 0 }), null, 'zero is explicit, not blank');
+});
+
+test('cruise stay dates must be the selected From / Back sailing', () => {
+  const fourNights = { departureDay: 'MONDAY', returnDay: 'FRIDAY', nights: 4 };
+  assert.equal(validateCruiseStayDates('2026-08-31', '2026-09-04', fourNights), null);
+  assert.equal(
+    validateCruiseStayDates('2026-09-01', '2026-09-05', fourNights),
+    'DEPARTURE_DAY_MISMATCH',
+  );
+  assert.equal(
+    validateCruiseStayDates('2026-08-31', '2026-09-03', fourNights),
+    'STAY_LENGTH_MISMATCH',
+  );
+  assert.equal(
+    validateCruiseStayDates('2026-08-31', '2026-09-04', { ...fourNights, returnDay: 'THURSDAY' }),
+    'RETURN_DAY_MISMATCH',
+  );
+});
+
+test('cruise stay date validation handles the Friday-to-Monday weekend wrap', () => {
+  assert.equal(validateCruiseStayDates('2026-09-04', '2026-09-07', {
+    departureDay: 'FRIDAY', returnDay: 'MONDAY', nights: 3,
+  }), null);
+  assert.equal(validateCruiseStayDates(new Date('invalid'), '2026-09-07', {
+    departureDay: 'FRIDAY', returnDay: 'MONDAY', nights: 3,
+  }), 'INVALID_DATES');
 });
 
 // ── rateApplies ─────────────────────────────────────────────────────────────
