@@ -369,6 +369,7 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
       occupancy: body.occupancy,
       selectedSupplements: body.selectedSupplements,
       transferRateId: body.transferRateId,
+      transferPaxCount: body.transferPaxCount,
     }) : null;
 
     // Cruise-only and programme fares share one rule: Single / Double / Triple
@@ -488,7 +489,7 @@ export async function createCruiseBooking(req: Request, res: Response): Promise<
     // one explicit, admin-priced From → To route; free-text transfer prices are
     // never trusted by the booking API.
     let transferRate = null;
-    const transferPaxCount = commercialResolution?.pax ?? pax;
+    const transferPaxCount = commercialResolution?.transferPaxCount ?? pax;
     if (!programmeRate && body.transferRateId) {
       if (!body.scheduleId) throw new Error('SCHEDULE_NOT_AVAILABLE');
       transferRate = await prisma.cruiseTransferRate.findFirst({

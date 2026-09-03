@@ -8898,6 +8898,15 @@ html[lang="ar"] .hotel-albums-title { text-transform: none; letter-spacing: 0; }
 .cr-vehicle-transfer .act-transfer-head > div { display: grid; gap: 3px; }
 .cr-vehicle-transfer .act-transfer-head small { color: var(--text-muted); font-size: 10px; font-weight: 500; }
 .cr-transfer-options { display: grid; grid-template-columns: minmax(150px,.36fr) minmax(0,1fr); gap: 10px; margin-top: 10px; align-items: stretch; }
+.cr-transfer-pax-field {
+  align-content: start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+.cr-transfer-pax-field input { min-height: 42px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cr-transfer-pax-field .field-hint { display: block; margin-top: 6px; line-height: 1.45; }
 .cr-transfer-product-summary { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 10px; min-height: 76px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-raised); }
 .cr-transfer-product-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; background: var(--brand-accent-soft); color: var(--brand-accent-text); }
 .cr-transfer-product-icon svg { width: 19px; height: 19px; }
@@ -9069,4 +9078,242 @@ input[type="checkbox"]:focus-visible,
 input[type="radio"]:focus-visible {
   outline: 2px solid var(--brand-accent);
   outline-offset: 2px;
+}
+
+/* ═══ Control integrity pass ═══════════════════════════════════════════════
+   Admin and agency pages share this final layer. Earlier feature-specific
+   rules may make a toolbar denser, but they must never turn a text action into
+   a 30px icon box, place a glyph over its label, or let a modal footer cover
+   the form. Keep geometry here logical (inline/block) so Arabic and English
+   behave identically. */
+.btn {
+  inline-size: auto;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  block-size: auto;
+  min-block-size: 38px;
+  padding-block: 8px;
+  padding-inline: 14px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+  vertical-align: middle;
+  overflow: visible;
+}
+
+.btn-sm {
+  min-block-size: 34px;
+  padding-block: 6px;
+  padding-inline: 11px;
+  line-height: 1.2;
+}
+
+.btn > svg,
+.btn > i,
+.btn > .ph,
+.icon-button > svg,
+.icon-button > i,
+.icon-button > .ph,
+.icon-btn > svg,
+.icon-btn > i,
+.icon-btn > .ph {
+  position: static;
+  inset: auto;
+  margin: 0;
+  flex: 0 0 auto;
+  align-self: center;
+  pointer-events: none;
+}
+
+/* Only explicitly icon-only controls are square. Text actions inside table
+   rows (Review, PDF, Excel, Download…) size from their actual label. */
+.icon-button,
+.icon-btn,
+.btn-icon,
+.row-actions .btn-icon,
+.row-actions .icon-button {
+  inline-size: 34px;
+  min-inline-size: 34px;
+  max-inline-size: 34px;
+  block-size: 34px;
+  min-block-size: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+  inline-size: max-content;
+  max-inline-size: none;
+  overflow: visible;
+}
+
+.row-actions .btn:not(.btn-icon),
+.row-actions button:not(.btn-icon):not(.icon-button) {
+  inline-size: auto;
+  min-inline-size: max-content;
+  max-inline-size: none;
+  min-block-size: 34px;
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
+.table-toolbar,
+.toolbar-actions,
+.page-actions,
+.admin-tab-bar,
+.filter-actions,
+.modal-footer {
+  min-inline-size: 0;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.table-toolbar > *,
+.toolbar-actions > *,
+.page-actions > *,
+.admin-tab-bar > *,
+.filter-actions > * {
+  min-inline-size: 0;
+}
+
+.table-toolbar .btn,
+.toolbar-actions .btn,
+.page-actions .btn,
+.admin-tab-bar .btn,
+.filter-actions .btn {
+  flex: 0 1 auto;
+}
+
+.modal-body { padding-block-end: 24px; }
+.modal-footer {
+  min-block-size: 64px;
+  padding-block: 12px;
+  padding-inline: 18px;
+  isolation: isolate;
+  z-index: 3;
+}
+.modal-footer .btn { flex: 0 1 auto; min-inline-size: 96px; }
+
+.field,
+.form-field,
+.form-row,
+.input-action { min-inline-size: 0; }
+
+.field > label,
+.form-field > label {
+  display: block;
+  margin-block-end: 6px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+select,
+.field select,
+.form-field select {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  padding-inline-start: 12px;
+  padding-inline-end: 38px;
+  text-overflow: ellipsis;
+}
+
+input[type="file"]::file-selector-button {
+  min-block-size: 32px;
+  margin-inline-end: 10px;
+  padding-inline: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* One small, predictable check/radio drawing in both themes. This replaces
+   browser-dependent oversized ticks while preserving the switch used by
+   .compact-check. */
+input[type="checkbox"]:not([role="switch"]),
+input[type="radio"] {
+  -webkit-appearance: none;
+  appearance: none;
+  inline-size: 18px;
+  block-size: 18px;
+  min-inline-size: 18px;
+  min-block-size: 18px;
+  border: 1.5px solid var(--border-strong);
+  background-color: var(--surface);
+  background-position: center;
+  background-repeat: no-repeat;
+  box-shadow: none;
+}
+
+input[type="checkbox"]:not([role="switch"]) { border-radius: 5px; }
+input[type="checkbox"]:not([role="switch"]):checked {
+  border-color: var(--brand-accent);
+  background-color: var(--brand-accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.2 6.3 11.5 13 4.8' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 14px 14px;
+}
+
+input[type="radio"] { border-radius: 50%; }
+input[type="radio"]:checked {
+  border-color: var(--brand-accent);
+  background-color: var(--brand-accent);
+  box-shadow: inset 0 0 0 4px var(--surface);
+}
+
+.compact-check input[type="checkbox"] {
+  inline-size: 32px;
+  block-size: 18px;
+  min-inline-size: 32px;
+  min-block-size: 18px;
+  border-radius: 999px;
+  background-image: none;
+  background-size: auto;
+}
+.compact-check input[type="checkbox"]:checked { background-image: none; }
+
+:root[data-theme="dark"] .btn-outline,
+:root[data-theme="dark"] .btn-muted {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+:root[data-theme="dark"] .btn-outline:hover,
+:root[data-theme="dark"] .btn-muted:hover { background: var(--surface-muted); }
+:root[data-theme="dark"] input[type="checkbox"]:not([role="switch"]),
+:root[data-theme="dark"] input[type="radio"] { background-color: var(--surface-raised); }
+:root[data-theme="dark"] input[type="checkbox"]:not([role="switch"]):checked { background-color: var(--brand-accent); }
+:root[data-theme="dark"] input[type="radio"]:checked { background-color: var(--brand-accent); box-shadow: inset 0 0 0 4px var(--surface-raised); }
+
+@media (max-width: 640px) {
+  .btn,
+  .btn-sm { min-block-size: 40px; padding-block: 8px; }
+  .icon-button,
+  .icon-btn,
+  .btn-icon,
+  .row-actions .btn-icon,
+  .row-actions .icon-button {
+    inline-size: 40px;
+    min-inline-size: 40px;
+    max-inline-size: 40px;
+    block-size: 40px;
+    min-block-size: 40px;
+  }
+  .modal-footer .btn { flex: 1 1 140px; min-inline-size: 0; }
+  .admin-tab-bar .btn,
+  .filter-actions .btn { flex: 1 1 calc(50% - 5px); }
+  .row-actions .btn:not(.btn-icon),
+  .row-actions button:not(.btn-icon):not(.icon-button) { min-block-size: 40px; }
 }

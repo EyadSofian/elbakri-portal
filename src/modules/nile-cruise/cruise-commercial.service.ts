@@ -28,6 +28,7 @@ export interface CruiseCommercialIntent {
   occupancy?: string | null;
   selectedSupplements?: string[];
   transferRateId?: string | null;
+  transferPaxCount?: number | null;
 }
 
 export interface CruiseCommercialResolution {
@@ -49,6 +50,7 @@ export interface CruiseCommercialResolution {
   programme: any | null;
   programmeRate: any | null;
   transferRate: any | null;
+  transferPaxCount: number | null;
   transferVehicleCount: number | null;
 }
 
@@ -76,6 +78,9 @@ export function cruiseIntentFromCustomFields(input: Record<string, unknown> | un
     occupancy: String(input?.cruiseOccupancy ?? '').trim().toUpperCase() || null,
     selectedSupplements: names,
     transferRateId: String(input?.cruiseTransferRateId ?? '').trim() || null,
+    transferPaxCount: input?.cruiseTransferPaxCount == null || input.cruiseTransferPaxCount === ''
+      ? null
+      : Number(input.cruiseTransferPaxCount),
   };
 }
 
@@ -209,8 +214,14 @@ export async function resolveCruiseCommercialSelection(
 
   let transferRate: any | null = null;
   let transferTotal: Decimal | null = null;
+  let transferPaxCount: number | null = null;
   let transferVehicleCount: number | null = null;
   if (intent.transferRateId) {
+    const requestedTransferPax = intent.transferPaxCount == null ? pax : Number(intent.transferPaxCount);
+    if (!Number.isInteger(requestedTransferPax) || requestedTransferPax < 1 || requestedTransferPax > 500) {
+      businessError('TRANSFER_PAX_INVALID');
+    }
+    transferPaxCount = requestedTransferPax;
     transferRate = await db.cruiseTransferRate.findFirst({
       where: {
         id: intent.transferRateId,
@@ -224,7 +235,11 @@ export async function resolveCruiseCommercialSelection(
     if (!transferRate || (transferRate.validFrom && transferRate.validFrom > checkIn)
       || (transferRate.validTo && transferRate.validTo < checkIn)) businessError('TRANSFER_RATE_NOT_AVAILABLE');
     if (transferRate.currency !== currency) businessError('MIXED_CURRENCY');
-    const priced = priceCruiseTransfer({ amount: transferRate.amount, capacity: transferRate.vehicleCapacity, pax });
+    const priced = priceCruiseTransfer({
+      amount: transferRate.amount,
+      capacity: transferRate.vehicleCapacity,
+      pax: transferPaxCount,
+    });
     if (!priced) businessError('TRANSFER_RATE_NOT_AVAILABLE');
     transferTotal = priced.total;
     transferVehicleCount = priced.vehicleCount;
@@ -249,6 +264,7 @@ export async function resolveCruiseCommercialSelection(
     programme,
     programmeRate,
     transferRate,
+    transferPaxCount,
     transferVehicleCount,
   };
 }
@@ -274,6 +290,7 @@ export function cruiseResolutionFields(value: CruiseCommercialResolution): Recor
     cruiseTransferTo: value.transferRate?.toLocation,
     cruiseTransferVehicleType: value.transferRate?.vehicleType,
     cruiseTransferVehicleCapacity: value.transferRate?.vehicleCapacity,
+    cruiseTransferPaxCount: value.transferPaxCount ?? undefined,
     cruiseTransferVehicleCount: value.transferVehicleCount ?? undefined,
     cruiseTransferPricePerVehicle: value.transferRate?.amount?.toNumber(),
     cruiseTransferTotal: value.transferTotal?.toNumber(),

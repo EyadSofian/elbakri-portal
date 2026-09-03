@@ -360,7 +360,8 @@ test('portal: a requested Nile cruise product can never silently downgrade', () 
   assert.equal(portal.crProductSelectionError('PROGRAMME', { cruise: {}, programme: { hasRates: false } }), 'PROGRAMME_UNAVAILABLE');
   assert.equal(portal.crProductSelectionError('PROGRAMME', { cruise: {}, programme: { hasRates: true } }), null);
   assert.equal(portal.crProductSelectionError('TRANSFER', { cruise: {}, transferRate: null }), 'TRANSFER_REQUIRED');
-  assert.equal(portal.crProductSelectionError('TRANSFER', { cruise: {}, transferRate: { id: 'tr-1' } }), null);
+  assert.equal(portal.crProductSelectionError('TRANSFER', { cruise: {}, transferRate: { id: 'tr-1' }, transferPax: 0 }), 'TRANSFER_PAX_INVALID');
+  assert.equal(portal.crProductSelectionError('TRANSFER', { cruise: {}, transferRate: { id: 'tr-1' }, transferPax: 3 }), null);
   assert.match(dashboardSource, /crProductSelectionError\(productMode, selection\)/);
 });
 
@@ -447,9 +448,11 @@ test('portal: Nile cruise transfer reaches the quote as one vehicle product, not
   assert.equal(fields.cruiseTransferTripType, 'ROUND_TRIP');
   assert.equal(fields.cruiseTransferVehicleType, 'VAN_12');
   assert.equal(fields.cruiseTransferVehicleCapacity, 12);
+  assert.equal(fields.cruiseTransferPaxCount, 13);
   assert.equal(fields.cruiseTransferVehicleCount, 2);
   assert.equal(fields.cruiseTransferPricePerVehicle, 180);
   assert.equal(fields.cruiseTransferTotal, 360);
+  assert.match(adminSource, /cruiseTransferPaxCount \?\? q\.transferPaxCount/);
 });
 
 test('portal: cruise selection fields survive both template and fallback quote forms', () => {
@@ -482,6 +485,25 @@ test('portal: the cruise request payload keeps programme and transfer selections
   assert.equal(payload.customFields.cruiseRateId, 'rate-3');
   assert.equal(payload.customFields.agentReference, 'AG-9');
   assert.equal(payload.transferRequested, false);
+
+  const transferPayload = portal.buildCruiseQuotePayload({
+    nationality: 'Egyptian', checkIn: '2026-09-07', checkOut: '2026-09-11',
+    adults: 7, children: 0, notes: 'Separate transfer party',
+  }, {
+    serviceId: 'cruise-1', serviceName: 'MS Nile Dawn',
+    prefillCustomFields: {
+      cruiseProductMode: 'TRANSFER', cruiseScheduleId: 'schedule-4',
+      cruiseTransferRateId: 'transfer-rt-12', cruiseTransferPaxCount: 13,
+    },
+    transfer: {
+      transferRequested: true, transferTripType: 'ROUND_TRIP', transferPaxCount: 13,
+      transferVehicleType: 'VAN_12', transferVehicleCapacity: 12, transferVehicleCount: 2,
+    },
+  }, {});
+  assert.equal(transferPayload.adultsCount, 7);
+  assert.equal(transferPayload.transferPaxCount, 13);
+  assert.equal(transferPayload.customFields.cruiseTransferPaxCount, 13);
+  assert.equal(transferPayload.transferVehicleCount, 2);
 });
 
 test('portal: an empty or malformed request-form template falls back to the complete built-in form', () => {
@@ -540,6 +562,7 @@ test('admin: a Nile cruise request shows the chosen programme and vehicle produc
   assert.match(html, /Cruise \+ transfer/);
   assert.match(html, /Monday → Friday/);
   assert.match(html, /Round-trip/);
+  assert.match(html, /13 passengers/i);
   assert.match(html, /VAN 12/);
   assert.match(html, /2 vehicles/);
   assert.match(html, /360/);

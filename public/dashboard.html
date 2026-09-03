@@ -2062,7 +2062,11 @@ function crTransferChanged() {
   const capacity = Math.max(1, Number(rate.vehicleCapacity || 1));
   const vehicles = Math.ceil(currentPax / capacity);
   host.innerHTML = `<div class="cr-transfer-options">
-    <div class="form-field"><label>${t("cruise.transferPassengers","Transfer passengers")}</label><input id="crTransferPax" type="number" min="1" value="${currentPax}" oninput="crUpdateQuote()"></div>
+    <div class="form-field cr-transfer-pax-field">
+      <label for="crTransferPax">${t("cruise.transferPassengers","Number of transfer passengers")}</label>
+      <input id="crTransferPax" type="number" min="1" max="500" step="1" inputmode="numeric" required value="${currentPax}" aria-describedby="crTransferPaxHint" oninput="crUpdateQuote()">
+      <small id="crTransferPaxHint" class="field-hint">${t("cruise.transferPassengersHint","Set how many guests will use the transfer. The price is per vehicle, and the vehicle count updates automatically.")}</small>
+    </div>
     <div class="cr-transfer-product-summary">
       <span class="cr-transfer-product-icon">${icon("car")}</span>
       <div><b>${escapeHtml(String(rate.vehicleType || "VAN_6").replace(/_/g," "))}</b><small>${rate.tripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")} · ${t("cruise.upToPassengers","up to {count} passengers").replace("{count}", formatNumber(capacity))}</small></div>
@@ -2152,9 +2156,10 @@ function cruiseCabinPicker(cruise, rates) {
  * represents the selected one-way OR round-trip product; it must never be
  * multiplied by passengers or doubled again for a return leg. */
 function crVehicleTransferPrice(rate, requestedPax) {
-  const pax = Math.max(1, parseInt(requestedPax || "1", 10) || 1);
+  const parsedPax = Number(requestedPax);
+  const pax = Number.isInteger(parsedPax) && parsedPax > 0 && parsedPax <= 500 ? parsedPax : 0;
   const capacity = Math.max(1, Number(rate?.vehicleCapacity || 1));
-  const vehicleCount = Math.ceil(pax / capacity);
+  const vehicleCount = pax > 0 ? Math.ceil(pax / capacity) : 0;
   const unitPrice = Number(rate?.amount ?? 0);
   return {
     pax,
@@ -2274,6 +2279,7 @@ function crProductSelectionError(mode, selection) {
     if (selection.programme.hasRates !== true && !(selection.programme.rates || []).length) return "PROGRAMME_UNAVAILABLE";
   }
   if (mode === "TRANSFER" && !selection.transferRate) return "TRANSFER_REQUIRED";
+  if (mode === "TRANSFER" && (!Number.isInteger(selection.transferPax) || selection.transferPax < 1)) return "TRANSFER_PAX_INVALID";
   return null;
 }
 
@@ -2302,6 +2308,7 @@ function crQuoteSelectionFields(mode, selection, schedule, sailingDate) {
     cruiseTransferTripType: transferRate ? selection?.transferTripType : undefined,
     cruiseTransferVehicleType: transferRate?.vehicleType,
     cruiseTransferVehicleCapacity: transferRate ? Number(selection?.transferCapacity || transferRate.vehicleCapacity || 0) : undefined,
+    cruiseTransferPaxCount: transferRate ? Number(selection?.transferPax || 0) : undefined,
     cruiseTransferVehicleCount: transferRate ? Number(selection?.transferVehicleCount || 0) : undefined,
     cruiseTransferPricePerVehicle: transferRate ? Number(selection?.transferUnitPrice || 0) : undefined,
     cruiseTransferTotal: transferRate ? Number(selection?.transferTotal || 0) : undefined,
@@ -2334,6 +2341,8 @@ function crRequestQuote(cruiseId) {
   if (selectionError) {
     const message = selectionError === "TRANSFER_REQUIRED"
       ? t("cruise.chooseTransferRequired","Choose an available transfer vehicle before requesting the quote.")
+      : selectionError === "TRANSFER_PAX_INVALID"
+        ? t("cruise.transferPassengersInvalid","Enter a valid number of transfer passengers.")
       : selectionError === "CRUISE_REQUIRED"
         ? t("empty.failed","Failed to load")
         : t("cruise.chooseProgrammeRequired","Choose an available programme with a valid price period for this sailing date.");
@@ -2375,7 +2384,7 @@ function crRequestQuote(cruiseId) {
       ? `${t("cruise.transfer","Transfer")}: ${t("activity.transferIncluded","Transfer included")} · ${programme.transferFromName || ""} → ${programme.transferToName || ""}`
       : transfer.transferRequested
       ? `${t("cruise.transfer","Transfer")}: ${transfer.transferFromName} → ${transfer.transferToName}`
-        + (transferRate ? ` · ${selection.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")} · ${selection.transferVehicleCount} × ${formatPrice(selection.transferUnitPrice, transferRate.currency)} ${t("transport.perVehicle","per vehicle")}` : "")
+        + (transferRate ? ` · ${selection.transferPax} ${t("form.passengers","Passengers")} · ${selection.transferTripType === "ROUND_TRIP" ? t("cruise.roundTrip","Round-trip") : t("cruise.oneWay","One-way")} · ${selection.transferVehicleCount} × ${formatPrice(selection.transferUnitPrice, transferRate.currency)} ${t("transport.perVehicle","per vehicle")}` : "")
       : `${t("cruise.transfer","Transfer")}: ${t("cruise.noTransfer","No transfer")}`,
     selection?.supplements?.length ? `${t("hotel.supplements","Supplements")}: ${selection.supplements.map(x => x.name).join(", ")}` : "",
   ].filter(Boolean);

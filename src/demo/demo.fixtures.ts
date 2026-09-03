@@ -109,6 +109,24 @@ export const DEMO_QUOTES = [
   { id: 'q1', requestNumber: 'QR-2026-000312', status: 'PENDING', serviceType: 'HOTEL', clientName: 'Nadia Saleh', companyId: 'c1', company: DEMO_COMPANIES[0], createdAt: '2026-07-31T10:00:00.000Z', details: { destination: 'Hurghada', nights: 5, pax: 2 }, quotedAmount: null, currency: 'USD' },
   { id: 'q2', requestNumber: 'QR-2026-000313', status: 'QUOTED', serviceType: 'TRANSPORT', clientName: 'Peter Lang', companyId: 'c3', company: DEMO_COMPANIES[2], createdAt: '2026-07-30T13:20:00.000Z', details: { from: 'CAI', to: 'Alexandria', pax: 8 }, quotedAmount: 3400, currency: 'EGP' },
   { id: 'q3', requestNumber: 'QR-2026-000314', status: 'CONFIRMED', serviceType: 'ACTIVITY', clientName: 'Hala Zaki', companyId: 'c2', company: DEMO_COMPANIES[1], createdAt: '2026-07-29T09:45:00.000Z', details: { activity: 'Luxor day tour', pax: 4 }, quotedAmount: 480, currency: 'USD' },
+  {
+    id: 'q4', refNumber: 'QR-2026-000315', requestNumber: 'QR-2026-000315', status: 'PENDING', serviceType: 'CRUISE',
+    clientName: 'Klaus Berger', companyId: 'c1', company: DEMO_COMPANIES[0], createdBy: DEMO_USERS[3],
+    serviceName: 'MS Nile Dawn', adultsCount: 7, childrenCount: 0, infantsCount: 0, checkIn: '2026-09-07T00:00:00.000Z',
+    checkOut: '2026-09-11T00:00:00.000Z', currency: 'EGP', resolvedAmount: 7800,
+    transferRequested: true, transferFromName: 'Luxor Airport', transferToName: 'Nile Cruise Port',
+    transferTripType: 'ROUND_TRIP', transferPaxCount: 13, transferVehicleType: 'VAN_12',
+    transferVehicleCapacity: 12, transferVehicleCount: 2,
+    customFields: {
+      cruiseProductMode: 'TRANSFER', cruiseScheduleId: 'cs1', cruiseScheduleRoute: 'MONDAY_TO_FRIDAY',
+      cruiseNights: 4, cruiseSailingDate: '2026-09-07', cruiseCurrency: 'EGP',
+      cruiseTransferRateId: 'ctr1-egp-rt', cruiseTransferTripType: 'ROUND_TRIP',
+      cruiseTransferVehicleType: 'VAN_12', cruiseTransferVehicleCapacity: 12,
+      cruiseTransferPaxCount: 13, cruiseTransferVehicleCount: 2, cruiseTransferPricePerVehicle: 3900,
+      cruiseTransferTotal: 7800, cruiseProductTotal: 7800, cruiseResolvedTotal: 7800,
+    },
+    createdAt: '2026-08-30T12:15:00.000Z', quotedAmount: null, details: { cruise: 'MS Nile Dawn', pax: 7 },
+  },
 ];
 
 export const DEMO_OFFERS = [
@@ -144,6 +162,7 @@ export const DEMO_CRUISES = [
       { id: 'ctr1', scheduleId: 'sc1', market: 'FOREIGN', fromLocation: 'Luxor Airport', toLocation: 'Nile Cruise Pier', tripType: 'ONE_WAY', vehicleType: 'VAN_6', vehicleCapacity: 6, amount: 100, currency: 'USD' },
       { id: 'ctr1-rt', scheduleId: 'sc1', market: 'FOREIGN', fromLocation: 'Luxor Airport', toLocation: 'Nile Cruise Pier', tripType: 'ROUND_TRIP', vehicleType: 'VAN_12', vehicleCapacity: 12, amount: 180, currency: 'USD' },
       { id: 'ctr1-egp', scheduleId: 'sc1', market: 'EGYPTIAN', fromLocation: 'مطار الأقصر', toLocation: 'مرسى النايل كروز', tripType: 'ONE_WAY', vehicleType: 'VAN_6', vehicleCapacity: 6, amount: 2200, currency: 'EGP' },
+      { id: 'ctr1-egp-rt', scheduleId: 'sc1', market: 'EGYPTIAN', fromLocation: 'مطار الأقصر', toLocation: 'مرسى النايل كروز', tripType: 'ROUND_TRIP', vehicleType: 'VAN_12', vehicleCapacity: 12, amount: 3900, currency: 'EGP' },
       { id: 'ctr1-short', scheduleId: 'sc1-short', market: 'FOREIGN', fromLocation: 'Luxor Airport', toLocation: 'Nile Cruise Pier', tripType: 'ONE_WAY', vehicleType: 'VAN_6', vehicleCapacity: 6, amount: 90, currency: 'USD' },
       { id: 'ctr1-short-egp', scheduleId: 'sc1-short', market: 'EGYPTIAN', fromLocation: 'مطار الأقصر', toLocation: 'مرسى النايل كروز', tripType: 'ONE_WAY', vehicleType: 'VAN_6', vehicleCapacity: 6, amount: 2000, currency: 'EGP' },
     ] },

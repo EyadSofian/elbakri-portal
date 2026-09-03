@@ -72,11 +72,32 @@ test('programme plus standalone transfer is explicitly refused', async () => {
   }, fakeDb()), /TRANSFER_ALREADY_INCLUDED/);
 });
 
-test('standalone transfer vehicle count comes from real passengers', async () => {
+test('standalone transfer vehicle count comes from the selected transfer passengers', async () => {
   const result = await resolveCruiseCommercialSelection({
-    ...base, adultsCount: 5, childrenCount: 2, productMode: 'TRANSFER', cabinRateId: 'r3', occupancy: 'DOUBLE', transferRateId: 't6',
+    ...base, adultsCount: 5, childrenCount: 2, productMode: 'TRANSFER', cabinRateId: 'r3', occupancy: 'DOUBLE',
+    transferRateId: 't6', transferPaxCount: 3,
   }, fakeDb());
   assert.equal(result.pax, 7);
+  assert.equal(result.transferPaxCount, 3);
+  assert.equal(result.transferVehicleCount, 1);
+  assert.equal(result.transferTotal!.toString(), '100');
+  assert.equal(cruiseResolutionFields(result).cruiseTransferPaxCount, 3);
+});
+
+test('standalone transfer rejects an invalid explicit passenger count', async () => {
+  await assert.rejects(() => resolveCruiseCommercialSelection({
+    ...base, productMode: 'TRANSFER', cabinRateId: 'r3', occupancy: 'DOUBLE',
+    transferRateId: 't6', transferPaxCount: 0,
+  }, fakeDb()), /TRANSFER_PAX_INVALID/);
+});
+
+test('thirteen transfer passengers require two twelve-seat vehicles', async () => {
+  const twelveSeatRate = { ...transferRate, vehicleCapacity: 12, amount: new Decimal(180), tripType: 'ROUND_TRIP' };
+  const result = await resolveCruiseCommercialSelection({
+    ...base, productMode: 'TRANSFER', cabinRateId: 'r3', occupancy: 'DOUBLE',
+    transferRateId: 't6', transferPaxCount: 13,
+  }, fakeDb('FOREIGN', { transferRate: twelveSeatRate }));
+  assert.equal(result.transferPaxCount, 13);
   assert.equal(result.transferVehicleCount, 2);
-  assert.equal(result.transferTotal!.toString(), '200');
+  assert.equal(result.transferTotal!.toString(), '360');
 });

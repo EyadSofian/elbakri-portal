@@ -177,6 +177,7 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
         checkOut: body.checkOut,
         adultsCount: body.adultsCount,
         childrenCount: body.childrenCount,
+        transferPaxCount: body.transferPaxCount ?? selection.transferPaxCount,
       });
       const unrelated = Object.fromEntries(Object.entries(customFields ?? {}).filter(([key]) => !key.startsWith('cruise')));
       customFields = { ...unrelated, ...cruiseResolutionFields(cruiseResolution) };
@@ -241,6 +242,11 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
         transferToName: cruiseResolution.transferRate.toLocation,
         transferPickupTime: body.transferPickupTime ?? null,
         transferReturnTime: body.transferReturnTime ?? null,
+        transferTripType: cruiseResolution.transferRate.tripType,
+        transferPaxCount: cruiseResolution.transferPaxCount,
+        transferVehicleType: cruiseResolution.transferRate.vehicleType,
+        transferVehicleCapacity: cruiseResolution.transferRate.vehicleCapacity,
+        transferVehicleCount: cruiseResolution.transferVehicleCount,
         transferNotes: body.transferNotes ?? cruiseResolution.transferRate.notes ?? null,
       }
       : readTransferAddOn({}, { transferIncluded })
@@ -291,7 +297,7 @@ export async function createQuoteRequest(req: Request, res: Response): Promise<v
           ?? (String(body.transferTripType ?? 'ONE_WAY').toUpperCase() === 'ROUND_TRIP' ? 'ROUND_TRIP' : 'ONE_WAY')
         : null,
       transferPaxCount: transfer.transferRequested
-        ? cruiseResolution?.pax ?? Math.max(1, Math.floor(Number(body.transferPaxCount ?? body.adultsCount ?? 1)) || 1)
+        ? cruiseResolution?.transferPaxCount ?? Math.max(1, Math.floor(Number(body.transferPaxCount ?? body.adultsCount ?? 1)) || 1)
         : null,
       transferVehicleType: transfer.transferRequested
         ? (cruiseResolution?.transferRate?.vehicleType ?? String(body.transferVehicleType ?? '').trim().toUpperCase()) || null

@@ -393,6 +393,7 @@ function cruiseSelectionBlock(q) {
     cf.cruiseChildUnitPrice != null ? [t("cruise.childPerPerson", "Child · per person"), formatMoney(cf.cruiseChildUnitPrice, currency)] : null,
     mode === "TRANSFER" ? [t("cruise.transferTripType", "Transfer type"), cf.cruiseTransferTripType === "ROUND_TRIP" ? t("cruise.roundTrip", "Round-trip") : t("cruise.oneWay", "One-way")] : null,
     mode === "TRANSFER" ? [t("cruise.route", "Transfer route"), `${q.transferFromName || "—"} → ${q.transferToName || "—"}`] : null,
+    mode === "TRANSFER" ? [t("cruise.transferPassengers", "Transfer passengers"), `${cf.cruiseTransferPaxCount ?? q.transferPaxCount ?? "—"} ${t("form.passengers", "passengers")}`] : null,
     mode === "TRANSFER" ? [t("cruise.vehicle", "Vehicle"), `${String(cf.cruiseTransferVehicleType || q.transferVehicleType || "—").replace(/_/g, " ")} · ${cf.cruiseTransferVehicleCapacity || q.transferVehicleCapacity || "—"} ${t("form.passengers", "passengers")}`] : null,
     mode === "TRANSFER" ? [t("cruise.vehiclesRequired", "Vehicles required"), `${cf.cruiseTransferVehicleCount || q.transferVehicleCount || 1} ${Number(cf.cruiseTransferVehicleCount || q.transferVehicleCount || 1) === 1 ? t("cruise.vehicle", "vehicle") : t("cruise.vehicles", "vehicles")}`] : null,
     mode === "TRANSFER" && cf.cruiseTransferPricePerVehicle != null ? [t("transport.perVehicle", "Per vehicle"), formatMoney(cf.cruiseTransferPricePerVehicle, currency)] : null,

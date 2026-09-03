@@ -140,3 +140,28 @@ YES
 - `prisma validate`: PASS.
 - Demo package API: related package loaded and Double + one child resolved to the configured server total.
 - Database integration guard: PASS. The 22 database scenarios remain skipped locally because no disposable PostgreSQL instance is installed/configured; they were not falsely reported as executed.
+
+## Follow-up verification (2026-09-03)
+
+### Nile Cruise transfer passenger count
+
+- The number of transfer passengers is now a separate, required customer choice; it no longer silently follows the number of cruise guests.
+- The authoritative server resolver validates the choice (1–500), derives the number of vehicles from the selected vehicle capacity, and calculates the transfer total per vehicle.
+- The value survives both direct cruise bookings and quote requests, is stored in `transferPaxCount`, is included in the protected cruise selection snapshot, is visible in the admin request, and is consumed by Transport operations.
+- User verification: 13 transfer passengers + a 12-seat round-trip vehicle produced 2 vehicles and EGP 7,800 (2 × EGP 3,900).
+- Admin verification: the request displayed the same 13 passengers, round-trip product, 12-seat vehicle, 2 vehicles and EGP 7,800 total.
+
+### Shared control layout
+
+- Text actions no longer inherit icon-only square dimensions.
+- Button icons remain in normal flex flow and cannot overlap their labels.
+- Toolbars and modal actions wrap safely; modal footers no longer cover form content.
+- Checkboxes and radios use one compact, explicit drawing in light and dark themes.
+
+### Verification gate
+
+- `npm test`: 368 passed, 0 failed (includes the new 13-passenger / 12-seat server test).
+- `npm run build`: PASS.
+- `npm run test:html`: PASS.
+- `npm run test:audit`: PASS — 222 dashboard handlers, 451 admin handlers and every frontend API path are valid.
+- Browser layout audit at 1280 × 720: no overflowing buttons, modal actions or modal containers.
